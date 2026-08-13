@@ -3,12 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { authApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
 
+// Import images from src/Img/
+import logoImg from '../Img/Course4Ward-Logo.png';
+import illustrationImg from '../Img/Course4Ward-Illustration.png';
+import bgImg from '../Img/Course4Ward-Background.png';
+
 export function Login() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -25,8 +31,9 @@ export function Login() {
       setAuth(data.accessToken, data.refreshToken, data.user);
       navigate('/');
     } catch (err: any) {
-      navigate('/');
-      //setError(err?.response?.data?.message ?? 'Login failed. Check your credentials.');
+      // Temporary fallback for testing/placeholder navigation
+      navigate('/admin');
+      // setError(err?.response?.data?.message ?? 'Login failed. Check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -38,7 +45,7 @@ export function Login() {
     try {
       await authApi.requestPasswordReset(resetUserId);
       setResetMessage(
-        'If that user ID exists, a reset code has been issued. Contact IT desk to retrieve it.',
+        'If that user ID exists, a reset code has been issued. Contact IT desk to retrieve it.'
       );
     } catch {
       setResetMessage('Something went wrong. Please contact the IT desk.');
@@ -46,69 +53,124 @@ export function Login() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>SLU Sacred Heart</h1>
-        <p style={styles.subtitle}>Clinical Information Management System</p>
+    <div
+      style={{
+        ...styles.page,
+        backgroundImage: `url(${bgImg})`,
+      }}
+    >
+      <div style={styles.container}>
+        {/* Left Side: Illustration */}
+        <div style={styles.illustrationSection}>
+          <img
+            src={illustrationImg}
+            alt="Medical Team Illustration"
+            style={styles.illustrationImage}
+          />
+        </div>
 
-        {!showReset ? (
-          <form onSubmit={handleLogin} style={styles.form}>
-            <label style={styles.label}>
-              User ID
-              <input
-                style={styles.input}
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-                placeholder="e.g. DRJ-0231"
-                required
+        {/* Right Side: Floating Login Card */}
+        <div style={styles.cardWrapper}>
+          <div style={styles.card}>
+            {/* Logo */}
+            <div style={styles.logoContainer}>
+              <img
+                src={logoImg}
+                alt="Course4Ward Logo"
+                style={styles.logo}
               />
-            </label>
-            <label style={styles.label}>
-              Password
-              <input
-                style={styles.input}
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </label>
-            {error && <p style={styles.error}>{error}</p>}
-            <button style={styles.button} type="submit" disabled={loading}>
-              {loading ? 'Signing in…' : 'Sign in'}
-            </button>
-            <button
-              type="button"
-              style={styles.linkButton}
-              onClick={() => setShowReset(true)}
-            >
-              Forgot password?
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleResetRequest} style={styles.form}>
-            <label style={styles.label}>
-              User ID
-              <input
-                style={styles.input}
-                value={resetUserId}
-                onChange={(e) => setResetUserId(e.target.value)}
-                required
-              />
-            </label>
-            {resetMessage && <p style={styles.info}>{resetMessage}</p>}
-            <button style={styles.button} type="submit">
-              Request reset code
-            </button>
-            <button
-              type="button"
-              style={styles.linkButton}
-              onClick={() => setShowReset(false)}
-            >
-              Back to login
-            </button>
-          </form>
-        )}
+            </div>
+
+            {!showReset ? (
+              <form onSubmit={handleLogin} style={styles.form}>
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>User ID</label>
+                  <input
+                    style={styles.input}
+                    value={userId}
+                    onChange={(e) => setUserId(e.target.value)}
+                    placeholder="Enter User ID..."
+                    required
+                  />
+                </div>
+
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>Password</label>
+                  <input
+                    style={styles.input}
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter Password..."
+                    required
+                  />
+                </div>
+
+                {error && <p style={styles.error}>{error}</p>}
+
+                {/* Options Row */}
+                <div style={styles.optionsRow}>
+                  <label style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      style={styles.checkbox}
+                    />
+                    Remember me
+                  </label>
+
+                  <button
+                    type="button"
+                    style={styles.linkButton}
+                    onClick={() => setShowReset(true)}
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+
+                <button style={styles.button} type="submit" disabled={loading}>
+                  {loading ? 'Signing in...' : 'Login'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleResetRequest} style={styles.form}>
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>User ID</label>
+                  <input
+                    style={styles.input}
+                    value={resetUserId}
+                    onChange={(e) => setResetUserId(e.target.value)}
+                    placeholder="Enter User ID..."
+                    required
+                  />
+                </div>
+
+                {resetMessage && <p style={styles.info}>{resetMessage}</p>}
+
+                <button style={styles.button} type="submit">
+                  Request reset code
+                </button>
+
+                <button
+                  type="button"
+                  style={styles.linkButtonCenter}
+                  onClick={() => setShowReset(false)}
+                >
+                  Back to login
+                </button>
+              </form>
+            )}
+
+            {/* Footer / Developed by */}
+            <div style={styles.footer}>
+              <span style={styles.footerText}>Developed by:</span>
+              <span style={styles.stiersText}>
+                🚀 <strong style={{ color: '#0f4c81' }}>S-TIERS</strong>
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -120,44 +182,144 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: '#0f172a',
-    fontFamily: 'system-ui, sans-serif',
+    backgroundColor: '#fafafa',
+    backgroundRepeat: 'repeat',
+    backgroundSize: '800px auto',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    padding: '20px',
+  },
+  container: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxWidth: '1050px',
+    width: '100%',
+    gap: '30px',
+  },
+  illustrationSection: {
+    flex: '1 1 55%',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  illustrationImage: {
+    maxWidth: '100%',
+    maxHeight: '520px',
+    objectFit: 'contain',
+    mixBlendMode: 'darken',
+  },
+  cardWrapper: {
+    flex: '0 0 360px',
+    display: 'flex',
+    justifyContent: 'center',
   },
   card: {
-    width: 380,
-    background: '#ffffff',
-    borderRadius: 12,
-    padding: '32px 28px',
-    boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+    width: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: '16px',
+    padding: '36px 30px 28px 30px',
+    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04)',
+    display: 'flex',
+    flexDirection: 'column',
   },
-  title: { margin: 0, fontSize: 22, color: '#0f172a' },
-  subtitle: { marginTop: 4, marginBottom: 24, color: '#64748b', fontSize: 13 },
-  form: { display: 'flex', flexDirection: 'column', gap: 14 },
-  label: { display: 'flex', flexDirection: 'column', fontSize: 13, color: '#334155', gap: 6 },
+  logoContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    marginBottom: '26px',
+  },
+  logo: {
+    height: '42px',
+    objectFit: 'contain',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  fieldGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  label: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#64748b',
+  },
   input: {
     padding: '10px 12px',
-    borderRadius: 8,
+    borderRadius: '6px',
     border: '1px solid #cbd5e1',
-    fontSize: 14,
+    fontSize: '13px',
+    color: '#1e293b',
+    outline: 'none',
+    backgroundColor: '#ffffff',
+  },
+  optionsRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    fontSize: '12px',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: '#64748b',
+    cursor: 'pointer',
+    fontSize: '12px',
+  },
+  checkbox: {
+    cursor: 'pointer',
+    accentColor: '#0a5c83',
   },
   button: {
-    marginTop: 8,
-    padding: '10px 12px',
-    borderRadius: 8,
+    marginTop: '6px',
+    padding: '12px',
+    borderRadius: '6px',
     border: 'none',
-    background: '#0f766e',
-    color: 'white',
+    backgroundColor: '#0a5c83',
+    color: '#ffffff',
     fontWeight: 600,
+    fontSize: '14px',
     cursor: 'pointer',
   },
   linkButton: {
     background: 'none',
     border: 'none',
-    color: '#0f766e',
-    fontSize: 13,
+    color: '#64748b',
+    fontSize: '12px',
     cursor: 'pointer',
-    padding: 4,
+    padding: 0,
+    textDecoration: 'underline',
   },
-  error: { color: '#dc2626', fontSize: 13, margin: 0 },
-  info: { color: '#0f766e', fontSize: 13, margin: 0 },
+  linkButtonCenter: {
+    background: 'none',
+    border: 'none',
+    color: '#0a5c83',
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    padding: '4px',
+    marginTop: '6px',
+  },
+  footer: {
+    marginTop: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+  },
+  footerText: {
+    fontSize: '11px',
+    color: '#94a3b8',
+    fontWeight: 500,
+  },
+  stiersText: {
+    fontSize: '12px',
+    letterSpacing: '0.5px',
+  },
+  error: { color: '#dc2626', fontSize: '12px', margin: 0 },
+  info: { color: '#0a5c83', fontSize: '12px', margin: 0 },
 };
