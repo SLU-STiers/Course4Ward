@@ -395,11 +395,170 @@ function AccountsPanel() {
   );
 }
 
+/* ==========================================================================
+   REQUESTS VIEW (Password Reset Requests with Functional Pagination)
+   ========================================================================== */
 function RequestsView() {
+  const qc = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
+  // Fetch password reset requests from backend
+  const { data: requestsData } = useQuery({
+    queryKey: ['reset-requests'],
+    queryFn: () => adminApi.getResetRequests().then((r) => r.data),
+  });
+
+  // Handle approving/resetting password request
+  const handleResetPassword = useMutation({
+    mutationFn: (requestId: string) => adminApi.approveResetRequest(requestId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reset-requests'] }),
+  });
+
+  // Fallback mock data matching your mockup UI image
+  const mockRequests = [
+    { id: 'RST-0001', name: 'Christine Brooks', role: 'Doctor', email: 'christine.brooks@courseinward.com', date: '14 Feb 2026', time: '10:32 AM', status: 'Pending' },
+    { id: 'RST-0002', name: 'Rosie Pearson', role: 'Nurse', email: 'rosie.pearson@courseinward.com', date: '14 Feb 2026', time: '09:15 AM', status: 'Pending' },
+    { id: 'RST-0003', name: 'Darrell Caldwell', role: 'Doctor', email: 'darrell.caldwell@courseinward.com', date: '14 Feb 2026', time: '08:47 AM', status: 'Pending' },
+    { id: 'RST-0004', name: 'Gilbert Johnston', role: 'Doctor', email: 'gilbert.johnston@courseinward.com', date: '14 Feb 2026', time: '07:58 AM', status: 'Pending' },
+    { id: 'RST-0005', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
+    { id: 'RST-0006', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
+    { id: 'RST-0007', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
+    { id: 'RST-0008', name: 'Gilbert Johnston', role: 'Doctor', email: 'gilbert.johnston@courseinward.com', date: '14 Feb 2026', time: '07:58 AM', status: 'Pending' },
+    { id: 'RST-0009', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
+    { id: 'RST-0010', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
+    { id: 'RST-0011', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },  
+  ];
+
+  const list = requestsData || mockRequests;
+
+  // Search filter
+  const filteredList = list.filter((req: any) =>
+    req.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.id.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Pagination calculations
+  const totalItems = filteredList.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const currentData = filteredList.slice(startIndex, startIndex + itemsPerPage);
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
   return (
-    <div style={styles.cardContainer}>
-      <h3>Requests</h3>
-      <p style={{ color: '#64748b', fontSize: '14px' }}>No pending requests at this time.</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div style={styles.cardContainer}>
+        {/* Header Bar with Search */}
+        <div style={styles.requestsHeader}>
+          <div>
+            <h3 style={styles.requestsTitle}>Password Reset Requests</h3>
+            <p style={styles.requestsSubTitle}>Review and manage user password reset requests.</p>
+          </div>
+
+          <div style={styles.searchContainer}>
+            <input
+              type="text"
+              placeholder="Search requests..."
+              style={styles.searchInput}
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Reset to page 1 on new search
+              }}
+            />
+            <span style={styles.searchIcon}>🔍</span>
+          </div>
+        </div>
+
+        {/* Requests Table */}
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Request ID</th>
+              <th style={styles.th}>User</th>
+              <th style={styles.th}>Email</th>
+              <th style={styles.th}>Requested On</th>
+              <th style={styles.th}>Status</th>
+              <th style={styles.th}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {currentData.map((item: any) => (
+              <tr key={item.id} style={styles.tr}>
+                <td style={{ ...styles.td, fontWeight: 700, color: '#0284c7' }}>
+                  {item.id}
+                </td>
+                <td style={styles.td}>
+                  <div style={{ fontWeight: 700, color: '#0f172a' }}>{item.name}</div>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>{item.role}</div>
+                </td>
+                <td style={{ ...styles.td, color: '#475569' }}>{item.email}</td>
+                <td style={styles.td}>
+                  <div style={{ fontWeight: 600, color: '#0f172a' }}>{item.date}</div>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>{item.time}</div>
+                </td>
+                <td style={styles.td}>
+                  <span style={styles.pendingBadge}>{item.status}</span>
+                </td>
+                <td style={styles.td}>
+                  <button
+                    style={styles.actionButton}
+                    onClick={() => handleResetPassword.mutate(item.id)}
+                  >
+                    Reset Password
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Pagination Controls */}
+        <div style={styles.paginationContainer}>
+          <span style={styles.paginationInfo}>
+            Showing {totalItems === 0 ? 0 : startIndex + 1} to {endIndex} of {totalItems} requests
+          </span>
+
+          <div style={styles.paginationControls}>
+            <button
+              style={styles.pageArrowButton}
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+            >
+              ‹
+            </button>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <button
+                key={page}
+                style={{
+                  ...styles.pageNumberButton,
+                  ...(currentPage === page ? styles.pageNumberActive : {}),
+                }}
+                onClick={() => handlePageChange(page)}
+              >
+                {page}
+              </button>
+            ))}
+
+            <button
+              style={styles.pageArrowButton}
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+            >
+              ›
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -697,5 +856,119 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#dc2626',
     fontSize: '11px',
     cursor: 'pointer',
+  },
+
+  /* Requests Section Styles */
+  requestsHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+    gap: '16px',
+  },
+  requestsTitle: {
+    fontSize: '20px',
+    fontWeight: 800,
+    color: '#0f172a',
+    margin: 0,
+  },
+  requestsSubTitle: {
+    fontSize: '13px',
+    color: '#64748b',
+    margin: '4px 0 0 0',
+  },
+  searchContainer: {
+    position: 'relative',
+    width: '280px',
+  },
+  searchInput: {
+    width: '100%',
+    padding: '10px 36px 10px 14px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    backgroundColor: '#f8fafc',
+    fontSize: '13px',
+    outline: 'none',
+  },
+  searchIcon: {
+    position: 'absolute',
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    fontSize: '14px',
+    color: '#94a3b8',
+    pointerEvents: 'none',
+  },
+  pendingBadge: {
+    backgroundColor: '#fef3c7',
+    color: '#b45309',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    display: 'inline-block',
+  },
+  actionButton: {
+    backgroundColor: '#0a5c83',
+    color: '#ffffff',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+
+  /* Pagination */
+  paginationContainer: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: '24px',
+    paddingTop: '16px',
+    borderTop: '1px solid #f1f5f9',
+  },
+  paginationInfo: {
+    fontSize: '12px',
+    color: '#64748b',
+    fontWeight: 500,
+  },
+  paginationControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  pageNumberButton: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    backgroundColor: '#ffffff',
+    color: '#475569',
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pageNumberActive: {
+    backgroundColor: '#0a5c83',
+    color: '#ffffff',
+    borderColor: '#0a5c83',
+  },
+  pageArrowButton: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+    backgroundColor: '#ffffff',
+    color: '#64748b',
+    fontSize: '14px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 };
