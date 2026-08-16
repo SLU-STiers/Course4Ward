@@ -9,7 +9,7 @@ import logoImg from '../Img/Course4Ward-Logo.png';
 import illustrationImg from '../Img/Course4Ward-Illustration.png';
 import bgImg from '../Img/Course4Ward-Background.png';
 
-const DEV_REDIRECT_ROLE: Role = 'ADMIN';
+const DEV_REDIRECT_ROLE: Role = 'CLAIMS_PROCESSOR'; // Change this to test different roles in development
 
 const roleRouteMap: Record<Role, string> = {
   PHYSICIAN: '/physician',
