@@ -79,4 +79,9 @@ export const adminApi = {
     api.get('/admin/audit-logs', { params }),
   ordersAnalytics: (bucket: 'day' | 'week' | 'month' | 'year') =>
     api.get('/admin/audit-logs/analytics/orders', { params: { bucket } }),
+  getResetRequests: () => 
+    api.get('/admin/password-reset-requests'),
+  
+  approveResetRequest: (requestId: string) => 
+    api.post(`/admin/password-reset-requests/${requestId}/approve`),
 };
