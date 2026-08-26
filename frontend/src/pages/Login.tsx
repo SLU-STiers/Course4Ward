@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { authApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
+import { PATH_ROLE } from '../routes/roleRoutes';
 import type { Role } from '../types';
 
 // Import images from src/Img/
@@ -9,18 +10,12 @@ import logoImg from '../Img/Course4Ward-Logo.png';
 import illustrationImg from '../Img/Course4Ward-Illustration.png';
 import bgImg from '../Img/Course4Ward-Background.png';
 
-const DEV_REDIRECT_ROLE: Role = 'CLAIMS_PROCESSOR'; // Change this to test different roles in development
-
-const roleRouteMap: Record<Role, string> = {
-  PHYSICIAN: '/physician',
-  NURSE: '/nurse',
-  CLAIMS_PROCESSOR: '/claims',
-  ADMIN: '/admin',
-};
-
 export function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const setAuth = useAuthStore((s) => s.setAuth);
+  const fromPath =
+    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/';
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
@@ -39,16 +34,17 @@ export function Login() {
 
     try {
       if (import.meta.env.DEV) {
+        const role: Role = PATH_ROLE[fromPath] ?? 'PHYSICIAN';
         const fakeUser = {
           id: 'dev-user',
           userId: userId || 'dev-admin',
           firstName: 'Dev',
-          lastName: DEV_REDIRECT_ROLE,
-          role: DEV_REDIRECT_ROLE,
+          lastName: role,
+          role,
         };
 
         setAuth('dev-access-token', 'dev-refresh-token', fakeUser);
-        navigate(roleRouteMap[DEV_REDIRECT_ROLE], { replace: true });
+        navigate(fromPath === '/login' ? '/' : fromPath, { replace: true });
         return;
       }
 
