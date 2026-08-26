@@ -9,7 +9,7 @@ interface AuthState {
   logout: () => void;
 }
 
-// Note: this is a standalone app (not a Claude artifact), so browser storage
+// browser storage
 // is fine here. sessionStorage is used so tokens don't persist past the
 // browser tab closing on shared hospital workstations.
 const STORAGE_KEY = 'cims_auth';
