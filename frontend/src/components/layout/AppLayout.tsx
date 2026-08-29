@@ -15,6 +15,11 @@ export function AppLayout() {
     setAuth(accessToken, refreshToken, { ...user, role, lastName: role });
   }, [accessToken, location.pathname, refreshToken, setAuth, user]);
 
+  const hasOwnShell = ['/physician', '/claims', '/admin'].includes(location.pathname);
+  if (hasOwnShell) {
+    return <Outlet />;
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: 'system-ui, sans-serif' }}>
       <header
