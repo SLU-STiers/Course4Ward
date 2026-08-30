@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 interface RecordAuditInput {
   userId?: string | null;
@@ -12,10 +12,10 @@ interface RecordAuditInput {
 
 @Injectable()
 export class AuditLogService {
-  constructor(private database: DatabaseService) {}
+  constructor(private prisma: PrismaService) {}
 
   async record(input: RecordAuditInput) {
-    return this.database.auditLog.create({
+    return this.prisma.auditLog.create({
       data: {
         userId: input.userId ?? undefined,
         action: input.action,
@@ -29,7 +29,7 @@ export class AuditLogService {
 
   // Used by Admin > "view transaction logs and important analytics"
   async findAll(params: { skip?: number; take?: number; entityType?: string }) {
-    return this.database.auditLog.findMany({
+    return this.prisma.auditLog.findMany({
       where: params.entityType ? { entityType: params.entityType } : undefined,
       orderBy: { createdAt: 'desc' },
       skip: params.skip,
@@ -40,6 +40,12 @@ export class AuditLogService {
 
   // Orders per day/week/month/year for admin analytics
   async ordersOverTime(bucket: 'day' | 'week' | 'month' | 'year') {
-    return this.database.ordersOverTime();
+    return this.prisma.$queryRawUnsafe(`
+      SELECT date_trunc('${bucket}', "orderDate") AS period, COUNT(*)::int AS count
+      FROM physician_orders
+      GROUP BY period
+      ORDER BY period DESC
+      LIMIT 100;
+    `);
   }
 }

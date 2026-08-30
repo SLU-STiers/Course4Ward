@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { SummaryStatus } from '../common/types/domain';
-import { DatabaseService } from '../database/database.service';
+import { SummaryStatus } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
 
@@ -11,7 +11,7 @@ export class CourseInWardService {
   private readonly aiServiceUrl: string;
 
   constructor(
-    private database: DatabaseService,
+    private prisma: PrismaService,
     private auditLog: AuditLogService,
     private ordersService: OrdersService,
     private config: ConfigService,
@@ -48,7 +48,7 @@ export class CourseInWardService {
   // "Summarized Physician's Orders" -- generate today's Course in the Ward
   async generateSummary(patientId: string, requestedById: string) {
     const [patient, todaysOrders] = await Promise.all([
-      this.database.patient.findUnique({ where: { id: patientId } }),
+      this.prisma.patient.findUnique({ where: { id: patientId } }),
       this.ordersService.findTodaysOrders(patientId),
     ]);
     if (!patient) throw new NotFoundException('Patient not found');
@@ -61,7 +61,7 @@ export class CourseInWardService {
       `${patient.firstName} ${patient.lastName}`,
     );
 
-    const summary = await this.database.courseInWard.create({
+    const summary = await this.prisma.courseInWard.create({
       data: {
         patientId,
         aiGeneratedText: aiText,
@@ -83,7 +83,7 @@ export class CourseInWardService {
   // "Resummarized Physician's Orders" -- option 1: physician manually edits
   async editSummary(id: string, editedText: string, physicianId: string) {
     const existing = await this.findOne(id);
-    const updated = await this.database.courseInWard.update({
+    const updated = await this.prisma.courseInWard.update({
       where: { id },
       data: {
         currentText: editedText,
@@ -106,14 +106,14 @@ export class CourseInWardService {
   async regenerateSummary(id: string, physicianId: string) {
     const existing = await this.findOne(id);
     const todaysOrders = await this.ordersService.findTodaysOrders(existing.patientId);
-    const patient = await this.database.patient.findUnique({ where: { id: existing.patientId } });
+    const patient = await this.prisma.patient.findUnique({ where: { id: existing.patientId } });
 
     const aiText = await this.callAiSummarizer(
       todaysOrders,
       `${patient!.firstName} ${patient!.lastName}`,
     );
 
-    const updated = await this.database.courseInWard.update({
+    const updated = await this.prisma.courseInWard.update({
       where: { id },
       data: {
         aiGeneratedText: aiText,
@@ -136,7 +136,7 @@ export class CourseInWardService {
   // Physician approves the summary they deem accurate
   async approve(id: string, physicianId: string) {
     await this.findOne(id);
-    const approved = await this.database.courseInWard.update({
+    const approved = await this.prisma.courseInWard.update({
       where: { id },
       data: {
         status: SummaryStatus.APPROVED,
@@ -156,13 +156,13 @@ export class CourseInWardService {
   }
 
   async findOne(id: string) {
-    const summary = await this.database.courseInWard.findUnique({ where: { id } });
+    const summary = await this.prisma.courseInWard.findUnique({ where: { id } });
     if (!summary) throw new NotFoundException('Course in the Ward summary not found');
     return summary;
   }
 
   findForPatient(patientId: string) {
-    return this.database.courseInWard.findMany({
+    return this.prisma.courseInWard.findMany({
       where: { patientId },
       orderBy: { summaryDate: 'desc' },
     });

@@ -1,24 +1,24 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { ClaimStatus, SummaryStatus } from '../common/types/domain';
-import { DatabaseService } from '../database/database.service';
+import { ClaimStatus, SummaryStatus } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class ClaimsService {
   constructor(
-    private database: DatabaseService,
+    private prisma: PrismaService,
     private auditLog: AuditLogService,
   ) {}
 
   // A claim wraps one approved (or pending) Course in the Ward entry for
   // processor review. Created once a summary exists for a patient.
   async createFromSummary(courseInWardId: string, claimsProcessorId: string) {
-    const summary = await this.database.courseInWard.findUnique({
+    const summary = await this.prisma.courseInWard.findUnique({
       where: { id: courseInWardId },
     });
     if (!summary) throw new NotFoundException('Course in the Ward summary not found');
 
-    const claim = await this.database.claim.create({
+    const claim = await this.prisma.claim.create({
       data: {
         patientId: summary.patientId,
         courseInWardId,
@@ -37,7 +37,7 @@ export class ClaimsService {
   }
 
   findAll() {
-    return this.database.claim.findMany({
+    return this.prisma.claim.findMany({
       orderBy: { id: 'desc' },
       include: {
         patient: { select: { firstName: true, lastName: true } },
@@ -48,7 +48,7 @@ export class ClaimsService {
 
   // Claims processor notifies the attending physician to validate the entry
   async notifyPhysician(claimId: string, claimsProcessorId: string) {
-    const claim = await this.database.claim.update({
+    const claim = await this.prisma.claim.update({
       where: { id: claimId },
       data: {
         status: ClaimStatus.NEEDS_PHYSICIAN_VALIDATION,
@@ -71,7 +71,7 @@ export class ClaimsService {
   // Auto-populate CF4 (PhilHealth Claim Form 4) with the approved Course in
   // the Ward summary. Only allowed once the physician has approved it.
   async generateCf4(claimId: string, claimsProcessorId: string) {
-    const claim = await this.database.claim.findUnique({
+    const claim = await this.prisma.claim.findUnique({
       where: { id: claimId },
       include: { courseInWard: true, patient: true },
     });
@@ -82,7 +82,7 @@ export class ClaimsService {
       );
     }
 
-    const updated = await this.database.claim.update({
+    const updated = await this.prisma.claim.update({
       where: { id: claimId },
       data: {
         status: ClaimStatus.CF4_GENERATED,
