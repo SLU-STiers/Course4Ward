@@ -15,7 +15,7 @@ export function AppLayout() {
     setAuth(accessToken, refreshToken, { ...user, role, lastName: role });
   }, [accessToken, location.pathname, refreshToken, setAuth, user]);
 
-  const hasOwnShell = ['/physician', '/claims', '/admin'].includes(location.pathname);
+  const hasOwnShell = ['/physician', '/nurse', '/claims', '/admin'].includes(location.pathname);
   if (hasOwnShell) {
     return <Outlet />;
   }
