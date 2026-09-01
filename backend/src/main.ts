@@ -2,34 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
-import { Client } from 'pg';
 import { AppModule } from './app.module';
-
-async function testDatabaseConnection() {
-  const connectionString = process.env.DATABASE_URL;
-
-  if (!connectionString) {
-    console.warn('DATABASE_URL is not set. Skipping database connection test.');
-    return false;
-  }
-
-  const maskedUrl = connectionString.replace(/\/\/([^@]+)@/, '//***@');
-  const client = new Client({ connectionString });
-
-  try {
-    await client.connect();
-    const result = await client.query('SELECT 1 AS ok');
-    console.log(`Database connected successfully: ${maskedUrl}`);
-    console.log('Postgres verification query result:', result.rows[0]);
-    return true;
-  } catch (error) {
-    console.error(`Database connection failed: ${maskedUrl}`);
-    console.error(error);
-    return false;
-  } finally {
-    await client.end().catch(() => undefined);
-  }
-}
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -58,13 +31,6 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
-
-  const dbConnected = await testDatabaseConnection();
-  if (dbConnected) {
-    console.log('Database readiness check: OK');
-  } else {
-    console.warn('Database readiness check: FAILED');
-  }
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

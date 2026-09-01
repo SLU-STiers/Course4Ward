@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { OrderEnteredBy, Role } from '../common/types/domain';
-import { DatabaseService } from '../database/database.service';
+import { OrderEnteredBy, Role } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 @Injectable()
 export class OrdersService {
   constructor(
-    private database: DatabaseService,
+    private prisma: PrismaService,
     private auditLog: AuditLogService,
   ) {}
 
@@ -15,7 +15,7 @@ export class OrdersService {
     const enteredByFlag =
       enteredByRole === Role.NURSE ? OrderEnteredBy.NURSE_ON_BEHALF : OrderEnteredBy.PHYSICIAN;
 
-    const order = await this.database.physicianOrder.create({
+    const order = await this.prisma.physicianOrder.create({
       data: {
         patientId: dto.patientId,
         orderingPhysicianId: dto.orderingPhysicianId,
@@ -40,7 +40,7 @@ export class OrdersService {
   }
 
   findForPatient(patientId: string) {
-    return this.database.physicianOrder.findMany({
+    return this.prisma.physicianOrder.findMany({
       where: { patientId },
       orderBy: { orderDate: 'desc' },
       include: {
@@ -55,7 +55,7 @@ export class OrdersService {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    return this.database.physicianOrder.findMany({
+    return this.prisma.physicianOrder.findMany({
       where: { patientId, orderDate: { gte: startOfDay } },
       orderBy: { orderDate: 'asc' },
     });

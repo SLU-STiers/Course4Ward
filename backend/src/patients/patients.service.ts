@@ -1,19 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Role } from '../common/types/domain';
-import { DatabaseService } from '../database/database.service';
+import { Role } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
 
 @Injectable()
 export class PatientsService {
   constructor(
-    private database: DatabaseService,
+    private prisma: PrismaService,
     private auditLog: AuditLogService,
   ) {}
 
   // Nurse patient management: name, gender, initial assessment
   async create(dto: CreatePatientDto, nurseId: string) {
-    const patient = await this.database.patient.create({
+    const patient = await this.prisma.patient.create({
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
@@ -24,7 +24,7 @@ export class PatientsService {
       },
     });
 
-    await this.database.patientAssignment.create({
+    await this.prisma.patientAssignment.create({
       data: { patientId: patient.id, userId: nurseId, role: Role.NURSE },
     });
 
@@ -41,7 +41,7 @@ export class PatientsService {
   // "Find and view the patient they are currently handling" -- scoped to
   // the requesting physician/nurse's active assignments.
   async findAssignedTo(userId: string) {
-    return this.database.patient.findMany({
+    return this.prisma.patient.findMany({
       where: {
         assignments: { some: { userId, active: true } },
       },
@@ -50,7 +50,7 @@ export class PatientsService {
   }
 
   async findOne(id: string) {
-    const patient = await this.database.patient.findUnique({
+    const patient = await this.prisma.patient.findUnique({
       where: { id },
       include: {
         orders: { orderBy: { orderDate: 'desc' }, take: 20 },
@@ -64,7 +64,7 @@ export class PatientsService {
 
   async update(id: string, dto: UpdatePatientDto, userId: string) {
     await this.findOne(id);
-    const patient = await this.database.patient.update({
+    const patient = await this.prisma.patient.update({
       where: { id },
       data: {
         initialAssessment: dto.initialAssessment,
@@ -85,7 +85,7 @@ export class PatientsService {
   }
 
   async assignStaff(patientId: string, staffUserId: string, role: Role) {
-    return this.database.patientAssignment.create({
+    return this.prisma.patientAssignment.create({
       data: { patientId, userId: staffUserId, role },
     });
   }

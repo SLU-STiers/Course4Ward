@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateNoteDto } from './dto/create-note.dto';
 
 @Injectable()
 export class NotesService {
-  constructor(private database: DatabaseService) {}
+  constructor(private prisma: PrismaService) {}
 
   create(dto: CreateNoteDto, physicianId: string) {
-    return this.database.physicianNote.create({
+    return this.prisma.physicianNote.create({
       data: {
         patientId: dto.patientId,
         physicianId,
@@ -18,7 +18,7 @@ export class NotesService {
   }
 
   findForPatient(patientId: string) {
-    return this.database.physicianNote.findMany({
+    return this.prisma.physicianNote.findMany({
       where: { patientId },
       orderBy: { createdAt: 'desc' },
     });
@@ -26,7 +26,7 @@ export class NotesService {
 
   // For a physician's personal reminder feed across all their patients
   findUpcomingReminders(physicianId: string) {
-    return this.database.physicianNote.findMany({
+    return this.prisma.physicianNote.findMany({
       where: { physicianId, reminderAt: { gte: new Date() } },
       orderBy: { reminderAt: 'asc' },
       include: { patient: { select: { firstName: true, lastName: true } } },

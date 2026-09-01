@@ -6,7 +6,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { LoginDto } from './dto/login.dto';
 import {
@@ -17,14 +17,14 @@ import {
 @Injectable()
 export class AuthService {
   constructor(
-    private database: DatabaseService,
+    private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
     private auditLog: AuditLogService,
   ) {}
 
   async login(dto: LoginDto, ipAddress?: string) {
-    const user = await this.database.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { userId: dto.userId },
     });
 
@@ -76,7 +76,7 @@ export class AuthService {
   // this is a LAN-only system. Stubbed here to return a token directly for
   // local development.
   async requestPasswordReset(dto: RequestPasswordResetDto) {
-    const user = await this.database.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { userId: dto.userId },
     });
     if (!user) {
@@ -108,7 +108,7 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
-    await this.database.user.update({
+    await this.prisma.user.update({
       where: { id: payload.sub },
       data: { passwordHash, mustResetPassword: false },
     });
