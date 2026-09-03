@@ -899,17 +899,20 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
 const shell: Record<string, React.CSSProperties> = {
   appContainer: {
     display: 'flex',
-    minHeight: '100vh',
+    height: '100vh',
+    overflow: 'hidden',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
     backgroundColor: '#f3f4f6',
   },
   sidebar: {
     width: 232,
+    flexShrink: 0,
     backgroundColor: '#ffffff',
     borderRight: '1px solid #e5e7eb',
     display: 'flex',
     flexDirection: 'column',
     padding: '8px 0 16px',
+    overflow: 'hidden',
   },
   sidebarLogoContainer: { padding: '16px 20px 24px' },
   sidebarLogo: { maxHeight: 44, maxWidth: 180, objectFit: 'contain' },
@@ -934,9 +937,12 @@ const shell: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
+    minHeight: 56,
+    flexShrink: 0,
     margin: '0 14px',
     padding: '10px 8px',
     borderTop: '1px solid #f1f5f9',
+    boxSizing: 'border-box',
   },
   profileAvatar: {
     width: 36,
@@ -951,8 +957,21 @@ const shell: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     flexShrink: 0,
   },
-  profileName: { fontSize: 12, fontWeight: 700, color: '#0f172a' },
-  profileEmail: { fontSize: 10, color: '#94a3b8' },
+  profileName: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#0f172a',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  profileEmail: {
+    fontSize: 10,
+    color: '#94a3b8',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   logoutBtn: {
     flexShrink: 0,
     border: '1px solid #fecaca',
@@ -964,12 +983,20 @@ const shell: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: 'pointer',
   },
-  mainWrapper: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
+  mainWrapper: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+  },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '28px 32px 8px',
+    flexShrink: 0,
   },
   headerTitle: { margin: 0, fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' },
   bellWrap: {
@@ -999,7 +1026,7 @@ const shell: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     padding: '0 4px',
   },
-  content: { padding: '16px 32px 32px', flex: 1 },
+  content: { padding: '16px 32px 32px', flex: 1, minHeight: 0, overflowY: 'auto' },
 };
 
 const ui: Record<string, React.CSSProperties> = {

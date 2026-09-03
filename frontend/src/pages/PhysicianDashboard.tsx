@@ -1365,17 +1365,20 @@ function ManageView() {
 const shell: Record<string, React.CSSProperties> = {
   appContainer: {
     display: 'flex',
-    minHeight: '100vh',
+    height: '100vh',
+    overflow: 'hidden',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
     backgroundColor: '#f3f4f6',
   },
   sidebar: {
     width: 232,
+    flexShrink: 0,
     backgroundColor: '#ffffff',
     borderRight: '1px solid #e5e7eb',
     display: 'flex',
     flexDirection: 'column',
     padding: '8px 0 16px',
+    overflow: 'hidden',
   },
   sidebarLogoContainer: {
     padding: '16px 20px 24px',
@@ -1422,10 +1425,13 @@ const shell: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
+    minHeight: 56,
+    flexShrink: 0,
     margin: '0 14px',
     padding: '10px 12px',
     backgroundColor: '#f3f4f6',
     borderRadius: 14,
+    boxSizing: 'border-box',
   },
   profileAvatar: {
     width: 36,
@@ -1444,6 +1450,9 @@ const shell: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 700,
     color: '#0f172a',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
   profileEmail: {
     fontSize: 10,
@@ -1468,12 +1477,15 @@ const shell: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '28px 32px 8px',
+    flexShrink: 0,
   },
   headerTitle: {
     margin: 0,
@@ -1490,6 +1502,8 @@ const shell: Record<string, React.CSSProperties> = {
   content: {
     padding: '16px 32px 32px',
     flex: 1,
+    minHeight: 0,
+    overflowY: 'auto',
   },
   bellWrap: {
     position: 'relative',
