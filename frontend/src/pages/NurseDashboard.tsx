@@ -1,7 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import logoImg from '../Img/Course4Ward-Logo.png';
+import searchImg from '../Img/search.png';
+import notificationImg from '../Img/notification.png';
+import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';
 
@@ -19,13 +22,6 @@ type NursePatient = {
   initials: string;
 };
 
-type OrderSet = {
-  dateLabel: string;
-  time: string;
-  doctor: string;
-  orders: string[];
-};
-
 const MOCK_PATIENTS: NursePatient[] = [
   { id: '1', name: 'Sarah Brown', patientId: '1123', recordId: 'SH-2024-0123', admissionDate: '15/04/2026', color: '#ef4444', age: 28, gender: 'Female', initials: 'SB' },
   { id: '2', name: 'Michael Owen', patientId: '1122', recordId: 'SH-2024-0122', admissionDate: '15/04/2026', color: '#22c55e', age: 45, gender: 'Male', initials: 'MO' },
@@ -36,6 +32,111 @@ const MOCK_PATIENTS: NursePatient[] = [
   { id: '7', name: 'Nora Reyes', patientId: '1116', recordId: 'SH-2024-0116', admissionDate: '16/04/2026', color: '#d946ef', age: 36, gender: 'Female', initials: 'NR' },
   { id: '8', name: 'James Cruz', patientId: '1115', recordId: 'SH-2024-0115', admissionDate: '16/04/2026', color: '#06b6d4', age: 29, gender: 'Male', initials: 'JC' },
 ];
+
+type TriageAssessment = {
+  time: string;
+  heartRate: string;
+  respRate: string;
+  spo2: string;
+  bp: string;
+  temp: string;
+  pain: string;
+  notes: string;
+};
+
+type PatientChart = {
+  name: string;
+  age: number;
+  gender: string;
+  admissionDate: string;
+  recordId: string;
+  triage: TriageAssessment;
+  assignedDoctors: string[];
+};
+
+const AVAILABLE_DOCTORS = [
+  'Dr. Mike Mentzer',
+  'Dr. Agcaoili Diddy',
+  'Dr. Jecy Guillian',
+  'Dr. John Doe',
+];
+
+const DEFAULT_TRIAGE: TriageAssessment = {
+  time: '08:00 AM',
+  heartRate: '86 bpm',
+  respRate: '18 /min',
+  spo2: '97%',
+  bp: '120/80 mmHg',
+  temp: '36.8 °C',
+  pain: '2/10',
+  notes: 'Stable on arrival. No acute distress.',
+};
+
+function buildChart(
+  name: string,
+  extras: Partial<PatientChart> & { triage?: Partial<TriageAssessment> } = {}
+): PatientChart {
+  const fromList = MOCK_PATIENTS.find((p) => p.name === name);
+  return {
+    name,
+    age: extras.age ?? fromList?.age ?? 40,
+    gender: extras.gender ?? fromList?.gender ?? '—',
+    admissionDate: extras.admissionDate ?? fromList?.admissionDate ?? '15/04/2026',
+    recordId: extras.recordId ?? fromList?.recordId ?? 'SH-2024-0000',
+    assignedDoctors: extras.assignedDoctors ?? ['Dr. Mike Mentzer'],
+    triage: { ...DEFAULT_TRIAGE, ...extras.triage },
+  };
+}
+
+const INITIAL_CHARTS: Record<string, PatientChart> = {
+  'Sarah Brown': buildChart('Sarah Brown', {
+    assignedDoctors: ['Dr. Mike Mentzer'],
+    triage: {
+      time: '08:12 AM',
+      heartRate: '98 bpm',
+      respRate: '22 /min',
+      spo2: '94%',
+      bp: '128/82 mmHg',
+      temp: '38.2 °C',
+      pain: '6/10',
+      notes: 'Fever and productive cough. Priority 2 triage.',
+    },
+  }),
+  'Michael Owen': buildChart('Michael Owen', {
+    assignedDoctors: ['Dr. Mike Mentzer'],
+    triage: {
+      time: '07:40 AM',
+      heartRate: '88 bpm',
+      respRate: '16 /min',
+      spo2: '98%',
+      bp: '148/92 mmHg',
+      temp: '36.9 °C',
+      pain: '1/10',
+      notes: 'Hypertension on arrival. Alert and oriented.',
+    },
+  }),
+  'Mary Jane': buildChart('Mary Jane', {
+    assignedDoctors: ['Dr. Jecy Guillian'],
+    triage: {
+      time: '04:10 PM',
+      heartRate: '76 bpm',
+      respRate: '16 /min',
+      spo2: '99%',
+      bp: '118/76 mmHg',
+      temp: '36.6 °C',
+      pain: '3/10',
+      notes: 'Post-op recovery. Wound clean and dry.',
+    },
+  }),
+};
+
+type OrderSet = {
+  dateKey: string;
+  dateLabel: string;
+  time: string;
+  doctor: string;
+  orders: string[];
+};
 
 type AdmissionStatus = 'Admitted' | 'Discharged';
 
@@ -81,8 +182,9 @@ const INITIAL_ADMISSIONS: AdmissionRecord[] = [
 const DEFAULT_ORDER_SETS: Record<string, OrderSet[]> = {
   '1': [
     {
+      dateKey: '2026-04-15',
       dateLabel: 'April 15, 2026',
-      time: 'Today, 8:00 AM',
+      time: '8:00 AM',
       doctor: 'Dr. Mike Mentzer',
       orders: [
         'IV Ceftriaxone 1g q12h',
@@ -92,32 +194,57 @@ const DEFAULT_ORDER_SETS: Record<string, OrderSet[]> = {
       ],
     },
     {
+      dateKey: '2026-04-15',
       dateLabel: 'April 15, 2026',
-      time: 'Today, 1:00 PM',
+      time: '1:00 PM',
       doctor: 'Dr. Agcaoili Diddy',
       orders: ['Continue oxygen support at 2L/min', 'CBC repeat at 6 PM', 'Encourage oral fluids'],
     },
     {
+      dateKey: '2026-04-14',
       dateLabel: 'April 14, 2026',
-      time: 'Yesterday, 4:30 PM',
+      time: '4:30 PM',
       doctor: 'Dr. Jecy Guillian',
       orders: ['Continue antibiotics', 'Observe for respiratory distress'],
+    },
+    {
+      dateKey: '2026-04-13',
+      dateLabel: 'April 13, 2026',
+      time: '9:00 AM',
+      doctor: 'Dr. Mike Mentzer',
+      orders: ['Start IV fluids', 'NPO until further notice', 'Chest physiotherapy q8h'],
     },
   ],
   '2': [
     {
+      dateKey: '2026-04-15',
       dateLabel: 'April 15, 2026',
-      time: 'Today, 7:50 AM',
+      time: '7:50 AM',
       doctor: 'Dr. Mike Mentzer',
       orders: ['Amlodipine 5mg once daily', 'Monitor BP every 4 hours', 'Low-salt diet'],
+    },
+    {
+      dateKey: '2026-04-14',
+      dateLabel: 'April 14, 2026',
+      time: '6:00 PM',
+      doctor: 'Dr. John Doe',
+      orders: ['Hold antihypertensives if SBP < 110', 'Repeat ECG in the morning'],
     },
   ],
   '3': [
     {
+      dateKey: '2026-04-14',
       dateLabel: 'April 14, 2026',
-      time: 'Yesterday, 4:30 PM',
+      time: '4:30 PM',
       doctor: 'Dr. Jecy Guillian',
       orders: ['Continue oral antibiotics', 'Wound dressing daily', 'Ambulate as tolerated'],
+    },
+    {
+      dateKey: '2026-04-13',
+      dateLabel: 'April 13, 2026',
+      time: '10:15 AM',
+      doctor: 'Dr. Jecy Guillian',
+      orders: ['Post-op vital signs q2h', 'Incentive spirometry'],
     },
   ],
 };
@@ -131,20 +258,14 @@ const DEFAULT_SUMMARIES: Record<string, string> = {
 
 export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('management');
-  const [showProfile, setShowProfile] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
+  const [charts, setCharts] = useState<Record<string, PatientChart>>(INITIAL_CHARTS);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-        setShowProfile(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <div style={shell.appContainer}>
@@ -168,51 +289,32 @@ export function NurseDashboard() {
         </nav>
         <div style={shell.sidebarProfile}>
           <div style={shell.profileAvatar}>AT</div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={shell.profileName}>Adrian Tabalvaro</div>
             <div style={shell.profileEmail}>ID 2246787</div>
           </div>
+          <button type="button" style={shell.logoutBtn} onClick={handleLogout}>
+            Log out
+          </button>
         </div>
       </aside>
 
       <div style={shell.mainWrapper}>
         <header style={shell.header}>
           <h1 style={shell.headerTitle}>{activeTab === 'management' ? 'Management' : 'Patient Management'}</h1>
-          <div style={shell.headerRight}>
-            <div style={shell.bellWrap}>
-              <span style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
-              <span style={shell.bellBadge}>2</span>
-            </div>
-            <div ref={profileRef} style={shell.headerProfileWrap}>
-              <button type="button" style={shell.headerProfileBtn} onClick={() => setShowProfile((v) => !v)}>
-                <div style={shell.headerAvatar}>AT</div>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={shell.headerProfileName}>Adrian Tabalvaro</div>
-                  <div style={shell.headerProfileId}>2246787</div>
-                </div>
-                <span style={{ fontSize: 10, color: '#64748b' }}>▼</span>
-              </button>
-              {showProfile && (
-                <div style={shell.dropdownMenu}>
-                  <button
-                    type="button"
-                    style={shell.dropdownItem}
-                    onClick={() => {
-                      logout();
-                      navigate('/login');
-                    }}
-                  >
-                    Log out
-                  </button>
-                </div>
-              )}
-            </div>
+          <div style={shell.bellWrap}>
+            <img src={notificationImg} alt="Notifications" style={{ width: 18, height: 18 }} />
+            <span style={shell.bellBadge}>2</span>
           </div>
         </header>
 
         <main style={shell.content}>
-          {activeTab === 'management' && <ManagementPortalView />}
-          {activeTab === 'patient' && <PatientView />}
+          {activeTab === 'management' && (
+            <ManagementPortalView charts={charts} />
+          )}
+          {activeTab === 'patient' && (
+            <PatientView charts={charts} setCharts={setCharts} />
+          )}
         </main>
       </div>
     </div>
@@ -266,15 +368,164 @@ function PatientIcon() {
   );
 }
 
-function PatientView() {
+function resolveChart(name: string, charts: Record<string, PatientChart>): PatientChart {
+  return charts[name] ?? buildChart(name);
+}
+
+function formatDateLabel(dateKey: string) {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function PatientDetailModal({
+  chart,
+  canAddDoctor,
+  onClose,
+  onAddDoctor,
+  status,
+  onDischarge,
+}: {
+  chart: PatientChart;
+  canAddDoctor: boolean;
+  onClose: () => void;
+  onAddDoctor?: (doctor: string) => void;
+  status?: AdmissionStatus;
+  onDischarge?: () => void;
+}) {
+  const [doctorPick, setDoctorPick] = useState('');
+  const unusedDoctors = AVAILABLE_DOCTORS.filter((d) => !chart.assignedDoctors.includes(d));
+
+  return (
+    <div style={ui.overlay} onClick={onClose}>
+      <div style={ui.modalWide} onClick={(e) => e.stopPropagation()}>
+        <div style={ui.modalHeaderRow}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h3 style={{ ...ui.sectionTitle, margin: 0 }}>Patient Details</h3>
+            {status && (
+              <span style={status === 'Admitted' ? ui.badgeAdmitted : ui.badgeDischarged}>
+                {status}
+              </span>
+            )}
+          </div>
+          <button type="button" style={ui.closeX} onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <div style={ui.detailGrid}>
+          <div>
+            <div style={ui.fieldLabel}>Name</div>
+            <div style={ui.detailValue}>{chart.name}</div>
+          </div>
+          <div>
+            <div style={ui.fieldLabel}>Age</div>
+            <div style={ui.detailValue}>{chart.age}</div>
+          </div>
+          <div>
+            <div style={ui.fieldLabel}>Admission Date</div>
+            <div style={ui.detailValue}>{chart.admissionDate}</div>
+          </div>
+          <div>
+            <div style={ui.fieldLabel}>Gender</div>
+            <div style={ui.detailValue}>{chart.gender}</div>
+          </div>
+        </div>
+
+        <h4 style={ui.subhead}>Triage Assessment</h4>
+        <div style={ui.triageGrid}>
+          <TriageCell label="Time" value={chart.triage.time} />
+          <TriageCell label="Heart Rate" value={chart.triage.heartRate} />
+          <TriageCell label="Respiratory Rate" value={chart.triage.respRate} />
+          <TriageCell label="SpO₂" value={chart.triage.spo2} />
+          <TriageCell label="BP" value={chart.triage.bp} />
+          <TriageCell label="Temp" value={chart.triage.temp} />
+          <TriageCell label="Pain" value={chart.triage.pain} />
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <div style={ui.fieldLabel}>Notes</div>
+          <div style={ui.notesBox}>{chart.triage.notes}</div>
+        </div>
+
+        <h4 style={ui.subhead}>Assigned Doctor</h4>
+        {chart.assignedDoctors.length ? (
+          <ul style={ui.doctorList}>
+            {chart.assignedDoctors.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+        ) : (
+          <p style={ui.muted}>No doctor assigned yet.</p>
+        )}
+
+        {canAddDoctor && (
+          <div style={ui.addDoctorRow}>
+            <select
+              value={doctorPick}
+              onChange={(e) => setDoctorPick(e.target.value)}
+              style={{ ...ui.input, flex: 1 }}
+            >
+              <option value="">Select doctor</option>
+              {unusedDoctors.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              style={ui.primaryBtn}
+              disabled={!doctorPick}
+              onClick={() => {
+                if (!doctorPick || !onAddDoctor) return;
+                onAddDoctor(doctorPick);
+                setDoctorPick('');
+              }}
+            >
+              Add Doctor
+            </button>
+          </div>
+        )}
+
+        <div style={ui.modalActions}>
+          <button type="button" style={ui.outlineBtn} onClick={onClose}>
+            Close
+          </button>
+          {status === 'Admitted' && onDischarge && (
+            <button type="button" style={ui.primaryBtn} onClick={onDischarge}>
+              Discharge Patient
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TriageCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={ui.triageCell}>
+      <div style={ui.fieldLabel}>{label}</div>
+      <div style={ui.detailValue}>{value}</div>
+    </div>
+  );
+}
+
+function PatientView({
+  charts,
+  setCharts,
+}: {
+  charts: Record<string, PatientChart>;
+  setCharts: React.Dispatch<React.SetStateAction<Record<string, PatientChart>>>;
+}) {
   const pageSize = 8;
   const [records, setRecords] = useState(INITIAL_ADMISSIONS);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDate, setNewDate] = useState('01 Sep 2026');
-  const [viewing, setViewing] = useState<AdmissionRecord | null>(null);
+  const [viewingName, setViewingName] = useState<string | null>(null);
 
   const filtered = records.filter(
     (r) =>
@@ -289,6 +540,9 @@ function PatientView() {
   const visiblePages =
     pageCount <= 4 ? pages : [...pages.slice(0, 3), pageCount].filter((n, i, arr) => arr.indexOf(n) === i);
 
+  const viewing = viewingName ? resolveChart(viewingName, charts) : null;
+  const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;
+
   const discharge = (id: string) => {
     setRecords((prev) =>
       prev.map((r) =>
@@ -297,18 +551,16 @@ function PatientView() {
     );
   };
 
-  const addPatient = () => {
-    const name = newName.trim();
-    if (!name) return;
-    const nextNum = records.length + 1;
-    const id = `ADM-${String(nextNum).padStart(4, '0')}`;
-    setRecords((prev) => [
-      { id, name, admittedOn: newDate, dischargedOn: null, status: 'Admitted' },
-      ...prev,
-    ]);
-    setNewName('');
-    setShowAdd(false);
-    setPage(1);
+  const addDoctor = (doctor: string) => {
+    if (!viewingName) return;
+    setCharts((prev) => {
+      const current = resolveChart(viewingName, prev);
+      if (current.assignedDoctors.includes(doctor)) return prev;
+      return {
+        ...prev,
+        [viewingName]: { ...current, assignedDoctors: [...current.assignedDoctors, doctor] },
+      };
+    });
   };
 
   return (
@@ -322,7 +574,7 @@ function PatientView() {
 
       <div style={ui.pmToolbar}>
         <div style={{ ...ui.searchWrap, flex: 1, marginBottom: 0 }}>
-          <span style={{ color: '#94a3b8' }}>🔍</span>
+          <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
           <input
             value={search}
             onChange={(e) => {
@@ -333,9 +585,6 @@ function PatientView() {
             style={ui.searchInput}
           />
         </div>
-        <button type="button" style={ui.primaryBtn} onClick={() => setShowAdd(true)}>
-          + Add Patient
-        </button>
       </div>
 
       <div style={ui.tableWrap}>
@@ -354,11 +603,15 @@ function PatientView() {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td style={ui.td}>
-                  <button type="button" style={ui.idLink} onClick={() => setViewing(r)}>
+                  <button type="button" style={ui.idLink} onClick={() => setViewingName(r.name)}>
                     {r.id}
                   </button>
                 </td>
-                <td style={{ ...ui.td, fontWeight: 600, color: '#0f172a' }}>{r.name}</td>
+                <td style={ui.td}>
+                  <button type="button" style={ui.nameBtn} onClick={() => setViewingName(r.name)}>
+                    {r.name}
+                  </button>
+                </td>
                 <td style={{ ...ui.td, color: '#334155' }}>{r.admittedOn}</td>
                 <td style={{ ...ui.td, color: '#64748b' }}>{r.dischargedOn ?? '—'}</td>
                 <td style={ui.td}>
@@ -367,15 +620,11 @@ function PatientView() {
                   </span>
                 </td>
                 <td style={{ ...ui.td, textAlign: 'right' }}>
-                  {r.status === 'Admitted' ? (
-                    <button type="button" style={ui.primaryBtn} onClick={() => discharge(r.id)}>
-                      Discharge Patient
-                    </button>
-                  ) : (
-                    <button type="button" style={ui.outlineBtn} onClick={() => setViewing(r)}>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    <button type="button" style={ui.outlineBtn} onClick={() => setViewingName(r.name)}>
                       View Record
                     </button>
-                  )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -422,61 +671,30 @@ function PatientView() {
         </div>
       </div>
 
-      {showAdd && (
-        <div style={ui.overlay} onClick={() => setShowAdd(false)}>
-          <div style={ui.modal} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ ...ui.sectionTitle, marginTop: 0 }}>Add Patient</h3>
-            <label style={ui.field}>
-              <span style={ui.fieldLabel}>Full Name</span>
-              <input value={newName} onChange={(e) => setNewName(e.target.value)} style={ui.input} />
-            </label>
-            <label style={ui.field}>
-              <span style={ui.fieldLabel}>Admission Date</span>
-              <input value={newDate} onChange={(e) => setNewDate(e.target.value)} style={ui.input} />
-            </label>
-            <div style={ui.modalActions}>
-              <button type="button" style={ui.outlineBtn} onClick={() => setShowAdd(false)}>
-                Cancel
-              </button>
-              <button type="button" style={ui.primaryBtn} onClick={addPatient} disabled={!newName.trim()}>
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {viewing && (
-        <div style={ui.overlay} onClick={() => setViewing(null)}>
-          <div style={ui.modal} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ ...ui.sectionTitle, marginTop: 0 }}>{viewing.id}</h3>
-            <p style={{ margin: '0 0 6px', fontWeight: 700 }}>{viewing.name}</p>
-            <p style={ui.muted}>Admitted: {viewing.admittedOn}</p>
-            <p style={ui.muted}>Discharged: {viewing.dischargedOn ?? '—'}</p>
-            <span style={viewing.status === 'Admitted' ? ui.badgeAdmitted : ui.badgeDischarged}>
-              {viewing.status}
-            </span>
-            <div style={{ ...ui.modalActions, marginTop: 16 }}>
-              <button type="button" style={ui.outlineBtn} onClick={() => setViewing(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <PatientDetailModal
+          chart={viewing}
+          canAddDoctor
+          onClose={() => setViewingName(null)}
+          onAddDoctor={addDoctor}
+          status={viewingRecord?.status}
+          onDischarge={
+            viewingRecord ? () => discharge(viewingRecord.id) : undefined
+          }
+        />
       )}
     </section>
   );
 }
 
-function ManagementPortalView() {
+function ManagementPortalView({ charts }: { charts: Record<string, PatientChart> }) {
   const [patients] = useState(MOCK_PATIENTS);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(MOCK_PATIENTS[0].id);
   const [viewedIds, setViewedIds] = useState<string[]>([MOCK_PATIENTS[0].id]);
-  const [orderIndex, setOrderIndex] = useState(0);
-  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>(DEFAULT_ORDER_SETS);
-  const [physicianName, setPhysicianName] = useState('');
-  const [newOrder, setNewOrder] = useState('');
+  const [selectedDate, setSelectedDate] = useState('2026-04-15');
+  const [ordersByPatient] = useState<Record<string, OrderSet[]>>(DEFAULT_ORDER_SETS);
+  const [detailName, setDetailName] = useState<string | null>(null);
 
   const selected = patients.find((p) => p.id === selectedId) ?? null;
   const filtered = patients.filter(
@@ -487,49 +705,32 @@ function ManagementPortalView() {
   );
 
   const orderSets = selected ? ordersByPatient[selected.id] ?? [] : [];
-  const currentSet = orderSets[orderIndex] ?? null;
+  const datesWithOrders = [...new Set(orderSets.map((o) => o.dateKey))].sort().reverse();
+  const ordersForDate = orderSets.filter((o) => o.dateKey === selectedDate);
 
   const openPatient = (id: string) => {
     setSelectedId(id);
-    setOrderIndex(0);
-    setPhysicianName('');
-    setNewOrder('');
+    const sets = ordersByPatient[id] ?? [];
+    const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '2026-04-15';
+    setSelectedDate(latest);
     setViewedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
 
-  const addOrderNote = () => {
-    if (!selected || !newOrder.trim()) return;
-    const doctor = physicianName.trim() || currentSet?.doctor || 'Ordering physician';
-    setOrdersByPatient((prev) => {
-      const existing = prev[selected.id] ?? [];
-      if (existing[orderIndex]) {
-        const next = existing.map((set, i) =>
-          i === orderIndex ? { ...set, orders: [...set.orders, newOrder.trim()] } : set
-        );
-        return { ...prev, [selected.id]: next };
-      }
-      return {
-        ...prev,
-        [selected.id]: [
-          ...existing,
-          {
-            dateLabel: 'April 15, 2026',
-            time: 'Today',
-            doctor,
-            orders: [newOrder.trim()],
-          },
-        ],
-      };
-    });
-    setNewOrder('');
+  const shiftDate = (dir: -1 | 1) => {
+    if (!datesWithOrders.length) return;
+    const idx = Math.max(0, datesWithOrders.indexOf(selectedDate));
+    const next = datesWithOrders[idx + dir];
+    if (next) setSelectedDate(next);
   };
+
+  const detailChart = detailName ? resolveChart(detailName, charts) : null;
 
   return (
     <div style={ui.layout}>
       <section style={ui.card}>
         <h2 style={ui.sectionTitle}>Patient Overview</h2>
         <div style={ui.searchWrap}>
-          <span style={{ color: '#94a3b8' }}>🔍</span>
+          <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -573,6 +774,7 @@ function ManagementPortalView() {
                       onClick={(e) => {
                         e.stopPropagation();
                         openPatient(p.id);
+                        setDetailName(p.name);
                       }}
                     >
                       View
@@ -604,77 +806,68 @@ function ManagementPortalView() {
             <div style={ui.orderCard}>
               <div style={ui.orderHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>📄</span>
+                  <img src={documentImg} alt="Doctor's order" style={{ width: 16, height: 16 }} />
                   <strong>Doctor’s Order</strong>
                 </div>
                 <div style={ui.dateNav}>
                   <button
                     type="button"
                     style={ui.navChevron}
-                    disabled={orderIndex === 0}
-                    onClick={() => setOrderIndex((i) => Math.max(0, i - 1))}
+                    disabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) >= datesWithOrders.length - 1}
+                    onClick={() => shiftDate(1)}
+                    title="Older date"
                   >
                     ‹
                   </button>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>
-                      {currentSet?.dateLabel ?? 'No orders'}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#64748b' }}>
-                      {orderSets.length ? `${orderIndex + 1} of ${orderSets.length}` : '0 of 0'}
-                    </div>
-                  </div>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    style={ui.dateInput}
+                  />
                   <button
                     type="button"
                     style={ui.navChevron}
-                    disabled={orderIndex >= orderSets.length - 1}
-                    onClick={() => setOrderIndex((i) => Math.min(orderSets.length - 1, i + 1))}
+                    disabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) <= 0}
+                    onClick={() => shiftDate(-1)}
+                    title="Newer date"
                   >
                     ›
                   </button>
                 </div>
               </div>
 
-              {currentSet ? (
+              {ordersForDate.length ? (
                 <>
-                  <div style={ui.orderMeta}>
-                    <div>
-                      <div style={{ fontWeight: 800 }}>{currentSet.doctor}</div>
-                      <div style={{ fontSize: 12, color: '#64748b' }}>{currentSet.time}</div>
-                    </div>
-                    {viewedIds.includes(selected.id) && (
-                      <span style={ui.viewedBadge}>✓ Order Viewed</span>
-                    )}
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>
+                    Showing physician orders for {formatDateLabel(selectedDate)}
                   </div>
-                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Orders:</div>
-                  <ul style={ui.orderList}>
-                    {currentSet.orders.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
+                  {ordersForDate.map((set) => (
+                    <div key={`${set.doctor}-${set.time}`} style={{ marginBottom: 14 }}>
+                      <div style={ui.orderMeta}>
+                        <div>
+                          <div style={{ fontWeight: 800 }}>{set.doctor}</div>
+                          <div style={{ fontSize: 12, color: '#64748b' }}>{set.time}</div>
+                        </div>
+                        {viewedIds.includes(selected.id) && (
+                          <span style={ui.viewedBadge}>✓ Order Viewed</span>
+                        )}
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Orders:</div>
+                      <ul style={ui.orderList}>
+                        {set.orders.map((line) => (
+                          <li key={line}>{line}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </>
               ) : (
-                <p style={ui.muted}>No physician orders have been entered for this patient yet.</p>
+                <p style={ui.muted}>
+                  No physician orders for {formatDateLabel(selectedDate)}. Choose another date to view previous
+                  orders.
+                </p>
               )}
-
-              <div style={ui.addRow}>
-                <input
-                  placeholder="Ordering Physician"
-                  value={physicianName}
-                  onChange={(e) => setPhysicianName(e.target.value)}
-                  style={ui.input}
-                />
-                <input
-                  placeholder="Edit Physician Order"
-                  value={newOrder}
-                  onChange={(e) => setNewOrder(e.target.value)}
-                  style={ui.input}
-                  onKeyDown={(e) => e.key === 'Enter' && addOrderNote()}
-                />
-              </div>
-              <button type="button" style={ui.addBtn} onClick={addOrderNote} disabled={!newOrder.trim()}>
-                Add
-              </button>
             </div>
 
             <div style={ui.aiCard}>
@@ -694,6 +887,14 @@ function ManagementPortalView() {
           <p style={ui.muted}>Select a patient to view physician orders.</p>
         )}
       </section>
+
+      {detailChart && (
+        <PatientDetailModal
+          chart={detailChart}
+          canAddDoctor={false}
+          onClose={() => setDetailName(null)}
+        />
+      )}
     </div>
   );
 }
@@ -701,17 +902,20 @@ function ManagementPortalView() {
 const shell: Record<string, React.CSSProperties> = {
   appContainer: {
     display: 'flex',
-    minHeight: '100vh',
+    height: '100vh',
+    overflow: 'hidden',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
     backgroundColor: '#f3f4f6',
   },
   sidebar: {
     width: 232,
+    flexShrink: 0,
     backgroundColor: '#ffffff',
     borderRight: '1px solid #e5e7eb',
     display: 'flex',
     flexDirection: 'column',
     padding: '8px 0 16px',
+    overflow: 'hidden',
   },
   sidebarLogoContainer: { padding: '16px 20px 24px' },
   sidebarLogo: { maxHeight: 44, maxWidth: 180, objectFit: 'contain' },
@@ -736,9 +940,12 @@ const shell: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
+    minHeight: 56,
+    flexShrink: 0,
     margin: '0 14px',
     padding: '10px 8px',
     borderTop: '1px solid #f1f5f9',
+    boxSizing: 'border-box',
   },
   profileAvatar: {
     width: 36,
@@ -753,17 +960,48 @@ const shell: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     flexShrink: 0,
   },
-  profileName: { fontSize: 12, fontWeight: 700, color: '#0f172a' },
-  profileEmail: { fontSize: 10, color: '#94a3b8' },
-  mainWrapper: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
+  profileName: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#0f172a',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  profileEmail: {
+    fontSize: 10,
+    color: '#94a3b8',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  logoutBtn: {
+    flexShrink: 0,
+    border: '1px solid #fecaca',
+    backgroundColor: '#fff',
+    color: '#ef4444',
+    borderRadius: 8,
+    padding: '6px 8px',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  mainWrapper: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+  },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '28px 32px 8px',
+    flexShrink: 0,
   },
   headerTitle: { margin: 0, fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' },
-  headerRight: { display: 'flex', alignItems: 'center', gap: 16 },
   bellWrap: {
     position: 'relative',
     width: 40,
@@ -791,53 +1029,7 @@ const shell: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     padding: '0 4px',
   },
-  headerProfileWrap: { position: 'relative' },
-  headerProfileBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    padding: 4,
-  },
-  headerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    backgroundColor: '#cbd5e1',
-    color: TEAL,
-    fontSize: 11,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerProfileName: { fontSize: 13, fontWeight: 700, color: '#0f172a' },
-  headerProfileId: { fontSize: 11, color: '#64748b' },
-  dropdownMenu: {
-    position: 'absolute',
-    right: 0,
-    top: 'calc(100% + 8px)',
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
-    borderRadius: 8,
-    minWidth: 140,
-    overflow: 'hidden',
-    zIndex: 20,
-  },
-  dropdownItem: {
-    width: '100%',
-    padding: '10px 14px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#ef4444',
-    fontSize: 13,
-    fontWeight: 600,
-    textAlign: 'left',
-    cursor: 'pointer',
-  },
-  content: { padding: '16px 32px 32px', flex: 1 },
+  content: { padding: '16px 32px 32px', flex: 1, minHeight: 0, overflowY: 'auto' },
 };
 
 const ui: Record<string, React.CSSProperties> = {
@@ -1100,4 +1292,72 @@ const ui: Record<string, React.CSSProperties> = {
   field: { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 },
   fieldLabel: { fontSize: 12, color: '#64748b', fontWeight: 600 },
   modalActions: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
+  modalWide: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    width: 640,
+    maxWidth: '94%',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+  },
+  modalHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  closeX: {
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    color: '#94a3b8',
+    fontSize: 16,
+  },
+  detailGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 12,
+    marginBottom: 8,
+  },
+  detailValue: { fontSize: 14, fontWeight: 700, color: '#0f172a' },
+  subhead: { margin: '16px 0 8px', fontSize: 14, fontWeight: 800, color: '#0f172a' },
+  triageGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: 8,
+  },
+  triageCell: {
+    backgroundColor: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    padding: 10,
+  },
+  notesBox: {
+    backgroundColor: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 13,
+    color: '#334155',
+    lineHeight: 1.5,
+  },
+  doctorList: { margin: '0 0 8px', paddingLeft: 18, fontSize: 13, color: '#0f172a' },
+  addDoctorRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 },
+  nameBtn: {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    fontWeight: 600,
+    color: '#0f172a',
+    cursor: 'pointer',
+    fontSize: 13,
+  },
+  dateInput: {
+    border: '1px solid #cbd5e1',
+    borderRadius: 8,
+    padding: '4px 8px',
+    fontSize: 12,
+    fontWeight: 600,
+  },
 };
