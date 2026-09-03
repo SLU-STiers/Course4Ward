@@ -1,10 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
 }
 
 // ---------- Enums ----------
@@ -74,7 +76,7 @@ model User {
   ordersAsEncoder            PhysicianOrder[]         @relation("EnteredBy")
   notes                      PhysicianNote[]
   summariesValidated         CourseInWard[]           @relation("ApprovedBy")
-  admissions                 PatientAdmission[] // <-- new
+  admissions                 PatientAdmission[]
   auditLogs                  AuditLog[]
   passwordResets             PasswordResetRequest[]
   summaryRequestsAsPhysician SummaryApprovalRequest[] @relation("RequestedPhysician")
@@ -93,7 +95,6 @@ model Patient {
   updatedAt   DateTime  @updatedAt
 
   admissions    PatientAdmission[]
-  orders        PhysicianOrder[]
   notes         PhysicianNote[]
   coursesInWard CourseInWard[]
 
@@ -116,25 +117,20 @@ model PatientAdmission {
 }
 
 model PhysicianOrder {
-  id             String         @id @default(uuid())
+  id             String                      @id @default(uuid())
   orderContent   String
-  dateCreated    DateTime       @default(now())
-  dateUpdated    DateTime?      @updatedAt
-  orderEmbedding String?
+  dateCreated    DateTime                    @default(now())
+  dateUpdated    DateTime?                   @updatedAt
+  orderEmbedding Unsupported("vector(768)")?
   admissionId    String
-  patientId      String
   orderedById    String
   encodedById    String
-  enteredByRole  OrderEnteredBy @default(PHYSICIAN)
-  type           OrderType
-  frequency      String?
-  dosage         String?
-  active         Boolean        @default(true)
+  enteredByRole  OrderEnteredBy              @default(PHYSICIAN)
+  active         Boolean                     @default(true)
 
   summarizationId String?
 
   admission PatientAdmission @relation(fields: [admissionId], references: [id])
-  patient   Patient          @relation(fields: [patientId], references: [id]) // <-- new
   orderedBy User             @relation("OrderingPhysician", fields: [orderedById], references: [id])
   encodedBy User             @relation("EnteredBy", fields: [encodedById], references: [id])
   summary   CourseInWard?    @relation(fields: [summarizationId], references: [id])
@@ -165,7 +161,7 @@ model CourseInWard {
   status         SummaryStatus @default(DRAFT_AI)
   validatorId    String?
   validatedAt    DateTime?
-  patientId      String // <-- add this line
+  patientId      String
 
   patient    Patient                  @relation(fields: [patientId], references: [id])
   approvedBy User?                    @relation("ApprovedBy", fields: [validatorId], references: [id])
