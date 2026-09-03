@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import logoImg from '../Img/Course4Ward-Logo.png';
+import searchImg from '../Img/search.png';
+import notificationImg from '../Img/notification.png';
+import documentImg from '../Img/document.png';
 
 type TabType = 'overview' | 'manage' | 'requests';
 
@@ -298,7 +301,7 @@ export function PhysicianDashboard() {
             <p style={shell.headerSubtitle}>We are pleased to have you!</p>
           </div>
           <div style={shell.bellWrap}>
-            <span style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
+            <img src={notificationImg} alt="Notifications" style={{ width: 18, height: 18 }} />
             <span style={shell.bellBadge}>2</span>
           </div>
         </header>
@@ -733,7 +736,7 @@ function RequestsView() {
             placeholder="Search requests..."
             style={requests.searchInput}
           />
-          <span style={requests.searchIcon}>🔍</span>
+          <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
         </div>
       </div>
 
@@ -1166,7 +1169,7 @@ function ManageView() {
         <div style={manage.listHeader}>
           <h2 style={manage.listTitle}>Patients List</h2>
           <div style={manage.searchWrap}>
-            <span style={{ fontSize: 13, color: '#94a3b8' }}>🔍</span>
+            <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -1239,7 +1242,7 @@ function ManageView() {
         <section style={manage.orderCard}>
           <div style={manage.orderHeader}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 18 }}>📄</span>
+              <img src={documentImg} alt="Doctor's order" style={{ width: 18, height: 18 }} />
               <h2 style={manage.panelTitle}>Doctor’s Order</h2>
             </div>
             <button type="button" style={manage.calendarBtn} onClick={() => setShowCalendar(true)}>
