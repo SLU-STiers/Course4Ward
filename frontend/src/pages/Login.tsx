@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { authApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
-import { PATH_ROLE } from '../routes/roleRoutes';
-import type { Role } from '../types';
+import { ROLE_PATH } from '../routes/roleRoutes';
 
 // Import images from src/Img/
 import logoImg from '../Img/Course4Ward-Logo.png';
@@ -12,10 +11,7 @@ import bgImg from '../Img/Course4Ward-Background.png';
 
 export function Login() {
   const navigate = useNavigate();
-  const location = useLocation();
   const setAuth = useAuthStore((s) => s.setAuth);
-  const fromPath =
-    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/';
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
@@ -27,36 +23,26 @@ export function Login() {
   const [resetUserId, setResetUserId] = useState('');
   const [resetMessage, setResetMessage] = useState<string | null>(null);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
+async function handleLogin(e: React.FormEvent) {
+  e.preventDefault();
+  setError(null);
+  setLoading(true);
 
-    try {
-      if (import.meta.env.DEV) {
-        const role: Role = PATH_ROLE[fromPath] ?? 'PHYSICIAN';
-        const fakeUser = {
-          id: 'dev-user',
-          userId: userId || 'dev-admin',
-          firstName: 'Dev',
-          lastName: role,
-          role,
-        };
+  try {
+    const { data } = await authApi.login(userId, password);
+    setAuth(data.accessToken, data.refreshToken, data.user);
 
-        setAuth('dev-access-token', 'dev-refresh-token', fakeUser);
-        navigate(fromPath === '/login' ? '/' : fromPath, { replace: true });
-        return;
-      }
-
-      const { data } = await authApi.login(userId, password);
-      setAuth(data.accessToken, data.refreshToken, data.user);
-      navigate('/');
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Login failed. Check your credentials.');
-    } finally {
-      setLoading(false);
+    if (data.user.mustResetPassword) {
+      navigate('/reset-password');
+    } else {
+      navigate(ROLE_PATH[data.user.role] ?? '/', { replace: true });
     }
+  } catch (err: any) {
+    setError(err?.response?.data?.message ?? 'Login failed. Check your credentials.');
+  } finally {
+    setLoading(false);
   }
+}
 
   async function handleResetRequest(e: React.FormEvent) {
     e.preventDefault();

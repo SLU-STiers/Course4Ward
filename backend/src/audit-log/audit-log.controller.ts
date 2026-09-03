@@ -18,12 +18,10 @@ export class AuditLogController {
   findAll(
     @Query('skip') skip?: string,
     @Query('take') take?: string,
-    @Query('entityType') entityType?: string,
   ) {
     return this.auditLogService.findAll({
       skip: skip ? Number(skip) : undefined,
       take: take ? Number(take) : undefined,
-      entityType,
     });
   }
 

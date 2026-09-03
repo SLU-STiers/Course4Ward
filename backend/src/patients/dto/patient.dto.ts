@@ -10,33 +10,25 @@ export class CreatePatientDto {
   @IsString()
   lastName: string;
 
-  @ApiProperty()
-  @IsString()
-  gender: string;
-
-  @ApiProperty()
-  @IsDateString()
-  dateOfBirth: string;
-
-  @ApiPropertyOptional({ description: "Nurse's initial assessment notes" })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  initialAssessment?: string;
+  gender?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
 }
 
 export class UpdatePatientDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  initialAssessment?: string;
+  gender?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()
-  admissionDate?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsDateString()
-  dischargeDate?: string;
+  dateOfBirth?: string;
 }

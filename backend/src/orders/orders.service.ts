@@ -17,23 +17,17 @@ export class OrdersService {
 
     const order = await this.prisma.physicianOrder.create({
       data: {
-        patientId: dto.patientId,
-        orderingPhysicianId: dto.orderingPhysicianId,
-        enteredById,
+        admissionId: dto.admissionId,
+        orderedById: dto.orderedById,
+        encodedById: enteredById,
         enteredByRole: enteredByFlag,
-        type: dto.type,
-        description: dto.description,
-        frequency: dto.frequency,
-        dosage: dto.dosage,
+        orderContent: dto.orderContent,
       },
     });
 
     await this.auditLog.record({
       userId: enteredById,
       action: 'ORDER_CREATED',
-      entityType: 'PhysicianOrder',
-      entityId: order.id,
-      metadata: { enteredByRole: enteredByFlag, type: dto.type },
     });
 
     return order;
@@ -41,11 +35,11 @@ export class OrdersService {
 
   findForPatient(patientId: string) {
     return this.prisma.physicianOrder.findMany({
-      where: { patientId },
-      orderBy: { orderDate: 'desc' },
+      where: { admission: { patientId } },
+      orderBy: { dateCreated: 'desc' },
       include: {
-        orderingPhysician: { select: { firstName: true, lastName: true } },
-        enteredBy: { select: { firstName: true, lastName: true, role: true } },
+        orderedBy: { select: { firstName: true, lastName: true } },
+        encodedBy: { select: { firstName: true, lastName: true, role: true } },
       },
     });
   }
@@ -56,8 +50,8 @@ export class OrdersService {
     startOfDay.setHours(0, 0, 0, 0);
 
     return this.prisma.physicianOrder.findMany({
-      where: { patientId, orderDate: { gte: startOfDay } },
-      orderBy: { orderDate: 'asc' },
+      where: { admission: { patientId }, dateCreated: { gte: startOfDay } },
+      orderBy: { dateCreated: 'asc' },
     });
   }
 }

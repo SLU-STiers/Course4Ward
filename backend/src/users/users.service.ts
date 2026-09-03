@@ -43,9 +43,6 @@ export class UsersService {
     await this.auditLog.record({
       userId: actingAdminId,
       action: 'USER_CREATED',
-      entityType: 'User',
-      entityId: user.id,
-      metadata: { role: user.role },
     });
 
     return user;
@@ -72,9 +69,6 @@ export class UsersService {
     await this.auditLog.record({
       userId: actingAdminId,
       action: 'USER_UPDATED',
-      entityType: 'User',
-      entityId: id,
-      metadata: dto as any,
     });
 
     return user;
@@ -93,8 +87,6 @@ export class UsersService {
     await this.auditLog.record({
       userId: actingAdminId,
       action: 'USER_DEACTIVATED',
-      entityType: 'User',
-      entityId: id,
     });
 
     return user;

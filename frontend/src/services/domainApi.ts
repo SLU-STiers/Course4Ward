@@ -31,12 +31,9 @@ export const patientsApi = {
 // --- Orders ---
 export const ordersApi = {
   create: (data: {
-    patientId: string;
-    orderingPhysicianId: string;
-    type: string;
-    description: string;
-    frequency?: string;
-    dosage?: string;
+    admissionId: string;
+    orderedById: string;
+    orderContent: string;
   }) => api.post<PhysicianOrder>('/orders', data),
   forPatient: (patientId: string) => api.get<PhysicianOrder[]>(`/orders/patient/${patientId}`),
 };
