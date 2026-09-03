@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import logoImg from '../Img/Course4Ward-Logo.png';
@@ -255,21 +255,14 @@ const DEFAULT_SUMMARIES: Record<string, string> = {
 
 export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('management');
-  const [showProfile, setShowProfile] = useState(false);
   const [charts, setCharts] = useState<Record<string, PatientChart>>(INITIAL_CHARTS);
-  const profileRef = useRef<HTMLDivElement>(null);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-        setShowProfile(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <div style={shell.appContainer}>
@@ -293,45 +286,22 @@ export function NurseDashboard() {
         </nav>
         <div style={shell.sidebarProfile}>
           <div style={shell.profileAvatar}>AT</div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={shell.profileName}>Adrian Tabalvaro</div>
             <div style={shell.profileEmail}>ID 2246787</div>
           </div>
+          <button type="button" style={shell.logoutBtn} onClick={handleLogout}>
+            Log out
+          </button>
         </div>
       </aside>
 
       <div style={shell.mainWrapper}>
         <header style={shell.header}>
           <h1 style={shell.headerTitle}>{activeTab === 'management' ? 'Management' : 'Patient Management'}</h1>
-          <div style={shell.headerRight}>
-            <div style={shell.bellWrap}>
-              <span style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
-              <span style={shell.bellBadge}>2</span>
-            </div>
-            <div ref={profileRef} style={shell.headerProfileWrap}>
-              <button type="button" style={shell.headerProfileBtn} onClick={() => setShowProfile((v) => !v)}>
-                <div style={shell.headerAvatar}>AT</div>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={shell.headerProfileName}>Adrian Tabalvaro</div>
-                  <div style={shell.headerProfileId}>2246787</div>
-                </div>
-                <span style={{ fontSize: 10, color: '#64748b' }}>▼</span>
-              </button>
-              {showProfile && (
-                <div style={shell.dropdownMenu}>
-                  <button
-                    type="button"
-                    style={shell.dropdownItem}
-                    onClick={() => {
-                      logout();
-                      navigate('/login');
-                    }}
-                  >
-                    Log out
-                  </button>
-                </div>
-              )}
-            </div>
+          <div style={shell.bellWrap}>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
+            <span style={shell.bellBadge}>2</span>
           </div>
         </header>
 
@@ -967,6 +937,17 @@ const shell: Record<string, React.CSSProperties> = {
   },
   profileName: { fontSize: 12, fontWeight: 700, color: '#0f172a' },
   profileEmail: { fontSize: 10, color: '#94a3b8' },
+  logoutBtn: {
+    flexShrink: 0,
+    border: '1px solid #fecaca',
+    backgroundColor: '#fff',
+    color: '#ef4444',
+    borderRadius: 8,
+    padding: '6px 8px',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
   mainWrapper: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
   header: {
     display: 'flex',
@@ -975,7 +956,6 @@ const shell: Record<string, React.CSSProperties> = {
     padding: '28px 32px 8px',
   },
   headerTitle: { margin: 0, fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' },
-  headerRight: { display: 'flex', alignItems: 'center', gap: 16 },
   bellWrap: {
     position: 'relative',
     width: 40,
@@ -1002,52 +982,6 @@ const shell: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '0 4px',
-  },
-  headerProfileWrap: { position: 'relative' },
-  headerProfileBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    padding: 4,
-  },
-  headerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    backgroundColor: '#cbd5e1',
-    color: TEAL,
-    fontSize: 11,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerProfileName: { fontSize: 13, fontWeight: 700, color: '#0f172a' },
-  headerProfileId: { fontSize: 11, color: '#64748b' },
-  dropdownMenu: {
-    position: 'absolute',
-    right: 0,
-    top: 'calc(100% + 8px)',
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
-    borderRadius: 8,
-    minWidth: 140,
-    overflow: 'hidden',
-    zIndex: 20,
-  },
-  dropdownItem: {
-    width: '100%',
-    padding: '10px 14px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#ef4444',
-    fontSize: 13,
-    fontWeight: 600,
-    textAlign: 'left',
-    cursor: 'pointer',
   },
   content: { padding: '16px 32px 32px', flex: 1 },
 };
