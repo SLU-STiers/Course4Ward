@@ -1,0 +1,192 @@
+ generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PHYSICIAN
+  NURSE 
+  CLAIMS_PROCESSOR
+  ADMIN
+}
+
+enum OrderType {
+  MEDICATION
+  ADMISSION
+  DISCHARGE
+  DIAGNOSTIC
+  OTHER
+}
+
+enum OrderEnteredBy {
+  PHYSICIAN
+  NURSE_ON_BEHALF
+}
+
+enum SummaryStatus {
+  DRAFT_AI
+  DRAFT_EDITED
+  APPROVED
+}
+
+enum ClaimStatus {
+  PENDING_REVIEW
+  NEEDS_PHYSICIAN_VALIDATION
+  VALIDATED
+  CF4_GENERATED
+}
+
+model User {
+  id            String   @id @default(uuid())
+  userId        String   @unique // hospital-issued login ID, distinct from internal uuid
+  passwordHash  String
+  firstName     String
+  lastName      String
+  role          Role
+  isActive      Boolean  @default(true)
+  mustResetPassword Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ordersPlaced      PhysicianOrder[] @relation("OrderingPhysician")
+  ordersEntered     PhysicianOrder[] @relation("EnteredBy")
+  notes             PhysicianNote[]
+  assignedPatients  PatientAssignment[]
+  summariesApproved CourseInWard[]   @relation("ApprovedBy")
+  auditLogs         AuditLog[]
+  claimsReviewed    Claim[]          @relation("ReviewedBy")
+
+  @@map("users")
+}
+
+model Patient {
+  id             String   @id @default(uuid())
+  firstName      String
+  lastName       String
+  gender         String
+  dateOfBirth    DateTime
+  admissionDate  DateTime?
+  dischargeDate  DateTime?
+  initialAssessment String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assignments     PatientAssignment[]
+  orders          PhysicianOrder[]
+  notes           PhysicianNote[]
+  coursesInWard   CourseInWard[]
+  claims          Claim[]
+
+  @@map("patients")
+}
+
+// Which nurse/physician is currently assigned to which patient
+model PatientAssignment {
+  id        String   @id @default(uuid())
+  patientId String
+  userId    String
+  role      Role
+  active    Boolean  @default(true)
+  assignedAt DateTime @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([patientId, active])
+  @@map("patient_assignments")
+}
+
+model PhysicianOrder {
+  id              String          @id @default(uuid())
+  patientId       String
+  orderingPhysicianId String
+  enteredById     String
+  enteredByRole   OrderEnteredBy  @default(PHYSICIAN)
+  type            OrderType
+  description     String          // e.g. medicine name, discharge instructions
+  frequency       String?         // e.g. "every 8 hours"
+  dosage          String?
+  orderDate       DateTime        @default(now())
+  active          Boolean         @default(true)
+
+  patient           Patient @relation(fields: [patientId], references: [id])
+  orderingPhysician User    @relation("OrderingPhysician", fields: [orderingPhysicianId], references: [id])
+  enteredBy         User    @relation("EnteredBy", fields: [enteredById], references: [id])
+
+  @@index([patientId, orderDate])
+  @@map("physician_orders")
+}
+
+model PhysicianNote {
+  id          String   @id @default(uuid())
+  patientId   String
+  physicianId String
+  content     String
+  reminderAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  patient   Patient @relation(fields: [patientId], references: [id])
+  physician User    @relation(fields: [physicianId], references: [id])
+
+  @@map("physician_notes")
+}
+
+// AI-generated / physician-approved daily summary of orders = "Course in the Ward"
+model CourseInWard {
+  id            String        @id @default(uuid())
+  patientId     String
+  summaryDate   DateTime      @default(now())
+  aiGeneratedText String?     // raw output from ai-service
+  currentText   String        // what's currently shown — AI text, or physician-edited text
+  status        SummaryStatus @default(DRAFT_AI)
+  approvedById  String?
+  approvedAt    DateTime?
+  version       Int           @default(1)
+
+  patient    Patient @relation(fields: [patientId], references: [id])
+  approvedBy User?   @relation("ApprovedBy", fields: [approvedById], references: [id])
+  claim      Claim?
+
+  @@index([patientId, summaryDate])
+  @@map("courses_in_ward")
+}
+
+model Claim {
+  id                String      @id @default(uuid())
+  patientId         String
+  courseInWardId    String      @unique
+  status            ClaimStatus @default(PENDING_REVIEW)
+  reviewedById       String?
+  reviewedAt         DateTime?
+  cf4Generated       Boolean     @default(false)
+  cf4GeneratedAt      DateTime?
+  physicianNotifiedAt DateTime?
+
+  patient       Patient      @relation(fields: [patientId], references: [id])
+  courseInWard  CourseInWard @relation(fields: [courseInWardId], references: [id])
+  reviewedBy    User?        @relation("ReviewedBy", fields: [reviewedById], references: [id])
+
+  @@map("claims")
+}
+
+// Immutable log for compliance — every write to patient data should append here
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String   // e.g. "ORDER_CREATED", "SUMMARY_APPROVED", "LOGIN"
+  entityType String   // e.g. "PhysicianOrder"
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
