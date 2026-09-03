@@ -6,8 +6,7 @@ import logoImg from '../Img/Course4Ward-Logo.png';
 type TabType = 'overview' | 'manage' | 'requests';
 
 const TEAL = '#104E65';
-const TEAL_MID = '#1A6A8A';
-const TEAL_LIGHT = '#2B86A8';
+const CARD_SHADOW = '0 8px 28px rgba(16, 78, 101, 0.08)';
 
 type PatientStatus = 'admitted' | 'discharged';
 type OverviewFilter = 'all' | PatientStatus;
@@ -244,20 +243,13 @@ const MOCK_REQUESTS: {
 
 export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [showProfile, setShowProfile] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-        setShowProfile(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
     <div style={shell.appContainer}>
@@ -289,20 +281,12 @@ export function PhysicianDashboard() {
 
         <div style={shell.sidebarProfile}>
           <div style={shell.profileAvatar}>JD</div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={shell.profileName}>Dr. John Doe</div>
-            <div style={shell.profileEmail}>john.doe@email.com</div>
+            <div style={shell.profileEmail}>johndoe@gmail.com</div>
           </div>
-          <button
-            type="button"
-            title="Log out"
-            onClick={() => {
-              logout();
-              window.location.assign('/login');
-            }}
-            style={shell.logoutBtn}
-          >
-            ⎋
+          <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
+            Log out
           </button>
         </div>
       </aside>
@@ -311,40 +295,11 @@ export function PhysicianDashboard() {
         <header style={shell.header}>
           <div>
             <h1 style={shell.headerTitle}>Good Day! Dr. John</h1>
-            {activeTab === 'overview' && (
-              <p style={shell.headerSubtitle}>We are pleased to have you!</p>
-            )}
+            <p style={shell.headerSubtitle}>We are pleased to have you!</p>
           </div>
-          <div style={shell.headerRight}>
-            <div style={shell.bellWrap}>
-              <span style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
-              <span style={shell.bellBadge}>2</span>
-            </div>
-            <div ref={profileRef} style={shell.headerProfileWrap}>
-              <button
-                type="button"
-                style={shell.headerProfileBtn}
-                onClick={() => setShowProfile((v) => !v)}
-              >
-                <div style={shell.headerAvatar}>JD</div>
-                <span style={shell.headerProfileName}>Dr. John Doe</span>
-                <span style={{ fontSize: 10, color: '#64748b' }}>▼</span>
-              </button>
-              {showProfile && (
-                <div style={shell.dropdownMenu}>
-                  <button
-                    type="button"
-                    style={shell.dropdownItem}
-                    onClick={() => {
-                      logout();
-                      navigate('/login');
-                    }}
-                  >
-                    Log out
-                  </button>
-                </div>
-              )}
-            </div>
+          <div style={shell.bellWrap}>
+            <span style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
+            <span style={shell.bellBadge}>2</span>
           </div>
         </header>
 
@@ -443,6 +398,7 @@ function sameDay(a: Date, b: Date) {
 function OverviewView() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>('all');
+  const [checkedIds, setCheckedIds] = useState<Record<string, boolean>>({});
   const pageSize = 8;
 
   const admittedCount = MOCK_PATIENTS.filter((p) => p.status === 'admitted').length;
@@ -473,7 +429,7 @@ function OverviewView() {
           onClick={() => setFilterAndReset('all')}
         />
         <StatCard
-          color={TEAL_MID}
+          color={TEAL}
           label="Admitted Patients"
           value={String(admittedCount)}
           icon={<BedIcon />}
@@ -481,7 +437,7 @@ function OverviewView() {
           onClick={() => setFilterAndReset('admitted')}
         />
         <StatCard
-          color={TEAL_LIGHT}
+          color={TEAL}
           label="Discharged Patients"
           value={String(dischargedCount)}
           icon={<WheelchairIcon />}
@@ -515,23 +471,29 @@ function OverviewView() {
           </div>
 
           <table style={overview.table}>
-            <thead>
-              <tr>
-                <th style={{ ...overview.th, width: 28 }} />
-                <th style={overview.th}>Patient</th>
-                <th style={overview.th}>Patient ID</th>
-                <th style={overview.th}>Admission Date</th>
-              </tr>
-            </thead>
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
-                  <td style={overview.td}>
+                  <td style={{ ...overview.td, width: 28 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(checkedIds[p.id])}
+                      onChange={() =>
+                        setCheckedIds((prev) => ({ ...prev, [p.id]: !prev[p.id] }))
+                      }
+                      style={overview.checkbox}
+                      aria-label={`Select ${p.name}`}
+                    />
+                  </td>
+                  <td style={{ ...overview.td, width: 22 }}>
                     <span style={{ ...overview.dot, backgroundColor: p.color }} />
                   </td>
-                  <td style={{ ...overview.td, fontWeight: 600, color: '#334155' }}>{p.name}</td>
+                  <td style={{ ...overview.td, fontWeight: 600, color: '#1e293b' }}>{p.name}</td>
                   <td style={{ ...overview.td, color: '#64748b' }}>{p.patientId}</td>
                   <td style={{ ...overview.td, color: '#64748b' }}>{p.admissionDate}</td>
+                  <td style={{ ...overview.td, textAlign: 'right', width: 36 }}>
+                    <span style={overview.rowDots}>⋯</span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -575,9 +537,8 @@ function StatCard({
       style={{
         ...overview.statCard,
         backgroundColor: color,
-        outline: active ? '3px solid rgba(15, 23, 42, 0.18)' : 'none',
-        outlineOffset: 2,
-        opacity: active ? 1 : 0.92,
+        boxShadow: active ? '0 10px 28px rgba(16, 78, 101, 0.38)' : '0 10px 24px rgba(16, 78, 101, 0.22)',
+        transform: active ? 'translateY(-1px)' : 'none',
       }}
     >
       <div style={overview.statIcon}>{icon}</div>
@@ -591,39 +552,39 @@ function StatCard({
 
 function HeartIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden>
+    <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>
       <path
         d="M14 23s-8-5.2-8-10.2C6 9.6 8.2 7.5 11 7.5c1.6 0 2.6.8 3 1.6.4-.8 1.4-1.6 3-1.6 2.8 0 5 2.1 5 5.3C22 17.8 14 23 14 23z"
-        stroke="white"
-        strokeWidth="1.6"
+        stroke={TEAL}
+        strokeWidth="1.8"
       />
-      <path d="M8 14h3l1.5-3 2 6 1.5-3H20" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 14h3l1.5-3 2 6 1.5-3H20" stroke={TEAL} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
 function BedIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden>
-      <circle cx="9" cy="10" r="2.2" stroke="white" strokeWidth="1.6" />
-      <path d="M5 20v-5.5h16A2.5 2.5 0 0 1 23.5 17v3M5 16.5h10" stroke="white" strokeWidth="1.6" strokeLinecap="round" />
+    <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>
+      <circle cx="9" cy="10" r="2.2" stroke={TEAL} strokeWidth="1.8" />
+      <path d="M5 20v-5.5h16A2.5 2.5 0 0 1 23.5 17v3M5 16.5h10" stroke={TEAL} strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
 
 function WheelchairIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden>
-      <circle cx="11" cy="8" r="2" stroke="white" strokeWidth="1.6" />
-      <path d="M11 10.5v4.5h6l2.5 5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="11" cy="19" r="3.5" stroke="white" strokeWidth="1.6" />
+    <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>
+      <circle cx="11" cy="8" r="2" stroke={TEAL} strokeWidth="1.8" />
+      <path d="M11 10.5v4.5h6l2.5 5" stroke={TEAL} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="11" cy="19" r="3.5" stroke={TEAL} strokeWidth="1.8" />
     </svg>
   );
 }
 
 function CalendarWidget() {
   const [cursor, setCursor] = useState(new Date(2026, 5, 1));
-  const [selected, setSelected] = useState(20);
+  const [selected, setSelected] = useState(30);
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
@@ -634,7 +595,6 @@ function CalendarWidget() {
 
   return (
     <section style={overview.widget}>
-      <h3 style={overview.sectionTitle}>Calendar</h3>
       <div style={overview.calNav}>
         <button
           type="button"
@@ -705,7 +665,7 @@ function TodoListWidget() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="New note"
-            style={{ flex: 1 }}
+            style={overview.addNoteInput}
             onKeyDown={(e) => e.key === 'Enter' && addNote()}
           />
           <button type="button" onClick={addNote} style={overview.addNotesBtn}>
@@ -723,6 +683,7 @@ function TodoListWidget() {
                 onChange={() =>
                   setTodos((prev) => prev.map((t, i) => (i === idx ? { ...t, done: !t.done } : t)))
                 }
+                style={overview.checkbox}
               />
               <span style={item.done ? { textDecoration: 'line-through', color: '#94a3b8' } : undefined}>
                 {item.text}
@@ -1231,7 +1192,7 @@ function ManageView() {
                   key={p.id}
                   onClick={() => openPatient(p.id, false)}
                   style={{
-                    backgroundColor: active ? '#f1f5f9' : 'transparent',
+                    backgroundColor: active ? '#eef6f8' : 'transparent',
                     cursor: 'pointer',
                   }}
                 >
@@ -1446,8 +1407,9 @@ const shell: Record<string, React.CSSProperties> = {
     textAlign: 'left',
   },
   navButtonActive: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'transparent',
     color: '#0f172a',
+    fontWeight: 800,
   },
   navIcon: {
     display: 'flex',
@@ -1461,8 +1423,9 @@ const shell: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: 10,
     margin: '0 14px',
-    padding: '10px 8px',
-    borderTop: '1px solid #f1f5f9',
+    padding: '10px 12px',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 14,
   },
   profileAvatar: {
     width: 36,
@@ -1490,13 +1453,15 @@ const shell: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap',
   },
   logoutBtn: {
-    marginLeft: 'auto',
-    border: 'none',
-    background: 'transparent',
+    flexShrink: 0,
+    border: '1px solid #fecaca',
+    backgroundColor: '#fff',
+    color: '#ef4444',
+    borderRadius: 8,
+    padding: '6px 8px',
+    fontSize: 11,
+    fontWeight: 700,
     cursor: 'pointer',
-    color: '#94a3b8',
-    padding: 4,
-    fontSize: 16,
   },
   mainWrapper: {
     flex: 1,
@@ -1520,7 +1485,7 @@ const shell: Record<string, React.CSSProperties> = {
   headerSubtitle: {
     margin: '4px 0 0',
     fontSize: 13,
-    color: '#64748b',
+    color: '#94a3b8',
   },
   content: {
     padding: '16px 32px 32px',
@@ -1528,20 +1493,19 @@ const shell: Record<string, React.CSSProperties> = {
   },
   bellWrap: {
     position: 'relative',
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: '50%',
     backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
+    boxShadow: CARD_SHADOW,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    cursor: 'pointer',
   },
   bellBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -2,
+    right: -2,
     minWidth: 18,
     height: 18,
     borderRadius: 9,
@@ -1553,63 +1517,6 @@ const shell: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     padding: '0 4px',
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 16,
-  },
-  headerProfileWrap: {
-    position: 'relative',
-  },
-  headerProfileBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    padding: 4,
-  },
-  headerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    backgroundColor: '#cbd5e1',
-    color: TEAL,
-    fontSize: 11,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerProfileName: {
-    fontSize: 13,
-    fontWeight: 700,
-    color: '#0f172a',
-  },
-  dropdownMenu: {
-    position: 'absolute',
-    right: 0,
-    top: 'calc(100% + 8px)',
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
-    borderRadius: 8,
-    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)',
-    minWidth: 140,
-    overflow: 'hidden',
-    zIndex: 20,
-  },
-  dropdownItem: {
-    width: '100%',
-    padding: '10px 14px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#ef4444',
-    fontSize: 13,
-    fontWeight: 600,
-    textAlign: 'left',
-    cursor: 'pointer',
   },
 };
 
@@ -1625,13 +1532,13 @@ const overview: Record<string, React.CSSProperties> = {
     gap: 16,
   },
   statCard: {
-    borderRadius: 16,
-    padding: '18px 20px',
+    borderRadius: 22,
+    padding: '20px 22px',
     color: '#ffffff',
     display: 'flex',
     alignItems: 'center',
     gap: 16,
-    minHeight: 88,
+    minHeight: 96,
     border: 'none',
     width: '100%',
     textAlign: 'left',
@@ -1639,10 +1546,10 @@ const overview: Record<string, React.CSSProperties> = {
     fontFamily: 'inherit',
   },
   statIcon: {
-    width: 48,
-    height: 48,
+    width: 52,
+    height: 52,
     borderRadius: '50%',
-    border: '1.5px solid rgba(255,255,255,0.45)',
+    backgroundColor: '#ffffff',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1667,9 +1574,9 @@ const overview: Record<string, React.CSSProperties> = {
   },
   patientCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: '18px 20px 8px',
-    border: '1px solid #e5e7eb',
+    borderRadius: 20,
+    padding: '20px 22px 12px',
+    boxShadow: CARD_SHADOW,
   },
   patientHeader: {
     display: 'flex',
@@ -1678,7 +1585,7 @@ const overview: Record<string, React.CSSProperties> = {
     marginBottom: 8,
   },
   sectionTitle: {
-    margin: '0 0 12px',
+    margin: 0,
     fontSize: 18,
     fontWeight: 800,
     color: '#0f172a',
@@ -1687,11 +1594,11 @@ const overview: Record<string, React.CSSProperties> = {
     width: 28,
     height: 28,
     borderRadius: 8,
-    border: '1px solid #e2e8f0',
-    background: '#fff',
+    border: 'none',
+    background: 'transparent',
     cursor: 'pointer',
-    color: '#334155',
-    fontSize: 16,
+    color: '#64748b',
+    fontSize: 18,
     padding: 0,
     display: 'flex',
     alignItems: 'center',
@@ -1710,14 +1617,26 @@ const overview: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #f1f5f9',
   },
   td: {
-    padding: '12px 8px',
+    padding: '14px 8px',
     fontSize: 13,
-    borderBottom: '1px solid #f8fafc',
+    borderBottom: 'none',
     verticalAlign: 'middle',
   },
+  checkbox: {
+    width: 14,
+    height: 14,
+    accentColor: TEAL,
+    cursor: 'pointer',
+  },
+  rowDots: {
+    color: '#94a3b8',
+    fontSize: 18,
+    letterSpacing: 1,
+    lineHeight: 1,
+  },
   dot: {
-    width: 10,
-    height: 10,
+    width: 11,
+    height: 11,
     borderRadius: '50%',
     display: 'inline-block',
   },
@@ -1728,9 +1647,9 @@ const overview: Record<string, React.CSSProperties> = {
   },
   widget: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
-    padding: 16,
-    border: '1px solid #e5e7eb',
+    borderRadius: 20,
+    padding: 18,
+    boxShadow: CARD_SHADOW,
   },
   calNav: {
     display: 'flex',
@@ -1777,14 +1696,22 @@ const overview: Record<string, React.CSSProperties> = {
     marginBottom: 12,
   },
   addNotesBtn: {
-    border: 'none',
-    backgroundColor: '#38bdf8',
-    color: '#fff',
+    border: '1.5px solid #38bdf8',
+    backgroundColor: '#ffffff',
+    color: '#0ea5e9',
     borderRadius: 8,
     padding: '6px 12px',
     fontSize: 12,
     fontWeight: 700,
     cursor: 'pointer',
+  },
+  addNoteInput: {
+    flex: 1,
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    padding: '8px 10px',
+    fontSize: 13,
+    outline: 'none',
   },
   todoList: {
     listStyle: 'none',
@@ -1826,9 +1753,9 @@ const manage: Record<string, React.CSSProperties> = {
   },
   listCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: '18px 20px 12px',
-    border: '1px solid #e5e7eb',
+    boxShadow: CARD_SHADOW,
   },
   listHeader: {
     display: 'flex',
@@ -1868,9 +1795,9 @@ const manage: Record<string, React.CSSProperties> = {
   },
   orderCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 18,
-    border: '1px solid #e5e7eb',
+    boxShadow: CARD_SHADOW,
   },
   orderHeader: {
     display: 'flex',
@@ -1887,11 +1814,11 @@ const manage: Record<string, React.CSSProperties> = {
   calendarBtn: {
     border: '1px solid #cbd5e1',
     backgroundColor: '#ffffff',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: '6px 12px',
     fontSize: 12,
     fontWeight: 600,
-    color: '#334155',
+    color: TEAL,
     cursor: 'pointer',
   },
   patientMeta: {
@@ -1927,28 +1854,28 @@ const manage: Record<string, React.CSSProperties> = {
     alignItems: 'center',
   },
   addBtn: {
-    border: '1px solid #86efac',
-    backgroundColor: '#dcfce7',
-    color: '#166534',
-    borderRadius: 8,
+    border: `1.5px solid ${TEAL}`,
+    backgroundColor: '#ffffff',
+    color: TEAL,
+    borderRadius: 10,
     padding: '8px 18px',
     fontWeight: 700,
     cursor: 'pointer',
   },
   submitBtn: {
     border: 'none',
-    backgroundColor: '#166534',
+    backgroundColor: TEAL,
     color: '#ffffff',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: '8px 20px',
     fontWeight: 700,
     cursor: 'pointer',
   },
   aiCard: {
-    backgroundColor: '#f3e8ff',
-    borderRadius: 18,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
     padding: 18,
-    border: '1px solid #e9d5ff',
+    boxShadow: CARD_SHADOW,
   },
   aiHeader: {
     display: 'flex',
@@ -1960,11 +1887,11 @@ const manage: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: 16,
     fontWeight: 800,
-    color: '#3b0764',
+    color: '#0f172a',
   },
   aiBadge: {
-    backgroundColor: '#d8b4fe',
-    color: '#6b21a8',
+    backgroundColor: '#e0f2fe',
+    color: TEAL,
     fontSize: 11,
     fontWeight: 700,
     padding: '4px 10px',
@@ -1974,17 +1901,17 @@ const manage: Record<string, React.CSSProperties> = {
     margin: '0 0 14px',
     fontSize: 13,
     lineHeight: 1.55,
-    color: '#4c1d95',
+    color: '#334155',
   },
   aiEditor: {
     width: '100%',
-    border: '1px solid #e9d5ff',
+    border: '1px solid #e2e8f0',
     borderRadius: 8,
     padding: 10,
     fontSize: 13,
     marginBottom: 12,
     boxSizing: 'border-box',
-    backgroundColor: '#faf5ff',
+    backgroundColor: '#f8fafc',
   },
   aiActions: {
     display: 'flex',
@@ -2138,19 +2065,19 @@ const manage: Record<string, React.CSSProperties> = {
     padding: 0,
   },
   calDaySelected: {
-    backgroundColor: '#ef4444',
+    backgroundColor: TEAL,
     color: '#ffffff',
     fontWeight: 700,
-    borderRadius: 6,
+    borderRadius: 18,
   },
 };
 
 const requests: Record<string, React.CSSProperties> = {
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: '24px 24px 16px',
-    border: '1px solid #e5e7eb',
+    boxShadow: CARD_SHADOW,
   },
   headerRow: {
     display: 'flex',
@@ -2199,10 +2126,10 @@ const requests: Record<string, React.CSSProperties> = {
     textAlign: 'left',
     fontSize: 12,
     fontWeight: 700,
-    color: '#0f172a',
+    color: TEAL,
     padding: '12px 14px',
-    backgroundColor: '#e0f2fe',
-    borderBottom: '1px solid #bae6fd',
+    backgroundColor: '#f1f5f9',
+    borderBottom: '1px solid #e2e8f0',
   },
   td: {
     padding: '14px',
@@ -2213,7 +2140,7 @@ const requests: Record<string, React.CSSProperties> = {
   idLink: {
     border: 'none',
     background: 'transparent',
-    color: '#0284c7',
+    color: TEAL,
     fontWeight: 700,
     cursor: 'pointer',
     padding: 0,
@@ -2247,9 +2174,9 @@ const requests: Record<string, React.CSSProperties> = {
     fontWeight: 700,
   },
   reviewBtn: {
-    border: '1px solid #0284c7',
+    border: `1px solid ${TEAL}`,
     backgroundColor: '#ffffff',
-    color: '#0284c7',
+    color: TEAL,
     borderRadius: 8,
     padding: '6px 14px',
     fontSize: 12,
@@ -2284,9 +2211,9 @@ const requests: Record<string, React.CSSProperties> = {
     padding: 0,
   },
   pageActive: {
-    backgroundColor: '#0284c7',
+    backgroundColor: TEAL,
     color: '#ffffff',
-    borderColor: '#0284c7',
+    borderColor: TEAL,
   },
   modalOverlay: {
     position: 'fixed',
@@ -2520,9 +2447,9 @@ const review: Record<string, React.CSSProperties> = {
     marginBottom: 8,
   },
   hideOrdersBtn: {
-    border: '1px solid #0284c7',
+    border: `1px solid ${TEAL}`,
     backgroundColor: '#ffffff',
-    color: '#0284c7',
+    color: TEAL,
     borderRadius: 8,
     padding: '6px 12px',
     fontSize: 12,
@@ -2554,9 +2481,9 @@ const review: Record<string, React.CSSProperties> = {
     gap: 10,
   },
   outlineBtn: {
-    border: '1px solid #0284c7',
+    border: `1px solid ${TEAL}`,
     backgroundColor: '#ffffff',
-    color: '#0284c7',
+    color: TEAL,
     borderRadius: 8,
     padding: '6px 12px',
     fontSize: 12,
