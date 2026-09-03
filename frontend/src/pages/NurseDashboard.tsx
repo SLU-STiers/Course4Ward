@@ -383,11 +383,15 @@ function PatientDetailModal({
   canAddDoctor,
   onClose,
   onAddDoctor,
+  status,
+  onDischarge,
 }: {
   chart: PatientChart;
   canAddDoctor: boolean;
   onClose: () => void;
   onAddDoctor?: (doctor: string) => void;
+  status?: AdmissionStatus;
+  onDischarge?: () => void;
 }) {
   const [doctorPick, setDoctorPick] = useState('');
   const unusedDoctors = AVAILABLE_DOCTORS.filter((d) => !chart.assignedDoctors.includes(d));
@@ -396,7 +400,14 @@ function PatientDetailModal({
     <div style={ui.overlay} onClick={onClose}>
       <div style={ui.modalWide} onClick={(e) => e.stopPropagation()}>
         <div style={ui.modalHeaderRow}>
-          <h3 style={{ ...ui.sectionTitle, margin: 0 }}>Patient Details</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h3 style={{ ...ui.sectionTitle, margin: 0 }}>Patient Details</h3>
+            {status && (
+              <span style={status === 'Admitted' ? ui.badgeAdmitted : ui.badgeDischarged}>
+                {status}
+              </span>
+            )}
+          </div>
           <button type="button" style={ui.closeX} onClick={onClose}>
             ✕
           </button>
@@ -480,6 +491,11 @@ function PatientDetailModal({
           <button type="button" style={ui.outlineBtn} onClick={onClose}>
             Close
           </button>
+          {status === 'Admitted' && onDischarge && (
+            <button type="button" style={ui.primaryBtn} onClick={onDischarge}>
+              Discharge Patient
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -522,6 +538,7 @@ function PatientView({
     pageCount <= 4 ? pages : [...pages.slice(0, 3), pageCount].filter((n, i, arr) => arr.indexOf(n) === i);
 
   const viewing = viewingName ? resolveChart(viewingName, charts) : null;
+  const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;
 
   const discharge = (id: string) => {
     setRecords((prev) =>
@@ -604,11 +621,6 @@ function PatientView({
                     <button type="button" style={ui.outlineBtn} onClick={() => setViewingName(r.name)}>
                       View Record
                     </button>
-                    {r.status === 'Admitted' && (
-                      <button type="button" style={ui.primaryBtn} onClick={() => discharge(r.id)}>
-                        Discharge Patient
-                      </button>
-                    )}
                   </div>
                 </td>
               </tr>
@@ -662,6 +674,10 @@ function PatientView({
           canAddDoctor
           onClose={() => setViewingName(null)}
           onAddDoctor={addDoctor}
+          status={viewingRecord?.status}
+          onDischarge={
+            viewingRecord ? () => discharge(viewingRecord.id) : undefined
+          }
         />
       )}
     </section>
