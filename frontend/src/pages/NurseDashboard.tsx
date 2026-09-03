@@ -962,6 +962,7 @@ const ui: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     alignSelf: 'flex-start',
   },
+  
   aiCard: {
     backgroundColor: '#f3e8ff',
     borderRadius: 16,
