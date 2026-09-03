@@ -17,7 +17,7 @@ app = FastAPI(title="Doctor's Orders Summarizer – Batch")
 
 # ------------------ Request / Response Models ----------------------------
 class OrderItem(BaseModel):
-    id: int                     # matches your PostgreSQL primary key
+    id: str                     # matches a PostgreSQL UUID or other string primary key
     text: str                   # raw doctor's orders
 
 class BatchSummaryRequest(BaseModel):
@@ -25,7 +25,7 @@ class BatchSummaryRequest(BaseModel):
     temperature: Optional[float] = Field(0.1, ge=0.0, le=1.0)
 
 class SingleResult(BaseModel):
-    id: int
+    id: str
     summary: Optional[str]
     success: bool
     processing_time_seconds: float
