@@ -1,35 +1,34 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { Filter, ArrowUpDown } from 'lucide-react';
 import { adminApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
+import dashboardIcon from '../Img/dashboard.png';
+import userIcon from '../Img/user.png';
+import requestsIcon from '../Img/requests.png';
 
 // Import Logo
 import logoImg from '../Img/Course4Ward-Logo.png';
 
+type ActivityRow = {
+  id: string;
+  name: string;
+  profession: string;
+  date: string;
+  time: string;
+};
+
 export function AdminPanel() {
   const [activeNav, setActiveNav] = useState<'dashboard' | 'users' | 'requests'>('dashboard');
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
     logout(); // Clears Zustand state and deletes sessionStorage['cims_auth'] automatically
     navigate('/login', { replace: true });
   };
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowProfileMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   return (
     <div style={styles.appContainer}>
@@ -40,43 +39,57 @@ export function AdminPanel() {
         </div>
 
         <nav style={styles.sidebarNav}>
-          <button
-            style={{
-              ...styles.navButton,
-              ...(activeNav === 'dashboard' ? styles.navButtonActive : {}),
-            }}
-            onClick={() => setActiveNav('dashboard')}
-          >
-            <span style={styles.navIcon}>📊</span> Dashboard
-          </button>
+  <button
+    style={{
+      ...styles.navButton,
+      ...(activeNav === 'dashboard' ? styles.navButtonActive : {}),
+    }}
+    onClick={() => setActiveNav('dashboard')}
+  >
+    <img src={dashboardIcon} alt="Dashboard" style={styles.navIconImage} /> Dashboard
+  </button>
 
-          <button
-            style={{
-              ...styles.navButton,
-              ...(activeNav === 'users' ? styles.navButtonActive : {}),
-            }}
-            onClick={() => setActiveNav('users')}
-          >
-            <span style={styles.navIcon}>👤</span> Users
-          </button>
+  <button
+    style={{
+      ...styles.navButton,
+      ...(activeNav === 'users' ? styles.navButtonActive : {}),
+    }}
+    onClick={() => setActiveNav('users')}
+  >
+    <img src={userIcon} alt="Users" style={styles.navIconImage} /> Users
+  </button>
 
-          <button
-            style={{
-              ...styles.navButton,
-              ...(activeNav === 'requests' ? styles.navButtonActive : {}),
-            }}
-            onClick={() => setActiveNav('requests')}
-          >
-            <span style={styles.navIcon}>💬</span> Requests
+  <button
+    style={{
+      ...styles.navButton,
+      ...(activeNav === 'requests' ? styles.navButtonActive : {}),
+    }}
+    onClick={() => setActiveNav('requests')}
+  >
+    <img src={requestsIcon} alt="Requests" style={styles.navIconImage} /> Requests
+  </button>
+</nav>
+        <div style={styles.sidebarProfile}>
+          <div style={styles.profileAvatar}>
+            {user?.firstName?.[0] ?? 'A'}{user?.lastName?.[0] ?? 'D'}
+          </div>
+          <div style={styles.profileDetails}>
+            <div style={styles.profileName}>
+              {user?.firstName ? `${user.firstName} ${user.lastName}` : 'Admin User'}
+            </div>
+            <div style={styles.profileEmail}>Administrator</div>
+          </div>
+          <button type="button" style={styles.logoutBtn} onClick={handleLogout}>
+            Log out
           </button>
-        </nav>
+        </div>
       </aside>
 
       {/* MAIN CONTENT AREA */}
       <div style={styles.mainWrapper}>
         {/* TOP HEADER */}
         <header style={styles.header}>
-          <h2 style={styles.headerTitle}>Good Day! Admin</h2>
+          <h1 style={styles.headerTitle}>Admin</h1>
 
           <div style={styles.headerRight}>
             {/* Notification Bell */}
@@ -85,29 +98,6 @@ export function AdminPanel() {
               <span style={styles.badgeCount}>2</span>
             </div>
 
-            {/* Profile Dropdown */}
-            <div style={styles.profileContainer} ref={dropdownRef}>
-              <button
-                style={styles.profileButton}
-                onClick={() => setShowProfileMenu((prev) => !prev)}
-              >
-                <div style={styles.avatarCircle}>
-                  <span>👤</span>
-                </div>
-                <span style={styles.userName}>
-                  {user?.firstName ? `${user.firstName} ${user.lastName}` : 'Swan Johnson'}
-                </span>
-                <span style={{ fontSize: '10px', color: '#64748b' }}>▼</span>
-              </button>
-
-              {showProfileMenu && (
-                <div style={styles.dropdownMenu}>
-                  <button style={styles.dropdownItem} onClick={handleLogout}>
-                    <span style={{ marginRight: '8px' }}>🚪</span> Log out
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </header>
 
@@ -126,10 +116,51 @@ export function AdminPanel() {
    DASHBOARD VIEW (Matching image metrics & activity log table)
    ========================================================================== */
 function DashboardView() {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [professionFilter, setProfessionFilter] = useState('all');
+  const [sortField, setSortField] = useState<'id' | 'name' | 'date'>('id');
+  const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('ascending');
+  const [page, setPage] = useState(1);
+  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | null>(null);
+  const pageSize = 5;
   const { data: logs } = useQuery({
     queryKey: ['audit-logs'],
     queryFn: () => adminApi.auditLogs({ take: 50 }).then((r) => r.data),
   });
+
+  const fallbackLogs: ActivityRow[] = [
+    { id: '00001', name: 'Christine Brooks', profession: 'Doctor', date: '14 Feb 2026', time: '14:37:52' },
+    { id: '00002', name: 'Rosie Pearson', profession: 'Nurse', date: '14 Feb 2026', time: '14:37:52' },
+    { id: '00003', name: 'Darrell Caldwell', profession: 'Doctor', date: '14 Feb 2026', time: '14:37:52' },
+    { id: '00004', name: 'Gilbert Johnston', profession: 'Doctor', date: '14 Feb 2026', time: '14:37:52' },
+    { id: '00005', name: 'Alan Cain', profession: 'Nurse', date: '14 Feb 2026', time: '14:37:52' },
+    { id: '00006', name: 'Alfred Murray', profession: 'Nurse', date: '14 Feb 2026', time: '15:17:02' },
+  ];
+  const activityRows: ActivityRow[] = logs?.length
+    ? logs.map((log: any, index: number) => {
+        const date = new Date(log.createdAt);
+        return {
+          id: String(index + 1).padStart(5, '0'),
+          name: log.user ? `${log.user.firstName} ${log.user.lastName}` : 'System User',
+          profession: log.user?.role || 'Doctor',
+          date: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+          time: date.toLocaleTimeString(),
+        };
+      })
+    : fallbackLogs;
+  const filteredActivity = activityRows
+    .filter((row) =>
+      `${row.id} ${row.name} ${row.profession}`.toLowerCase().includes(searchTerm.toLowerCase()) &&
+      (professionFilter === 'all' || row.profession.toLowerCase() === professionFilter.toLowerCase())
+    )
+    .sort((a, b) => {
+      const comparison = a[sortField].localeCompare(b[sortField]);
+      return sortDirection === 'ascending' ? comparison : -comparison;
+    });
+  const pageCount = Math.max(1, Math.ceil(filteredActivity.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * pageSize;
+  const visibleActivity = filteredActivity.slice(pageStart, pageStart + pageSize);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -168,36 +199,47 @@ function DashboardView() {
       {/* ACTIVITY LOGS SECTION */}
       <div style={styles.cardContainer}>
         {/* Table Filters Bar */}
-        <div style={styles.tableHeaderBar}>
+        <div style={styles.activityHeader}>
           <h3 style={styles.tableTitle}>Activity Logs</h3>
-
-          <div style={styles.filtersContainer}>
-            <div style={styles.filterGroup}>
-              <span style={{ fontSize: '14px', color: '#64748b' }}>🔍</span>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
-                Filter By
-              </span>
+          <div style={styles.activityToolbar}>
+            <div style={styles.activitySearch}>
+              <input
+                type="search"
+                placeholder="Search activity logs..."
+                value={searchTerm}
+                onChange={(event) => { setSearchTerm(event.target.value); setPage(1); }}
+                style={styles.activitySearchInput}
+              />
+              <span style={styles.activitySearchIcon}>⌕</span>
             </div>
-
-            <select style={styles.filterSelect} defaultValue="14 Feb 2026">
-              <option>14 Feb 2026</option>
-            </select>
-
-            <select style={styles.filterSelect} defaultValue="">
-              <option value="" disabled selected hidden>
-                Order Type
-              </option>
-              <option value="all">All</option>
-            </select>
-
-            <select style={styles.filterSelect} defaultValue="">
-              <option value="" disabled selected hidden>
-                Order Status
-              </option>
-              <option value="all">All</option>
-            </select>
-
-            <button style={styles.resetButton}>🔄 Reset Filter</button>
+            <div style={styles.hoverMenu} onMouseEnter={() => setOpenMenu('filter')} onMouseLeave={() => setOpenMenu(null)}>
+              <button type="button" style={styles.toolbarButton}><Filter size={14} /> Filter</button>
+              {openMenu === 'filter' && (
+                <div style={styles.activityMenu}>
+                  <span style={styles.menuTitle}>Profession</span>
+                  {['all', 'doctor', 'nurse'].map((profession) => (
+                    <button type="button" key={profession} style={styles.menuOption} onClick={() => { setProfessionFilter(profession); setPage(1); }}>
+                      {profession[0].toUpperCase() + profession.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={styles.hoverMenu} onMouseEnter={() => setOpenMenu('sort')} onMouseLeave={() => setOpenMenu(null)}>
+              <button type="button" style={styles.toolbarButton}><ArrowUpDown size={14} /> Sort by</button>
+              {openMenu === 'sort' && (
+                <div style={styles.activityMenu}>
+                  {([['id', 'ID'], ['name', 'Name'], ['date', 'Date']] as const).map(([field, label]) => (
+                    <button type="button" key={field} style={styles.menuOption} onClick={() => { setSortField(field); setPage(1); }}>
+                      {label} {sortField === field ? (sortDirection === 'ascending' ? '↑' : '↓') : ''}
+                    </button>
+                  ))}
+                  <button type="button" style={styles.menuOption} onClick={() => setSortDirection((direction) => direction === 'ascending' ? 'descending' : 'ascending')}>
+                    {sortDirection === 'ascending' ? 'Descending' : 'Ascending'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -213,34 +255,21 @@ function DashboardView() {
             </tr>
           </thead>
           <tbody>
-            {logs && logs.length > 0 ? (
-              logs.map((l: any, idx: number) => {
-                const dateObj = new Date(l.createdAt);
-                return (
-                  <tr key={l.id || idx} style={styles.tr}>
-                    <td style={styles.td}>{String(idx + 1).padStart(5, '0')}</td>
-                    <td style={styles.td}>
-                      {l.user ? `${l.user.firstName} ${l.user.lastName}` : 'System User'}
-                    </td>
-                    <td style={styles.td}>{l.user?.role || 'Doctor'}</td>
-                    <td style={styles.td}>{dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                    <td style={styles.td}>{dateObj.toLocaleTimeString()}</td>
-                  </tr>
-                );
-              })
-            ) : (
-              // Mock items as shown in mockup
-              <>
-                <MockLogRow id="00001" name="Christine Brooks" profession="Doctor" date="14 Feb 2026" time="14:37:52" />
-                <MockLogRow id="00002" name="Rosie Pearson" profession="Nurse" date="14 Feb 2026" time="14:37:52" />
-                <MockLogRow id="00003" name="Darrell Caldwell" profession="Doctor" date="14 Feb 2026" time="14:37:52" />
-                <MockLogRow id="00004" name="Gilbert Johnston" profession="Doctor" date="14 Feb 2026" time="14:37:52" />
-                <MockLogRow id="00005" name="Alan Cain" profession="Nurse" date="14 Feb 2026" time="14:37:52" />
-                <MockLogRow id="00006" name="Alfred Murray" profession="Nurse" date="14 Feb 2026" time="15:17:02" />
-              </>
-            )}
+            {visibleActivity.map((row) => (
+              <MockLogRow key={row.id} {...row} />
+            ))}
           </tbody>
         </table>
+        <div style={styles.activityPagination}>
+          <span style={styles.paginationInfo}>Showing {filteredActivity.length ? pageStart + 1 : 0} to {Math.min(pageStart + pageSize, filteredActivity.length)} of {filteredActivity.length} logs</span>
+          <div style={styles.paginationControls}>
+            <button type="button" style={styles.pageNumberButton} disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>‹</button>
+            {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
+              <button type="button" key={pageNumber} style={{ ...styles.pageNumberButton, ...(safePage === pageNumber ? styles.pageNumberActive : {}) }} onClick={() => setPage(pageNumber)}>{pageNumber}</button>
+            ))}
+            <button type="button" style={styles.pageNumberButton} disabled={safePage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>›</button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -570,36 +599,41 @@ const styles: Record<string, React.CSSProperties> = {
   appContainer: {
     display: 'flex',
     minHeight: '100vh',
-    backgroundColor: '#f8fafc',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    backgroundColor: '#f3f4f6',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   },
 
   /* Sidebar */
   sidebar: {
-    width: '220px',
+    width: '232px',
     backgroundColor: '#ffffff',
-    borderRight: '1px solid #e2e8f0',
+    borderRight: '1px solid #e5e7eb',
     display: 'flex',
     flexDirection: 'column',
   },
   sidebarLogoContainer: {
-    padding: '24px 20px',
+    padding: '16px 20px 24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sidebarLogo: {
-    height: '36px',
+    width: '180px',
+    height: '44px',
     objectFit: 'contain',
   },
   sidebarNav: {
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
-    padding: '0 12px',
+    padding: '0 14px',
+    flex: 1,
   },
   navButton: {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
-    padding: '12px 16px',
+    padding: '10px 12px',
     borderRadius: '8px',
     border: 'none',
     backgroundColor: 'transparent',
@@ -614,7 +648,47 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#0f172a',
   },
   navIcon: {
+    width: '18px',
+    height: '18px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     fontSize: '16px',
+  },
+  sidebarProfile: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    margin: '0 14px',
+    padding: '10px 8px',
+    borderTop: '1px solid #f1f5f9',
+  },
+  profileAvatar: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    backgroundColor: '#cbd5e1',
+    color: '#0a5c83',
+    fontSize: '11px',
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  profileDetails: { minWidth: 0, flex: 1 },
+  profileName: { fontSize: '12px', fontWeight: 700, color: '#0f172a' },
+  profileEmail: { fontSize: '10px', color: '#94a3b8' },
+  logoutBtn: {
+    flexShrink: 0,
+    border: '1px solid #fecaca',
+    backgroundColor: '#ffffff',
+    color: '#ef4444',
+    borderRadius: '8px',
+    padding: '6px 8px',
+    fontSize: '11px',
+    fontWeight: 700,
+    cursor: 'pointer',
   },
 
   /* Header & Main Layout */
@@ -624,19 +698,17 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
   },
   header: {
-    height: '70px',
-    backgroundColor: '#ffffff',
-    borderBottom: '1px solid #e2e8f0',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '0 32px',
+    padding: '28px 32px 8px',
   },
   headerTitle: {
-    fontSize: '22px',
-    fontWeight: 700,
+    fontSize: '28px',
+    fontWeight: 800,
     color: '#0f172a',
     margin: 0,
+    letterSpacing: '-0.02em',
   },
   headerRight: {
     display: 'flex',
@@ -774,6 +846,89 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '20px',
     flexWrap: 'wrap',
     gap: '12px',
+  },
+  activityHeader: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: '12px',
+    marginBottom: '20px',
+  },
+  activityToolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  activitySearch: {
+    position: 'relative',
+    width: '280px',
+  },
+  activitySearchInput: {
+    width: '100%',
+    padding: '8px 32px 8px 12px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    backgroundColor: '#ffffff',
+    fontSize: '13px',
+    outline: 'none',
+  },
+  activitySearchIcon: {
+    position: 'absolute',
+    right: '10px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: '#94a3b8',
+    fontSize: '18px',
+    pointerEvents: 'none',
+  },
+  hoverMenu: {
+    position: 'relative',
+  },
+  toolbarButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 12px',
+    border: '1px solid #b8cbd2',
+    borderRadius: '8px',
+    backgroundColor: '#ffffff',
+    color: '#004358',
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  activityMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    width: '180px',
+    padding: '8px',
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.12)',
+    zIndex: 10,
+  },
+  menuTitle: {
+    display: 'block',
+    padding: '4px',
+    color: '#64748b',
+    fontSize: '11px',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+  },
+  menuOption: {
+    display: 'block',
+    width: '100%',
+    padding: '7px 6px',
+    border: 'none',
+    borderRadius: '4px',
+    backgroundColor: '#ffffff',
+    color: '#334155',
+    textAlign: 'left',
+    fontSize: '12px',
+    cursor: 'pointer',
   },
   tableTitle: {
     fontSize: '20px',
@@ -929,6 +1084,15 @@ const styles: Record<string, React.CSSProperties> = {
     paddingTop: '16px',
     borderTop: '1px solid #f1f5f9',
   },
+  activityPagination: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    marginTop: '16px',
+    paddingTop: '16px',
+    borderTop: '1px solid #f1f5f9',
+  },
   paginationInfo: {
     fontSize: '12px',
     color: '#64748b',
@@ -971,4 +1135,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  navIconImage: {
+  width: '20px',
+  height: '20px',
+  marginRight: '8px',
+  objectFit: 'contain',
+}
 };
