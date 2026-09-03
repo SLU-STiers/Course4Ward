@@ -9,7 +9,7 @@ datasource db {
 
 enum Role {
   PHYSICIAN
-  NURSE
+  NURSE 
   CLAIMS_PROCESSOR
   ADMIN
 }
