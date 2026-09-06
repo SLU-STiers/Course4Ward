@@ -606,10 +606,13 @@ const styles: Record<string, React.CSSProperties> = {
   /* Sidebar */
   sidebar: {
     width: '232px',
+    flexShrink: 0,
     backgroundColor: '#ffffff',
     borderRight: '1px solid #e5e7eb',
     display: 'flex',
     flexDirection: 'column',
+    padding: '8px 0 16px',
+    overflow: 'hidden',
   },
   sidebarLogoContainer: {
     padding: '16px 20px 24px',
@@ -619,8 +622,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sidebarLogo: {
     width: '180px',
-    height: '44px',
+    height: 'auto',
+    maxHeight: '44px',
     objectFit: 'contain',
+    display: 'block',
   },
   sidebarNav: {
     display: 'flex',
