@@ -11,10 +11,12 @@ datasource db {
 
 // ---------- Enums ----------
 enum Role {
+  ADMIN
   PHYSICIAN
   NURSE
   CLAIMS_PROCESSOR
-  ADMIN
+
+  @@map("role")
 }
 
 enum OrderType {
@@ -150,6 +152,8 @@ model PhysicianNote {
   physician User    @relation(fields: [physicianId], references: [id])
   patient   Patient @relation(fields: [patientId], references: [id])
 
+  @@index([physicianID])
+  @@index([admissionID])
   @@map("physician_notes")
 }
 
