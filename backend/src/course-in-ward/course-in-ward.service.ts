@@ -1,14 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
 import { SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
+import { OllamaClient } from './ollama-client';
 
 @Injectable()
 export class CourseInWardService {
   private readonly aiServiceUrl: string;
+  private readonly ollamaClient: OllamaClient;
 
   constructor(
     private prisma: PrismaService,
@@ -17,27 +18,32 @@ export class CourseInWardService {
     private config: ConfigService,
   ) {
     this.aiServiceUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000';
+    this.ollamaClient = new OllamaClient(this.aiServiceUrl);
   }
 
   // Calls the Python/FastAPI + Ollama microservice. This service is the ONLY
   // caller of ai-service -- the frontend never talks to it directly.
   private async callAiSummarizer(orders: any[], patientName: string): Promise<string> {
     try {
-      const { data } = await axios.post(
-        `${this.aiServiceUrl}/summarize/course-in-ward`,
-        {
-          patient_name: patientName,
-          orders: orders.map((o) => ({
-            type: o.type,
-            description: o.description,
-            frequency: o.frequency,
-            dosage: o.dosage,
-            order_date: o.orderDate,
-          })),
-        },
-        { timeout: 30000 },
+      const response = await this.ollamaClient.summarizeBatch(
+        orders.map((order) => ({
+          id: String(order.id),
+          text: [
+            order.type,
+            order.description,
+            order.dosage,
+            order.frequency,
+          ]
+            .filter(Boolean)
+            .join(' '),
+        })),
       );
-      return data.summary;
+
+      if (response.failed > 0 || response.results.some((result) => !result.success)) {
+        throw new Error('One or more order summaries failed');
+      }
+
+      return response.results.map((result) => result.summary ?? '').filter(Boolean).join(' ');
     } catch (err) {
       throw new BadRequestException(
         'AI summarization service is unavailable. Try again or write the summary manually.',
