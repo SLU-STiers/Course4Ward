@@ -917,8 +917,13 @@ const shell: Record<string, React.CSSProperties> = {
     padding: '8px 0 16px',
     overflow: 'hidden',
   },
-  sidebarLogoContainer: { padding: '16px 20px 24px' },
-  sidebarLogo: { maxHeight: 44, maxWidth: 180, objectFit: 'contain' },
+  sidebarLogoContainer: {
+    padding: '16px 20px 24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sidebarLogo: { width: 180, height: 'auto', maxHeight: 44, objectFit: 'contain', display: 'block' },
   sidebarNav: { display: 'flex', flexDirection: 'column', gap: 4, padding: '0 14px', flex: 1 },
   navButton: {
     display: 'flex',

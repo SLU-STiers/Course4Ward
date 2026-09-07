@@ -14,12 +14,6 @@ export function ProtectedRoute({ allowedRoles }: Props) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  // In local `npm run dev`, switch modules by changing the URL
-  // (/physician, /nurse, /claims, /admin) without a role gate.
-  if (import.meta.env.DEV) {
-    return <Outlet />;
-  }
-
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to="/" replace />;
   }

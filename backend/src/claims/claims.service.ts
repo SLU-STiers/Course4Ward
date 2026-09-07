@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { ClaimStatus, SummaryStatus } from '@prisma/client';
+import { SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 
@@ -18,41 +18,39 @@ export class ClaimsService {
     });
     if (!summary) throw new NotFoundException('Course in the Ward summary not found');
 
-    const claim = await this.prisma.claim.create({
+    if (!summary.validatorId) throw new BadRequestException('Summary has no validating physician');
+
+    const claim = await this.prisma.summaryApprovalRequest.create({
       data: {
-        patientId: summary.patientId,
-        courseInWardId,
-        status: ClaimStatus.PENDING_REVIEW,
+        summaryId: courseInWardId,
+        physicianId: summary.validatorId,
+        processorId: claimsProcessorId,
       },
     });
 
     await this.auditLog.record({
       userId: claimsProcessorId,
       action: 'CLAIM_CREATED',
-      entityType: 'Claim',
-      entityId: claim.id,
     });
 
     return claim;
   }
 
   findAll() {
-    return this.prisma.claim.findMany({
+    return this.prisma.summaryApprovalRequest.findMany({
       orderBy: { id: 'desc' },
       include: {
-        patient: { select: { firstName: true, lastName: true } },
-        courseInWard: true,
+        summary: { include: { patient: true } },
       },
     });
   }
 
   // Claims processor notifies the attending physician to validate the entry
   async notifyPhysician(claimId: string, claimsProcessorId: string) {
-    const claim = await this.prisma.claim.update({
+    const claim = await this.prisma.summaryApprovalRequest.update({
       where: { id: claimId },
       data: {
-        status: ClaimStatus.NEEDS_PHYSICIAN_VALIDATION,
-        physicianNotifiedAt: new Date(),
+        status: 'PHYSICIAN_VALIDATION_REQUESTED',
       },
     });
 
@@ -61,8 +59,6 @@ export class ClaimsService {
     await this.auditLog.record({
       userId: claimsProcessorId,
       action: 'CLAIM_PHYSICIAN_NOTIFIED',
-      entityType: 'Claim',
-      entityId: claimId,
     });
 
     return claim;
@@ -71,31 +67,25 @@ export class ClaimsService {
   // Auto-populate CF4 (PhilHealth Claim Form 4) with the approved Course in
   // the Ward summary. Only allowed once the physician has approved it.
   async generateCf4(claimId: string, claimsProcessorId: string) {
-    const claim = await this.prisma.claim.findUnique({
+    const claim = await this.prisma.summaryApprovalRequest.findUnique({
       where: { id: claimId },
-      include: { courseInWard: true, patient: true },
+      include: { summary: { include: { patient: true } } },
     });
     if (!claim) throw new NotFoundException('Claim not found');
-    if (claim.courseInWard.status !== SummaryStatus.APPROVED) {
+    if (claim.summary.status !== SummaryStatus.APPROVED || !claim.summary.approvedStatus) {
       throw new BadRequestException(
         'Course in the Ward must be physician-approved before CF4 can be generated',
       );
     }
 
-    const updated = await this.prisma.claim.update({
+    const updated = await this.prisma.summaryApprovalRequest.update({
       where: { id: claimId },
-      data: {
-        status: ClaimStatus.CF4_GENERATED,
-        cf4Generated: true,
-        cf4GeneratedAt: new Date(),
-      },
+      data: { status: 'CF4_GENERATED' },
     });
 
     await this.auditLog.record({
       userId: claimsProcessorId,
       action: 'CF4_GENERATED',
-      entityType: 'Claim',
-      entityId: claimId,
     });
 
     // The actual CF4 document (PDF) would be rendered here from
@@ -106,8 +96,8 @@ export class ClaimsService {
     return {
       claim: updated,
       cf4Fields: {
-        patientName: `${claim.patient.firstName} ${claim.patient.lastName}`,
-        courseInTheWard: claim.courseInWard.currentText,
+        patientName: `${claim.summary.patient.firstName} ${claim.summary.patient.lastName}`,
+        courseInTheWard: claim.summary.summaryContent,
       },
     };
   }

@@ -1385,11 +1385,16 @@ const shell: Record<string, React.CSSProperties> = {
   },
   sidebarLogoContainer: {
     padding: '16px 20px 24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   sidebarLogo: {
+    width: 180,
+    height: 'auto',
     maxHeight: 44,
-    maxWidth: 180,
     objectFit: 'contain',
+    display: 'block',
   },
   sidebarNav: {
     display: 'flex',
