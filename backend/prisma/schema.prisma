@@ -152,8 +152,7 @@ model PhysicianNote {
   physician User    @relation(fields: [physicianId], references: [id])
   patient   Patient @relation(fields: [patientId], references: [id])
 
-  @@index([physicianID])
-  @@index([admissionID])
+  @@index([physicianId])
   @@map("physician_notes")
 }
 
