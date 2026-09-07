@@ -11,7 +11,7 @@ export class NotesService {
       data: {
         patientId: dto.patientId,
         physicianId,
-        content: dto.content,
+        notesArray: dto.content,
         reminderAt: dto.reminderAt ? new Date(dto.reminderAt) : undefined,
       },
     });

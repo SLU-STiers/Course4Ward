@@ -6,6 +6,7 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   role: Role;
+  mustResetPassword?: boolean;
 }
 
 export interface Patient {
@@ -23,15 +24,13 @@ export type OrderType = 'MEDICATION' | 'ADMISSION' | 'DISCHARGE' | 'DIAGNOSTIC' 
 
 export interface PhysicianOrder {
   id: string;
-  patientId: string;
-  orderingPhysicianId: string;
-  enteredById: string;
+  admissionId: string;
+  orderedById: string;
+  encodedById: string;
   enteredByRole: 'PHYSICIAN' | 'NURSE_ON_BEHALF';
-  type: OrderType;
-  description: string;
-  frequency?: string | null;
-  dosage?: string | null;
-  orderDate: string;
+  orderContent: string;
+  dateCreated: string;
+  dateUpdated?: string | null;
   active: boolean;
 }
 

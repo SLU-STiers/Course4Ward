@@ -1,15 +1,18 @@
- generator client {
-  provider = "prisma-client-js"
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
 }
 
+// ---------- Enums ----------
 enum Role {
   PHYSICIAN
-  NURSE 
+  NURSE
   CLAIMS_PROCESSOR
   ADMIN
 }
@@ -33,160 +36,178 @@ enum SummaryStatus {
   APPROVED
 }
 
-enum ClaimStatus {
-  PENDING_REVIEW
-  NEEDS_PHYSICIAN_VALIDATION
-  VALIDATED
-  CF4_GENERATED
+enum ResetStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
 }
 
-model User {
-  id            String   @id @default(uuid())
-  userId        String   @unique // hospital-issued login ID, distinct from internal uuid
-  passwordHash  String
-  firstName     String
-  lastName      String
-  role          Role
-  isActive      Boolean  @default(true)
-  mustResetPassword Boolean @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+enum ActionType {
+  LOGIN
+  LOGOUT
+  ADD_NOTE
+  CREATE_ORDER_NURSE
+  CREATE_ORDER
+  APPROVE_SUMMARY
+  EDIT_SUMMARY
+  REGENERATE_SUMMARY
+  REQUEST_SUMMARY
+  ADD_ACCOUNT
+  EDIT_ACCOUNT
+  DELETE_ACCOUNT
+  REGISTER_PATIENT
+}
 
-  ordersPlaced      PhysicianOrder[] @relation("OrderingPhysician")
-  ordersEntered     PhysicianOrder[] @relation("EnteredBy")
-  notes             PhysicianNote[]
-  assignedPatients  PatientAssignment[]
-  summariesApproved CourseInWard[]   @relation("ApprovedBy")
-  auditLogs         AuditLog[]
-  claimsReviewed    Claim[]          @relation("ReviewedBy")
+// ---------- Models ----------
+model User {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  passwordHash      String
+  firstName         String
+  lastName          String
+  role              Role
+  isActive          Boolean  @default(true)
+  mustResetPassword Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  ordersAsPhysician          PhysicianOrder[]         @relation("OrderingPhysician")
+  ordersAsEncoder            PhysicianOrder[]         @relation("EnteredBy")
+  notes                      PhysicianNote[]
+  summariesValidated         CourseInWard[]           @relation("ApprovedBy")
+  admissions                 PatientAdmission[]
+  auditLogs                  AuditLog[]
+  passwordResets             PasswordResetRequest[]
+  summaryRequestsAsPhysician SummaryApprovalRequest[] @relation("RequestedPhysician")
+  summaryRequestsAsProcessor SummaryApprovalRequest[] @relation("RequestedProcessor")
 
   @@map("users")
 }
 
 model Patient {
-  id             String   @id @default(uuid())
-  firstName      String
-  lastName       String
-  gender         String
-  dateOfBirth    DateTime
-  admissionDate  DateTime?
-  dischargeDate  DateTime?
-  initialAssessment String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id          String    @id @default(uuid())
+  firstName   String
+  lastName    String
+  gender      String?
+  dateOfBirth DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  assignments     PatientAssignment[]
-  orders          PhysicianOrder[]
-  notes           PhysicianNote[]
-  coursesInWard   CourseInWard[]
-  claims          Claim[]
+  admissions    PatientAdmission[]
+  notes         PhysicianNote[]
+  coursesInWard CourseInWard[]
 
   @@map("patients")
 }
 
-// Which nurse/physician is currently assigned to which patient
-model PatientAssignment {
-  id        String   @id @default(uuid())
-  patientId String
-  userId    String
-  role      Role
-  active    Boolean  @default(true)
-  assignedAt DateTime @default(now())
-
-  patient Patient @relation(fields: [patientId], references: [id])
-  user    User    @relation(fields: [userId], references: [id])
-
-  @@index([patientId, active])
-  @@map("patient_assignments")
-}
-
-model PhysicianOrder {
-  id              String          @id @default(uuid())
-  patientId       String
-  orderingPhysicianId String
-  enteredById     String
-  enteredByRole   OrderEnteredBy  @default(PHYSICIAN)
-  type            OrderType
-  description     String          // e.g. medicine name, discharge instructions
-  frequency       String?         // e.g. "every 8 hours"
-  dosage          String?
-  orderDate       DateTime        @default(now())
-  active          Boolean         @default(true)
-
-  patient           Patient @relation(fields: [patientId], references: [id])
-  orderingPhysician User    @relation("OrderingPhysician", fields: [orderingPhysicianId], references: [id])
-  enteredBy         User    @relation("EnteredBy", fields: [enteredById], references: [id])
-
-  @@index([patientId, orderDate])
-  @@map("physician_orders")
-}
-
-model PhysicianNote {
-  id          String   @id @default(uuid())
-  patientId   String
-  physicianId String
-  content     String
-  reminderAt  DateTime?
-  createdAt   DateTime @default(now())
+model PatientAdmission {
+  id            String    @id @default(uuid())
+  admissionDate DateTime
+  dischargeDate DateTime?
+  patientId     String
+  physicianId   String
 
   patient   Patient @relation(fields: [patientId], references: [id])
   physician User    @relation(fields: [physicianId], references: [id])
 
+  orders PhysicianOrder[]
+
+  @@map("patient_admissions")
+}
+
+model PhysicianOrder {
+  id             String                      @id @default(uuid())
+  orderContent   String
+  dateCreated    DateTime                    @default(now())
+  dateUpdated    DateTime?                   @updatedAt
+  orderEmbedding Unsupported("vector(768)")?
+  admissionId    String
+  orderedById    String
+  encodedById    String
+  enteredByRole  OrderEnteredBy              @default(PHYSICIAN)
+  active         Boolean                     @default(true)
+
+  summarizationId String?
+
+  admission PatientAdmission @relation(fields: [admissionId], references: [id])
+  orderedBy User             @relation("OrderingPhysician", fields: [orderedById], references: [id])
+  encodedBy User             @relation("EnteredBy", fields: [encodedById], references: [id])
+  summary   CourseInWard?    @relation(fields: [summarizationId], references: [id])
+
+  @@index([admissionId, dateCreated])
+  @@map("physician_orders")
+}
+
+model PhysicianNote {
+  id          String    @id @default(uuid())
+  notesArray  String
+  physicianId String
+  patientId   String
+  createdAt   DateTime  @default(now())
+  reminderAt  DateTime?
+
+  physician User    @relation(fields: [physicianId], references: [id])
+  patient   Patient @relation(fields: [patientId], references: [id])
+
   @@map("physician_notes")
 }
 
-// AI-generated / physician-approved daily summary of orders = "Course in the Ward"
 model CourseInWard {
-  id            String        @id @default(uuid())
-  patientId     String
-  summaryDate   DateTime      @default(now())
-  aiGeneratedText String?     // raw output from ai-service
-  currentText   String        // what's currently shown — AI text, or physician-edited text
-  status        SummaryStatus @default(DRAFT_AI)
-  approvedById  String?
-  approvedAt    DateTime?
-  version       Int           @default(1)
+  id             String        @id @default(uuid())
+  summaryContent String
+  summaryDate    DateTime      @default(now())
+  approvedStatus Boolean?
+  status         SummaryStatus @default(DRAFT_AI)
+  validatorId    String?
+  validatedAt    DateTime?
+  patientId      String
 
-  patient    Patient @relation(fields: [patientId], references: [id])
-  approvedBy User?   @relation("ApprovedBy", fields: [approvedById], references: [id])
-  claim      Claim?
+  patient    Patient                  @relation(fields: [patientId], references: [id])
+  approvedBy User?                    @relation("ApprovedBy", fields: [validatorId], references: [id])
+  orders     PhysicianOrder[]
+  requests   SummaryApprovalRequest[]
 
-  @@index([patientId, summaryDate])
   @@map("courses_in_ward")
 }
 
-model Claim {
-  id                String      @id @default(uuid())
-  patientId         String
-  courseInWardId    String      @unique
-  status            ClaimStatus @default(PENDING_REVIEW)
-  reviewedById       String?
-  reviewedAt         DateTime?
-  cf4Generated       Boolean     @default(false)
-  cf4GeneratedAt      DateTime?
-  physicianNotifiedAt DateTime?
+model SummaryApprovalRequest {
+  id          String   @id @default(uuid())
+  physicianId String
+  processorId String
+  summaryId   String
+  requestedAt DateTime @default(now())
+  status      String   @default("PENDING")
 
-  patient       Patient      @relation(fields: [patientId], references: [id])
-  courseInWard  CourseInWard @relation(fields: [courseInWardId], references: [id])
-  reviewedBy    User?        @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  physician User         @relation("RequestedPhysician", fields: [physicianId], references: [id])
+  processor User         @relation("RequestedProcessor", fields: [processorId], references: [id])
+  summary   CourseInWard @relation(fields: [summaryId], references: [id])
 
-  @@map("claims")
+  @@map("summary_approval_requests")
 }
 
-// Immutable log for compliance — every write to patient data should append here
+model PasswordResetRequest {
+  id          String      @id @default(uuid())
+  userId      String
+  token       String      @unique
+  requestedAt DateTime    @default(now())
+  expiresAt   DateTime
+  resolvedAt  DateTime?
+  status      ResetStatus @default(PENDING)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("password_reset_requests")
+}
+
 model AuditLog {
-  id         String   @id @default(uuid())
-  userId     String?
-  action     String   // e.g. "ORDER_CREATED", "SUMMARY_APPROVED", "LOGIN"
-  entityType String   // e.g. "PhysicianOrder"
-  entityId   String?
-  metadata   Json?
-  ipAddress  String?
-  createdAt  DateTime @default(now())
+  id        String     @id @default(uuid())
+  timeStamp DateTime   @default(now())
+  action    ActionType
+  userId    String
 
-  user User? @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
-  @@index([entityType, entityId])
-  @@index([createdAt])
   @@map("audit_logs")
 }

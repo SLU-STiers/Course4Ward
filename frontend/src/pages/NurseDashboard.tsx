@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import logoImg from '../Img/Course4Ward-Logo.png';
+import searchImg from '../Img/search.png';
+import notificationImg from '../Img/notification.png';
+import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';
 
@@ -300,7 +303,7 @@ export function NurseDashboard() {
         <header style={shell.header}>
           <h1 style={shell.headerTitle}>{activeTab === 'management' ? 'Management' : 'Patient Management'}</h1>
           <div style={shell.bellWrap}>
-            <span style={{ fontSize: 18, lineHeight: 1 }}>🔔</span>
+            <img src={notificationImg} alt="Notifications" style={{ width: 18, height: 18 }} />
             <span style={shell.bellBadge}>2</span>
           </div>
         </header>
@@ -383,11 +386,15 @@ function PatientDetailModal({
   canAddDoctor,
   onClose,
   onAddDoctor,
+  status,
+  onDischarge,
 }: {
   chart: PatientChart;
   canAddDoctor: boolean;
   onClose: () => void;
   onAddDoctor?: (doctor: string) => void;
+  status?: AdmissionStatus;
+  onDischarge?: () => void;
 }) {
   const [doctorPick, setDoctorPick] = useState('');
   const unusedDoctors = AVAILABLE_DOCTORS.filter((d) => !chart.assignedDoctors.includes(d));
@@ -396,7 +403,14 @@ function PatientDetailModal({
     <div style={ui.overlay} onClick={onClose}>
       <div style={ui.modalWide} onClick={(e) => e.stopPropagation()}>
         <div style={ui.modalHeaderRow}>
-          <h3 style={{ ...ui.sectionTitle, margin: 0 }}>Patient Details</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h3 style={{ ...ui.sectionTitle, margin: 0 }}>Patient Details</h3>
+            {status && (
+              <span style={status === 'Admitted' ? ui.badgeAdmitted : ui.badgeDischarged}>
+                {status}
+              </span>
+            )}
+          </div>
           <button type="button" style={ui.closeX} onClick={onClose}>
             ✕
           </button>
@@ -480,6 +494,11 @@ function PatientDetailModal({
           <button type="button" style={ui.outlineBtn} onClick={onClose}>
             Close
           </button>
+          {status === 'Admitted' && onDischarge && (
+            <button type="button" style={ui.primaryBtn} onClick={onDischarge}>
+              Discharge Patient
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -522,6 +541,7 @@ function PatientView({
     pageCount <= 4 ? pages : [...pages.slice(0, 3), pageCount].filter((n, i, arr) => arr.indexOf(n) === i);
 
   const viewing = viewingName ? resolveChart(viewingName, charts) : null;
+  const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;
 
   const discharge = (id: string) => {
     setRecords((prev) =>
@@ -554,7 +574,7 @@ function PatientView({
 
       <div style={ui.pmToolbar}>
         <div style={{ ...ui.searchWrap, flex: 1, marginBottom: 0 }}>
-          <span style={{ color: '#94a3b8' }}>🔍</span>
+          <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
           <input
             value={search}
             onChange={(e) => {
@@ -604,11 +624,6 @@ function PatientView({
                     <button type="button" style={ui.outlineBtn} onClick={() => setViewingName(r.name)}>
                       View Record
                     </button>
-                    {r.status === 'Admitted' && (
-                      <button type="button" style={ui.primaryBtn} onClick={() => discharge(r.id)}>
-                        Discharge Patient
-                      </button>
-                    )}
                   </div>
                 </td>
               </tr>
@@ -662,6 +677,10 @@ function PatientView({
           canAddDoctor
           onClose={() => setViewingName(null)}
           onAddDoctor={addDoctor}
+          status={viewingRecord?.status}
+          onDischarge={
+            viewingRecord ? () => discharge(viewingRecord.id) : undefined
+          }
         />
       )}
     </section>
@@ -711,7 +730,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
       <section style={ui.card}>
         <h2 style={ui.sectionTitle}>Patient Overview</h2>
         <div style={ui.searchWrap}>
-          <span style={{ color: '#94a3b8' }}>🔍</span>
+          <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -787,7 +806,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
             <div style={ui.orderCard}>
               <div style={ui.orderHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>📄</span>
+                  <img src={documentImg} alt="Doctor's order" style={{ width: 16, height: 16 }} />
                   <strong>Doctor’s Order</strong>
                 </div>
                 <div style={ui.dateNav}>
@@ -883,20 +902,28 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
 const shell: Record<string, React.CSSProperties> = {
   appContainer: {
     display: 'flex',
-    minHeight: '100vh',
+    height: '100vh',
+    overflow: 'hidden',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
     backgroundColor: '#f3f4f6',
   },
   sidebar: {
     width: 232,
+    flexShrink: 0,
     backgroundColor: '#ffffff',
     borderRight: '1px solid #e5e7eb',
     display: 'flex',
     flexDirection: 'column',
     padding: '8px 0 16px',
+    overflow: 'hidden',
   },
-  sidebarLogoContainer: { padding: '16px 20px 24px' },
-  sidebarLogo: { maxHeight: 44, maxWidth: 180, objectFit: 'contain' },
+  sidebarLogoContainer: {
+    padding: '16px 20px 24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sidebarLogo: { width: 180, height: 'auto', maxHeight: 44, objectFit: 'contain', display: 'block' },
   sidebarNav: { display: 'flex', flexDirection: 'column', gap: 4, padding: '0 14px', flex: 1 },
   navButton: {
     display: 'flex',
@@ -918,9 +945,12 @@ const shell: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
+    minHeight: 56,
+    flexShrink: 0,
     margin: '0 14px',
     padding: '10px 8px',
     borderTop: '1px solid #f1f5f9',
+    boxSizing: 'border-box',
   },
   profileAvatar: {
     width: 36,
@@ -935,8 +965,21 @@ const shell: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     flexShrink: 0,
   },
-  profileName: { fontSize: 12, fontWeight: 700, color: '#0f172a' },
-  profileEmail: { fontSize: 10, color: '#94a3b8' },
+  profileName: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#0f172a',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  profileEmail: {
+    fontSize: 10,
+    color: '#94a3b8',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   logoutBtn: {
     flexShrink: 0,
     border: '1px solid #fecaca',
@@ -948,12 +991,20 @@ const shell: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: 'pointer',
   },
-  mainWrapper: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
+  mainWrapper: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+  },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '28px 32px 8px',
+    flexShrink: 0,
   },
   headerTitle: { margin: 0, fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' },
   bellWrap: {
@@ -983,7 +1034,7 @@ const shell: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     padding: '0 4px',
   },
-  content: { padding: '16px 32px 32px', flex: 1 },
+  content: { padding: '16px 32px 32px', flex: 1, minHeight: 0, overflowY: 'auto' },
 };
 
 const ui: Record<string, React.CSSProperties> = {
@@ -1108,7 +1159,6 @@ const ui: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     alignSelf: 'flex-start',
   },
-
   aiCard: {
     backgroundColor: '#f3e8ff',
     borderRadius: 16,

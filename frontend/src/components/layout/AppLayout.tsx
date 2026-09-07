@@ -1,22 +1,37 @@
 import { useEffect } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { PATH_ROLE } from '../../routes/roleRoutes';
+
+const KNOWN_SHELL_PATHS = ['/physician', '/nurse', '/claims', '/admin'];
 
 export function AppLayout() {
   const { user, logout, setAuth, accessToken, refreshToken } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Browsers/OS address bars sometimes auto-capitalize the first letter typed
+  // (e.g. "/Physician" instead of "/physician"). Normalize casing so route
+  // matching and the shell detection below stay reliable either way.
+  const normalizedPath = location.pathname.replace(/\/+$/, '') || '/';
+  const lowerPath = normalizedPath.toLowerCase();
+  const hasOwnShell = KNOWN_SHELL_PATHS.some(
+    (path) => lowerPath === path || lowerPath.startsWith(`${path}/`)
+  );
+
   useEffect(() => {
     if (!import.meta.env.DEV || !user || !accessToken || !refreshToken) return;
-    const role = PATH_ROLE[location.pathname];
+    const role = PATH_ROLE[lowerPath];
     if (!role || user.role === role) return;
     setAuth(accessToken, refreshToken, { ...user, role, lastName: role });
-  }, [accessToken, location.pathname, refreshToken, setAuth, user]);
+  }, [accessToken, lowerPath, refreshToken, setAuth, user]);
 
-  const hasOwnShell = ['/physician', '/nurse', '/claims', '/admin'].includes(location.pathname);
   if (hasOwnShell) {
+    // Snap the address bar back to the canonical lowercase path so it never
+    // sticks on a capitalized variant like "/Physician".
+    if (normalizedPath !== lowerPath) {
+      return <Navigate to={`${lowerPath}${location.search}${location.hash}`} replace />;
+    }
     return <Outlet />;
   }
 

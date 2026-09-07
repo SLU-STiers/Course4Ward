@@ -1,21 +1,17 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { authApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
-import { PATH_ROLE } from '../routes/roleRoutes';
-import type { Role } from '../types';
+import { ROLE_PATH } from '../routes/roleRoutes';
 
 // Import images from src/Img/
 import logoImg from '../Img/Course4Ward-Logo.png';
-import illustrationImg from '../Img/Course4Ward-Illustration.png';
 import bgImg from '../Img/Course4Ward-Background.png';
+import foregroundImg from '../Img/Course4Ward-Foreground.png';
 
 export function Login() {
   const navigate = useNavigate();
-  const location = useLocation();
   const setAuth = useAuthStore((s) => s.setAuth);
-  const fromPath =
-    (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/';
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
@@ -33,24 +29,14 @@ export function Login() {
     setLoading(true);
 
     try {
-      if (import.meta.env.DEV) {
-        const role: Role = PATH_ROLE[fromPath] ?? 'PHYSICIAN';
-        const fakeUser = {
-          id: 'dev-user',
-          userId: userId || 'dev-admin',
-          firstName: 'Dev',
-          lastName: role,
-          role,
-        };
-
-        setAuth('dev-access-token', 'dev-refresh-token', fakeUser);
-        navigate(fromPath === '/login' ? '/' : fromPath, { replace: true });
-        return;
-      }
-
       const { data } = await authApi.login(userId, password);
       setAuth(data.accessToken, data.refreshToken, data.user);
-      navigate('/');
+
+      if (data.user.mustResetPassword) {
+        navigate('/reset-password');
+      } else {
+        navigate(ROLE_PATH[data.user.role] ?? '/', { replace: true });
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message ?? 'Login failed. Check your credentials.');
     } finally {
@@ -78,116 +64,109 @@ export function Login() {
         backgroundImage: `url(${bgImg})`,
       }}
     >
-      <div style={styles.container}>
-        {/* Left Side: Illustration */}
-        <div style={styles.illustrationSection}>
-          <img
-            src={illustrationImg}
-            alt="Medical Team Illustration"
-            style={styles.illustrationImage}
-          />
-        </div>
+      {/* Central Blue Banner / Foreground Section */}
+      <div
+        style={{
+          ...styles.blueBannerContainer,
+          backgroundImage: `url(${foregroundImg})`,
+        }}
+      >
+        {/* Floating White Login Card */}
+        <div style={styles.card}>
+          {/* Logo */}
+          <div style={styles.logoContainer}>
+            <img
+              src={logoImg}
+              alt="Course4Ward Logo"
+              style={styles.logo}
+            />
+          </div>
 
-        {/* Right Side: Floating Login Card */}
-        <div style={styles.cardWrapper}>
-          <div style={styles.card}>
-            {/* Logo */}
-            <div style={styles.logoContainer}>
-              <img
-                src={logoImg}
-                alt="Course4Ward Logo"
-                style={styles.logo}
-              />
-            </div>
+          {!showReset ? (
+            <form onSubmit={handleLogin} style={styles.form}>
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>User ID</label>
+                <input
+                  style={styles.input}
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  placeholder="Enter User ID..."
+                  required
+                />
+              </div>
 
-            {!showReset ? (
-              <form onSubmit={handleLogin} style={styles.form}>
-                <div style={styles.fieldGroup}>
-                  <label style={styles.label}>User ID</label>
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>Password</label>
+                <input
+                  style={styles.input}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter Password..."
+                  required
+                />
+              </div>
+
+              {error && <p style={styles.error}>{error}</p>}
+
+              {/* Options Row */}
+              <div style={styles.optionsRow}>
+                <label style={styles.checkboxLabel}>
                   <input
-                    style={styles.input}
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    placeholder="Enter User ID..."
-                    required
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    style={styles.checkbox}
                   />
-                </div>
-
-                <div style={styles.fieldGroup}>
-                  <label style={styles.label}>Password</label>
-                  <input
-                    style={styles.input}
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter Password..."
-                    required
-                  />
-                </div>
-
-                {error && <p style={styles.error}>{error}</p>}
-
-                {/* Options Row */}
-                <div style={styles.optionsRow}>
-                  <label style={styles.checkboxLabel}>
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      style={styles.checkbox}
-                    />
-                    Remember me
-                  </label>
-
-                  <button
-                    type="button"
-                    style={styles.linkButton}
-                    onClick={() => setShowReset(true)}
-                  >
-                    Forgot Password?
-                  </button>
-                </div>
-
-                <button style={styles.button} type="submit" disabled={loading}>
-                  {loading ? 'Signing in...' : 'Login'}
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleResetRequest} style={styles.form}>
-                <div style={styles.fieldGroup}>
-                  <label style={styles.label}>User ID</label>
-                  <input
-                    style={styles.input}
-                    value={resetUserId}
-                    onChange={(e) => setResetUserId(e.target.value)}
-                    placeholder="Enter User ID..."
-                    required
-                  />
-                </div>
-
-                {resetMessage && <p style={styles.info}>{resetMessage}</p>}
-
-                <button style={styles.button} type="submit">
-                  Request reset code
-                </button>
+                  Remember me
+                </label>
 
                 <button
                   type="button"
-                  style={styles.linkButtonCenter}
-                  onClick={() => setShowReset(false)}
+                  style={styles.linkButton}
+                  onClick={() => setShowReset(true)}
                 >
-                  Back to login
+                  Forgot Password?
                 </button>
-              </form>
-            )}
+              </div>
 
-            {/* Footer / Developed by */}
-            <div style={styles.footer}>
-              <span style={styles.footerText}>Developed by:</span>
-              <span style={styles.stiersText}>
-                🚀 <strong style={{ color: '#0f4c81' }}>S-TIERS</strong>
-              </span>
-            </div>
+              <button style={styles.button} type="submit" disabled={loading}>
+                {loading ? 'Signing in...' : 'Login'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleResetRequest} style={styles.form}>
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>User ID</label>
+                <input
+                  style={styles.input}
+                  value={resetUserId}
+                  onChange={(e) => setResetUserId(e.target.value)}
+                  placeholder="Enter User ID..."
+                  required
+                />
+              </div>
+
+              {resetMessage && <p style={styles.info}>{resetMessage}</p>}
+
+              <button style={styles.button} type="submit">
+                Request reset code
+              </button>
+
+              <button
+                type="button"
+                style={styles.linkButtonCenter}
+                onClick={() => setShowReset(false)}
+              >
+                Back to login
+              </button>
+            </form>
+          )}
+
+          {/* Footer / Developed by */}
+          <div style={styles.footer}>
+            <span style={styles.footerText}>Developed by:</span>
+            <span style={styles.stiersText}>S-TIERS</span>
           </div>
         </div>
       </div>
@@ -198,54 +177,46 @@ export function Login() {
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: '100vh',
+    width: '100vw',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fafafa',
+    backgroundColor: '#ffffff',
     backgroundRepeat: 'repeat',
-    backgroundSize: '800px auto',
+    backgroundSize: '900px auto',
+    backgroundPosition: 'center',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     padding: '20px',
+    boxSizing: 'border-box',
   },
-  container: {
-    display: 'flex',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    maxWidth: '1050px',
+  blueBannerContainer: {
     width: '100%',
-    gap: '30px',
-  },
-  illustrationSection: {
-    flex: '1 1 55%',
+    maxWidth: '1080px',
+    minHeight: '620px',
+    borderRadius: '16px',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
     display: 'flex',
-    justifyContent: 'center',
     alignItems: 'center',
-  },
-  illustrationImage: {
-    maxWidth: '100%',
-    maxHeight: '520px',
-    objectFit: 'contain',
-    mixBlendMode: 'darken',
-  },
-  cardWrapper: {
-    flex: '0 0 360px',
-    display: 'flex',
     justifyContent: 'center',
+    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+    padding: '20px',
+    boxSizing: 'border-box',
   },
   card: {
     width: '100%',
+    maxWidth: '380px',
     backgroundColor: '#ffffff',
-    borderRadius: '16px',
-    padding: '36px 30px 28px 30px',
-    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04)',
+    borderRadius: '20px',
+    padding: '36px 32px 28px 32px',
+    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.12)',
     display: 'flex',
     flexDirection: 'column',
   },
   logoContainer: {
     display: 'flex',
     justifyContent: 'center',
-    marginBottom: '26px',
+    marginBottom: '28px',
   },
   logo: {
     height: '42px',
@@ -267,9 +238,9 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#64748b',
   },
   input: {
-    padding: '10px 12px',
+    padding: '10px 14px',
     borderRadius: '6px',
-    border: '1px solid #cbd5e1',
+    border: '1px solid #e2e8f0',
     fontSize: '13px',
     color: '#1e293b',
     outline: 'none',
@@ -280,6 +251,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     alignItems: 'center',
     fontSize: '12px',
+    marginTop: '2px',
   },
   checkboxLabel: {
     display: 'flex',
@@ -294,7 +266,7 @@ const styles: Record<string, React.CSSProperties> = {
     accentColor: '#0a5c83',
   },
   button: {
-    marginTop: '6px',
+    marginTop: '8px',
     padding: '12px',
     borderRadius: '6px',
     border: 'none',
@@ -303,15 +275,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: '14px',
     cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
   },
   linkButton: {
     background: 'none',
     border: 'none',
-    color: '#64748b',
+    color: '#0a5c83',
     fontSize: '12px',
     cursor: 'pointer',
     padding: 0,
-    textDecoration: 'underline',
+    fontWeight: 500,
   },
   linkButtonCenter: {
     background: 'none',
@@ -337,6 +310,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   stiersText: {
     fontSize: '12px',
+    fontWeight: 700,
+    color: '#0f4c81',
     letterSpacing: '0.5px',
   },
   error: { color: '#dc2626', fontSize: '12px', margin: 0 },

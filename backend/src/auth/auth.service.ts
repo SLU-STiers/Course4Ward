@@ -37,13 +37,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    await this.auditLog.record({
-      userId: user.id,
-      action: 'LOGIN',
-      entityType: 'User',
-      entityId: user.id,
-      ipAddress,
-    });
+    await this.auditLog.record({ userId: user.id, action: 'LOGIN' });
 
     return {
       ...(await this.issueTokens(user.id, user.userId, user.role)),
@@ -54,6 +48,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        mustResetPassword: user.mustResetPassword,
       },
     };
   }
@@ -116,8 +111,6 @@ export class AuthService {
     await this.auditLog.record({
       userId: payload.sub,
       action: 'PASSWORD_RESET',
-      entityType: 'User',
-      entityId: payload.sub,
     });
 
     return { message: 'Password updated successfully.' };

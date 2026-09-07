@@ -28,11 +28,8 @@ export class CourseInWardService {
         {
           patient_name: patientName,
           orders: orders.map((o) => ({
-            type: o.type,
-            description: o.description,
-            frequency: o.frequency,
-            dosage: o.dosage,
-            order_date: o.orderDate,
+            order_content: o.orderContent,
+            order_date: o.dateCreated,
           })),
         },
         { timeout: 30000 },
@@ -64,8 +61,7 @@ export class CourseInWardService {
     const summary = await this.prisma.courseInWard.create({
       data: {
         patientId,
-        aiGeneratedText: aiText,
-        currentText: aiText,
+        summaryContent: aiText,
         status: SummaryStatus.DRAFT_AI,
       },
     });
@@ -73,8 +69,6 @@ export class CourseInWardService {
     await this.auditLog.record({
       userId: requestedById,
       action: 'SUMMARY_GENERATED_AI',
-      entityType: 'CourseInWard',
-      entityId: summary.id,
     });
 
     return summary;
@@ -86,17 +80,14 @@ export class CourseInWardService {
     const updated = await this.prisma.courseInWard.update({
       where: { id },
       data: {
-        currentText: editedText,
+        summaryContent: editedText,
         status: SummaryStatus.DRAFT_EDITED,
-        version: existing.version + 1,
       },
     });
 
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_EDITED_MANUAL',
-      entityType: 'CourseInWard',
-      entityId: id,
     });
 
     return updated;
@@ -116,18 +107,14 @@ export class CourseInWardService {
     const updated = await this.prisma.courseInWard.update({
       where: { id },
       data: {
-        aiGeneratedText: aiText,
-        currentText: aiText,
+        summaryContent: aiText,
         status: SummaryStatus.DRAFT_AI,
-        version: existing.version + 1,
       },
     });
 
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_REGENERATED_AI',
-      entityType: 'CourseInWard',
-      entityId: id,
     });
 
     return updated;
@@ -140,16 +127,15 @@ export class CourseInWardService {
       where: { id },
       data: {
         status: SummaryStatus.APPROVED,
-        approvedById: physicianId,
-        approvedAt: new Date(),
+        approvedStatus: true,
+        validatorId: physicianId,
+        validatedAt: new Date(),
       },
     });
 
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_APPROVED',
-      entityType: 'CourseInWard',
-      entityId: id,
     });
 
     return approved;
