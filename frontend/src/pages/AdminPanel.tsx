@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Filter, ArrowUpDown } from 'lucide-react';
@@ -23,6 +23,39 @@ export function AdminPanel() {
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const knownRequestIds = useRef<Set<string> | null>(null);
+
+  const { data: resetRequestsData } = useQuery({
+    queryKey: ['reset-requests'],
+    queryFn: () => adminApi.getResetRequests().then((response) => response.data),
+    refetchInterval: 15000,
+  });
+
+  const pendingResetRequests = (resetRequestsData ?? []).filter(
+    (request: any) => request.status === 'PENDING',
+  );
+
+  useEffect(() => {
+    const currentRequestIds = new Set<string>(
+      pendingResetRequests.map((request: any) => String(request.id)),
+    );
+
+    if (knownRequestIds.current === null) {
+      knownRequestIds.current = currentRequestIds;
+      return;
+    }
+
+    const newRequest = pendingResetRequests.find(
+      (request: any) => !knownRequestIds.current?.has(request.id),
+    );
+    knownRequestIds.current = currentRequestIds;
+
+    if (newRequest && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification('New password reset request', {
+        body: `${newRequest.user.firstName} ${newRequest.user.lastName} submitted a request.`,
+      });
+    }
+  }, [pendingResetRequests]);
 
   const handleLogout = () => {
     logout(); // Clears Zustand state and deletes sessionStorage['cims_auth'] automatically
@@ -90,7 +123,18 @@ export function AdminPanel() {
           <h1 style={styles.headerTitle}>Admin</h1>
 
           <div style={styles.headerRight}>
-            <NotificationBell />
+            {/* Notification Bell */}
+            <button
+              type="button"
+              aria-label="Open password reset notifications"
+              style={styles.notificationBadge}
+              onClick={() => setActiveNav('requests')}
+            >
+              <span style={{ fontSize: '18px' }}>🔔</span>
+              {pendingResetRequests.length > 0 && (
+                <span style={styles.badgeCount}>{pendingResetRequests.length}</span>
+              )}
+            </button>
 
           </div>
         </header>
@@ -121,18 +165,17 @@ function DashboardView() {
     queryKey: ['audit-logs'],
     queryFn: () => adminApi.auditLogs({ take: 50 }).then((r) => r.data),
   });
+  const { data: summary } = useQuery({
+    queryKey: ['admin-analytics-summary'],
+    queryFn: () => adminApi.analyticsSummary().then((r) => r.data),
+  });
+  const { data: ordersAnalytics } = useQuery({
+    queryKey: ['admin-orders-analytics'],
+    queryFn: () => adminApi.ordersAnalytics('day').then((r) => r.data),
+  });
 
-  const fallbackLogs: ActivityRow[] = [
-    { id: '00001', name: 'Christine Brooks', profession: 'Doctor', date: '14 Feb 2026', time: '14:37:52' },
-    { id: '00002', name: 'Rosie Pearson', profession: 'Nurse', date: '14 Feb 2026', time: '14:37:52' },
-    { id: '00003', name: 'Darrell Caldwell', profession: 'Doctor', date: '14 Feb 2026', time: '14:37:52' },
-    { id: '00004', name: 'Gilbert Johnston', profession: 'Doctor', date: '14 Feb 2026', time: '14:37:52' },
-    { id: '00005', name: 'Alan Cain', profession: 'Nurse', date: '14 Feb 2026', time: '14:37:52' },
-    { id: '00006', name: 'Alfred Murray', profession: 'Nurse', date: '14 Feb 2026', time: '15:17:02' },
-  ];
-  const activityRows: ActivityRow[] = logs?.length
-    ? logs.map((log: any, index: number) => {
-        const date = new Date(log.createdAt);
+  const activityRows: ActivityRow[] = (logs ?? []).map((log: any, index: number) => {
+        const date = new Date(log.timeStamp);
         return {
           id: String(index + 1).padStart(5, '0'),
           name: log.user ? `${log.user.firstName} ${log.user.lastName}` : 'System User',
@@ -140,8 +183,7 @@ function DashboardView() {
           date: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
           time: date.toLocaleTimeString(),
         };
-      })
-    : fallbackLogs;
+      });
   const filteredActivity = activityRows
     .filter((row) =>
       `${row.id} ${row.name} ${row.profession}`.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -162,31 +204,31 @@ function DashboardView() {
       <div style={styles.metricsGrid}>
         <MetricCard
           title="Total Users"
-          value="67"
-          trend="8.5% Up from yesterday"
+          value={String(summary?.totalUsers ?? 0)}
+          trend={`${summary?.activeUsers ?? 0} active accounts`}
           isUp={true}
           icon="👤"
         />
         <MetricCard
-          title="CF4 Pending"
-          value="25"
-          trend="1.2% Up from yesterday"
+          title="Pending Resets"
+          value={String(summary?.pendingResets ?? 0)}
+          trend="Awaiting admin review"
+          isUp={true}
+          icon="🔐"
+        />
+        <MetricCard
+          title="Summaries Pending"
+          value={String(summary?.pendingSummaries ?? 0)}
+          trend={`${summary?.approvedSummaries ?? 0} approved`}
           isUp={true}
           icon="🕒"
         />
         <MetricCard
-          title="CF4 Approved"
-          value="24"
-          trend="4.3% Down from yesterday"
-          isUp={false}
-          icon="👤"
-        />
-        <MetricCard
-          title="CF4 Rejected"
-          value="13"
-          trend="3.1% Up from yesterday"
+          title="Orders Today"
+          value={String(ordersAnalytics?.[0]?.count ?? 0)}
+          trend="Latest daily bucket"
           isUp={true}
-          icon="👤"
+          icon="📋"
         />
       </div>
 
@@ -211,7 +253,7 @@ function DashboardView() {
               {openMenu === 'filter' && (
                 <div style={styles.activityMenu}>
                   <span style={styles.menuTitle}>Profession</span>
-                  {['all', 'doctor', 'nurse'].map((profession) => (
+                  {['all', 'PHYSICIAN', 'NURSE', 'CLAIMS_PROCESSOR', 'ADMIN'].map((profession) => (
                     <button type="button" key={profession} style={styles.menuOption} onClick={() => { setProfessionFilter(profession); setPage(1); }}>
                       {profession[0].toUpperCase() + profession.slice(1)}
                     </button>
@@ -252,6 +294,7 @@ function DashboardView() {
             {visibleActivity.map((row) => (
               <MockLogRow key={row.id} {...row} />
             ))}
+            {!visibleActivity.length && <tr><td style={styles.td} colSpan={5}>No activity logs found.</td></tr>}
           </tbody>
         </table>
         <div style={styles.activityPagination}>
@@ -318,6 +361,8 @@ function AccountsPanel() {
     role: 'NURSE',
     temporaryPassword: '',
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', role: 'NURSE', isActive: true });
 
   const createUser = useMutation({
     mutationFn: () => adminApi.createUser(form),
@@ -331,6 +376,19 @@ function AccountsPanel() {
     mutationFn: (id: string) => adminApi.deactivateUser(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
   });
+
+  const updateUser = useMutation({
+    mutationFn: () => adminApi.updateUser(editingId as string, editForm),
+    onSuccess: () => {
+      setEditingId(null);
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+
+  const beginEdit = (user: any) => {
+    setEditingId(user.id);
+    setEditForm({ firstName: user.firstName, lastName: user.lastName, role: user.role, isActive: user.isActive });
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '24px' }}>
@@ -400,19 +458,39 @@ function AccountsPanel() {
                 <td style={styles.td}>{u.role}</td>
                 <td style={styles.td}>{u.isActive ? 'Active' : 'Deactivated'}</td>
                 <td style={styles.td}>
-                  {u.isActive && (
-                    <button
-                      onClick={() => deactivate.mutate(u.id)}
-                      style={styles.deactivateButton}
-                    >
-                      Deactivate
-                    </button>
-                  )}
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => beginEdit(u)} style={styles.actionButton}>Edit</button>
+                    {u.isActive ? (
+                      <button onClick={() => deactivate.mutate(u.id)} style={styles.deactivateButton}>Deactivate</button>
+                    ) : (
+                      <button onClick={() => { beginEdit(u); setEditForm((current) => ({ ...current, isActive: true })); }} style={styles.actionButton}>Reactivate</button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        {editingId && (
+          <div style={{ marginTop: '20px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+            <h4 style={{ margin: '0 0 12px', color: '#0f172a' }}>Edit Account</h4>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <input style={styles.formInput} value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} />
+              <input style={styles.formInput} value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} />
+              <select style={styles.formInput} value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
+                <option value="PHYSICIAN">Physician</option>
+                <option value="NURSE">Nurse</option>
+                <option value="CLAIMS_PROCESSOR">Claims Processor</option>
+                <option value="ADMIN">Admin</option>
+              </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+                <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} /> Active
+              </label>
+              <button style={styles.primaryButton} onClick={() => updateUser.mutate()}>Save</button>
+              <button style={styles.secondaryButton} onClick={() => setEditingId(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -425,6 +503,7 @@ function RequestsView() {
   const qc = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const itemsPerPage = 5;
 
   // Fetch password reset requests from backend
@@ -436,30 +515,27 @@ function RequestsView() {
   // Handle approving/resetting password request
   const handleResetPassword = useMutation({
     mutationFn: (requestId: string) => adminApi.approveResetRequest(requestId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['reset-requests'] }),
+    onSuccess: (response: any) => {
+      setTemporaryPassword(response.data.temporaryPassword);
+      qc.invalidateQueries({ queryKey: ['reset-requests'] });
+    },
   });
 
-  // Fallback mock data matching your mockup UI image
-  const mockRequests = [
-    { id: 'RST-0001', name: 'Christine Brooks', role: 'Doctor', email: 'christine.brooks@courseinward.com', date: '14 Feb 2026', time: '10:32 AM', status: 'Pending' },
-    { id: 'RST-0002', name: 'Rosie Pearson', role: 'Nurse', email: 'rosie.pearson@courseinward.com', date: '14 Feb 2026', time: '09:15 AM', status: 'Pending' },
-    { id: 'RST-0003', name: 'Darrell Caldwell', role: 'Doctor', email: 'darrell.caldwell@courseinward.com', date: '14 Feb 2026', time: '08:47 AM', status: 'Pending' },
-    { id: 'RST-0004', name: 'Gilbert Johnston', role: 'Doctor', email: 'gilbert.johnston@courseinward.com', date: '14 Feb 2026', time: '07:58 AM', status: 'Pending' },
-    { id: 'RST-0005', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
-    { id: 'RST-0006', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
-    { id: 'RST-0007', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
-    { id: 'RST-0008', name: 'Gilbert Johnston', role: 'Doctor', email: 'gilbert.johnston@courseinward.com', date: '14 Feb 2026', time: '07:58 AM', status: 'Pending' },
-    { id: 'RST-0009', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
-    { id: 'RST-0010', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },
-    { id: 'RST-0011', name: 'Alan Cain', role: 'Nurse', email: 'alan.cain@courseinward.com', date: '14 Feb 2026', time: '07:30 AM', status: 'Pending' },  
-  ];
-
-  const list = requestsData || mockRequests;
+  const list = (requestsData ?? []).map((request: any) => ({
+    ...request,
+    name: `${request.user.firstName} ${request.user.lastName}`,
+    role: request.user.role,
+    userId: request.user.userId,
+    date: new Date(request.requestedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+    time: new Date(request.requestedAt).toLocaleTimeString(),
+    status: request.status,
+  }));
 
   // Search filter
   const filteredList = list.filter((req: any) =>
     req.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (req.ipAddress ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -479,6 +555,12 @@ function RequestsView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div style={styles.cardContainer}>
+        {temporaryPassword && (
+          <div style={styles.resetResult}>
+            Temporary password for the user: <strong>{temporaryPassword}</strong>. Share it securely; it is only shown here once.
+            <button type="button" style={styles.dismissButton} onClick={() => setTemporaryPassword(null)}>Dismiss</button>
+          </div>
+        )}
         {/* Header Bar with Search */}
         <div style={styles.requestsHeader}>
           <div>
@@ -507,7 +589,8 @@ function RequestsView() {
             <tr>
               <th style={styles.th}>Request ID</th>
               <th style={styles.th}>User</th>
-              <th style={styles.th}>Email</th>
+              <th style={styles.th}>User ID</th>
+              <th style={styles.th}>Requester IP</th>
               <th style={styles.th}>Requested On</th>
               <th style={styles.th}>Status</th>
               <th style={styles.th}>Action</th>
@@ -523,7 +606,10 @@ function RequestsView() {
                   <div style={{ fontWeight: 700, color: '#0f172a' }}>{item.name}</div>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{item.role}</div>
                 </td>
-                <td style={{ ...styles.td, color: '#475569' }}>{item.email}</td>
+                <td style={{ ...styles.td, color: '#475569' }}>{item.userId}</td>
+                <td style={{ ...styles.td, color: '#475569', fontFamily: 'monospace' }}>
+                  {item.ipAddress ?? 'Unavailable'}
+                </td>
                 <td style={styles.td}>
                   <div style={{ fontWeight: 600, color: '#0f172a' }}>{item.date}</div>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{item.time}</div>
@@ -532,12 +618,7 @@ function RequestsView() {
                   <span style={styles.pendingBadge}>{item.status}</span>
                 </td>
                 <td style={styles.td}>
-                  <button
-                    style={styles.actionButton}
-                    onClick={() => handleResetPassword.mutate(item.id)}
-                  >
-                    Reset Password
-                  </button>
+                  {item.status === 'PENDING' && <button style={styles.actionButton} onClick={() => handleResetPassword.mutate(item.id)}>Approve reset</button>}
                 </td>
               </tr>
             ))}
@@ -1074,6 +1155,32 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '6px',
     fontSize: '12px',
     fontWeight: 600,
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    padding: '10px 14px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '6px',
+    backgroundColor: '#ffffff',
+    color: '#475569',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  resetResult: {
+    marginBottom: '16px',
+    padding: '12px 14px',
+    borderRadius: '8px',
+    backgroundColor: '#ecfdf5',
+    color: '#166534',
+    fontSize: '13px',
+    lineHeight: 1.5,
+  },
+  dismissButton: {
+    marginLeft: '10px',
+    border: 0,
+    background: 'transparent',
+    color: '#166534',
+    fontWeight: 700,
     cursor: 'pointer',
   },
 

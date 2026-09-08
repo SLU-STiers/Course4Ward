@@ -34,7 +34,14 @@ export class PatientsService {
   async findAssignedTo(userId: string) {
     return this.prisma.patient.findMany({
       where: {
-        admissions: { some: { physicianId: userId, dischargeDate: null } },
+        admissions: { some: { physicianId: userId } },
+      },
+      include: {
+        admissions: {
+          where: { physicianId: userId },
+          orderBy: { admissionDate: 'desc' },
+          select: { id: true, admissionDate: true, dischargeDate: true },
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });

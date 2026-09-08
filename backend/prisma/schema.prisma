@@ -202,7 +202,9 @@ model SummaryApprovalRequest {
 model PasswordResetRequest {
   id          String      @id @default(uuid())
   userId      String
+  ipAddress   String?
   token       String      @unique
+  temporaryPassword String?
   requestedAt DateTime    @default(now())
   expiresAt   DateTime
   resolvedAt  DateTime?
