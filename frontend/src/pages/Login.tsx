@@ -8,7 +8,9 @@ import { ROLE_PATH } from '../routes/roleRoutes';
 // Import images from src/Img/
 import logoImg from '../Img/Course4Ward-Logo.png';
 import bgImg from '../Img/Course4Ward-Background.png';
-import foregroundImg from '../Img/Course4Ward-Foreground.png';
+import stiersImg from '../Img/S-tiers.png';
+import viewImg from '../Img/view.png';
+import hideImg from '../Img/hide.png';
 
 const RESET_TOKEN_STORAGE_KEY = 'cims_password_reset_token';
 
@@ -18,6 +20,7 @@ export function Login() {
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -106,48 +109,54 @@ export function Login() {
         backgroundImage: `url(${bgImg})`,
       }}
     >
-      {/* Central Blue Banner / Foreground Section */}
-      <div
-        style={{
-          ...styles.blueBannerContainer,
-          backgroundImage: `url(${foregroundImg})`,
-        }}
-      >
-        {/* Floating White Login Card */}
-        <div style={styles.card}>
-          {/* Logo */}
-          <div style={styles.logoContainer}>
-            <img
-              src={logoImg}
-              alt="Course4Ward Logo"
-              style={styles.logo}
-            />
-          </div>
+      {/* Floating White Login Card */}
+      <div style={styles.card}>
+        {/* Logo */}
+        <div style={styles.logoContainer}>
+          <img
+            src={logoImg}
+            alt="Course4Ward Logo"
+            style={styles.logo}
+          />
+        </div>
 
-          {!showReset ? (
-            <form onSubmit={handleLogin} style={styles.form}>
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>User ID</label>
-                <input
-                  style={styles.input}
-                  value={userId}
-                  onChange={(e) => setUserId(e.target.value)}
-                  placeholder="Enter User ID..."
-                  required
-                />
-              </div>
+        {!showReset ? (
+          <form onSubmit={handleLogin} style={styles.form}>
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>User ID</label>
+              <input
+                style={styles.input}
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                placeholder="Enter User ID..."
+                required
+              />
+            </div>
 
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>Password</label>
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Password</label>
+              <div style={styles.passwordWrapper}>
                 <input
-                  style={styles.input}
-                  type="password"
+                  style={styles.passwordInput}
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter Password..."
                   required
                 />
+                <button
+                  type="button"
+                  style={styles.toggleButton}
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  <img
+                    src={showPassword ? hideImg : viewImg}
+                    alt={showPassword ? 'Hide password' : 'Show password'}
+                    style={styles.toggleIcon}
+                  />
+                </button>
               </div>
+            </div>
 
               {resetMessage && <p style={styles.info}>{resetMessage}</p>}
 
@@ -173,47 +182,47 @@ export function Login() {
                 </div>
               )}
 
-              {error && <p style={styles.error}>{error}</p>}
+            {error && <p style={styles.error}>{error}</p>}
 
-              {/* Options Row */}
-              <div style={styles.optionsRow}>
-                <label style={styles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    style={styles.checkbox}
-                  />
-                  Remember me
-                </label>
-
-                <button
-                  type="button"
-                  style={styles.linkButton}
-                  onClick={() => setShowReset(true)}
-                >
-                  Forgot Password?
-                </button>
-              </div>
-
-              <button style={styles.button} type="submit" disabled={loading}>
-                {loading ? 'Signing in...' : 'Login'}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleResetRequest} style={styles.form}>
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>User ID</label>
+            {/* Options Row */}
+            <div style={styles.optionsRow}>
+              <label style={styles.checkboxLabel}>
                 <input
-                  style={styles.input}
-                  value={resetUserId}
-                  onChange={(e) => setResetUserId(e.target.value)}
-                  placeholder="Enter User ID..."
-                  required
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  style={styles.checkbox}
                 />
-              </div>
+                Remember me
+              </label>
 
-              {resetMessage && <p style={styles.info}>{resetMessage}</p>}
+              <button
+                type="button"
+                style={styles.linkButton}
+                onClick={() => setShowReset(true)}
+              >
+                Forgot Password?
+              </button>
+            </div>
+
+            <button style={styles.button} type="submit" disabled={loading}>
+              {loading ? 'Signing in...' : 'Login'}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleResetRequest} style={styles.form}>
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>User ID</label>
+              <input
+                style={styles.input}
+                value={resetUserId}
+                onChange={(e) => setResetUserId(e.target.value)}
+                placeholder="Enter User ID..."
+                required
+              />
+            </div>
+
+            {resetMessage && <p style={styles.info}>{resetMessage}</p>}
 
               {!temporaryPassword && (
                 <button style={styles.button} type="submit">
@@ -221,21 +230,24 @@ export function Login() {
                 </button>
               )}
 
-              <button
-                type="button"
-                style={styles.linkButtonCenter}
-                onClick={() => setShowReset(false)}
-              >
-                Back to login
-              </button>
-            </form>
-          )}
+            <button
+              type="button"
+              style={styles.linkButtonCenter}
+              onClick={() => setShowReset(false)}
+            >
+              Back to login
+            </button>
+          </form>
+        )}
 
-          {/* Footer / Developed by */}
-          <div style={styles.footer}>
-            <span style={styles.footerText}>Developed by:</span>
-            <span style={styles.stiersText}>S-TIERS</span>
-          </div>
+        {/* Footer / Developed by */}
+        <div style={styles.footer}>
+          <span style={styles.footerText}>Developed by:</span>
+          <img
+            src={stiersImg}
+            alt="S-TIERS"
+            style={styles.stiersLogo}
+          />
         </div>
       </div>
     </div>
@@ -249,7 +261,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: 'rgba(124, 117, 117, 0.1)',
+    backgroundBlendMode: 'darken',
     backgroundRepeat: 'repeat',
     backgroundSize: '900px auto',
     backgroundPosition: 'center',
@@ -257,27 +270,13 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '20px',
     boxSizing: 'border-box',
   },
-  blueBannerContainer: {
-    width: '100%',
-    maxWidth: '1080px',
-    minHeight: '620px',
-    borderRadius: '16px',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-    padding: '20px',
-    boxSizing: 'border-box',
-  },
   card: {
     width: '100%',
-    maxWidth: '380px',
+    maxWidth: '420px',
     backgroundColor: '#ffffff',
-    borderRadius: '20px',
-    padding: '36px 32px 28px 32px',
-    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.12)',
+    borderRadius: '24px',
+    padding: '40px 36px 32px 36px',
+    boxShadow: '0 20px 40px rgba(0, 0, 0, 0.08), 0 8px 16px rgba(0, 0, 0, 0.06)',
     display: 'flex',
     flexDirection: 'column',
   },
@@ -287,7 +286,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '28px',
   },
   logo: {
-    height: '42px',
+    height: '85px',
     objectFit: 'contain',
   },
   form: {
@@ -301,24 +300,56 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '6px',
   },
   label: {
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: 600,
     color: '#64748b',
   },
   input: {
-    padding: '10px 14px',
-    borderRadius: '6px',
+    padding: '12px 14px',
+    borderRadius: '8px',
     border: '1px solid #e2e8f0',
-    fontSize: '13px',
+    fontSize: '14px',
     color: '#1e293b',
     outline: 'none',
     backgroundColor: '#ffffff',
+  },
+  passwordWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    width: '100%',
+    padding: '12px 42px 12px 14px',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    fontSize: '14px',
+    color: '#1e293b',
+    outline: 'none',
+    backgroundColor: '#ffffff',
+    boxSizing: 'border-box',
+  },
+  toggleButton: {
+    position: 'absolute',
+    right: '12px',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleIcon: {
+    width: '20px',
+    height: '20px',
+    opacity: 0.6,
   },
   optionsRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    fontSize: '12px',
+    fontSize: '13px',
     marginTop: '2px',
   },
   checkboxLabel: {
@@ -327,21 +358,21 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '6px',
     color: '#64748b',
     cursor: 'pointer',
-    fontSize: '12px',
+    fontSize: '13px',
   },
   checkbox: {
     cursor: 'pointer',
     accentColor: '#0a5c83',
   },
   button: {
-    marginTop: '8px',
+    marginTop: '10px',
     padding: '12px',
-    borderRadius: '6px',
+    borderRadius: '8px',
     border: 'none',
     backgroundColor: '#0a5c83',
     color: '#ffffff',
     fontWeight: 600,
-    fontSize: '14px',
+    fontSize: '15px',
     cursor: 'pointer',
     transition: 'background-color 0.2s ease',
   },
@@ -349,7 +380,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none',
     border: 'none',
     color: '#0a5c83',
-    fontSize: '12px',
+    fontSize: '13px',
     cursor: 'pointer',
     padding: 0,
     fontWeight: 500,
@@ -358,29 +389,27 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'none',
     border: 'none',
     color: '#0a5c83',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: 600,
     cursor: 'pointer',
     padding: '4px',
     marginTop: '6px',
   },
   footer: {
-    marginTop: '32px',
+    marginTop: '36px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '6px',
+    gap: '8px',
   },
   footerText: {
-    fontSize: '11px',
+    fontSize: '12px',
     color: '#94a3b8',
     fontWeight: 500,
   },
-  stiersText: {
-    fontSize: '12px',
-    fontWeight: 700,
-    color: '#0f4c81',
-    letterSpacing: '0.5px',
+  stiersLogo: {
+    height: '60px',
+    objectFit: 'contain',
   },
   error: { color: '#dc2626', fontSize: '12px', margin: 0 },
   info: { color: '#0a5c83', fontSize: '12px', margin: 0 },

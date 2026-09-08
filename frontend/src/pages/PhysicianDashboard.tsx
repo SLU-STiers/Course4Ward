@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { claimsApi, courseInWardApi, ordersApi, patientsApi } from '../services/domainApi';
 import type { Patient, PhysicianRequest } from '../types';
-import logoImg from '../Img/Course4Ward-Logo.png';
+import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { NotificationBell } from '../components/layout/NotificationBell';
 import searchImg from '../Img/search.png';
-import notificationImg from '../Img/notification.png';
 import documentImg from '../Img/document.png';
+import requestsIcon from '../Img/requests.png';
 
 type TabType = 'overview' | 'manage' | 'requests';
 
@@ -16,22 +17,35 @@ const CARD_SHADOW = '0 8px 28px rgba(16, 78, 101, 0.08)';
 type PatientStatus = 'admitted' | 'discharged';
 type OverviewFilter = 'all' | PatientStatus;
 
-type DashboardPatient = Patient & { status: PatientStatus; name: string; patientId: string; admissionDate: string; color: string };
-
-const patientColors = ['#ef4444', '#22c55e', '#6366f1', '#eab308', '#06b6d4', '#f97316'];
-
-function mapPatient(patient: Patient, index: number): DashboardPatient {
-  const admission = patient.admissions?.[0];
-  const admissionDate = admission?.admissionDate ? new Date(admission.admissionDate) : null;
-  return {
-    ...patient,
-    name: `${patient.firstName} ${patient.lastName}`,
-    patientId: patient.id,
-    admissionDate: admissionDate ? admissionDate.toLocaleDateString('en-GB') : '—',
-    color: patientColors[index % patientColors.length],
-    status: admission?.dischargeDate ? 'discharged' : 'admitted',
-  };
-}
+const MOCK_PATIENTS: {
+  id: string;
+  name: string;
+  patientId: string;
+  admissionDate: string;
+  color: string;
+  status: PatientStatus;
+}[] = [
+  { id: '1', name: 'Sarah Brown', patientId: '1123', admissionDate: '15/04/2026', color: '#ef4444', status: 'admitted' },
+  { id: '2', name: 'Michael Owen', patientId: '1122', admissionDate: '15/04/2026', color: '#22c55e', status: 'admitted' },
+  { id: '3', name: 'Mary Jane', patientId: '1121', admissionDate: '14/04/2026', color: '#84cc16', status: 'admitted' },
+  { id: '4', name: 'Peter Doolie', patientId: '1120', admissionDate: '14/04/2026', color: '#6366f1', status: 'admitted' },
+  { id: '5', name: 'Peter Doolie', patientId: '1119', admissionDate: '14/04/2026', color: '#ef4444', status: 'admitted' },
+  { id: '6', name: 'Peter Doolie', patientId: '1118', admissionDate: '15/04/2026', color: '#eab308', status: 'admitted' },
+  { id: '7', name: 'Liam Park', patientId: '1117', admissionDate: '15/04/2026', color: '#d946ef', status: 'admitted' },
+  { id: '8', name: 'Nora Reyes', patientId: '1116', admissionDate: '16/04/2026', color: '#f87171', status: 'admitted' },
+  { id: '9', name: 'James Cruz', patientId: '1115', admissionDate: '16/04/2026', color: '#06b6d4', status: 'admitted' },
+  { id: '10', name: 'Elena Santos', patientId: '1114', admissionDate: '17/04/2026', color: '#0ea5e9', status: 'admitted' },
+  { id: '11', name: 'Carlos Vega', patientId: '1113', admissionDate: '17/04/2026', color: '#f97316', status: 'admitted' },
+  { id: '12', name: 'Ava Lim', patientId: '1112', admissionDate: '18/04/2026', color: '#14b8a6', status: 'admitted' },
+  { id: '13', name: 'Ben Torres', patientId: '1111', admissionDate: '10/04/2026', color: '#64748b', status: 'discharged' },
+  { id: '14', name: 'Mia Chen', patientId: '1110', admissionDate: '09/04/2026', color: '#a855f7', status: 'discharged' },
+  { id: '15', name: 'Owen Blake', patientId: '1109', admissionDate: '08/04/2026', color: '#e11d48', status: 'discharged' },
+  { id: '16', name: 'Ruby Diaz', patientId: '1108', admissionDate: '07/04/2026', color: '#65a30d', status: 'discharged' },
+  { id: '17', name: 'Noah Kim', patientId: '1107', admissionDate: '06/04/2026', color: '#2563eb', status: 'discharged' },
+  { id: '18', name: 'Ivy Morales', patientId: '1106', admissionDate: '05/04/2026', color: '#db2777', status: 'discharged' },
+  { id: '19', name: 'Leo Santos', patientId: '1105', admissionDate: '04/04/2026', color: '#ca8a04', status: 'discharged' },
+  { id: '20', name: 'Paula Reed', patientId: '1104', admissionDate: '03/04/2026', color: '#7c3aed', status: 'discharged' },
+];
 
 const INITIAL_TODOS = [
   'Review newly admitted patients',
@@ -61,12 +75,9 @@ export function PhysicianDashboard() {
 
   return (
     <div style={shell.appContainer}>
-      <aside style={shell.sidebar}>
-        <div style={shell.sidebarLogoContainer}>
-          <img src={logoImg} alt="Course Toward" style={shell.sidebarLogo} />
-        </div>
-
-        <nav style={shell.sidebarNav}>
+      <CollapsibleSidebar
+        nav={
+          <>
           <NavItem
             label="Overview"
             icon={<OverviewIcon />}
@@ -81,14 +92,14 @@ export function PhysicianDashboard() {
           />
           <NavItem
             label="Requests"
-            icon={<RequestsIcon />}
+            icon={<img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />}
             active={activeTab === 'requests'}
             onClick={() => setActiveTab('requests')}
           />
         </nav>
 
         <div style={shell.sidebarProfile}>
-          <div style={shell.profileAvatar}>{initials}</div>
+          <div style={shell.profileAvatar}>JD</div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={shell.profileName}>Dr. {displayName}</div>
             <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
@@ -96,19 +107,17 @@ export function PhysicianDashboard() {
           <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
             Log out
           </button>
-        </div>
-      </aside>
+          </div>
+        }
+      />
 
       <div style={shell.mainWrapper}>
         <header style={shell.header}>
           <div>
-            <h1 style={shell.headerTitle}>Good Day! Dr. {user?.firstName ?? 'Physician'}</h1>
+            <h1 style={shell.headerTitle}>Good Day! Dr. John</h1>
             <p style={shell.headerSubtitle}>We are pleased to have you!</p>
           </div>
-          <div style={shell.bellWrap}>
-            <img src={notificationImg} alt="Notifications" style={{ width: 18, height: 18 }} />
-            <span style={shell.bellBadge}>2</span>
-          </div>
+          <NotificationBell />
         </header>
 
         <main style={shell.content}>
@@ -149,7 +158,7 @@ function NavItem({
 
 function OverviewIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
       <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
       <rect x="9" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
       <rect x="1.5" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
@@ -160,7 +169,7 @@ function OverviewIcon() {
 
 function ManageIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
       <path
         d="M3 6.5h10v6A1.5 1.5 0 0 1 11.5 14h-7A1.5 1.5 0 0 1 3 12.5v-6z"
         stroke="currentColor"
@@ -169,25 +178,6 @@ function ManageIcon() {
       <path d="M6 6.5V5a2 2 0 0 1 4 0v1.5" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
-}
-
-function RequestsIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M3 11.5V4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v4A1.5 1.5 0 0 1 11.5 10H6l-3 2.5z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path d="M8 5.5v3M6.5 7h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function parseAdmissionDate(value: string) {
-  const [dd, mm, yyyy] = value.split('/').map(Number);
-  return new Date(yyyy, (mm || 1) - 1, dd || 1);
 }
 
 function monthCells(year: number, month: number) {
@@ -207,7 +197,6 @@ function OverviewView() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>('all');
   const [checkedIds, setCheckedIds] = useState<Record<string, boolean>>({});
-  const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 
   useEffect(() => {
@@ -287,19 +276,8 @@ function OverviewView() {
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
-                  <td style={{ ...overview.td, width: 28 }}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(checkedIds[p.id])}
-                      onChange={() =>
-                        setCheckedIds((prev) => ({ ...prev, [p.id]: !prev[p.id] }))
-                      }
-                      style={overview.checkbox}
-                      aria-label={`Select ${p.name}`}
-                    />
-                  </td>
                   <td style={{ ...overview.td, width: 22 }}>
-                    <span style={{ ...overview.dot, backgroundColor: p.color }} />
+                    <span style={{ ...overview.dot, backgroundColor: p.status === 'admitted' ? '#22c55e' : '#ef4444' }} />
                   </td>
                   <td style={{ ...overview.td, fontWeight: 600, color: '#1e293b' }}>{p.name}</td>
                   <td style={{ ...overview.td, color: '#64748b' }}>{p.patientId}</td>
@@ -455,11 +433,17 @@ function TodoListWidget() {
   const [todos, setTodos] = useState(INITIAL_TODOS.map((text) => ({ text, done: false })));
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   const addNote = () => {
     const text = draft.trim();
     if (!text) return;
-    setTodos((prev) => [...prev, { text, done: false }]);
+    if (editingIndex === null) {
+      setTodos((prev) => [...prev, { text, done: false }]);
+    } else {
+      setTodos((prev) => prev.map((item, index) => (index === editingIndex ? { ...item, text } : item)));
+      setEditingIndex(null);
+    }
     setDraft('');
     setAdding(false);
   };
@@ -468,7 +452,7 @@ function TodoListWidget() {
     <section style={{ ...overview.widget, flex: 1 }}>
       <div style={overview.todoHeader}>
         <h3 style={{ ...overview.sectionTitle, margin: 0 }}>To do List</h3>
-        <button type="button" style={overview.addNotesBtn} onClick={() => setAdding((v) => !v)}>
+        <button type="button" style={overview.addNotesBtn} onClick={() => { setEditingIndex(null); setDraft(''); setAdding((v) => !v); }}>
           Add Notes +
         </button>
       </div>
@@ -482,13 +466,13 @@ function TodoListWidget() {
             onKeyDown={(e) => e.key === 'Enter' && addNote()}
           />
           <button type="button" onClick={addNote} style={overview.addNotesBtn}>
-            Save
+            {editingIndex === null ? 'Save' : 'Update'}
           </button>
         </div>
       )}
       <ul style={overview.todoList}>
         {todos.map((item, idx) => (
-          <li key={`${item.text}-${idx}`} style={overview.todoItem}>
+          <li key={`${item.text}-${idx}`} style={{ ...overview.todoItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <label style={overview.todoLabel}>
               <input
                 type="checkbox"
@@ -502,6 +486,10 @@ function TodoListWidget() {
                 {item.text}
               </span>
             </label>
+            <div style={overview.todoActions}>
+              <button type="button" style={overview.todoActionBtn} onClick={() => { setEditingIndex(idx); setDraft(item.text); setAdding(true); }}>Edit</button>
+              <button type="button" style={overview.todoDeleteBtn} onClick={() => setTodos((prev) => prev.filter((_, index) => index !== idx))}>Delete</button>
+            </div>
           </li>
         ))}
       </ul>
@@ -898,12 +886,12 @@ function CalendarModal({
     </div>
   );
 }
+void CalendarModal;
 function ManageView() {
   const user = useAuthStore((s) => s.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [search, setSearch] = useState('');
-  const [showCalendar, setShowCalendar] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -917,6 +905,7 @@ function ManageView() {
   const [summaryByPatient, setSummaryByPatient] = useState<Record<string, string>>({});
   const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
+  const [selectedOrderDate, setSelectedOrderDate] = useState('2026-04-15');
 
   useEffect(() => {
     patientsApi.assignedToMe().then(({ data }) => {
@@ -1041,7 +1030,7 @@ function ManageView() {
                 >
                   <td style={overview.td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ ...overview.dot, backgroundColor: p.color }} />
+                      <span style={{ ...overview.dot, backgroundColor: p.status === 'admitted' ? '#22c55e' : '#ef4444' }} />
                       <span style={{ fontWeight: 600, color: '#334155' }}>{p.name}</span>
                     </div>
                   </td>
@@ -1085,9 +1074,11 @@ function ManageView() {
               <img src={documentImg} alt="Doctor's order" style={{ width: 18, height: 18 }} />
               <h2 style={manage.panelTitle}>Doctor’s Order</h2>
             </div>
-            <button type="button" style={manage.calendarBtn} onClick={() => setShowCalendar(true)}>
-              📅 Calendar
-            </button>
+            <div style={manage.dateNavigator}>
+              <button type="button" style={manage.dateNavBtn} onClick={() => setSelectedOrderDate((value) => shiftDate(value, -1))}>‹</button>
+              <input type="date" value={selectedOrderDate} onChange={(event) => setSelectedOrderDate(event.target.value)} style={manage.dateInput} aria-label="Order date" />
+              <button type="button" style={manage.dateNavBtn} onClick={() => setSelectedOrderDate((value) => shiftDate(value, 1))}>›</button>
+            </div>
           </div>
 
           <div style={manage.patientMeta}>
@@ -1133,6 +1124,11 @@ function ManageView() {
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {submitted && <span style={{ fontSize: 12, color: '#166534' }}>Orders saved</span>}
+              {editingOrders && (
+                <button type="button" style={manage.cancelBtn} onClick={() => setEditingOrders(false)}>
+                  Cancel
+                </button>
+              )}
               <button
                 type="button"
                 style={manage.submitBtn}
@@ -1206,13 +1202,14 @@ function ManageView() {
         </section>
       </div>
 
-      <CalendarModal
-        open={showCalendar}
-        onClose={() => setShowCalendar(false)}
-        focusDate={admissionDate}
-      />
     </div>
   );
+}
+
+function shiftDate(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 const shell: Record<string, React.CSSProperties> = {
@@ -1249,20 +1246,20 @@ const shell: Record<string, React.CSSProperties> = {
   sidebarNav: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 4,
+    gap: 8,
     padding: '0 14px',
     flex: 1,
   },
   navButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: '10px 12px',
+    gap: 16,
+    padding: '14px 14px',
     border: 'none',
     backgroundColor: 'transparent',
     borderRadius: 8,
     color: '#64748b',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 600,
     cursor: 'pointer',
     textAlign: 'left',
@@ -1274,8 +1271,8 @@ const shell: Record<string, React.CSSProperties> = {
   },
   navIcon: {
     display: 'flex',
-    width: 18,
-    height: 18,
+    width: 22,
+    height: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1332,6 +1329,9 @@ const shell: Record<string, React.CSSProperties> = {
   },
   mainWrapper: {
     flex: 1,
+    width: '100%',
+    maxWidth: 1440,
+    margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
     minWidth: 0,
@@ -1606,6 +1606,25 @@ const overview: Record<string, React.CSSProperties> = {
     color: '#334155',
     cursor: 'pointer',
   },
+  todoActions: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 },
+  todoActionBtn: {
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#2563eb',
+    padding: '2px 4px',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  todoDeleteBtn: {
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#dc2626',
+    padding: '2px 4px',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
   pendingChip: {
     backgroundColor: '#fef3c7',
     color: '#b45309',
@@ -1693,6 +1712,26 @@ const manage: Record<string, React.CSSProperties> = {
     color: TEAL,
     cursor: 'pointer',
   },
+  dateNavigator: { display: 'flex', alignItems: 'center', gap: 8 },
+  dateNavBtn: {
+    width: 28,
+    height: 28,
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#64748b',
+    fontSize: 18,
+    padding: 0,
+    cursor: 'pointer',
+  },
+  dateInput: {
+    width: 126,
+    border: '1px solid #dbe3ec',
+    borderRadius: 8,
+    padding: '7px 8px',
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+    fontSize: 12,
+  },
   patientMeta: {
     marginBottom: 12,
   },
@@ -1743,8 +1782,17 @@ const manage: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     cursor: 'pointer',
   },
-  aiCard: {
+  cancelBtn: {
+    border: '1px solid #cbd5e1',
     backgroundColor: '#ffffff',
+    color: '#64748b',
+    borderRadius: 10,
+    padding: '8px 16px',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  aiCard: {
+    backgroundColor: '#f3e8ff',
     borderRadius: 20,
     padding: 18,
     boxShadow: CARD_SHADOW,
@@ -1762,8 +1810,8 @@ const manage: Record<string, React.CSSProperties> = {
     color: '#0f172a',
   },
   aiBadge: {
-    backgroundColor: '#e0f2fe',
-    color: TEAL,
+    backgroundColor: '#d8a0f4',
+    color: '#7e22ce',
     fontSize: 11,
     fontWeight: 700,
     padding: '4px 10px',
@@ -1773,7 +1821,7 @@ const manage: Record<string, React.CSSProperties> = {
     margin: '0 0 14px',
     fontSize: 13,
     lineHeight: 1.55,
-    color: '#334155',
+    color: '#1e293b',
   },
   aiEditor: {
     width: '100%',

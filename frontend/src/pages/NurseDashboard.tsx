@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import logoImg from '../Img/Course4Ward-Logo.png';
+import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { NotificationBell } from '../components/layout/NotificationBell';
 import searchImg from '../Img/search.png';
-import notificationImg from '../Img/notification.png';
 import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';
@@ -269,11 +269,9 @@ export function NurseDashboard() {
 
   return (
     <div style={shell.appContainer}>
-      <aside style={shell.sidebar}>
-        <div style={shell.sidebarLogoContainer}>
-          <img src={logoImg} alt="Course Toward" style={shell.sidebarLogo} />
-        </div>
-        <nav style={shell.sidebarNav}>
+      <CollapsibleSidebar
+        nav={
+          <>
           <NavItem
             label="Management"
             icon={<ManagementIcon />}
@@ -286,8 +284,10 @@ export function NurseDashboard() {
             active={activeTab === 'patient'}
             onClick={() => setActiveTab('patient')}
           />
-        </nav>
-        <div style={shell.sidebarProfile}>
+          </>
+        }
+        profile={
+          <div style={shell.sidebarProfile}>
           <div style={shell.profileAvatar}>AT</div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={shell.profileName}>Adrian Tabalvaro</div>
@@ -296,16 +296,14 @@ export function NurseDashboard() {
           <button type="button" style={shell.logoutBtn} onClick={handleLogout}>
             Log out
           </button>
-        </div>
-      </aside>
+          </div>
+        }
+      />
 
       <div style={shell.mainWrapper}>
         <header style={shell.header}>
           <h1 style={shell.headerTitle}>{activeTab === 'management' ? 'Management' : 'Patient Management'}</h1>
-          <div style={shell.bellWrap}>
-            <img src={notificationImg} alt="Notifications" style={{ width: 18, height: 18 }} />
-            <span style={shell.bellBadge}>2</span>
-          </div>
+          <NotificationBell />
         </header>
 
         <main style={shell.content}>
@@ -346,7 +344,7 @@ function NavItem({
 
 function ManagementIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
       <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
       <rect x="9" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
       <rect x="1.5" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
@@ -357,7 +355,7 @@ function ManagementIcon() {
 
 function PatientIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
       <path
         d="M3 11.5V4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v4A1.5 1.5 0 0 1 11.5 10H6l-3 2.5z"
         stroke="currentColor"
@@ -761,7 +759,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
                 >
                   <td style={ui.td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ ...ui.dot, backgroundColor: p.color }} />
+                      <span style={{ ...ui.dot, backgroundColor: p.status === 'admitted' ? '#22c55e' : '#ef4444' }} />
                       <span style={{ fontWeight: 600, color: '#334155' }}>{p.name}</span>
                     </div>
                   </td>
@@ -904,7 +902,7 @@ const shell: Record<string, React.CSSProperties> = {
     display: 'flex',
     height: '100vh',
     overflow: 'hidden',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     backgroundColor: '#f3f4f6',
   },
   sidebar: {
@@ -924,23 +922,23 @@ const shell: Record<string, React.CSSProperties> = {
     alignItems: 'center',
   },
   sidebarLogo: { width: 180, height: 'auto', maxHeight: 44, objectFit: 'contain', display: 'block' },
-  sidebarNav: { display: 'flex', flexDirection: 'column', gap: 4, padding: '0 14px', flex: 1 },
+  sidebarNav: { display: 'flex', flexDirection: 'column', gap: 8, padding: '0 14px', flex: 1 },
   navButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: '10px 12px',
+    gap: 16,
+    padding: '14px 14px',
     border: 'none',
     backgroundColor: 'transparent',
     borderRadius: 8,
     color: '#64748b',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 600,
     cursor: 'pointer',
     textAlign: 'left',
   },
   navButtonActive: { backgroundColor: '#f1f5f9', color: '#0f172a' },
-  navIcon: { display: 'flex', width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
+  navIcon: { display: 'flex', width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
   sidebarProfile: {
     display: 'flex',
     alignItems: 'center',
@@ -993,6 +991,9 @@ const shell: Record<string, React.CSSProperties> = {
   },
   mainWrapper: {
     flex: 1,
+    width: '100%',
+    maxWidth: 1440,
+    margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
     minWidth: 0,

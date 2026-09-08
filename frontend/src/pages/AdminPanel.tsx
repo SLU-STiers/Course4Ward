@@ -4,12 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import { Filter, ArrowUpDown } from 'lucide-react';
 import { adminApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
+import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { NotificationBell } from '../components/layout/NotificationBell';
 import dashboardIcon from '../Img/dashboard.png';
 import userIcon from '../Img/user.png';
 import requestsIcon from '../Img/requests.png';
-
-// Import Logo
-import logoImg from '../Img/Course4Ward-Logo.png';
 
 type ActivityRow = {
   id: string;
@@ -65,13 +64,9 @@ export function AdminPanel() {
 
   return (
     <div style={styles.appContainer}>
-      {/* LEFT SIDEBAR */}
-      <aside style={styles.sidebar}>
-        <div style={styles.sidebarLogoContainer}>
-          <img src={logoImg} alt="Course4Ward" style={styles.sidebarLogo} />
-        </div>
-
-        <nav style={styles.sidebarNav}>
+      <CollapsibleSidebar
+        nav={
+          <>
   <button
     style={{
       ...styles.navButton,
@@ -101,8 +96,10 @@ export function AdminPanel() {
   >
     <img src={requestsIcon} alt="Requests" style={styles.navIconImage} /> Requests
   </button>
-</nav>
-        <div style={styles.sidebarProfile}>
+          </>
+        }
+        profile={
+          <div style={styles.sidebarProfile}>
           <div style={styles.profileAvatar}>
             {user?.firstName?.[0] ?? 'A'}{user?.lastName?.[0] ?? 'D'}
           </div>
@@ -115,8 +112,9 @@ export function AdminPanel() {
           <button type="button" style={styles.logoutBtn} onClick={handleLogout}>
             Log out
           </button>
-        </div>
-      </aside>
+          </div>
+        }
+      />
 
       {/* MAIN CONTENT AREA */}
       <div style={styles.mainWrapper}>
@@ -658,7 +656,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     minHeight: '100vh',
     backgroundColor: '#f3f4f6',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   },
 
   /* Sidebar */
@@ -688,20 +686,20 @@ const styles: Record<string, React.CSSProperties> = {
   sidebarNav: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px',
+    gap: '8px',
     padding: '0 14px',
     flex: 1,
   },
   navButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    padding: '10px 12px',
+    gap: '16px',
+    padding: '14px 14px',
     borderRadius: '8px',
     border: 'none',
     backgroundColor: 'transparent',
     color: '#64748b',
-    fontSize: '14px',
+    fontSize: '16px',
     fontWeight: 600,
     cursor: 'pointer',
     textAlign: 'left',
@@ -711,8 +709,8 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#0f172a',
   },
   navIcon: {
-    width: '18px',
-    height: '18px',
+    width: '22px',
+    height: '22px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -757,6 +755,9 @@ const styles: Record<string, React.CSSProperties> = {
   /* Header & Main Layout */
   mainWrapper: {
     flex: 1,
+    width: '100%',
+    maxWidth: '1440px',
+    margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
   },
@@ -1226,9 +1227,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   navIconImage: {
-  width: '20px',
-  height: '20px',
-  marginRight: '8px',
+  width: '26px',
+  height: '26px',
+  marginRight: '10px',
   objectFit: 'contain',
 }
 };

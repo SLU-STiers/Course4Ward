@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import logoImg from '../Img/Course4Ward-Logo.png';
+import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { NotificationBell } from '../components/layout/NotificationBell';
 import overviewIcon from '../Img/overview.png';
 import requestsIcon from '../Img/requests.png';
 import exportIcon from '../Img/export.png';
@@ -321,13 +322,9 @@ export function ClaimsProcessorDashboard() {
 
   return (
     <div style={styles.appContainer}>
-      {/* SIDEBAR */}
-      <aside style={styles.sidebar}>
-        <div style={styles.sidebarLogoContainer}>
-          <img src={logoImg} alt="Course4Ward Logo" style={styles.sidebarLogo} />
-        </div>
-
-        <nav style={styles.sidebarNav}>
+      <CollapsibleSidebar
+        nav={
+          <>
           <button
             style={{
               ...styles.navButton,
@@ -336,7 +333,7 @@ export function ClaimsProcessorDashboard() {
             onClick={() => setActiveTab('overview')}
           >
             <img src={overviewIcon} alt="Overview" style={styles.navIconImage} />
-            Overview
+            Dashboard
           </button>
 
           <button
@@ -363,9 +360,10 @@ export function ClaimsProcessorDashboard() {
             <img src={exportIcon} alt="Export" style={styles.navIconImage} />
             Export
           </button>
-        </nav>
-
-        <div style={styles.sidebarProfile}>
+          </>
+        }
+        profile={
+          <div style={styles.sidebarProfile}>
           <div style={styles.profileAvatar}>SJ</div>
           <div style={styles.profileDetails}>
             <div style={styles.profileName}>Steve Joabs</div>
@@ -374,8 +372,9 @@ export function ClaimsProcessorDashboard() {
           <button type="button" style={styles.logoutBtn} onClick={handleLogout}>
             Log out
           </button>
-        </div>
-      </aside>
+          </div>
+        }
+      />
 
       {/* MAIN CONTAINER */}
       <div style={styles.mainWrapper}>
@@ -383,10 +382,7 @@ export function ClaimsProcessorDashboard() {
         <header style={styles.header}>
           <h1 style={styles.headerTitle}>Claims Processor</h1>
           <div style={styles.headerRight}>
-            <div style={styles.notificationBadge}>
-              <span style={{ fontSize: '18px' }}>🔔</span>
-              <span style={styles.badgeDot} />
-            </div>
+            <NotificationBell showDot />
           </div>
         </header>
 
@@ -990,7 +986,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     minHeight: '100vh',
     backgroundColor: '#f3f4f6',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   },
   sidebar: {
     width: '232px',
@@ -1018,7 +1014,7 @@ const styles: Record<string, React.CSSProperties> = {
   sidebarNav: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px',
+    gap: '8px',
     padding: '0 14px',
     flex: 1,
   },
@@ -1070,13 +1066,13 @@ const styles: Record<string, React.CSSProperties> = {
   navButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
-    padding: '10px 12px',
+    gap: '16px',
+    padding: '14px 14px',
     borderRadius: '8px',
     border: 'none',
     backgroundColor: 'transparent',
     color: '#64748b',
-    fontSize: '14px',
+    fontSize: '16px',
     fontWeight: 600,
     cursor: 'pointer',
     textAlign: 'left',
@@ -1086,13 +1082,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#0f172a',
   },
   navIconImage: {
-  width: '20px',
-  height: '20px',
-  marginRight: '8px',
+  width: '26px',
+  height: '26px',
+  marginRight: '10px',
   objectFit: 'contain',
   },
   mainWrapper: {
     flex: 1,
+    width: '100%',
+    maxWidth: '1440px',
+    margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
   },
