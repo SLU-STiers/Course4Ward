@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Check, Copy } from 'lucide-react';
 import { authApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
 import { ROLE_PATH } from '../routes/roleRoutes';
@@ -22,6 +23,34 @@ export function Login() {
   const [showReset, setShowReset] = useState(false);
   const [resetUserId, setResetUserId] = useState('');
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [passwordCopied, setPasswordCopied] = useState(false);
+
+  useEffect(() => {
+    if (!resetToken || temporaryPassword) return;
+
+    const checkResetStatus = async () => {
+      try {
+        const { data } = await authApi.passwordResetStatus(resetToken);
+        if (data.status === 'APPROVED' && data.temporaryPassword) {
+          setTemporaryPassword(data.temporaryPassword);
+          setResetMessage('Your reset request was approved. Use this temporary password to log in.');
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Password reset approved', {
+              body: 'Your temporary password is ready on the login page.',
+            });
+          }
+        }
+      } catch {
+        // Keep polling; a brief network interruption should not lose the notification.
+      }
+    };
+
+    void checkResetStatus();
+    const intervalId = window.setInterval(checkResetStatus, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [resetToken, temporaryPassword]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -47,11 +76,17 @@ export function Login() {
   async function handleResetRequest(e: React.FormEvent) {
     e.preventDefault();
     setResetMessage(null);
+    setTemporaryPassword(null);
+    setPasswordCopied(false);
     try {
-      await authApi.requestPasswordReset(resetUserId);
+      const { data } = await authApi.requestPasswordReset(resetUserId);
+      setResetToken(data.resetToken);
       setResetMessage(
-        'If that user ID exists, a reset code has been issued. Contact IT desk to retrieve it.'
+        'Your request was submitted. Keep this login page open while an administrator reviews it.'
       );
+      if ('Notification' in window && Notification.permission === 'default') {
+        void Notification.requestPermission();
+      }
     } catch {
       setResetMessage('Something went wrong. Please contact the IT desk.');
     }
@@ -149,9 +184,33 @@ export function Login() {
 
               {resetMessage && <p style={styles.info}>{resetMessage}</p>}
 
-              <button style={styles.button} type="submit">
-                Request reset code
-              </button>
+              {temporaryPassword && (
+                <div style={styles.resetNotification} role="status">
+                  <div style={styles.passwordRow}>
+                    <strong>Temporary password:</strong>
+                    <code style={styles.passwordValue}>{temporaryPassword}</code>
+                    <button
+                      type="button"
+                      aria-label="Copy temporary password"
+                      title="Copy temporary password"
+                      style={styles.copyButton}
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(temporaryPassword);
+                        setPasswordCopied(true);
+                      }}
+                    >
+                      {passwordCopied ? <Check size={16} /> : <Copy size={16} />}
+                    </button>
+                  </div>
+                  <span>Enter it on the login screen to continue.</span>
+                </div>
+              )}
+
+              {!temporaryPassword && (
+                <button style={styles.button} type="submit">
+                  Request reset code
+                </button>
+              )}
 
               <button
                 type="button"
@@ -316,4 +375,40 @@ const styles: Record<string, React.CSSProperties> = {
   },
   error: { color: '#dc2626', fontSize: '12px', margin: 0 },
   info: { color: '#0a5c83', fontSize: '12px', margin: 0 },
+  resetNotification: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    padding: '12px',
+    borderRadius: '6px',
+    border: '1px solid #86efac',
+    backgroundColor: '#f0fdf4',
+    color: '#166534',
+    fontSize: '13px',
+  },
+  passwordRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  passwordValue: {
+    padding: '4px 6px',
+    borderRadius: '4px',
+    backgroundColor: '#dcfce7',
+    overflowWrap: 'anywhere',
+  },
+  copyButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '30px',
+    height: '30px',
+    padding: 0,
+    border: '1px solid #86efac',
+    borderRadius: '5px',
+    backgroundColor: '#ffffff',
+    color: '#166534',
+    cursor: 'pointer',
+  },
 };

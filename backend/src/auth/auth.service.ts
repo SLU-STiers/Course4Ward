@@ -73,13 +73,16 @@ export class AuthService {
   // hands off to an IT-desk-issued one-time code rather than email, since
   // this is a LAN-only system. Stubbed here to return a token directly for
   // local development.
-  async requestPasswordReset(dto: RequestPasswordResetDto) {
+  async requestPasswordReset(dto: RequestPasswordResetDto, ipAddress?: string) {
     const user = await this.prisma.user.findUnique({
       where: { userId: dto.userId },
     });
     if (!user) {
       // Do not reveal whether a userId exists
-      return { message: 'If the account exists, a reset code was issued.' };
+      return {
+        message: 'If the account exists, a reset code was issued.',
+        resetToken: randomBytes(32).toString('hex'),
+      };
     }
 
     await this.prisma.passwordResetRequest.updateMany({
@@ -87,15 +90,36 @@ export class AuthService {
       data: { status: 'EXPIRED', resolvedAt: new Date() },
     });
 
+    const resetToken = randomBytes(32).toString('hex');
     await this.prisma.passwordResetRequest.create({
       data: {
         userId: user.id,
-        token: randomBytes(32).toString('hex'),
+        ipAddress,
+        token: resetToken,
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       },
     });
 
-    return { message: 'Reset request submitted for administrator approval.' };
+    return {
+      message: 'Reset request submitted for administrator approval.',
+      resetToken,
+    };
+  }
+
+  async getPasswordResetStatus(resetToken: string) {
+    const request = await this.prisma.passwordResetRequest.findUnique({
+      where: { token: resetToken },
+      select: { status: true, expiresAt: true, temporaryPassword: true },
+    });
+
+    if (!request || request.expiresAt < new Date()) {
+      return { status: 'PENDING' as const };
+    }
+
+    return {
+      status: request.status,
+      temporaryPassword: request.status === 'APPROVED' ? request.temporaryPassword : null,
+    };
   }
 
   async findPasswordResetRequests() {
@@ -130,7 +154,11 @@ export class AuthService {
       }),
       this.prisma.passwordResetRequest.update({
         where: { id: request.id },
-        data: { status: 'APPROVED', resolvedAt: new Date() },
+        data: {
+          status: 'APPROVED',
+          temporaryPassword,
+          resolvedAt: new Date(),
+        },
       }),
     ]);
 

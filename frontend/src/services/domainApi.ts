@@ -15,7 +15,11 @@ export const authApi = {
       { userId, password },
     ),
   requestPasswordReset: (userId: string) =>
-    api.post('/auth/password-reset/request', { userId }),
+    api.post<{ message: string; resetToken: string }>('/auth/password-reset/request', { userId }),
+  passwordResetStatus: (resetToken: string) =>
+    api.get<{ status: string; temporaryPassword?: string | null }>('/auth/password-reset/status', {
+      params: { resetToken },
+    }),
   confirmPasswordReset: (userId: string, resetToken: string, newPassword: string) =>
     api.post('/auth/password-reset/confirm', { userId, resetToken, newPassword }),
   changePassword: (newPassword: string) => api.post('/auth/password-change', { newPassword }),

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Filter, ArrowUpDown } from 'lucide-react';
@@ -24,6 +24,39 @@ export function AdminPanel() {
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const knownRequestIds = useRef<Set<string> | null>(null);
+
+  const { data: resetRequestsData } = useQuery({
+    queryKey: ['reset-requests'],
+    queryFn: () => adminApi.getResetRequests().then((response) => response.data),
+    refetchInterval: 15000,
+  });
+
+  const pendingResetRequests = (resetRequestsData ?? []).filter(
+    (request: any) => request.status === 'PENDING',
+  );
+
+  useEffect(() => {
+    const currentRequestIds = new Set<string>(
+      pendingResetRequests.map((request: any) => String(request.id)),
+    );
+
+    if (knownRequestIds.current === null) {
+      knownRequestIds.current = currentRequestIds;
+      return;
+    }
+
+    const newRequest = pendingResetRequests.find(
+      (request: any) => !knownRequestIds.current?.has(request.id),
+    );
+    knownRequestIds.current = currentRequestIds;
+
+    if (newRequest && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification('New password reset request', {
+        body: `${newRequest.user.firstName} ${newRequest.user.lastName} submitted a request.`,
+      });
+    }
+  }, [pendingResetRequests]);
 
   const handleLogout = () => {
     logout(); // Clears Zustand state and deletes sessionStorage['cims_auth'] automatically
@@ -93,10 +126,17 @@ export function AdminPanel() {
 
           <div style={styles.headerRight}>
             {/* Notification Bell */}
-            <div style={styles.notificationBadge}>
+            <button
+              type="button"
+              aria-label="Open password reset notifications"
+              style={styles.notificationBadge}
+              onClick={() => setActiveNav('requests')}
+            >
               <span style={{ fontSize: '18px' }}>🔔</span>
-              <span style={styles.badgeCount}>2</span>
-            </div>
+              {pendingResetRequests.length > 0 && (
+                <span style={styles.badgeCount}>{pendingResetRequests.length}</span>
+              )}
+            </button>
 
           </div>
         </header>
@@ -497,6 +537,7 @@ function RequestsView() {
   const filteredList = list.filter((req: any) =>
     req.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (req.ipAddress ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     req.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -551,6 +592,7 @@ function RequestsView() {
               <th style={styles.th}>Request ID</th>
               <th style={styles.th}>User</th>
               <th style={styles.th}>User ID</th>
+              <th style={styles.th}>Requester IP</th>
               <th style={styles.th}>Requested On</th>
               <th style={styles.th}>Status</th>
               <th style={styles.th}>Action</th>
@@ -567,6 +609,9 @@ function RequestsView() {
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{item.role}</div>
                 </td>
                 <td style={{ ...styles.td, color: '#475569' }}>{item.userId}</td>
+                <td style={{ ...styles.td, color: '#475569', fontFamily: 'monospace' }}>
+                  {item.ipAddress ?? 'Unavailable'}
+                </td>
                 <td style={styles.td}>
                   <div style={{ fontWeight: 600, color: '#0f172a' }}>{item.date}</div>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{item.time}</div>

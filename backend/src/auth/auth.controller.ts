@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
@@ -28,8 +28,13 @@ export class AuthController {
   }
 
   @Post('password-reset/request')
-  requestReset(@Body() dto: RequestPasswordResetDto) {
-    return this.authService.requestPasswordReset(dto);
+  requestReset(@Body() dto: RequestPasswordResetDto, @Req() req: Request) {
+    return this.authService.requestPasswordReset(dto, req.ip);
+  }
+
+  @Get('password-reset/status')
+  passwordResetStatus(@Query('resetToken') resetToken: string) {
+    return this.authService.getPasswordResetStatus(resetToken);
   }
 
   @Post('password-reset/confirm')
