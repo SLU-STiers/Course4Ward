@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Login } from './pages/Login';
+import { ResetPassword } from './pages/ResetPassword';
 import { PhysicianDashboard } from './pages/PhysicianDashboard';
 import { NurseDashboard } from './pages/NurseDashboard';
 import { ClaimsProcessorDashboard } from './pages/ClaimsProcessorDashboard';
@@ -17,6 +18,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ProtectedRoute />}>
+            <Route index element={<ResetPassword />} />
+          </Route>
 
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>

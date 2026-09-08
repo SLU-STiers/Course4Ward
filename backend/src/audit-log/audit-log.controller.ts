@@ -29,4 +29,9 @@ export class AuditLogController {
   ordersOverTime(@Query('bucket') bucket: 'day' | 'week' | 'month' | 'year' = 'day') {
     return this.auditLogService.ordersOverTime(bucket);
   }
+
+  @Get('analytics/summary')
+  summary() {
+    return this.auditLogService.summary();
+  }
 }
