@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { claimsApi, courseInWardApi, ordersApi, patientsApi } from '../services/domainApi';
+import type { Patient, PhysicianRequest } from '../types';
 import logoImg from '../Img/Course4Ward-Logo.png';
 import searchImg from '../Img/search.png';
 import notificationImg from '../Img/notification.png';
@@ -14,35 +16,22 @@ const CARD_SHADOW = '0 8px 28px rgba(16, 78, 101, 0.08)';
 type PatientStatus = 'admitted' | 'discharged';
 type OverviewFilter = 'all' | PatientStatus;
 
-const MOCK_PATIENTS: {
-  id: string;
-  name: string;
-  patientId: string;
-  admissionDate: string;
-  color: string;
-  status: PatientStatus;
-}[] = [
-  { id: '1', name: 'Sarah Brown', patientId: '1123', admissionDate: '15/04/2026', color: '#ef4444', status: 'admitted' },
-  { id: '2', name: 'Michael Owen', patientId: '1122', admissionDate: '15/04/2026', color: '#22c55e', status: 'admitted' },
-  { id: '3', name: 'Mary Jane', patientId: '1121', admissionDate: '14/04/2026', color: '#84cc16', status: 'admitted' },
-  { id: '4', name: 'Peter Doolie', patientId: '1120', admissionDate: '14/04/2026', color: '#6366f1', status: 'admitted' },
-  { id: '5', name: 'Peter Doolie', patientId: '1119', admissionDate: '14/04/2026', color: '#ef4444', status: 'admitted' },
-  { id: '6', name: 'Peter Doolie', patientId: '1118', admissionDate: '15/04/2026', color: '#eab308', status: 'admitted' },
-  { id: '7', name: 'Liam Park', patientId: '1117', admissionDate: '15/04/2026', color: '#d946ef', status: 'admitted' },
-  { id: '8', name: 'Nora Reyes', patientId: '1116', admissionDate: '16/04/2026', color: '#f87171', status: 'admitted' },
-  { id: '9', name: 'James Cruz', patientId: '1115', admissionDate: '16/04/2026', color: '#06b6d4', status: 'admitted' },
-  { id: '10', name: 'Elena Santos', patientId: '1114', admissionDate: '17/04/2026', color: '#0ea5e9', status: 'admitted' },
-  { id: '11', name: 'Carlos Vega', patientId: '1113', admissionDate: '17/04/2026', color: '#f97316', status: 'admitted' },
-  { id: '12', name: 'Ava Lim', patientId: '1112', admissionDate: '18/04/2026', color: '#14b8a6', status: 'admitted' },
-  { id: '13', name: 'Ben Torres', patientId: '1111', admissionDate: '10/04/2026', color: '#64748b', status: 'discharged' },
-  { id: '14', name: 'Mia Chen', patientId: '1110', admissionDate: '09/04/2026', color: '#a855f7', status: 'discharged' },
-  { id: '15', name: 'Owen Blake', patientId: '1109', admissionDate: '08/04/2026', color: '#e11d48', status: 'discharged' },
-  { id: '16', name: 'Ruby Diaz', patientId: '1108', admissionDate: '07/04/2026', color: '#65a30d', status: 'discharged' },
-  { id: '17', name: 'Noah Kim', patientId: '1107', admissionDate: '06/04/2026', color: '#2563eb', status: 'discharged' },
-  { id: '18', name: 'Ivy Morales', patientId: '1106', admissionDate: '05/04/2026', color: '#db2777', status: 'discharged' },
-  { id: '19', name: 'Leo Santos', patientId: '1105', admissionDate: '04/04/2026', color: '#ca8a04', status: 'discharged' },
-  { id: '20', name: 'Paula Reed', patientId: '1104', admissionDate: '03/04/2026', color: '#7c3aed', status: 'discharged' },
-];
+type DashboardPatient = Patient & { status: PatientStatus; name: string; patientId: string; admissionDate: string; color: string };
+
+const patientColors = ['#ef4444', '#22c55e', '#6366f1', '#eab308', '#06b6d4', '#f97316'];
+
+function mapPatient(patient: Patient, index: number): DashboardPatient {
+  const admission = patient.admissions?.[0];
+  const admissionDate = admission?.admissionDate ? new Date(admission.admissionDate) : null;
+  return {
+    ...patient,
+    name: `${patient.firstName} ${patient.lastName}`,
+    patientId: patient.id,
+    admissionDate: admissionDate ? admissionDate.toLocaleDateString('en-GB') : '—',
+    color: patientColors[index % patientColors.length],
+    status: admission?.dischargeDate ? 'discharged' : 'admitted',
+  };
+}
 
 const INITIAL_TODOS = [
   'Review newly admitted patients',
@@ -56,198 +45,14 @@ const INITIAL_TODOS = [
   'Validate records (BAG check)',
 ];
 
-const DEFAULT_ORDERS: Record<string, string[]> = {
-  '1': [
-    'IV Ceftriaxone 1g q12h',
-    'Paracetamol 500mg PRN for fever',
-    'Monitor vital signs every 2 hours',
-    'Chest x-ray',
-  ],
-};
-
-const DEFAULT_SUMMARY: Record<string, string> = {
-  '1':
-    'Patient was maintained on intravenous Ceftriaxone 1g every 12 hours and was given Paracetamol 500mg as needed for fever. Vital signs were regularly monitored every 2 hours. A chest X-ray was also requested for further assessment. The patient remained under close observation throughout the monitoring period.',
-};
-
-const MOCK_PHYSICIAN_ORDERS = [
-  {
-    when: 'April 15, 2026',
-    time: 'Today, 1:00 PM',
-    doctor: 'Dr. Mike Mentzer',
-    orders: [
-      'IV Ceftriaxone 1g q12h',
-      'Paracetamol 500mg PRN for fever',
-      'Monitor vital signs every 2 hours',
-      'Chest X-ray',
-    ],
-  },
-  {
-    when: 'April 15, 2026',
-    time: 'Today, 8:00 AM',
-    doctor: 'Dr. Agcaoili Diddy',
-    orders: ['Continue oxygen support at 2L/min', 'CBC repeat at 6 PM', 'Encourage oral fluids'],
-  },
-  {
-    when: 'April 14, 2026',
-    time: 'Yesterday, 4:30 PM',
-    doctor: 'Dr. Jecy Guillian',
-    orders: ['Continue antibiotics', 'Observe for respiratory distress'],
-  },
-];
-
-type RequestStatus = 'Pending Review' | 'Reviewed';
-
-const MOCK_REQUESTS: {
-  id: string;
-  patient: string;
-  patientId: string;
-  submittedBy: string;
-  role: string;
-  date: string;
-  time: string;
-  status: RequestStatus;
-  summary: string;
-}[] = [
-  {
-    id: 'SUM-0001',
-    patient: 'Sarah Brown',
-    patientId: '1123',
-    submittedBy: 'Steve Jacobs',
-    role: 'Claims Processor',
-    date: '15/04/2026',
-    time: '08:00 AM',
-    status: 'Pending Review',
-    summary:
-      'Patient was maintained on IV Ceftriaxone every 12 hours, with Paracetamol given as needed for fever. Oxygen support was continued at 2L/min, and repeat laboratory tests were requested.',
-  },
-  {
-    id: 'SUM-0002',
-    patient: 'Michael Owen',
-    patientId: '1122',
-    submittedBy: 'Steve Jacobs',
-    role: 'Claims Processor',
-    date: '15/04/2026',
-    time: '07:50 AM',
-    status: 'Pending Review',
-    summary: 'Patient presented with mild hypertension. Administered routine medications and remained stable.',
-  },
-  {
-    id: 'SUM-0003',
-    patient: 'Mary Jane',
-    patientId: '1121',
-    submittedBy: 'Anna Cruz',
-    role: 'Claims Processor',
-    date: '14/04/2026',
-    time: '04:30 PM',
-    status: 'Reviewed',
-    summary: 'Patient recovering well post-operation. Discharged with oral medications.',
-  },
-  {
-    id: 'SUM-0004',
-    patient: 'Peter Doolie',
-    patientId: '1120',
-    submittedBy: 'Steve Jacobs',
-    role: 'Claims Processor',
-    date: '14/04/2026',
-    time: '02:15 PM',
-    status: 'Pending Review',
-    summary: 'Observation for respiratory symptoms. Oxygen saturation remained steady.',
-  },
-  {
-    id: 'SUM-0005',
-    patient: 'Anna Kendrick',
-    patientId: '1119',
-    submittedBy: 'Anna Cruz',
-    role: 'Claims Processor',
-    date: '14/04/2026',
-    time: '11:45 AM',
-    status: 'Reviewed',
-    summary: 'Routine checkup completed without complications.',
-  },
-  {
-    id: 'SUM-0006',
-    patient: 'Sarah Brown',
-    patientId: '1123',
-    submittedBy: 'Steve Jacobs',
-    role: 'Claims Processor',
-    date: '13/04/2026',
-    time: '09:20 AM',
-    status: 'Pending Review',
-    summary: 'Follow-up summary after overnight monitoring. Vitals remained within normal limits.',
-  },
-  {
-    id: 'SUM-0007',
-    patient: 'Michael Owen',
-    patientId: '1122',
-    submittedBy: 'Anna Cruz',
-    role: 'Claims Processor',
-    date: '13/04/2026',
-    time: '08:10 AM',
-    status: 'Reviewed',
-    summary: 'Blood pressure trending down after medication adjustment.',
-  },
-  {
-    id: 'SUM-0008',
-    patient: 'Mary Jane',
-    patientId: '1121',
-    submittedBy: 'Steve Jacobs',
-    role: 'Claims Processor',
-    date: '12/04/2026',
-    time: '03:40 PM',
-    status: 'Pending Review',
-    summary: 'Wound site clean and dry. Pain score decreased with current analgesic plan.',
-  },
-  {
-    id: 'SUM-0009',
-    patient: 'Peter Doolie',
-    patientId: '1118',
-    submittedBy: 'Anna Cruz',
-    role: 'Claims Processor',
-    date: '12/04/2026',
-    time: '01:05 PM',
-    status: 'Reviewed',
-    summary: 'Respiratory rate improved after nebulization. Continue current oxygen support.',
-  },
-  {
-    id: 'SUM-0010',
-    patient: 'Liam Park',
-    patientId: '1117',
-    submittedBy: 'Steve Jacobs',
-    role: 'Claims Processor',
-    date: '11/04/2026',
-    time: '10:00 AM',
-    status: 'Pending Review',
-    summary: 'New admission summary pending physician confirmation of overnight orders.',
-  },
-  {
-    id: 'SUM-0011',
-    patient: 'Nora Reyes',
-    patientId: '1116',
-    submittedBy: 'Anna Cruz',
-    role: 'Claims Processor',
-    date: '11/04/2026',
-    time: '09:15 AM',
-    status: 'Reviewed',
-    summary: 'Labs reviewed. No acute findings requiring order changes.',
-  },
-  {
-    id: 'SUM-0012',
-    patient: 'Peter Doolie',
-    patientId: '1115',
-    submittedBy: 'Steve Jacobs',
-    role: 'Claims Processor',
-    date: '10/04/2026',
-    time: '04:55 PM',
-    status: 'Pending Review',
-    summary: 'CF4 details incomplete. Claims processor requested physician validation.',
-  },
-];
 
 export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const logout = useAuthStore((s) => s.logout);
+  const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const displayName = user ? `${user.firstName} ${user.lastName}` : 'Physician';
+  const initials = user ? `${user.firstName[0] ?? ''}${user.lastName[0] ?? ''}` : 'DR';
 
   const handleLogout = () => {
     logout();
@@ -283,10 +88,10 @@ export function PhysicianDashboard() {
         </nav>
 
         <div style={shell.sidebarProfile}>
-          <div style={shell.profileAvatar}>JD</div>
+          <div style={shell.profileAvatar}>{initials}</div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={shell.profileName}>Dr. John Doe</div>
-            <div style={shell.profileEmail}>johndoe@gmail.com</div>
+            <div style={shell.profileName}>Dr. {displayName}</div>
+            <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
           </div>
           <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
             Log out
@@ -297,7 +102,7 @@ export function PhysicianDashboard() {
       <div style={shell.mainWrapper}>
         <header style={shell.header}>
           <div>
-            <h1 style={shell.headerTitle}>Good Day! Dr. John</h1>
+            <h1 style={shell.headerTitle}>Good Day! Dr. {user?.firstName ?? 'Physician'}</h1>
             <p style={shell.headerSubtitle}>We are pleased to have you!</p>
           </div>
           <div style={shell.bellWrap}>
@@ -402,12 +207,17 @@ function OverviewView() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>('all');
   const [checkedIds, setCheckedIds] = useState<Record<string, boolean>>({});
+  const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 
-  const admittedCount = MOCK_PATIENTS.filter((p) => p.status === 'admitted').length;
-  const dischargedCount = MOCK_PATIENTS.filter((p) => p.status === 'discharged').length;
+  useEffect(() => {
+    patientsApi.assignedToMe().then(({ data }) => setPatients(data.map(mapPatient))).catch(() => setPatients([]));
+  }, []);
+
+  const admittedCount = patients.filter((p) => p.status === 'admitted').length;
+  const dischargedCount = patients.filter((p) => p.status === 'discharged').length;
   const filteredPatients =
-    filter === 'all' ? MOCK_PATIENTS : MOCK_PATIENTS.filter((p) => p.status === filter);
+    filter === 'all' ? patients : patients.filter((p) => p.status === filter);
 
   const pageCount = Math.max(1, Math.ceil(filteredPatients.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -426,7 +236,7 @@ function OverviewView() {
         <StatCard
           color={TEAL}
           label="Total Patients"
-          value={String(MOCK_PATIENTS.length)}
+          value={String(patients.length)}
           icon={<HeartIcon />}
           active={filter === 'all'}
           onClick={() => setFilterAndReset('all')}
@@ -703,14 +513,22 @@ function RequestsView() {
   const pageSize = 5;
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState(MOCK_REQUESTS);
-  const [selected, setSelected] = useState<(typeof MOCK_REQUESTS)[number] | null>(null);
+  const [items, setItems] = useState<PhysicianRequest[]>([]);
+  const [selected, setSelected] = useState<PhysicianRequest | null>(null);
+
+  const loadRequests = () => {
+    claimsApi.physicianRequests().then(({ data }) => setItems(data)).catch(() => setItems([]));
+  };
+
+  useEffect(() => {
+    loadRequests();
+  }, []);
 
   const filtered = items.filter(
     (r) =>
       r.id.toLowerCase().includes(search.toLowerCase()) ||
-      r.patient.toLowerCase().includes(search.toLowerCase()) ||
-      r.submittedBy.toLowerCase().includes(search.toLowerCase())
+      `${r.summary.patient.firstName} ${r.summary.patient.lastName}`.toLowerCase().includes(search.toLowerCase()) ||
+      `${r.processor.firstName} ${r.processor.lastName}`.toLowerCase().includes(search.toLowerCase())
   );
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -760,20 +578,20 @@ function RequestsView() {
                 </button>
               </td>
               <td style={requests.td}>
-                <div style={requests.primary}>{r.patient}</div>
-                <div style={requests.secondary}>ID: {r.patientId}</div>
+                <div style={requests.primary}>{r.summary.patient.firstName} {r.summary.patient.lastName}</div>
+                <div style={requests.secondary}>ID: {r.summary.patient.id}</div>
               </td>
               <td style={requests.td}>
-                <div style={requests.primary}>{r.submittedBy}</div>
-                <div style={requests.secondary}>{r.role}</div>
+                <div style={requests.primary}>{r.processor.firstName} {r.processor.lastName}</div>
+                <div style={requests.secondary}>Claims Processor</div>
               </td>
               <td style={requests.td}>
-                <div style={requests.primary}>{r.date}</div>
-                <div style={requests.secondary}>{r.time}</div>
+                <div style={requests.primary}>{new Date(r.requestedAt).toLocaleDateString('en-GB')}</div>
+                <div style={requests.secondary}>{new Date(r.requestedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
               </td>
               <td style={requests.td}>
-                <span style={r.status === 'Pending Review' ? requests.statusPending : requests.statusReviewed}>
-                  {r.status}
+                <span style={r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED' ? requests.statusPending : requests.statusReviewed}>
+                  {r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED' ? 'Pending Review' : 'Reviewed'}
                 </span>
               </td>
               <td style={{ ...requests.td, textAlign: 'right' }}>
@@ -840,10 +658,9 @@ function RequestsView() {
         <ReviewSummaryModal
           request={selected}
           onClose={() => setSelected(null)}
-          onApprove={() => {
-            setItems((prev) =>
-              prev.map((r) => (r.id === selected.id ? { ...r, status: 'Reviewed' } : r))
-            );
+          onApprove={async () => {
+            await claimsApi.approvePhysicianRequest(selected.id);
+            await loadRequests();
             setSelected(null);
           }}
         />
@@ -857,18 +674,17 @@ function ReviewSummaryModal({
   onClose,
   onApprove,
 }: {
-  request: (typeof MOCK_REQUESTS)[number];
+  request: PhysicianRequest;
   onClose: () => void;
   onApprove: () => void;
 }) {
   const [showOrders, setShowOrders] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [summary, setSummary] = useState(request.summary);
-  const admissionDate =
-    MOCK_PATIENTS.find((p) => p.patientId === request.patientId)?.admissionDate ?? request.date;
+  const [summary, setSummary] = useState(request.summary.summaryContent);
+  const admissionDate = new Date(request.summary.summaryDate).toLocaleDateString('en-GB');
 
   useEffect(() => {
-    setSummary(request.summary);
+    setSummary(request.summary.summaryContent);
     setEditing(false);
     setShowOrders(true);
   }, [request]);
@@ -880,16 +696,14 @@ function ReviewSummaryModal({
           <aside style={review.ordersPanel}>
             <h3 style={review.ordersTitle}>Physicians Orders:</h3>
             <div style={review.ordersScroll}>
-              {MOCK_PHYSICIAN_ORDERS.map((group) => (
-                <div key={`${group.doctor}-${group.time}`} style={review.orderCard}>
-                  <div style={review.orderWhen}>{group.when}</div>
-                  <div style={review.orderTime}>{group.time}</div>
-                  <div style={review.orderDoctor}>{group.doctor}</div>
+              {request.summary.orders.map((order) => (
+                <div key={order.id} style={review.orderCard}>
+                  <div style={review.orderWhen}>{new Date(order.dateCreated).toLocaleDateString('en-GB')}</div>
+                  <div style={review.orderTime}>{new Date(order.dateCreated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                  <div style={review.orderDoctor}>Dr. {order.orderedBy?.firstName} {order.orderedBy?.lastName}</div>
                   <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px' }}>Orders:</div>
                   <ul style={review.orderList}>
-                    {group.orders.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
+                    <li>{order.orderContent}</li>
                   </ul>
                 </div>
               ))}
@@ -927,11 +741,11 @@ function ReviewSummaryModal({
             <div style={review.patientGrid}>
               <label style={review.field}>
                 <span style={review.fieldLabel}>Name</span>
-                <input readOnly value={request.patient} style={review.fieldInput} />
+                <input readOnly value={`${request.summary.patient.firstName} ${request.summary.patient.lastName}`} style={review.fieldInput} />
               </label>
               <label style={review.field}>
                 <span style={review.fieldLabel}>Patient ID</span>
-                <input readOnly value={request.patientId} style={review.fieldInput} />
+                <input readOnly value={request.summary.patient.id} style={review.fieldInput} />
               </label>
               <label style={review.field}>
                 <span style={review.fieldLabel}>Admission Date</span>
@@ -942,13 +756,13 @@ function ReviewSummaryModal({
             <div style={review.sectionLabel}>Submitted By</div>
             <div style={review.submittedCard}>
               <div>
-                <div style={{ fontWeight: 700, color: '#0f172a' }}>{request.submittedBy}</div>
-                <div style={{ fontSize: 12, color: '#64748b' }}>{request.role}</div>
+                <div style={{ fontWeight: 700, color: '#0f172a' }}>{request.processor.firstName} {request.processor.lastName}</div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>Claims Processor</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 11, color: '#64748b' }}>Submitted on</div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
-                  {request.date} | {request.time}
+                  {new Date(request.requestedAt).toLocaleString('en-GB')}
                 </div>
               </div>
             </div>
@@ -979,7 +793,7 @@ function ReviewSummaryModal({
                 type="button"
                 style={review.outlineBtn}
                 onClick={() => {
-                  setSummary(request.summary);
+                  setSummary(request.summary.summaryContent);
                   setEditing(false);
                 }}
               >
@@ -1085,7 +899,9 @@ function CalendarModal({
   );
 }
 function ManageView() {
-  const [selectedId, setSelectedId] = useState(MOCK_PATIENTS[0].id);
+  const user = useAuthStore((s) => s.user);
+  const [patients, setPatients] = useState<DashboardPatient[]>([]);
+  const [selectedId, setSelectedId] = useState('');
   const [search, setSearch] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -1093,24 +909,43 @@ function ManageView() {
   const [submitted, setSubmitted] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const selected = MOCK_PATIENTS.find((p) => p.id === selectedId) ?? MOCK_PATIENTS[0];
-  const admissionDate = parseAdmissionDate(selected.admissionDate);
+  const selected = patients.find((p) => p.id === selectedId) ?? patients[0];
+  const admissionDate = selected ? parseAdmissionDate(selected.admissionDate) : new Date();
 
-  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, string[]>>(() => ({
-    ...DEFAULT_ORDERS,
-  }));
+  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, string[]>>({});
   const [draft, setDraft] = useState('');
-  const [summaryByPatient, setSummaryByPatient] = useState<Record<string, string>>(() => ({
-    ...DEFAULT_SUMMARY,
-  }));
+  const [summaryByPatient, setSummaryByPatient] = useState<Record<string, string>>({});
+  const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
 
-  const orders = ordersByPatient[selected.id] ?? [];
-  const summary =
-    summaryByPatient[selected.id] ??
-    'No AI summary yet. Submit orders to generate a draft.';
+  useEffect(() => {
+    patientsApi.assignedToMe().then(({ data }) => {
+      const mapped = data.map(mapPatient);
+      setPatients(mapped);
+      if (mapped[0]) setSelectedId(mapped[0].id);
+    }).catch(() => setPatients([]));
+  }, []);
 
-  const filtered = MOCK_PATIENTS.filter(
+  useEffect(() => {
+    if (!selected) return;
+    Promise.all([ordersApi.forPatient(selected.id), courseInWardApi.forPatient(selected.id)]).then(([ordersResponse, summariesResponse]) => {
+      setOrdersByPatient((previous) => ({
+        ...previous,
+        [selected.id]: ordersResponse.data.map((order) => order.orderContent),
+      }));
+      const latest = summariesResponse.data[0];
+      if (latest) {
+        setSummaryByPatient((previous) => ({ ...previous, [selected.id]: latest.summaryContent }));
+        setSummaryIds((previous) => ({ ...previous, [selected.id]: latest.id }));
+      }
+    }).catch(() => undefined);
+  }, [selected?.id]);
+
+  const orders = selected ? ordersByPatient[selected.id] ?? [] : [];
+  const summary =
+    (selected && summaryByPatient[selected.id]) ?? 'No AI summary yet. Submit orders to generate a draft.';
+
+  const filtered = patients.filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.patientId.includes(search)
@@ -1138,15 +973,17 @@ function ManageView() {
   const addOrder = () => {
     const text = draft.trim();
     if (!text) return;
-    setOrdersByPatient((prev) => ({
-      ...prev,
-      [selected.id]: [...(prev[selected.id] ?? []), text],
-    }));
-    setDraft('');
-    setSubmitted(false);
+    if (!selected || !selected.admissions?.[0] || !user) return;
+    ordersApi.create({ admissionId: selected.admissions[0].id, orderedById: user.id, orderContent: text })
+      .then(() => {
+        setOrdersByPatient((prev) => ({ ...prev, [selected.id]: [...(prev[selected.id] ?? []), text] }));
+        setDraft('');
+        setSubmitted(false);
+      });
   };
 
   const updateOrder = (idx: number, text: string) => {
+    if (!selected) return;
     setOrdersByPatient((prev) => {
       const next = [...(prev[selected.id] ?? [])];
       next[idx] = text;
@@ -1156,12 +993,15 @@ function ManageView() {
   };
 
   const removeOrder = (idx: number) => {
+    if (!selected) return;
     setOrdersByPatient((prev) => {
       const next = (prev[selected.id] ?? []).filter((_, i) => i !== idx);
       return { ...prev, [selected.id]: next };
     });
     setSubmitted(false);
   };
+
+  if (!selected) return <div style={{ color: '#64748b', padding: 24 }}>Loading assigned patients...</div>;
 
   return (
     <div style={manage.layout}>
@@ -1333,7 +1173,18 @@ function ManageView() {
             <button
               type="button"
               style={manage.aiLink}
-              onClick={() => setEditingSummary((v) => !v)}
+              onClick={() => {
+                if (!editingSummary) {
+                  setEditingSummary(true);
+                  return;
+                }
+                const id = summaryIds[selected.id];
+                if (!id) return;
+                courseInWardApi.edit(id, summary).then(({ data }) => {
+                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
+                  setEditingSummary(false);
+                });
+              }}
             >
               {editingSummary ? 'Save Summary' : 'Edit Summary'}
             </button>
@@ -1341,13 +1192,12 @@ function ManageView() {
               type="button"
               style={manage.aiLink}
               onClick={() => {
-                setSummaryByPatient((prev) => ({
-                  ...prev,
-                  [selected.id]:
-                    DEFAULT_SUMMARY[selected.id] ??
-                    `${selected.name} is under observation. Orders are being reviewed for today’s course in the ward.`,
-                }));
-                setEditingSummary(false);
+                const id = summaryIds[selected.id];
+                if (!id) return;
+                courseInWardApi.regenerate(id).then(({ data }) => {
+                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
+                  setEditingSummary(false);
+                });
               }}
             >
               ↻ Regenerate

@@ -45,6 +45,51 @@ export class ClaimsService {
     });
   }
 
+  findForPhysician(physicianId: string) {
+    return this.prisma.summaryApprovalRequest.findMany({
+      where: { physicianId },
+      orderBy: { requestedAt: 'desc' },
+      include: {
+        processor: { select: { firstName: true, lastName: true, role: true } },
+        summary: {
+          include: {
+            patient: true,
+            orders: {
+              orderBy: { dateCreated: 'desc' },
+              include: { orderedBy: { select: { firstName: true, lastName: true } } },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async approveForPhysician(id: string, physicianId: string) {
+    const request = await this.prisma.summaryApprovalRequest.findFirst({
+      where: { id, physicianId },
+    });
+    if (!request) throw new NotFoundException('Physician request not found');
+
+    const [summary, updatedRequest] = await this.prisma.$transaction([
+      this.prisma.courseInWard.update({
+        where: { id: request.summaryId },
+        data: {
+          status: SummaryStatus.APPROVED,
+          approvedStatus: true,
+          validatorId: physicianId,
+          validatedAt: new Date(),
+        },
+      }),
+      this.prisma.summaryApprovalRequest.update({
+        where: { id },
+        data: { status: 'VALIDATED' },
+      }),
+    ]);
+
+    await this.auditLog.record({ userId: physicianId, action: 'SUMMARY_APPROVED' });
+    return { ...updatedRequest, summary };
+  }
+
   // Claims processor notifies the attending physician to validate the entry
   async notifyPhysician(claimId: string, claimsProcessorId: string) {
     const claim = await this.prisma.summaryApprovalRequest.update({
