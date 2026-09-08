@@ -16,6 +16,11 @@
     "noImplicitAny": true,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": true,
-    "noFallthroughCasesInSwitch": false
-  }
+    "noFallthroughCasesInSwitch": false,
+    "types": ["jest", "node"]  // ← ADD THIS LINE
+  },
+  "include": [
+    "src/**/*",
+    "src/unit-tests/**/*"
+  ]
 }
