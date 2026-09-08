@@ -17,35 +17,24 @@ const CARD_SHADOW = '0 8px 28px rgba(16, 78, 101, 0.08)';
 type PatientStatus = 'admitted' | 'discharged';
 type OverviewFilter = 'all' | PatientStatus;
 
-const MOCK_PATIENTS: {
-  id: string;
+type DashboardPatient = Patient & {
   name: string;
   patientId: string;
   admissionDate: string;
-  color: string;
   status: PatientStatus;
-}[] = [
-  { id: '1', name: 'Sarah Brown', patientId: '1123', admissionDate: '15/04/2026', color: '#ef4444', status: 'admitted' },
-  { id: '2', name: 'Michael Owen', patientId: '1122', admissionDate: '15/04/2026', color: '#22c55e', status: 'admitted' },
-  { id: '3', name: 'Mary Jane', patientId: '1121', admissionDate: '14/04/2026', color: '#84cc16', status: 'admitted' },
-  { id: '4', name: 'Peter Doolie', patientId: '1120', admissionDate: '14/04/2026', color: '#6366f1', status: 'admitted' },
-  { id: '5', name: 'Peter Doolie', patientId: '1119', admissionDate: '14/04/2026', color: '#ef4444', status: 'admitted' },
-  { id: '6', name: 'Peter Doolie', patientId: '1118', admissionDate: '15/04/2026', color: '#eab308', status: 'admitted' },
-  { id: '7', name: 'Liam Park', patientId: '1117', admissionDate: '15/04/2026', color: '#d946ef', status: 'admitted' },
-  { id: '8', name: 'Nora Reyes', patientId: '1116', admissionDate: '16/04/2026', color: '#f87171', status: 'admitted' },
-  { id: '9', name: 'James Cruz', patientId: '1115', admissionDate: '16/04/2026', color: '#06b6d4', status: 'admitted' },
-  { id: '10', name: 'Elena Santos', patientId: '1114', admissionDate: '17/04/2026', color: '#0ea5e9', status: 'admitted' },
-  { id: '11', name: 'Carlos Vega', patientId: '1113', admissionDate: '17/04/2026', color: '#f97316', status: 'admitted' },
-  { id: '12', name: 'Ava Lim', patientId: '1112', admissionDate: '18/04/2026', color: '#14b8a6', status: 'admitted' },
-  { id: '13', name: 'Ben Torres', patientId: '1111', admissionDate: '10/04/2026', color: '#64748b', status: 'discharged' },
-  { id: '14', name: 'Mia Chen', patientId: '1110', admissionDate: '09/04/2026', color: '#a855f7', status: 'discharged' },
-  { id: '15', name: 'Owen Blake', patientId: '1109', admissionDate: '08/04/2026', color: '#e11d48', status: 'discharged' },
-  { id: '16', name: 'Ruby Diaz', patientId: '1108', admissionDate: '07/04/2026', color: '#65a30d', status: 'discharged' },
-  { id: '17', name: 'Noah Kim', patientId: '1107', admissionDate: '06/04/2026', color: '#2563eb', status: 'discharged' },
-  { id: '18', name: 'Ivy Morales', patientId: '1106', admissionDate: '05/04/2026', color: '#db2777', status: 'discharged' },
-  { id: '19', name: 'Leo Santos', patientId: '1105', admissionDate: '04/04/2026', color: '#ca8a04', status: 'discharged' },
-  { id: '20', name: 'Paula Reed', patientId: '1104', admissionDate: '03/04/2026', color: '#7c3aed', status: 'discharged' },
-];
+};
+
+function mapPatient(patient: Patient): DashboardPatient {
+  const admission = patient.admissions?.[0];
+  const admissionDate = admission?.admissionDate ?? patient.admissionDate ?? '';
+  return {
+    ...patient,
+    name: `${patient.firstName} ${patient.lastName}`,
+    patientId: patient.id,
+    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString() : '—',
+    status: admission?.dischargeDate ? 'discharged' : 'admitted',
+  };
+}
 
 const INITIAL_TODOS = [
   'Review newly admitted patients',
@@ -66,7 +55,6 @@ export function PhysicianDashboard() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
   const displayName = user ? `${user.firstName} ${user.lastName}` : 'Physician';
-  const initials = user ? `${user.firstName[0] ?? ''}${user.lastName[0] ?? ''}` : 'DR';
 
   const handleLogout = () => {
     logout();
@@ -78,35 +66,36 @@ export function PhysicianDashboard() {
       <CollapsibleSidebar
         nav={
           <>
-          <NavItem
-            label="Overview"
-            icon={<OverviewIcon />}
-            active={activeTab === 'overview'}
-            onClick={() => setActiveTab('overview')}
-          />
-          <NavItem
-            label="Manage"
-            icon={<ManageIcon />}
-            active={activeTab === 'manage'}
-            onClick={() => setActiveTab('manage')}
-          />
-          <NavItem
-            label="Requests"
-            icon={<img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />}
-            active={activeTab === 'requests'}
-            onClick={() => setActiveTab('requests')}
-          />
-        </nav>
-
-        <div style={shell.sidebarProfile}>
-          <div style={shell.profileAvatar}>JD</div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={shell.profileName}>Dr. {displayName}</div>
-            <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
-          </div>
-          <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
-            Log out
-          </button>
+            <NavItem
+              label="Overview"
+              icon={<OverviewIcon />}
+              active={activeTab === 'overview'}
+              onClick={() => setActiveTab('overview')}
+            />
+            <NavItem
+              label="Manage"
+              icon={<ManageIcon />}
+              active={activeTab === 'manage'}
+              onClick={() => setActiveTab('manage')}
+            />
+            <NavItem
+              label="Requests"
+              icon={<img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />}
+              active={activeTab === 'requests'}
+              onClick={() => setActiveTab('requests')}
+            />
+          </>
+        }
+        profile={
+          <div style={shell.sidebarProfile}>
+            <div style={shell.profileAvatar}>JD</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={shell.profileName}>Dr. {displayName}</div>
+              <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
+            </div>
+            <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
+              Log out
+            </button>
           </div>
         }
       />
@@ -196,7 +185,7 @@ function sameDay(a: Date, b: Date) {
 function OverviewView() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>('all');
-  const [checkedIds, setCheckedIds] = useState<Record<string, boolean>>({});
+  const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 
   useEffect(() => {
@@ -898,8 +887,6 @@ function ManageView() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const selected = patients.find((p) => p.id === selectedId) ?? patients[0];
-  const admissionDate = selected ? parseAdmissionDate(selected.admissionDate) : new Date();
-
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, string[]>>({});
   const [draft, setDraft] = useState('');
   const [summaryByPatient, setSummaryByPatient] = useState<Record<string, string>>({});

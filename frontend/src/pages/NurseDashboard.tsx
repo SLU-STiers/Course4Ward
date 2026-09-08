@@ -20,6 +20,7 @@ type NursePatient = {
   age: number;
   gender: string;
   initials: string;
+  status?: 'admitted' | 'discharged';
 };
 
 const MOCK_PATIENTS: NursePatient[] = [
@@ -759,7 +760,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
                 >
                   <td style={ui.td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ ...ui.dot, backgroundColor: p.status === 'admitted' ? '#22c55e' : '#ef4444' }} />
+                      <span style={{ ...ui.dot, backgroundColor: p.status === 'discharged' ? '#ef4444' : '#22c55e' }} />
                       <span style={{ fontWeight: 600, color: '#334155' }}>{p.name}</span>
                     </div>
                   </td>
