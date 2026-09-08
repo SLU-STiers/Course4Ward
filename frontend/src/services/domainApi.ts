@@ -18,6 +18,7 @@ export const authApi = {
     api.post('/auth/password-reset/request', { userId }),
   confirmPasswordReset: (userId: string, resetToken: string, newPassword: string) =>
     api.post('/auth/password-reset/confirm', { userId, resetToken, newPassword }),
+  changePassword: (newPassword: string) => api.post('/auth/password-change', { newPassword }),
 };
 
 // --- Patients ---
@@ -72,13 +73,13 @@ export const adminApi = {
   createUser: (data: any) => api.post('/admin/users', data),
   updateUser: (id: string, data: any) => api.patch(`/admin/users/${id}`, data),
   deactivateUser: (id: string) => api.delete(`/admin/users/${id}`),
-  auditLogs: (params?: { skip?: number; take?: number; entityType?: string }) =>
+  auditLogs: (params?: { skip?: number; take?: number }) =>
     api.get('/admin/audit-logs', { params }),
+  analyticsSummary: () => api.get('/admin/audit-logs/analytics/summary'),
   ordersAnalytics: (bucket: 'day' | 'week' | 'month' | 'year') =>
     api.get('/admin/audit-logs/analytics/orders', { params: { bucket } }),
-  getResetRequests: () => 
+  getResetRequests: () =>
     api.get('/admin/password-reset-requests'),
-  
-  approveResetRequest: (requestId: string) => 
+  approveResetRequest: (requestId: string) =>
     api.post(`/admin/password-reset-requests/${requestId}/approve`),
 };

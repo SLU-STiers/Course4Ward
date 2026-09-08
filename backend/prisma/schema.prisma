@@ -61,6 +61,14 @@ enum ActionType {
   REGISTER_PATIENT
 }
 
+enum CommunicationChannel {
+  SMS
+  EMAIL
+  CALL
+  VERBAL
+  OTHER
+}
+
 // ---------- Models ----------
 model User {
   id                String   @id @default(uuid())
@@ -129,6 +137,8 @@ model PhysicianOrder {
   encodedById    String
   enteredByRole  OrderEnteredBy              @default(PHYSICIAN)
   active         Boolean                     @default(true)
+
+  communicationChannel CommunicationChannel?
 
   summarizationId String?
 
