@@ -18,6 +18,13 @@ export interface Patient {
   admissionDate?: string | null;
   dischargeDate?: string | null;
   initialAssessment?: string | null;
+  admissions?: PatientAdmission[];
+}
+
+export interface PatientAdmission {
+  id: string;
+  admissionDate: string;
+  dischargeDate?: string | null;
 }
 
 export type OrderType = 'MEDICATION' | 'ADMISSION' | 'DISCHARGE' | 'DIAGNOSTIC' | 'OTHER';
@@ -32,6 +39,8 @@ export interface PhysicianOrder {
   dateCreated: string;
   dateUpdated?: string | null;
   active: boolean;
+  orderedBy?: { firstName: string; lastName: string };
+  encodedBy?: { firstName: string; lastName: string; role: Role };
 }
 
 export type SummaryStatus = 'DRAFT_AI' | 'DRAFT_EDITED' | 'APPROVED';
@@ -40,12 +49,24 @@ export interface CourseInWard {
   id: string;
   patientId: string;
   summaryDate: string;
+  summaryContent: string;
   aiGeneratedText?: string | null;
-  currentText: string;
+  currentText?: string;
   status: SummaryStatus;
   approvedById?: string | null;
   approvedAt?: string | null;
-  version: number;
+  version?: number;
+}
+
+export interface PhysicianRequest {
+  id: string;
+  requestedAt: string;
+  status: string;
+  processor: { firstName: string; lastName: string; role: Role };
+  summary: CourseInWard & {
+    patient: Patient;
+    orders: PhysicianOrder[];
+  };
 }
 
 export type ClaimStatus =
