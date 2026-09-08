@@ -43,7 +43,7 @@ export class AuthService {
     await this.auditLog.record({ userId: user.id, action: 'LOGIN' });
 
     return {
-      ...(await this.issueTokens(user.id, user.userId, user.role)),
+      ...(await this.issueTokens(user.id, user.userId, user.role, user.sessionVersion)),
       mustResetPassword: user.mustResetPassword,
       user: {
         id: user.id,
@@ -56,8 +56,13 @@ export class AuthService {
     };
   }
 
-  async issueTokens(sub: string, userId: string, role: string) {
-    const payload = { sub, userId, role };
+  async issueTokens(sub: string, userId: string, role: string, sessionVersion?: number) {
+    const payload = {
+      sub,
+      userId,
+      role,
+      ...(sessionVersion === undefined ? {} : { sessionVersion }),
+    };
     const accessToken = await this.jwt.signAsync(payload, {
       secret: this.config.get('JWT_ACCESS_SECRET'),
       expiresIn: this.config.get('JWT_ACCESS_EXPIRES_IN') ?? '15m',
@@ -150,7 +155,7 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: request.userId },
-        data: { passwordHash, mustResetPassword: true },
+        data: { passwordHash, mustResetPassword: true, sessionVersion: { increment: 1 } },
       }),
       this.prisma.passwordResetRequest.update({
         where: { id: request.id },
@@ -192,7 +197,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
     await this.prisma.user.update({
       where: { id: request.userId },
-      data: { passwordHash, mustResetPassword: false },
+      data: { passwordHash, mustResetPassword: false, sessionVersion: { increment: 1 } },
     });
 
     await this.prisma.passwordResetRequest.update({
@@ -210,12 +215,23 @@ export class AuthService {
 
   async changePassword(userId: string, newPassword: string) {
     const passwordHash = await bcrypt.hash(newPassword, 12);
-    await this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id: userId },
-      data: { passwordHash, mustResetPassword: false },
+      data: { passwordHash, mustResetPassword: false, sessionVersion: { increment: 1 } },
     });
 
     await this.auditLog.record({ userId, action: 'PASSWORD_RESET' });
-    return { message: 'Password updated successfully.' };
+    return {
+      message: 'Password updated successfully.',
+      ...(await this.issueTokens(user.id, user.userId, user.role, user.sessionVersion)),
+      user: {
+        id: user.id,
+        userId: user.userId,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        mustResetPassword: user.mustResetPassword,
+      },
+    };
   }
 }

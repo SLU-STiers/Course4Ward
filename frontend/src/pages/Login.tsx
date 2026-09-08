@@ -10,6 +10,8 @@ import logoImg from '../Img/Course4Ward-Logo.png';
 import bgImg from '../Img/Course4Ward-Background.png';
 import foregroundImg from '../Img/Course4Ward-Foreground.png';
 
+const RESET_TOKEN_STORAGE_KEY = 'cims_password_reset_token';
+
 export function Login() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -23,7 +25,9 @@ export function Login() {
   const [showReset, setShowReset] = useState(false);
   const [resetUserId, setResetUserId] = useState('');
   const [resetMessage, setResetMessage] = useState<string | null>(null);
-  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState<string | null>(() =>
+    sessionStorage.getItem(RESET_TOKEN_STORAGE_KEY),
+  );
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [passwordCopied, setPasswordCopied] = useState(false);
 
@@ -60,6 +64,7 @@ export function Login() {
     try {
       const { data } = await authApi.login(userId, password);
       setAuth(data.accessToken, data.refreshToken, data.user);
+      sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
 
       if (data.user.mustResetPassword) {
         navigate('/reset-password');
@@ -81,6 +86,8 @@ export function Login() {
     try {
       const { data } = await authApi.requestPasswordReset(resetUserId);
       setResetToken(data.resetToken);
+      sessionStorage.setItem(RESET_TOKEN_STORAGE_KEY, data.resetToken);
+      setShowReset(false);
       setResetMessage(
         'Your request was submitted. Keep this login page open while an administrator reviews it.'
       );
@@ -142,6 +149,30 @@ export function Login() {
                 />
               </div>
 
+              {resetMessage && <p style={styles.info}>{resetMessage}</p>}
+
+              {temporaryPassword && (
+                <div style={styles.resetNotification} role="status">
+                  <div style={styles.passwordRow}>
+                    <strong>Temporary password:</strong>
+                    <code style={styles.passwordValue}>{temporaryPassword}</code>
+                    <button
+                      type="button"
+                      aria-label="Copy temporary password"
+                      title="Copy temporary password"
+                      style={styles.copyButton}
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(temporaryPassword);
+                        setPasswordCopied(true);
+                      }}
+                    >
+                      {passwordCopied ? <Check size={16} /> : <Copy size={16} />}
+                    </button>
+                  </div>
+                  <span>Enter it on the login screen to continue.</span>
+                </div>
+              )}
+
               {error && <p style={styles.error}>{error}</p>}
 
               {/* Options Row */}
@@ -183,28 +214,6 @@ export function Login() {
               </div>
 
               {resetMessage && <p style={styles.info}>{resetMessage}</p>}
-
-              {temporaryPassword && (
-                <div style={styles.resetNotification} role="status">
-                  <div style={styles.passwordRow}>
-                    <strong>Temporary password:</strong>
-                    <code style={styles.passwordValue}>{temporaryPassword}</code>
-                    <button
-                      type="button"
-                      aria-label="Copy temporary password"
-                      title="Copy temporary password"
-                      style={styles.copyButton}
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(temporaryPassword);
-                        setPasswordCopied(true);
-                      }}
-                    >
-                      {passwordCopied ? <Check size={16} /> : <Copy size={16} />}
-                    </button>
-                  </div>
-                  <span>Enter it on the login screen to continue.</span>
-                </div>
-              )}
 
               {!temporaryPassword && (
                 <button style={styles.button} type="submit">

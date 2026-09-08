@@ -357,7 +357,6 @@ function AccountsPanel() {
   });
 
   const [form, setForm] = useState({
-    userId: '',
     firstName: '',
     lastName: '',
     role: 'NURSE',
@@ -369,14 +368,9 @@ function AccountsPanel() {
   const createUser = useMutation({
     mutationFn: () => adminApi.createUser(form),
     onSuccess: () => {
-      setForm({ userId: '', firstName: '', lastName: '', role: 'NURSE', temporaryPassword: '' });
+      setForm({ firstName: '', lastName: '', role: 'NURSE', temporaryPassword: '' });
       qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
-  });
-
-  const deactivate = useMutation({
-    mutationFn: (id: string) => adminApi.deactivateUser(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
   });
 
   const updateUser = useMutation({
@@ -397,12 +391,6 @@ function AccountsPanel() {
       <div style={styles.cardContainer}>
         <h4 style={{ marginTop: 0, color: '#0f172a' }}>Add Account</h4>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <input
-            style={styles.formInput}
-            placeholder="User ID (e.g. DRJ-0231)"
-            value={form.userId}
-            onChange={(e) => setForm({ ...form, userId: e.target.value })}
-          />
           <input
             style={styles.formInput}
             placeholder="First name"
@@ -460,14 +448,7 @@ function AccountsPanel() {
                 <td style={styles.td}>{u.role}</td>
                 <td style={styles.td}>{u.isActive ? 'Active' : 'Deactivated'}</td>
                 <td style={styles.td}>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => beginEdit(u)} style={styles.actionButton}>Edit</button>
-                    {u.isActive ? (
-                      <button onClick={() => deactivate.mutate(u.id)} style={styles.deactivateButton}>Deactivate</button>
-                    ) : (
-                      <button onClick={() => { beginEdit(u); setEditForm((current) => ({ ...current, isActive: true })); }} style={styles.actionButton}>Reactivate</button>
-                    )}
-                  </div>
+                  <button onClick={() => beginEdit(u)} style={styles.actionButton}>Edit</button>
                 </td>
               </tr>
             ))}
