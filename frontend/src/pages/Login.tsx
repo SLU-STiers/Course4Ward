@@ -14,6 +14,19 @@ import hideImg from '../Img/hide.png';
 
 const RESET_TOKEN_STORAGE_KEY = 'cims_password_reset_token';
 
+const INCORRECT_CREDENTIALS_MESSAGE = 'Invalid credentials. Please check your user ID and password.';
+
+/**
+ * Turns a failed-login Axios error into a single, consistent message. The
+ * backend can respond with either a plain string (e.g. "Invalid
+ * credentials" from a bad User ID/password) or an array of class-validator
+ * messages (e.g. "password must be longer than or equal to 8 characters"),
+ * but the login form always shows the same friendly wording either way.
+ */
+function buildLoginErrorMessage(_err: any): string {
+  return INCORRECT_CREDENTIALS_MESSAGE;
+}
+
 export function Login() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -75,7 +88,7 @@ export function Login() {
         navigate(ROLE_PATH[data.user.role] ?? '/', { replace: true });
       }
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Login failed. Check your credentials.');
+      setError(buildLoginErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -156,6 +169,7 @@ export function Login() {
                   />
                 </button>
               </div>
+              {error && <p style={styles.error}>{error}</p>}
             </div>
 
               {resetMessage && <p style={styles.info}>{resetMessage}</p>}
@@ -181,8 +195,6 @@ export function Login() {
                   <span>Enter it on the login screen to continue.</span>
                 </div>
               )}
-
-            {error && <p style={styles.error}>{error}</p>}
 
             {/* Options Row */}
             <div style={styles.optionsRow}>
