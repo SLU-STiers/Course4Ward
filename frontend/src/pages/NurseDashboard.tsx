@@ -259,6 +259,7 @@ const DEFAULT_SUMMARIES: Record<string, string> = {
 
 export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('management');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [charts, setCharts] = useState<Record<string, PatientChart>>(INITIAL_CHARTS);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -271,6 +272,8 @@ export function NurseDashboard() {
   return (
     <div style={shell.appContainer}>
       <CollapsibleSidebar
+        isOpen={sidebarOpen}
+        onOpenChange={setSidebarOpen}
         nav={
           <>
           <NavItem
@@ -301,7 +304,15 @@ export function NurseDashboard() {
         }
       />
 
-      <div style={shell.mainWrapper}>
+      <div
+        style={{
+          ...shell.mainWrapper,
+          marginLeft: sidebarOpen ? 232 : 0,
+          marginRight: 0,
+          width: 'auto',
+          maxWidth: 'none',
+        }}
+      >
         <header style={shell.header}>
           <h1 style={shell.headerTitle}>{activeTab === 'management' ? 'Management' : 'Patient Management'}</h1>
           <NotificationBell />
@@ -837,7 +848,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
               </div>
 
               {ordersForDate.length ? (
-                <>
+                <div style={ui.orderBox}>
                   <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>
                     Showing physician orders for {formatDateLabel(selectedDate)}
                   </div>
@@ -860,7 +871,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
                       </ul>
                     </div>
                   ))}
-                </>
+                </div>
               ) : (
                 <p style={ui.muted}>
                   No physician orders for {formatDateLabel(selectedDate)}. Choose another date to view previous
@@ -871,15 +882,18 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
 
             <div style={ui.aiCard}>
               <div style={ui.aiHeader}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: '#3b0764' }}>
-                  <span>✨</span> AI Summarized
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>✨</span>
+                  <span style={ui.aiTitle}>AI Summarized</span>
                 </div>
                 <span style={ui.aiBadge}>AI Draft ready</span>
               </div>
-              <p style={ui.aiText}>
-                {DEFAULT_SUMMARIES[selected.id] ??
-                  `No AI summary yet for ${selected.name}. Physician orders will appear here once summarized.`}
-              </p>
+              <div style={ui.aiBody}>
+                <p style={ui.aiText}>
+                  {DEFAULT_SUMMARIES[selected.id] ??
+                    `No AI summary yet for ${selected.name}. Physician orders will appear here once summarized.`}
+                </p>
+              </div>
             </div>
           </>
         ) : (
@@ -1107,10 +1121,16 @@ const ui: Record<string, React.CSSProperties> = {
   },
   metaRow: { display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 12, color: '#64748b', marginTop: 6 },
   orderCard: {
-    backgroundColor: '#ecfdf5',
-    borderRadius: 16,
-    padding: 16,
-    border: '1px solid #bbf7d0',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 20,
+    border: '1px solid #e2e8f0',
+  },
+  orderBox: {
+    backgroundColor: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    padding: 12,
   },
   orderHeader: {
     display: 'flex',
@@ -1162,21 +1182,29 @@ const ui: Record<string, React.CSSProperties> = {
     alignSelf: 'flex-start',
   },
   aiCard: {
-    backgroundColor: '#f3e8ff',
-    borderRadius: 16,
-    padding: 16,
-    border: '1px solid #e9d5ff',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    border: '1px solid #e2e8f0',
+    overflow: 'hidden',
   },
-  aiHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  aiHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 16px',
+    backgroundColor: '#f1eaff',
+  },
+  aiTitle: { fontWeight: 800, fontSize: 14, color: '#7c00b8' },
   aiBadge: {
-    backgroundColor: '#d8b4fe',
-    color: '#6b21a8',
+    backgroundColor: '#d3a0f5',
+    color: '#7c00b8',
     fontSize: 11,
     fontWeight: 700,
-    padding: '4px 10px',
-    borderRadius: 999,
+    padding: '4px 14px',
+    borderRadius: 6,
   },
-  aiText: { margin: 0, fontSize: 13, lineHeight: 1.55, color: '#4c1d95' },
+  aiBody: { padding: '14px 16px 18px' },
+  aiText: { margin: 0, fontSize: 13, lineHeight: 1.55, color: '#1e293b' },
   statRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 16 },
   statTile: {
     backgroundColor: '#f8fafc',
