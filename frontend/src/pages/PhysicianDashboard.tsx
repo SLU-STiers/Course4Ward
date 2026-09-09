@@ -41,53 +41,6 @@ function mapPatient(patient: Patient): DashboardPatient {
   };
 }
 
-<<<<<<< HEAD
-type DashboardPatient = {
-  id: string;
-  name: string;
-  patientId: string;
-  admissionDate: string;
-  status: PatientStatus;
-  admissions?: Patient['admissions'];
-};
-
-function mapPatient(patient: Patient): DashboardPatient {
-  const admissionDate = patient.admissionDate ?? patient.admissions?.[0]?.admissionDate ?? '';
-  const status: PatientStatus = patient.dischargeDate || patient.admissions?.[0]?.dischargeDate ? 'discharged' : 'admitted';
-  return {
-    id: patient.id,
-    name: `${patient.firstName} ${patient.lastName}`,
-    patientId: patient.id,
-    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString('en-GB') : '—',
-    color: status === 'admitted' ? '#22c55e' : '#ef4444',
-    status,
-    admissions: patient.admissions,
-  };
-}
-
-const MOCK_PATIENTS: {
-  id: string;
-=======
-type DashboardPatient = Patient & {
->>>>>>> 9d9114095f252f1eb158b45c3c6eb409d009587b
-  name: string;
-  patientId: string;
-  admissionDate: string;
-  status: PatientStatus;
-};
-
-function mapPatient(patient: Patient): DashboardPatient {
-  const admission = patient.admissions?.[0];
-  const admissionDate = admission?.admissionDate ?? patient.admissionDate ?? '';
-  return {
-    ...patient,
-    name: `${patient.firstName} ${patient.lastName}`,
-    patientId: patient.id,
-    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString() : '—',
-    status: admission?.dischargeDate ? 'discharged' : 'admitted',
-  };
-}
-
 const INITIAL_TODOS = [
   'Review newly admitted patients',
   'Update patient diagnoses',
@@ -103,6 +56,7 @@ const INITIAL_TODOS = [
 
 export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
@@ -116,28 +70,10 @@ export function PhysicianDashboard() {
   return (
     <div style={shell.appContainer}>
       <CollapsibleSidebar
+        isOpen={sidebarOpen}
+        onOpenChange={setSidebarOpen}
         nav={
           <>
-<<<<<<< HEAD
-          <NavItem
-            label="Overview"
-            icon={<OverviewIcon />}
-            active={activeTab === 'overview'}
-            onClick={() => setActiveTab('overview')}
-          />
-          <NavItem
-            label="Manage"
-            icon={<ManageIcon />}
-            active={activeTab === 'manage'}
-            onClick={() => setActiveTab('manage')}
-          />
-          <NavItem
-            label="Requests"
-            icon={<img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />}
-            active={activeTab === 'requests'}
-            onClick={() => setActiveTab('requests')}
-          />
-=======
             <NavItem
               label="Overview"
               icon={<OverviewIcon />}
@@ -156,20 +92,13 @@ export function PhysicianDashboard() {
               active={activeTab === 'requests'}
               onClick={() => setActiveTab('requests')}
             />
->>>>>>> 9d9114095f252f1eb158b45c3c6eb409d009587b
           </>
         }
         profile={
           <div style={shell.sidebarProfile}>
-<<<<<<< HEAD
-            <div style={shell.profileAvatar}>{initials}</div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={shell.profileName}>{displayName}</div>
-=======
             <div style={shell.profileAvatar}>JD</div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={shell.profileName}>Dr. {displayName}</div>
->>>>>>> 9d9114095f252f1eb158b45c3c6eb409d009587b
               <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
             </div>
             <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
@@ -179,7 +108,12 @@ export function PhysicianDashboard() {
         }
       />
 
-      <div style={shell.mainWrapper}>
+      <div
+        style={{
+          ...shell.mainWrapper,
+          marginLeft: sidebarOpen ? 232 : 0,
+        }}
+      >
         <header style={shell.header}>
           <div>
             <h1 style={shell.headerTitle}>Good Day! Dr. John</h1>
@@ -264,11 +198,7 @@ function sameDay(a: Date, b: Date) {
 function OverviewView() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>('all');
-<<<<<<< HEAD
-  const [patients, setPatients] = useState<DashboardPatient[]>(MOCK_PATIENTS);
-=======
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
->>>>>>> 9d9114095f252f1eb158b45c3c6eb409d009587b
   const pageSize = 8;
 
   useEffect(() => {
