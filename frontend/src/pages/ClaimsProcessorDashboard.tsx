@@ -498,14 +498,6 @@ export function ClaimsProcessorDashboard() {
             <ReviewRequestModal
               request={selectedRequest}
               onClose={() => setSelectedRequest(null)}
-              onApprove={() => {
-                setRequests((prev) =>
-                  prev.map((req) =>
-                    req.id === selectedRequest.id ? { ...req, status: 'Approved' } : req
-                  )
-                );
-                setSelectedRequest(null);
-              }}
               onRequestRevisions={() => {
                 setRequests((prev) =>
                   prev.map((req) =>
@@ -981,16 +973,12 @@ export function ClaimsProcessorDashboard() {
 function ReviewRequestModal({
   request,
   onClose,
-  onApprove,
   onRequestRevisions,
 }: {
   request: SummarizationRequest;
   onClose: () => void;
-  onApprove: () => void;
   onRequestRevisions: () => void;
 }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [summary, setSummary] = useState(request.summaryText);
   const [notificationMessage, setNotificationMessage] = useState('');
 
   const modalStyles = {
@@ -1231,11 +1219,6 @@ function ReviewRequestModal({
     },
   };
 
-  const resetSummary = () => {
-    setSummary(request.summaryText);
-    setIsEditing(false);
-  };
-
   return (
     <div style={modalStyles.overlay} onClick={onClose}>
       <div style={modalStyles.shell} onClick={(event) => event.stopPropagation()}>
@@ -1291,17 +1274,7 @@ function ReviewRequestModal({
               <span style={{ fontSize: '12px', color: '#64748b' }}>Generated: {request.date} at {request.time}</span>
             </div>
 
-            {isEditing ? (
-              <div style={{ padding: '16px' }}>
-                <textarea
-                  value={summary}
-                  onChange={(event) => setSummary(event.target.value)}
-                  style={modalStyles.textarea}
-                />
-              </div>
-            ) : (
-              <div style={modalStyles.summaryContent}>{summary}</div>
-            )}
+            <div style={modalStyles.summaryContent}>{request.summaryText}</div>
           </div>
 
           <div style={modalStyles.checklist}>
@@ -1329,22 +1302,10 @@ function ReviewRequestModal({
               style={modalStyles.textarea}
             />
             <div style={modalStyles.actions}>
-              <button type="button" style={modalStyles.outlineBtn} onClick={() => setIsEditing((value) => !value)}>
-                {isEditing ? 'Save Summary' : 'Edit Summary'}
-              </button>
-              <button type="button" style={modalStyles.outlineBtn} onClick={resetSummary}>
-                Reset Summary
+              <button type="button" style={modalStyles.primaryBtn} onClick={onRequestRevisions}>
+                Send Physician Reminder
               </button>
             </div>
-          </div>
-
-          <div style={modalStyles.actions}>
-            <button type="button" style={modalStyles.secondaryBtn} onClick={onRequestRevisions}>
-              Request Revisions
-            </button>
-            <button type="button" style={modalStyles.primaryBtn} onClick={onApprove}>
-              Approve Summary
-            </button>
           </div>
         </div>
       </div>
