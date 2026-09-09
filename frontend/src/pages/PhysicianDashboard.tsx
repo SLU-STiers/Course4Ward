@@ -1068,33 +1068,35 @@ function ManageView() {
             </div>
           </div>
 
-          <div style={manage.patientMeta}>
-            <div style={{ fontWeight: 700, color: '#0f172a' }}>Patient: {selected.name}</div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginTop: 8 }}>Orders:</div>
-          </div>
+          <div style={manage.orderBox}>
+            <div style={manage.patientMeta}>
+              <div style={{ fontWeight: 700, color: '#0f172a' }}>Patient: {selected.name}</div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginTop: 8 }}>Orders:</div>
+            </div>
 
-          <div style={manage.orderLines}>
-            {orders.map((line, idx) =>
-              editingOrders ? (
-                <div key={`${selected.id}-${idx}`} style={manage.orderEditRow}>
-                  <input
-                    value={line}
-                    onChange={(e) => updateOrder(idx, e.target.value)}
-                    style={manage.orderEditInput}
-                  />
-                  <button type="button" style={manage.removeOrderBtn} onClick={() => removeOrder(idx)}>
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <div key={`${selected.id}-${idx}`} style={manage.orderBullet}>
-                  • {line}
-                </div>
-              )
-            )}
-            {!orders.length && (
-              <div style={{ ...manage.orderLine, color: '#94a3b8' }}>No orders yet.</div>
-            )}
+            <div style={manage.orderLines}>
+              {orders.map((line, idx) =>
+                editingOrders ? (
+                  <div key={`${selected.id}-${idx}`} style={manage.orderEditRow}>
+                    <input
+                      value={line}
+                      onChange={(e) => updateOrder(idx, e.target.value)}
+                      style={manage.orderEditInput}
+                    />
+                    <button type="button" style={manage.removeOrderBtn} onClick={() => removeOrder(idx)}>
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div key={`${selected.id}-${idx}`} style={manage.orderBullet}>
+                    • {line}
+                  </div>
+                )
+              )}
+              {!orders.length && (
+                <div style={{ ...manage.orderLine, color: '#94a3b8' }}>No orders yet.</div>
+              )}
+            </div>
           </div>
 
           <textarea
@@ -1139,52 +1141,54 @@ function ManageView() {
             <span style={manage.aiBadge}>AI Draft ready</span>
           </div>
 
-          {editingSummary ? (
-            <textarea
-              value={summary}
-              onChange={(e) =>
-                setSummaryByPatient((prev) => ({ ...prev, [selected.id]: e.target.value }))
-              }
-              rows={6}
-              style={manage.aiEditor}
-            />
-          ) : (
-            <p style={manage.aiText}>{summary}</p>
-          )}
-
-          <div style={manage.aiActions}>
-            <button
-              type="button"
-              style={manage.aiLink}
-              onClick={() => {
-                if (!editingSummary) {
-                  setEditingSummary(true);
-                  return;
+          <div style={manage.aiBody}>
+            {editingSummary ? (
+              <textarea
+                value={summary}
+                onChange={(e) =>
+                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: e.target.value }))
                 }
-                const id = summaryIds[selected.id];
-                if (!id) return;
-                courseInWardApi.edit(id, summary).then(({ data }) => {
-                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
-                  setEditingSummary(false);
-                });
-              }}
-            >
-              {editingSummary ? 'Save Summary' : 'Edit Summary'}
-            </button>
-            <button
-              type="button"
-              style={manage.aiLink}
-              onClick={() => {
-                const id = summaryIds[selected.id];
-                if (!id) return;
-                courseInWardApi.regenerate(id).then(({ data }) => {
-                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
-                  setEditingSummary(false);
-                });
-              }}
-            >
-              ↻ Regenerate
-            </button>
+                rows={6}
+                style={manage.aiEditor}
+              />
+            ) : (
+              <p style={manage.aiText}>{summary}</p>
+            )}
+
+            <div style={manage.aiActions}>
+              <button
+                type="button"
+                style={manage.aiLink}
+                onClick={() => {
+                  if (!editingSummary) {
+                    setEditingSummary(true);
+                    return;
+                  }
+                  const id = summaryIds[selected.id];
+                  if (!id) return;
+                  courseInWardApi.edit(id, summary).then(({ data }) => {
+                    setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
+                    setEditingSummary(false);
+                  });
+                }}
+              >
+                {editingSummary ? 'Save Summary' : 'Edit Summary'}
+              </button>
+              <button
+                type="button"
+                style={manage.aiLink}
+                onClick={() => {
+                  const id = summaryIds[selected.id];
+                  if (!id) return;
+                  courseInWardApi.regenerate(id).then(({ data }) => {
+                    setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
+                    setEditingSummary(false);
+                  });
+                }}
+              >
+                ↻ Regenerate
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -1673,9 +1677,9 @@ const manage: Record<string, React.CSSProperties> = {
   },
   orderCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 18,
-    boxShadow: CARD_SHADOW,
+    borderRadius: 12,
+    padding: 20,
+    border: '1px solid #e2e8f0',
   },
   orderHeader: {
     display: 'flex',
@@ -1719,6 +1723,13 @@ const manage: Record<string, React.CSSProperties> = {
     backgroundColor: '#ffffff',
     fontSize: 12,
   },
+  orderBox: {
+    backgroundColor: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
   patientMeta: {
     marginBottom: 12,
   },
@@ -1726,7 +1737,6 @@ const manage: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 8,
-    marginBottom: 12,
   },
   orderLine: {
     border: '1px solid #e2e8f0',
@@ -1779,30 +1789,34 @@ const manage: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   aiCard: {
-    backgroundColor: '#f3e8ff',
-    borderRadius: 20,
-    padding: 18,
-    boxShadow: CARD_SHADOW,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    border: '1px solid #e2e8f0',
+    overflow: 'hidden',
   },
   aiHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    padding: '10px 16px',
+    backgroundColor: '#f1eaff',
   },
   aiTitle: {
     margin: 0,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 800,
-    color: '#0f172a',
+    color: '#7c00b8',
   },
   aiBadge: {
-    backgroundColor: '#d8a0f4',
-    color: '#7e22ce',
+    backgroundColor: '#d3a0f5',
+    color: '#7c00b8',
     fontSize: 11,
     fontWeight: 700,
-    padding: '4px 10px',
-    borderRadius: 999,
+    padding: '4px 14px',
+    borderRadius: 6,
+  },
+  aiBody: {
+    padding: '14px 16px 18px',
   },
   aiText: {
     margin: '0 0 14px',
@@ -1822,16 +1836,17 @@ const manage: Record<string, React.CSSProperties> = {
   },
   aiActions: {
     display: 'flex',
-    gap: 16,
+    gap: 10,
   },
   aiLink: {
-    border: 'none',
-    background: 'transparent',
-    color: '#2563eb',
-    fontSize: 13,
+    border: '1px solid #9cc8ff',
+    backgroundColor: '#ffffff',
+    color: '#0066cc',
+    fontSize: 12,
     fontWeight: 700,
+    borderRadius: 6,
+    padding: '6px 14px',
     cursor: 'pointer',
-    padding: 0,
   },
   dotsBtn: {
     border: 'none',
