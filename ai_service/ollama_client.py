@@ -42,9 +42,37 @@ class AdmissionItem(BaseModel):
     orders: List[OrderItem]
 
 
+class ReferenceExample(BaseModel):
+    """
+    One retrieved RAG reference: a historical APPROVED "Course in the Ward"
+    summary plus the source physician orders it was generated from. Used ONLY as
+    style/format guidance for the current summary, never copied verbatim.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
+    approvedSummary: str = Field(
+        ...,
+        description="Approved Course in the Ward summary text (exemplar output).",
+        validation_alias=AliasChoices("approved_summary", "approvedSummary", "summary"),
+    )
+    sourceOrders: List[str] = Field(
+        default_factory=list,
+        description="Raw physician orders that produced the exemplar summary.",
+        validation_alias=AliasChoices("source_orders", "sourceOrders", "orders"),
+    )
+    similarity: Optional[float] = Field(
+        None,
+        description="Cosine similarity between the reference and the current orders.",
+    )
+
+
 class BatchSummaryRequest(BaseModel):
     temperature: Optional[float] = Field(0.1, ge=0.0, le=1.0)
     admissions: List[AdmissionItem]
+    references: List[ReferenceExample] = Field(
+        default_factory=list,
+        description="Optional RAG references (prior APPROVED summaries of similar orders) used as style guidance.",
+    )
 
 
 class GroupResult(BaseModel):
@@ -64,19 +92,81 @@ class BatchSummaryResponse(BaseModel):
     failed: int
     results: List[GroupResult]
 
+
+class EmbedRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    texts: List[str] = Field(
+        ...,
+        min_length=1,
+        description="One or more texts to embed into vectors.",
+        validation_alias=AliasChoices("texts", "input"),
+    )
+
+
+class EmbedResponse(BaseModel):
+    model: str
+    dimension: int
+    embeddings: List[List[float]]
+    elapsed_seconds: float
+
 # ------------------ Core Summarization Function --------------------------
-def generate_summary(doctor_orders: str, temperature: float = 0.1, group_label: Optional[str] = None):
+def _format_references(references):
+    """Render RAG references (list of dicts) as a prompt guidance block."""
+    if not references:
+        return ""
+    lines = [
+        'REFERENCE EXAMPLES — prior APPROVED "Course in the Ward" summaries of similar physician orders.',
+        "Use them ONLY as style/format/terminology guidance (past tense + passive voice, paragraph structure, clinical wording).",
+        "NEVER copy their clinical content, medications, diagnoses, or details into the summary you write.",
+        "",
+    ]
+    for i, ref in enumerate(references, start=1):
+        sim = ref.get("similarity")
+        sim_txt = f" (similarity {sim:.2f})" if isinstance(sim, (int, float)) else ""
+        lines.append(f"Example {i}{sim_txt}:")
+        source_orders = ref.get("sourceOrders") or ref.get("source_orders") or []
+        if source_orders:
+            lines.append("  SOURCE ORDERS:")
+            lines.extend(f"    - {so}" for so in source_orders)
+        summary = (
+            ref.get("approvedSummary")
+            or ref.get("approved_summary")
+            or ref.get("summary")
+        )
+        lines.append("  APPROVED SUMMARY:")
+        lines.append(f"    {summary}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def generate_summary(
+    doctor_orders: str,
+    temperature: float = 0.1,
+    group_label: Optional[str] = None,
+    references: Optional[List[dict]] = None,
+):
     """
     Calls Ollama to generate a summary of the doctor's orders.
     `group_label`, when provided, tells the model which day/admission group the
-    orders belong to (e.g. "Day 1 of Admission #..."). The output paragraph
-    format is unchanged.
+    orders belong to (e.g. "Day 1 of Admission #..."). `references`, when
+    provided, adds retrieved RAG examples (prior APPROVED summaries of similar
+    orders) used only as style guidance. The output paragraph format is unchanged.
     Returns (summary_text, elapsed_seconds) or (None, elapsed) on error.
     """
     context_block = (
         f"ORDERS BELONG TO: {group_label} (these orders were written on the same "
         "day of the same admission and must be summarized together).\n\n"
         if group_label
+        else ""
+    )
+
+    references_block = _format_references(references)
+    references_rules = (
+        "7. REFERENCES: When reference examples are present, match their tone, "
+        "structure, and terminology, but summarize ONLY the CURRENT orders below. "
+        "Do not copy any clinical detail from the references and do not mention them.\n"
+        if references_block
         else ""
     )
 
@@ -88,11 +178,13 @@ RULES (FOLLOW THESE STRICTLY):
 2. OUTPUT LENGTH: Exactly 5 sentences. Group related orders into the same sentence using "and", "while", or semicolons. Do not use bullet points or numbered lists.
 3. COMPLETENESS: Include EVERY exact detail from the orders: medications (dose, route, frequency), diagnostics, fluids, oxygen, labs, referrals, PRN conditions, monitoring, consult criteria. Do not omit anything.
 4. NO ADDITIONS: Do not add diagnoses, outcomes, or context not present in the orders.
+{references_rules}
+{context_block}{references_block}
 
-{context_block}CURRENT DOCTOR'S ORDERS:
+CURRENT DOCTOR'S ORDERS:
 {doctor_orders}
 
-FINAL REMINDER: Output ONLY the summary paragraph. No extra text, no greetings, no bullet points.
+FINAL REMINDER: Output ONLY the summary paragraph. No extra text, no greetings, no bullet points. Do not mention or echo the reference examples.
 """
     payload = {
         "model": MODEL,
@@ -260,7 +352,12 @@ async def generate_summary_batch(req: BatchSummaryRequest):
             else:
                 label = _day_label(admission.admissionId, order_date, admission_date)
 
-            summary, elapsed = generate_summary(group_text, req.temperature, group_label=label)
+            summary, elapsed = generate_summary(
+                group_text,
+                req.temperature,
+                group_label=label,
+                references=[r.model_dump(exclude_none=True) for r in req.references],
+            )
             error = None if summary else "Failed to generate summary (check Ollama logs)"
 
             results.append(GroupResult(
@@ -283,10 +380,52 @@ async def generate_summary_batch(req: BatchSummaryRequest):
         results=results,
     )
 
+# ------------------ Embeddings Endpoint ---------------------------------
+@app.post("/embed", response_model=EmbedResponse)
+async def embed_endpoint(req: EmbedRequest):
+    """
+    Embed one or more texts with the LOCAL sentence-transformers model
+    (qwen3-embedding-0.6b, 1024-dim) exposed by `ollama_embeddings.py`.
+
+    Body: { "texts": ["...", ...] }
+    Returns: { model, dimension, embeddings: [[...]], elapsed_seconds }
+    """
+    if not req.texts:
+        raise HTTPException(status_code=400, detail="texts must not be empty")
+
+    start_time = time.time()
+    try:
+        from ollama_embeddings import EMBED_MODEL_NAME, embed_texts
+    except Exception as e:  # pragma: no cover - module import failure
+        raise HTTPException(status_code=503, detail=f"Embedding module unavailable: {e}")
+
+    try:
+        vectors = embed_texts(req.texts)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Embedding model failed to load or encode: {e}",
+        )
+
+    elapsed = time.time() - start_time
+    return EmbedResponse(
+        model=EMBED_MODEL_NAME,
+        dimension=int(vectors.shape[1]),
+        embeddings=vectors.tolist(),
+        elapsed_seconds=round(elapsed, 3),
+    )
+
 # ------------------ Health Check -----------------------------------------
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "model": MODEL}
+    embedding_model = "not_configured"
+    try:
+        from ollama_embeddings import EMBED_MODEL_NAME
+
+        embedding_model = EMBED_MODEL_NAME
+    except Exception:  # pragma: no cover - optional dependency
+        pass
+    return {"status": "ok", "model": MODEL, "embedding_model": embedding_model}
 
 # ------------------ (Optional) Run directly ------------------------------
 if __name__ == "__main__":

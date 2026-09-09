@@ -1,15 +1,26 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SummaryStatus } from '@prisma/client';
+import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
-import { OllamaClient } from './ollama-client';
+import { OllamaClient, OllamaReference } from './ollama-client';
+
+/** Vector dimension produced by the ai-service embedding model (Qwen3-Embedding-0.6B). */
+const EMBEDDING_DIM = 1024;
+
+interface SimilarReferenceRow {
+  summaryId: string;
+  orderContent: string;
+  approvedSummary: string;
+  similarity: number;
+}
 
 @Injectable()
 export class CourseInWardService {
   private readonly aiServiceUrl: string;
   private readonly ollamaClient: OllamaClient;
+  private readonly logger = new Logger(CourseInWardService.name);
 
   constructor(
     private prisma: PrismaService,
@@ -23,21 +34,52 @@ export class CourseInWardService {
 
   // Calls the Python/FastAPI + Ollama microservice. This service is the ONLY
   // caller of ai-service -- the frontend never talks to it directly.
-  private async callAiSummarizer(orders: any[], patientName: string): Promise<string> {
+  private async callAiSummarizer(orders: any[]): Promise<string> {
     try {
-      const response = await this.ollamaClient.summarizeBatch(
-        orders.map((order) => ({
+      if (!orders || orders.length === 0) {
+        this.logger.warn('[ai] callAiSummarizer received no orders');
+        throw new BadRequestException('No orders found to summarize');
+      }
+
+      // Group the incoming orders by admission so the AI service can label each
+      // admission-day group correctly.
+      const byAdmission = new Map<string, any[]>();
+      for (const order of orders) {
+        const key = order.admissionId ?? 'no-admission';
+        const bucket = byAdmission.get(key) ?? [];
+        bucket.push(order);
+        byAdmission.set(key, bucket);
+      }
+
+      const admissions = Array.from(byAdmission.entries()).map(([admissionId, bucket]) => ({
+        admissionId,
+        admissionDate: null,
+        orders: bucket.map((order) => ({
           id: String(order.id),
-          text: [
-            order.type,
-            order.description,
-            order.dosage,
-            order.frequency,
-          ]
-            .filter(Boolean)
-            .join(' '),
+          text: order.orderContent,
+          dateCreated:
+            order.dateCreated instanceof Date
+              ? order.dateCreated.toISOString()
+              : (order.dateCreated ?? null),
         })),
+      }));
+
+      // RAG: embed the combined orders and retrieve similar APPROVED summaries
+      // to use as style exemplars during generation.
+      const queryText = orders
+        .map((order) => order.orderContent)
+        .filter(Boolean)
+        .join('\n');
+      const references = queryText ? await this.retrieveReferences(queryText) : [];
+
+      this.logger.log(
+        `[ai] summarizing ${orders.length} order(s) across ${admissions.length} admission(s) with ${references.length} RAG reference(s)`,
       );
+
+      const response = await this.ollamaClient.summarizeBatch(admissions, {
+        temperature: 0.1,
+        references,
+      });
 
       if (response.failed > 0 || response.results.some((result) => !result.success)) {
         throw new Error('One or more order summaries failed');
@@ -48,6 +90,78 @@ export class CourseInWardService {
       throw new BadRequestException(
         'AI summarization service is unavailable. Try again or write the summary manually.',
       );
+    }
+  }
+
+  /**
+   * Retrieve up to `limit` DISTINCT APPROVED "Course in the Ward" summaries whose
+   * source orders are semantically similar to `queryText`, using pgvector cosine
+   * similarity over `physician_orders."orderEmbedding"`. Each returned reference
+   * carries its approved summary text plus a few matching source orders.
+   *
+   * Best-effort: any failure (AI service down, empty corpus, dimension mismatch)
+   * returns [] so summarization can still proceed without references.
+   */
+  private async retrieveReferences(
+    queryText: string,
+    limit = 3,
+  ): Promise<OllamaReference[]> {
+    try {
+      const queryVector = await this.ollamaClient.embed(queryText);
+      if (!queryVector || queryVector.length !== EMBEDDING_DIM) {
+        this.logger.warn(
+          `[rag] unexpected query embedding dimension: ${queryVector?.length ?? 0}`,
+        );
+        return [];
+      }
+      const literal = queryVector.map((v) => v.toFixed(8)).join(',');
+
+      // Orders linked to an APPROVED summary, ranked by cosine similarity.
+      const rows = await this.prisma.$queryRaw<SimilarReferenceRow[]>(Prisma.sql`
+        SELECT
+          o."summarizationId"  AS "summaryId",
+          o."orderContent"     AS "orderContent",
+          c."summaryContent"   AS "approvedSummary",
+          1 - (o."orderEmbedding" <=> ${`[${literal}]`}::vector) AS "similarity"
+        FROM "physician_orders" o
+        JOIN "courses_in_ward" c ON c."id" = o."summarizationId"
+        WHERE o.active = true
+          AND o."orderEmbedding" IS NOT NULL
+          AND c.status = 'APPROVED'
+        ORDER BY o."orderEmbedding" <=> ${`[${literal}]`}::vector
+        LIMIT ${limit * 8}
+      `);
+
+      // Keep the best-matching row per summary; retain up to 3 source orders.
+      const best = new Map<
+        string,
+        { summary: string; orders: string[]; sim: number }
+      >();
+      for (const row of rows) {
+        const key = String(row.summaryId);
+        const entry =
+          best.get(key) ??
+          ({ summary: row.approvedSummary, orders: [], sim: row.similarity } as {
+            summary: string;
+            orders: string[];
+            sim: number;
+          });
+        if (entry.orders.length < 3) entry.orders.push(row.orderContent);
+        entry.sim = Math.max(entry.sim, row.similarity);
+        best.set(key, entry);
+      }
+
+      return Array.from(best.values())
+        .sort((a, b) => b.sim - a.sim)
+        .slice(0, limit)
+        .map((entry) => ({
+          approvedSummary: entry.summary,
+          sourceOrders: entry.orders,
+          similarity: Number(entry.sim.toFixed(4)),
+        }));
+    } catch (err) {
+      this.logger.warn(`[rag] reference retrieval failed: ${(err as Error).message}`);
+      return [];
     }
   }
 
@@ -62,10 +176,7 @@ export class CourseInWardService {
       throw new BadRequestException('No orders recorded for this patient today');
     }
 
-    const aiText = await this.callAiSummarizer(
-      todaysOrders,
-      `${patient.firstName} ${patient.lastName}`,
-    );
+    const aiText = await this.callAiSummarizer(todaysOrders);
 
     const summary = await this.prisma.courseInWard.create({
       data: {
@@ -105,13 +216,28 @@ export class CourseInWardService {
   // "Resummarized Physician's Orders" -- option 2: regenerate via AI
   async regenerateSummary(id: string, physicianId: string) {
     const existing = await this.findOne(id);
-    const todaysOrders = await this.ordersService.findTodaysOrders(existing.patientId);
-    const patient = await this.prisma.patient.findUnique({ where: { id: existing.patientId } });
 
-    const aiText = await this.callAiSummarizer(
-      todaysOrders,
-      `${patient!.firstName} ${patient!.lastName}`,
-    );
+    // Prefer orders written today; otherwise fall back to the orders this
+    // summary was originally created from (or any of the patient's orders) so
+    // regenerating an older summary still has content instead of sending an
+    // empty batch to the AI service.
+    let sourceOrders = await this.ordersService.findTodaysOrders(existing.patientId);
+    if (sourceOrders.length === 0) {
+      sourceOrders = await this.prisma.physicianOrder.findMany({
+        where: {
+          OR: [
+            { summarizationId: existing.id },
+            { admission: { patientId: existing.patientId } },
+          ],
+        },
+        orderBy: { dateCreated: 'asc' },
+      });
+    }
+    if (sourceOrders.length === 0) {
+      throw new BadRequestException('No orders found to regenerate this summary');
+    }
+
+    const aiText = await this.callAiSummarizer(sourceOrders);
 
     const updated = await this.prisma.courseInWard.update({
       where: { id },

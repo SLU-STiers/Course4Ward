@@ -139,7 +139,7 @@ model PhysicianOrder {
   orderContent   String
   dateCreated    DateTime                    @default(now())
   dateUpdated    DateTime?                   @updatedAt
-  orderEmbedding Unsupported("vector(768)")?
+  orderEmbedding Unsupported("vector(1024)")?
   admissionId    String
   orderedById    String
   encodedById    String
