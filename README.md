@@ -26,32 +26,44 @@ Before all initialization activities, make sure that you have the following prer
 # **Installation**
 1. After installing or cloning the project files, head to the frontend folder using the following command in the terminal within VS Code:
 - cd frontend 
-2. Install all the npm dependencies using the command:
+2. Find the "backend" folder in the files menu on the left portion of VS Code (or the software application you are using)
+3. Create a file and name it ".env".
+4. Paste the following inside the file:
+- DATABASE_URL="postgresql://postgres:root@localhost:5432/course4ward"
+JWT_ACCESS_SECRET=change_me_access_secret
+JWT_REFRESH_SECRET=change_me_refresh_secret
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+AI_SERVICE_URL=http://localhost:8000
+PORT=3000
+CORS_ORIGIN=http://localhost:5173
+JWT_SECRET=SuperKey123!
+5. Install all the npm dependencies using the command:
 - npm install
-3. Do the same from the backend folder. You may use the following commands in order:
+6. Do the same from the backend folder. You may use the following commands in order:
 - cd .. (Goes back to the previous directory)
 - cd backend
 - npm install
-4. On your machine, go to the search bar and type:
+7. On your machine, go to the search bar and type:
 - X64 Native Tools Command Prompt for VS 2022 (Run as administrator)
-5. Type the following command (line-by-line):
+8. Type the following command (line-by-line):
 - set "PGROOT=C:\Program Files\PostgreSQL\18"
 - cd %TEMP%
 - git clone --branch v0.8.6 https://github.com/pgvector/pgvector.git
 - cd pgvector
 - nmake /F Makefile.win
 - nmake /F Makefile.win install
-6. Open postgreSQL, click the “Server” tab, and enter the account credentials you have set during the installation phase.
-7. Go back to VS Code and change your directory to the backend (if you’re not in the backend directory). Type the following command:
+9. Open postgreSQL, click the “Server” tab, and enter the account credentials you have set during the installation phase.
+10. Go back to VS Code and change your directory to the backend (if you’re not in the backend directory). Type the following command:
 - npx prisma generate
 - npx prisma db seed
-8. The database schema “course4ward” should be created in postgreSQL.
+11. The database schema “course4ward” should be created in postgreSQL.
 9. Go back to VS Code and on the terminal, go to the backend directory and type the following:
 - npm run start:dev
-10. Go to the frontend directory and type the following:
+12. Go to the frontend directory and type the following:
 - npm run dev
-11. Click on the “local” link.
-12. (TO BE CONTINUED/REVISED)
+13. Click on the “local” link.
+14. (TO BE CONTINUED/REVISED)
 
 # **Quick Start**
 Once the prerequisites are followed and the installation steps are done, you may start the Course4Ward web application using the command:
