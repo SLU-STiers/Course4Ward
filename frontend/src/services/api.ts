@@ -16,7 +16,14 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // Only force a session-expired logout/redirect when the failing request
+    // was actually authenticated (carried a Bearer token). A plain login
+    // attempt with wrong credentials also returns 401, but it never had a
+    // token attached — that's just "bad credentials", not an expired
+    // session, so it should leave the login form's error message on screen
+    // instead of hard-reloading the page out from under it.
+    const wasAuthenticatedRequest = Boolean(error.config?.headers?.Authorization);
+    if (error.response?.status === 401 && wasAuthenticatedRequest) {
       useAuthStore.getState().logout();
       window.location.href = '/login';
     }
