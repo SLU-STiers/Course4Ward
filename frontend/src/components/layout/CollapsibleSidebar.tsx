@@ -21,6 +21,7 @@ export function CollapsibleSidebar({ nav, profile, isOpen: controlledIsOpen, onO
 
   return (
     <aside
+      className="dashboard-sidebar"
       style={{
         position: 'fixed',
         inset: 0,
@@ -28,16 +29,16 @@ export function CollapsibleSidebar({ nav, profile, isOpen: controlledIsOpen, onO
         zIndex: 20,
         width: 232,
         transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-        transition: 'transform 240ms ease',
-        backgroundColor: '#ffffff',
-        borderRight: '1px solid #e5e7eb',
+        transition: 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms ease',
+        backgroundColor: 'var(--dashboard-surface)',
+        borderRight: '1px solid var(--dashboard-border)',
         boxShadow: isOpen ? '8px 0 24px rgba(15, 23, 42, 0.08)' : 'none',
         display: 'flex',
         flexDirection: 'column',
         padding: '8px 0 16px',
         overflow: 'visible',
-        fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        color: '#0f172a',
+        fontFamily: 'var(--dashboard-font-stack)',
+        color: 'var(--dashboard-ink)',
       }}
     >
       <div
@@ -74,9 +75,9 @@ export function CollapsibleSidebar({ nav, profile, isOpen: controlledIsOpen, onO
           width: 42,
           height: 64,
           padding: 0,
-          border: '1px solid #dbe3ec',
+          border: '1px solid var(--dashboard-border)',
           borderRadius: 12,
-          backgroundColor: '#ffffff',
+          backgroundColor: 'var(--dashboard-surface)',
           boxShadow: '4px 0 12px rgba(15, 23, 42, 0.08)',
           display: 'flex',
           alignItems: 'center',

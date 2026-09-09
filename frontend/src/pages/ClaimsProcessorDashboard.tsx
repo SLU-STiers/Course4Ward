@@ -3,6 +3,7 @@ import { Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardShell } from '../components/layout/DashboardShell';
 import { NotificationBell } from '../components/layout/NotificationBell';
+import { SearchField } from '../components/ui/DashboardUi';
 import overviewIcon from '../Img/overview.png';
 import requestsIcon from '../Img/requests.png';
 import exportIcon from '../Img/export.png';
@@ -391,16 +392,7 @@ export function ClaimsProcessorDashboard() {
           {activeTab === 'requests' && (
             <div>
               <div style={styles.requestToolbar}>
-                <div style={styles.searchWrapper}>
-                  <span style={styles.searchIcon}>🔍</span>
-                  <input
-                    type="text"
-                    placeholder="Search requests..."
-                    value={searchQuery}
-                    onChange={(e) => setRequestSearchAndResetPage(e.target.value)}
-                    style={styles.searchInput}
-                  />
-                </div>
+                      <SearchField value={searchQuery} onChange={setRequestSearchAndResetPage} placeholder="Search requests..." ariaLabel="Search requests" />
                 <HoverMenu
                   label="Filter"
                   icon={<Filter size={15} aria-hidden="true" />}
@@ -560,16 +552,7 @@ export function ClaimsProcessorDashboard() {
                   </div>
 
                   <div style={styles.exportToolbar}>
-                    <div style={styles.searchWrapper}>
-                      <span style={styles.searchIcon}>🔍</span>
-                      <input
-                        type="text"
-                        placeholder="Search patient"
-                        value={patientSearch}
-                        onChange={(e) => setPatientSearch(e.target.value)}
-                        style={styles.searchInput}
-                      />
-                    </div>
+                    <SearchField value={patientSearch} onChange={setPatientSearchAndResetPage} placeholder="Search patient" ariaLabel="Search patients" />
                     <HoverMenu label="Filter" icon={<Filter size={15} aria-hidden="true" />} open={showPatientFilter} setOpen={setShowPatientFilter}>
                       <div style={overviewStyles.filterLabel}>Filter patients</div>
                       <span style={overviewStyles.filterOptionLabel}>Admission date</span>
@@ -611,7 +594,7 @@ export function ClaimsProcessorDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredCf4Patients.map((p) => (
+                        {visibleCf4Patients.map((p) => (
                           <tr key={p.id} style={styles.tr}>
                             <td style={styles.td}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -753,16 +736,7 @@ export function ClaimsProcessorDashboard() {
                 <h2 style={overviewStyles.cardTitle}>Patient Overview</h2>
 
                 <div style={overviewStyles.patientToolbar}>
-                  <div style={styles.searchWrapper}>
-                    <span style={styles.searchIcon}>🔍</span>
-                    <input
-                      type="text"
-                      placeholder="Search patient"
-                      value={patientSearch}
-                      onChange={(e) => setPatientSearchAndResetPage(e.target.value)}
-                      style={styles.searchInput}
-                    />
-                  </div>
+                  <SearchField value={patientSearch} onChange={setPatientSearchAndResetPage} placeholder="Search patient" ariaLabel="Search patients" />
                   <HoverMenu label="Filter" icon={<Filter size={15} aria-hidden="true" />} open={showPatientFilter} setOpen={setShowPatientFilter}>
                     <div style={overviewStyles.filterLabel}>Filter patients</div>
                     <span style={overviewStyles.filterOptionLabel}>Admission date</span>
