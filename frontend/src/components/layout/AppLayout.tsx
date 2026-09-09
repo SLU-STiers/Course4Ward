@@ -2,10 +2,12 @@ import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { PATH_ROLE } from '../../routes/roleRoutes';
+import { useIdleLogout } from '../../hooks/useIdleLogout';
 
 const KNOWN_SHELL_PATHS = ['/physician', '/nurse', '/claims', '/admin'];
 
 export function AppLayout() {
+  useIdleLogout();
   const { user, logout, setAuth, accessToken, refreshToken } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
