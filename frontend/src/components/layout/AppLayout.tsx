@@ -1,12 +1,14 @@
+import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { PATH_ROLE } from '../../routes/roleRoutes';
 import { useIdleLogout } from '../../hooks/useIdleLogout';
 
 const KNOWN_SHELL_PATHS = ['/physician', '/nurse', '/claims', '/admin'];
 
 export function AppLayout() {
   useIdleLogout();
-  const { user, logout } = useAuthStore();
+  const { user, logout, setAuth, accessToken, refreshToken } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -18,6 +20,19 @@ export function AppLayout() {
   const hasOwnShell = KNOWN_SHELL_PATHS.some(
     (path) => lowerPath === path || lowerPath.startsWith(`${path}/`)
   );
+
+  // Dev-only convenience: visiting a different role's URL while logged in
+  // (e.g. a Physician session visiting /admin) reassigns the session to
+  // that role so the matching dashboard renders without a separate login.
+  // Intentionally NOT guarded beyond `import.meta.env.DEV` — this bypasses
+  // real role-based access control on purpose, for local testing only. It
+  // is dead-code-eliminated in production builds.
+  useEffect(() => {
+    if (!import.meta.env.DEV || !user || !accessToken || !refreshToken) return;
+    const role = PATH_ROLE[lowerPath];
+    if (!role || user.role === role) return;
+    setAuth(accessToken, refreshToken, { ...user, role, lastName: role });
+  }, [accessToken, lowerPath, refreshToken, setAuth, user]);
 
   if (hasOwnShell) {
     // Snap the address bar back to the canonical lowercase path so it never
