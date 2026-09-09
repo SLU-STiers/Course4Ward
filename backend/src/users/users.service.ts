@@ -34,11 +34,30 @@ export class UsersService {
     };
 
     const user = await this.prisma.$transaction(async (tx) => {
-      const counter = await tx.userIdCounter.update({
+      const existingCounter = await tx.userIdCounter.findUnique({
         where: { role: dto.role },
-        data: { nextNumber: { increment: 1 } },
       });
-      const userId = `${prefixes[dto.role]}${String(counter.nextNumber - 1).padStart(3, '0')}`;
+
+      let counter;
+      let nextUserNumber: number;
+
+      if (existingCounter) {
+        counter = await tx.userIdCounter.update({
+          where: { role: dto.role },
+          data: { nextNumber: { increment: 1 } },
+        });
+        nextUserNumber = counter.nextNumber - 1;
+      } else {
+        counter = await tx.userIdCounter.create({
+          data: {
+            role: dto.role,
+            nextNumber: 1,
+          },
+        });
+        nextUserNumber = counter.nextNumber;
+      }
+
+      const userId = `${prefixes[dto.role]}${String(nextUserNumber).padStart(3, '0')}`;
 
       return tx.user.create({
         data: {
