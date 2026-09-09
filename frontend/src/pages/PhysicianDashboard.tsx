@@ -17,6 +17,30 @@ const CARD_SHADOW = '0 8px 28px rgba(16, 78, 101, 0.08)';
 type PatientStatus = 'admitted' | 'discharged';
 type OverviewFilter = 'all' | PatientStatus;
 
+type DashboardPatient = {
+  id: string;
+  name: string;
+  patientId: string;
+  admissionDate: string;
+  color: string;
+  status: PatientStatus;
+  admissions?: Patient['admissions'];
+};
+
+function mapPatient(patient: Patient): DashboardPatient {
+  const admissionDate = patient.admissionDate ?? patient.admissions?.[0]?.admissionDate ?? '';
+  const status: PatientStatus = patient.dischargeDate || patient.admissions?.[0]?.dischargeDate ? 'discharged' : 'admitted';
+  return {
+    id: patient.id,
+    name: `${patient.firstName} ${patient.lastName}`,
+    patientId: patient.id,
+    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString('en-GB') : '—',
+    color: status === 'admitted' ? '#22c55e' : '#ef4444',
+    status,
+    admissions: patient.admissions,
+  };
+}
+
 const MOCK_PATIENTS: {
   id: string;
   name: string;
@@ -96,17 +120,18 @@ export function PhysicianDashboard() {
             active={activeTab === 'requests'}
             onClick={() => setActiveTab('requests')}
           />
-        </nav>
-
-        <div style={shell.sidebarProfile}>
-          <div style={shell.profileAvatar}>JD</div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={shell.profileName}>Dr. {displayName}</div>
-            <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
-          </div>
-          <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
-            Log out
-          </button>
+          </>
+        }
+        profile={
+          <div style={shell.sidebarProfile}>
+            <div style={shell.profileAvatar}>{initials}</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={shell.profileName}>{displayName}</div>
+              <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
+            </div>
+            <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
+              Log out
+            </button>
           </div>
         }
       />
@@ -196,7 +221,7 @@ function sameDay(a: Date, b: Date) {
 function OverviewView() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>('all');
-  const [checkedIds, setCheckedIds] = useState<Record<string, boolean>>({});
+  const [patients, setPatients] = useState<DashboardPatient[]>(MOCK_PATIENTS);
   const pageSize = 8;
 
   useEffect(() => {
@@ -898,8 +923,6 @@ function ManageView() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const selected = patients.find((p) => p.id === selectedId) ?? patients[0];
-  const admissionDate = selected ? parseAdmissionDate(selected.admissionDate) : new Date();
-
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, string[]>>({});
   const [draft, setDraft] = useState('');
   const [summaryByPatient, setSummaryByPatient] = useState<Record<string, string>>({});

@@ -10,6 +10,25 @@ body {
   line-height: 1.45;
 }
 
+.dashboard-shell {
+  min-height: 100vh;
+  background: #f3f4f6;
+}
+
+.dashboard-content-offset {
+  width: calc(100% - var(--dashboard-sidebar-offset));
+  min-width: 0;
+  margin-left: var(--dashboard-sidebar-offset);
+  transition: width 240ms ease, margin-left 240ms ease;
+}
+
+@media (max-width: 767px) {
+  .dashboard-content-offset {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
 button {
   font-family: inherit;
   font-size: 13px;

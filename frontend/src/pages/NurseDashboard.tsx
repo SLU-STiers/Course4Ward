@@ -20,6 +20,7 @@ type NursePatient = {
   age: number;
   gender: string;
   initials: string;
+  status?: 'admitted' | 'discharged';
 };
 
 const MOCK_PATIENTS: NursePatient[] = [

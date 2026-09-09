@@ -3,9 +3,10 @@ import notificationImg from '../../Img/notification.png';
 type NotificationBellProps = {
   count?: string;
   showDot?: boolean;
+  onClick?: () => void;
 };
 
-export function NotificationBell({ count = '2', showDot = false }: NotificationBellProps) {
+export function NotificationBell({ count = '2', showDot = false, onClick }: NotificationBellProps) {
   return (
     <div
       style={{
@@ -19,7 +20,9 @@ export function NotificationBell({ count = '2', showDot = false }: NotificationB
         alignItems: 'center',
         justifyContent: 'center',
         boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)',
+        cursor: onClick ? 'pointer' : 'default',
       }}
+      onClick={onClick}
     >
       <img src={notificationImg} alt="Notifications" style={{ width: 23, height: 23, objectFit: 'contain' }} />
       {showDot ? (

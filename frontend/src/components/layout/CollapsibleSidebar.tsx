@@ -5,10 +5,19 @@ import logoImg from '../../Img/Course4Ward-Logo.png';
 type CollapsibleSidebarProps = {
   nav: ReactNode;
   profile: ReactNode;
+  isOpen?: boolean;
+  onOpenChange?: (isOpen: boolean) => void;
 };
 
-export function CollapsibleSidebar({ nav, profile }: CollapsibleSidebarProps) {
-  const [isOpen, setIsOpen] = useState(true);
+export function CollapsibleSidebar({ nav, profile, isOpen: controlledIsOpen, onOpenChange }: CollapsibleSidebarProps) {
+  const [internalIsOpen, setInternalIsOpen] = useState(true);
+  const isOpen = controlledIsOpen ?? internalIsOpen;
+
+  const toggleOpen = () => {
+    const nextIsOpen = !isOpen;
+    setInternalIsOpen(nextIsOpen);
+    onOpenChange?.(nextIsOpen);
+  };
 
   return (
     <aside
@@ -56,7 +65,7 @@ export function CollapsibleSidebar({ nav, profile }: CollapsibleSidebarProps) {
         type="button"
         aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
         title={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={toggleOpen}
         style={{
           position: 'absolute',
           top: '50%',

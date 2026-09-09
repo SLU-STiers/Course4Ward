@@ -123,18 +123,10 @@ export function AdminPanel() {
           <h1 style={styles.headerTitle}>Admin</h1>
 
           <div style={styles.headerRight}>
-            {/* Notification Bell */}
-            <button
-              type="button"
-              aria-label="Open password reset notifications"
-              style={styles.notificationBadge}
+            <NotificationBell
+              count={String(pendingResetRequests.length)}
               onClick={() => setActiveNav('requests')}
-            >
-              <span style={{ fontSize: '18px' }}>🔔</span>
-              {pendingResetRequests.length > 0 && (
-                <span style={styles.badgeCount}>{pendingResetRequests.length}</span>
-              )}
-            </button>
+            />
 
           </div>
         </header>

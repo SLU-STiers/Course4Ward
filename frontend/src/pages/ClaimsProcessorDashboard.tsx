@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { DashboardShell } from '../components/layout/DashboardShell';
 import { NotificationBell } from '../components/layout/NotificationBell';
 import overviewIcon from '../Img/overview.png';
 import requestsIcon from '../Img/requests.png';
@@ -321,8 +321,7 @@ export function ClaimsProcessorDashboard() {
   };
 
   return (
-    <div style={styles.appContainer}>
-      <CollapsibleSidebar
+    <DashboardShell
         nav={
           <>
           <button
@@ -374,7 +373,7 @@ export function ClaimsProcessorDashboard() {
           </button>
           </div>
         }
-      />
+      >
 
       {/* MAIN CONTAINER */}
       <div style={styles.mainWrapper}>
@@ -977,7 +976,7 @@ export function ClaimsProcessorDashboard() {
           )}
         </main>
       </div>
-    </div>
+    </DashboardShell>
   );
 }
 
