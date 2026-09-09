@@ -5,34 +5,40 @@ import { claimsApi, courseInWardApi, ordersApi, patientsApi } from '../services/
 import type { Patient, PhysicianRequest } from '../types';
 import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
 import { NotificationBell } from '../components/layout/NotificationBell';
+import { FilterSortMenu, SearchField, SortDirectionToggle, StatusBadge } from '../components/ui/DashboardUi';
 import searchImg from '../Img/search.png';
 import documentImg from '../Img/document.png';
 import requestsIcon from '../Img/requests.png';
 
 type TabType = 'overview' | 'manage' | 'requests';
 
-const TEAL = '#104E65';
-const CARD_SHADOW = '0 8px 28px rgba(16, 78, 101, 0.08)';
+const TEAL = 'var(--dashboard-primary)';
+const CARD_SHADOW = '0 8px 28px rgba(10, 92, 131, 0.08)';
 
 type PatientStatus = 'admitted' | 'discharged';
 type OverviewFilter = 'all' | PatientStatus;
 
-type DashboardPatient = Patient & {
+type DashboardPatient = {
+  id: string;
   name: string;
   patientId: string;
   admissionDate: string;
+  color: string;
   status: PatientStatus;
+  admissions?: Patient['admissions'];
 };
 
 function mapPatient(patient: Patient): DashboardPatient {
-  const admission = patient.admissions?.[0];
-  const admissionDate = admission?.admissionDate ?? patient.admissionDate ?? '';
+  const admissionDate = patient.admissionDate ?? patient.admissions?.[0]?.admissionDate ?? '';
+  const status: PatientStatus = patient.dischargeDate || patient.admissions?.[0]?.dischargeDate ? 'discharged' : 'admitted';
   return {
-    ...patient,
+    id: patient.id,
     name: `${patient.firstName} ${patient.lastName}`,
     patientId: patient.id,
-    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString() : '—',
-    status: admission?.dischargeDate ? 'discharged' : 'admitted',
+    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString('en-GB') : '—',
+    color: status === 'admitted' ? '#22c55e' : '#ef4444',
+    status,
+    admissions: patient.admissions,
   };
 }
 
@@ -51,6 +57,7 @@ const INITIAL_TODOS = [
 
 export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
@@ -64,6 +71,8 @@ export function PhysicianDashboard() {
   return (
     <div style={shell.appContainer}>
       <CollapsibleSidebar
+        isOpen={sidebarOpen}
+        onOpenChange={setSidebarOpen}
         nav={
           <>
             <NavItem
@@ -100,7 +109,15 @@ export function PhysicianDashboard() {
         }
       />
 
-      <div style={shell.mainWrapper}>
+      <div
+        style={{
+          ...shell.mainWrapper,
+          marginLeft: sidebarOpen ? 232 : 0,
+          marginRight: 0,
+          width: 'auto',
+          maxWidth: 'none',
+        }}
+      >
         <header style={shell.header}>
           <div>
             <h1 style={shell.headerTitle}>Good Day! Dr. John</h1>
@@ -492,6 +509,10 @@ function RequestsView() {
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<PhysicianRequest[]>([]);
   const [selected, setSelected] = useState<PhysicianRequest | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'reviewed'>('all');
+  const [sortField, setSortField] = useState<'id' | 'patient' | 'requestedAt'>('requestedAt');
+  const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
+  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | null>(null);
 
   const loadRequests = () => {
     claimsApi.physicianRequests().then(({ data }) => setItems(data)).catch(() => setItems([]));
@@ -501,12 +522,24 @@ function RequestsView() {
     loadRequests();
   }, []);
 
-  const filtered = items.filter(
-    (r) =>
+  const filtered = items
+    .filter(
+      (r) =>
       r.id.toLowerCase().includes(search.toLowerCase()) ||
       `${r.summary.patient.firstName} ${r.summary.patient.lastName}`.toLowerCase().includes(search.toLowerCase()) ||
       `${r.processor.firstName} ${r.processor.lastName}`.toLowerCase().includes(search.toLowerCase())
-  );
+    )
+    .filter((r) => {
+      if (statusFilter === 'all') return true;
+      const isPending = r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED';
+      return statusFilter === 'pending' ? isPending : !isPending;
+    })
+    .sort((a, b) => {
+      const left = sortField === 'patient' ? `${a.summary.patient.firstName} ${a.summary.patient.lastName}` : a[sortField];
+      const right = sortField === 'patient' ? `${b.summary.patient.firstName} ${b.summary.patient.lastName}` : b[sortField];
+      const comparison = String(left).localeCompare(String(right), undefined, { numeric: true });
+      return sortDirection === 'ascending' ? comparison : -comparison;
+    });
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount);
@@ -521,17 +554,23 @@ function RequestsView() {
           <h2 style={requests.title}>Requests</h2>
           <p style={requests.subtitle}>Review AI summaries submitted by Claims Processors.</p>
         </div>
-        <div style={requests.searchWrap}>
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Search requests..."
-            style={requests.searchInput}
-          />
-          <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
+        <div className="dashboard-toolbar" style={{ marginBottom: 0, flex: 1 }}>
+          <SearchField value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search requests..." ariaLabel="Search physician requests" />
+          <FilterSortMenu label="Filter" open={openMenu === 'filter'} onToggle={() => setOpenMenu(openMenu === 'filter' ? null : 'filter')}>
+            <strong>Request status</strong>
+            {(['all', 'pending', 'reviewed'] as const).map((status) => (
+              <button type="button" key={status} className={statusFilter === status ? 'is-active' : ''} onClick={() => { setStatusFilter(status); setPage(1); }}>
+                {status[0].toUpperCase() + status.slice(1)}
+              </button>
+            ))}
+          </FilterSortMenu>
+          <FilterSortMenu label="Sort" open={openMenu === 'sort'} onToggle={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')}>
+            <strong>Sort requests by</strong>
+            {([['requestedAt', 'Submitted date'], ['patient', 'Patient name'], ['id', 'Request ID']] as const).map(([field, label]) => (
+              <button type="button" key={field} className={sortField === field ? 'is-active' : ''} onClick={() => { setSortField(field); setPage(1); }}>{label}</button>
+            ))}
+            <SortDirectionToggle direction={sortDirection} onChange={(direction) => { setSortDirection(direction); setPage(1); }} />
+          </FilterSortMenu>
         </div>
       </div>
 
@@ -567,9 +606,9 @@ function RequestsView() {
                 <div style={requests.secondary}>{new Date(r.requestedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
               </td>
               <td style={requests.td}>
-                <span style={r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED' ? requests.statusPending : requests.statusReviewed}>
+                <StatusBadge tone={r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED' ? 'pending' : 'success'}>
                   {r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED' ? 'Pending Review' : 'Reviewed'}
-                </span>
+                </StatusBadge>
               </td>
               <td style={{ ...requests.td, textAlign: 'right' }}>
                 <button type="button" style={requests.reviewBtn} onClick={() => setSelected(r)}>
@@ -1349,7 +1388,7 @@ const shell: Record<string, React.CSSProperties> = {
     color: '#94a3b8',
   },
   content: {
-    padding: '16px 32px 32px',
+    padding: '32px',
     flex: 1,
     minHeight: 0,
     overflowY: 'auto',

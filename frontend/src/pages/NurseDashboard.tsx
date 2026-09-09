@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
 import { NotificationBell } from '../components/layout/NotificationBell';
+import { FilterSortMenu, SearchField, SortDirectionToggle, StatusBadge } from '../components/ui/DashboardUi';
 import searchImg from '../Img/search.png';
 import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';
 
-const TEAL = '#104E65';
+const TEAL = 'var(--dashboard-primary)';
 
 type NursePatient = {
   id: string;
@@ -259,6 +260,7 @@ const DEFAULT_SUMMARIES: Record<string, string> = {
 
 export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('management');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [charts, setCharts] = useState<Record<string, PatientChart>>(INITIAL_CHARTS);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -271,6 +273,8 @@ export function NurseDashboard() {
   return (
     <div style={shell.appContainer}>
       <CollapsibleSidebar
+        isOpen={sidebarOpen}
+        onOpenChange={setSidebarOpen}
         nav={
           <>
           <NavItem
@@ -301,7 +305,15 @@ export function NurseDashboard() {
         }
       />
 
-      <div style={shell.mainWrapper}>
+      <div
+        style={{
+          ...shell.mainWrapper,
+          marginLeft: sidebarOpen ? 232 : 0,
+          marginRight: 0,
+          width: 'auto',
+          maxWidth: 'none',
+        }}
+      >
         <header style={shell.header}>
           <h1 style={shell.headerTitle}>{activeTab === 'management' ? 'Management' : 'Patient Management'}</h1>
           <NotificationBell />
@@ -525,12 +537,24 @@ function PatientView({
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [viewingName, setViewingName] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | AdmissionStatus>('all');
+  const [sortField, setSortField] = useState<'id' | 'name' | 'admittedOn'>('admittedOn');
+  const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
+  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | null>(null);
 
-  const filtered = records.filter(
-    (r) =>
+  const filtered = records
+    .filter(
+      (r) =>
       r.id.toLowerCase().includes(search.toLowerCase()) ||
       r.name.toLowerCase().includes(search.toLowerCase())
-  );
+    )
+    .filter((r) => statusFilter === 'all' || r.status === statusFilter)
+    .sort((a, b) => {
+      const left = a[sortField];
+      const right = b[sortField];
+      const comparison = left.localeCompare(right);
+      return sortDirection === 'ascending' ? comparison : -comparison;
+    });
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const start = (safePage - 1) * pageSize;
@@ -571,19 +595,30 @@ function PatientView({
         </div>
       </div>
 
-      <div style={ui.pmToolbar}>
-        <div style={{ ...ui.searchWrap, flex: 1, marginBottom: 0 }}>
-          <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Search patient, admission ID..."
-            style={ui.searchInput}
-          />
-        </div>
+      <div style={ui.pmToolbar} className="dashboard-toolbar">
+        <SearchField
+          value={search}
+          onChange={(value) => { setSearch(value); setPage(1); }}
+          placeholder="Search patient, admission ID..."
+          ariaLabel="Search patients and admissions"
+        />
+        <FilterSortMenu label="Filter" open={openMenu === 'filter'} onToggle={() => setOpenMenu(openMenu === 'filter' ? null : 'filter')}>
+          <strong>Admission status</strong>
+          {(['all', 'Admitted', 'Discharged'] as const).map((status) => (
+            <button type="button" key={status} className={statusFilter === status ? 'is-active' : ''} onClick={() => { setStatusFilter(status); setPage(1); }}>
+              {status === 'all' ? 'All statuses' : status}
+            </button>
+          ))}
+        </FilterSortMenu>
+        <FilterSortMenu label="Sort" open={openMenu === 'sort'} onToggle={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')}>
+          <strong>Sort patients by</strong>
+          {([['admittedOn', 'Admission date'], ['name', 'Patient name'], ['id', 'Admission ID']] as const).map(([field, label]) => (
+            <button type="button" key={field} className={sortField === field ? 'is-active' : ''} onClick={() => { setSortField(field); setPage(1); }}>
+              {label}
+            </button>
+          ))}
+          <SortDirectionToggle direction={sortDirection} onChange={(direction) => { setSortDirection(direction); setPage(1); }} />
+        </FilterSortMenu>
       </div>
 
       <div style={ui.tableWrap}>
@@ -614,9 +649,7 @@ function PatientView({
                 <td style={{ ...ui.td, color: '#334155' }}>{r.admittedOn}</td>
                 <td style={{ ...ui.td, color: '#64748b' }}>{r.dischargedOn ?? '—'}</td>
                 <td style={ui.td}>
-                  <span style={r.status === 'Admitted' ? ui.badgeAdmitted : ui.badgeDischarged}>
-                    {r.status}
-                  </span>
+                  <StatusBadge tone={r.status === 'Admitted' ? 'success' : 'neutral'}>{r.status}</StatusBadge>
                 </td>
                 <td style={{ ...ui.td, textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
@@ -1039,7 +1072,7 @@ const shell: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
     padding: '0 4px',
   },
-  content: { padding: '16px 32px 32px', flex: 1, minHeight: 0, overflowY: 'auto' },
+  content: { padding: '32px', flex: 1, minHeight: 0, overflowY: 'auto' },
 };
 
 const ui: Record<string, React.CSSProperties> = {
