@@ -1,5 +1,6 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -24,20 +25,32 @@ export class UsersService {
   };
 
   async create(dto: CreateUserDto, actingAdminId: string) {
-    const existing = await this.prisma.user.findUnique({ where: { userId: dto.userId } });
-    if (existing) throw new ConflictException('userId already exists');
-
     const passwordHash = await bcrypt.hash(dto.temporaryPassword, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        userId: dto.userId,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        role: dto.role,
-        passwordHash,
-        mustResetPassword: true,
-      },
-      select: this.safeSelect,
+    const prefixes: Record<Role, string> = {
+      ADMIN: 'ADM',
+      PHYSICIAN: 'DOC',
+      NURSE: 'NRS',
+      CLAIMS_PROCESSOR: 'CLM',
+    };
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const counter = await tx.userIdCounter.update({
+        where: { role: dto.role },
+        data: { nextNumber: { increment: 1 } },
+      });
+      const userId = `${prefixes[dto.role]}${String(counter.nextNumber - 1).padStart(3, '0')}`;
+
+      return tx.user.create({
+        data: {
+          userId,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          role: dto.role,
+          passwordHash,
+          mustResetPassword: true,
+        },
+        select: this.safeSelect,
+      });
     });
 
     await this.auditLog.record({
@@ -59,10 +72,19 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto, actingAdminId: string) {
-    await this.findOne(id);
+    const existing = await this.prisma.user.findUnique({
+      where: { id },
+      select: { isActive: true },
+    });
+    if (!existing) throw new NotFoundException('User not found');
+
+    const statusChanged = dto.isActive !== undefined && dto.isActive !== existing.isActive;
     const user = await this.prisma.user.update({
       where: { id },
-      data: dto,
+      data: {
+        ...dto,
+        ...(statusChanged ? { sessionVersion: { increment: 1 } } : {}),
+      },
       select: this.safeSelect,
     });
 
@@ -74,21 +96,4 @@ export class UsersService {
     return user;
   }
 
-  // Soft delete (deactivate) is the standard in healthcare systems --
-  // hard-deleting a user breaks audit trail / order history integrity.
-  async remove(id: string, actingAdminId: string) {
-    await this.findOne(id);
-    const user = await this.prisma.user.update({
-      where: { id },
-      data: { isActive: false },
-      select: this.safeSelect,
-    });
-
-    await this.auditLog.record({
-      userId: actingAdminId,
-      action: 'USER_DEACTIVATED',
-    });
-
-    return user;
-  }
 }

@@ -10,6 +10,7 @@ import type {
 
 // --- Auth ---
 export const authApi = {
+  session: () => api.get<{ authenticated: boolean }>('/auth/session'),
   login: (userId: string, password: string) =>
     api.post<{ accessToken: string; refreshToken: string; user: AuthUser; mustResetPassword: boolean }>(
       '/auth/login',
@@ -23,7 +24,11 @@ export const authApi = {
     }),
   confirmPasswordReset: (userId: string, resetToken: string, newPassword: string) =>
     api.post('/auth/password-reset/confirm', { userId, resetToken, newPassword }),
-  changePassword: (newPassword: string) => api.post('/auth/password-change', { newPassword }),
+  changePassword: (newPassword: string) =>
+    api.post<{ accessToken: string; refreshToken: string; user: AuthUser }>(
+      '/auth/password-change',
+      { newPassword },
+    ),
 };
 
 // --- Patients ---
@@ -79,7 +84,6 @@ export const adminApi = {
   listUsers: () => api.get('/admin/users'),
   createUser: (data: any) => api.post('/admin/users', data),
   updateUser: (id: string, data: any) => api.patch(`/admin/users/${id}`, data),
-  deactivateUser: (id: string) => api.delete(`/admin/users/${id}`),
   auditLogs: (params?: { skip?: number; take?: number }) =>
     api.get('/admin/audit-logs', { params }),
   analyticsSummary: () => api.get('/admin/audit-logs/analytics/summary'),

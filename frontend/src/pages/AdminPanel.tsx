@@ -5,7 +5,6 @@ import { Filter, ArrowUpDown } from 'lucide-react';
 import { adminApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
 import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
-import { NotificationBell } from '../components/layout/NotificationBell';
 import dashboardIcon from '../Img/dashboard.png';
 import userIcon from '../Img/user.png';
 import requestsIcon from '../Img/requests.png';
@@ -316,6 +315,35 @@ function MockLogRow({ id, name, profession, date, time }: any) {
   );
 }
 
+function ConfirmationDialog({
+  title,
+  message,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div style={styles.modalOverlay} onClick={onCancel}>
+      <div style={styles.confirmationModal} onClick={(event) => event.stopPropagation()}>
+        <div style={styles.confirmationHeader}>
+          <h3 style={styles.confirmationTitle}>{title}</h3>
+        </div>
+        <p style={styles.confirmationMessage}>{message}</p>
+        <div style={styles.confirmationActions}>
+          <button style={styles.secondaryButton} onClick={onCancel}>Cancel</button>
+          <button style={styles.primaryButton} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MetricCard({ title, value, trend, isUp, icon }: any) {
   return (
     <div style={styles.metricCard}>
@@ -347,7 +375,6 @@ function AccountsPanel() {
   });
 
   const [form, setForm] = useState({
-    userId: '',
     firstName: '',
     lastName: '',
     role: 'NURSE',
@@ -355,18 +382,19 @@ function AccountsPanel() {
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ firstName: '', lastName: '', role: 'NURSE', isActive: true });
+  const [confirmation, setConfirmation] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const createUser = useMutation({
     mutationFn: () => adminApi.createUser(form),
     onSuccess: () => {
-      setForm({ userId: '', firstName: '', lastName: '', role: 'NURSE', temporaryPassword: '' });
+      setForm({ firstName: '', lastName: '', role: 'NURSE', temporaryPassword: '' });
       qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
-  });
-
-  const deactivate = useMutation({
-    mutationFn: (id: string) => adminApi.deactivateUser(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
   });
 
   const updateUser = useMutation({
@@ -387,12 +415,6 @@ function AccountsPanel() {
       <div style={styles.cardContainer}>
         <h4 style={{ marginTop: 0, color: '#0f172a' }}>Add Account</h4>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <input
-            style={styles.formInput}
-            placeholder="User ID (e.g. DRJ-0231)"
-            value={form.userId}
-            onChange={(e) => setForm({ ...form, userId: e.target.value })}
-          />
           <input
             style={styles.formInput}
             placeholder="First name"
@@ -422,7 +444,21 @@ function AccountsPanel() {
             value={form.temporaryPassword}
             onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })}
           />
-          <button style={styles.primaryButton} onClick={() => createUser.mutate()}>
+          <button
+            style={styles.primaryButton}
+            onClick={() => {
+              const fullName = `${form.firstName || 'New'} ${form.lastName || 'User'}`.trim();
+              setConfirmation({
+                title: 'Create account',
+                message: `Are you sure you want to create an account for ${fullName}?`,
+                confirmLabel: 'Create Account',
+                onConfirm: () => {
+                  setConfirmation(null);
+                  createUser.mutate();
+                },
+              });
+            }}
+          >
             Create Account
           </button>
         </div>
@@ -450,14 +486,7 @@ function AccountsPanel() {
                 <td style={styles.td}>{u.role}</td>
                 <td style={styles.td}>{u.isActive ? 'Active' : 'Deactivated'}</td>
                 <td style={styles.td}>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => beginEdit(u)} style={styles.actionButton}>Edit</button>
-                    {u.isActive ? (
-                      <button onClick={() => deactivate.mutate(u.id)} style={styles.deactivateButton}>Deactivate</button>
-                    ) : (
-                      <button onClick={() => { beginEdit(u); setEditForm((current) => ({ ...current, isActive: true })); }} style={styles.actionButton}>Reactivate</button>
-                    )}
-                  </div>
+                  <button onClick={() => beginEdit(u)} style={styles.actionButton}>Edit</button>
                 </td>
               </tr>
             ))}
@@ -478,10 +507,35 @@ function AccountsPanel() {
               <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
                 <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} /> Active
               </label>
-              <button style={styles.primaryButton} onClick={() => updateUser.mutate()}>Save</button>
+              <button
+                style={styles.primaryButton}
+                onClick={() => {
+                  const fullName = `${editForm.firstName || 'User'} ${editForm.lastName || ''}`.trim();
+                  setConfirmation({
+                    title: 'Save account changes',
+                    message: `Are you sure you want to save changes for ${fullName}?`,
+                    confirmLabel: 'Save Changes',
+                    onConfirm: () => {
+                      setConfirmation(null);
+                      updateUser.mutate();
+                    },
+                  });
+                }}
+              >
+                Save
+              </button>
               <button style={styles.secondaryButton} onClick={() => setEditingId(null)}>Cancel</button>
             </div>
           </div>
+        )}
+        {confirmation && (
+          <ConfirmationDialog
+            title={confirmation.title}
+            message={confirmation.message}
+            confirmLabel={confirmation.confirmLabel}
+            onCancel={() => setConfirmation(null)}
+            onConfirm={confirmation.onConfirm}
+          />
         )}
       </div>
     </div>
@@ -496,6 +550,12 @@ function RequestsView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
   const itemsPerPage = 5;
 
   // Fetch password reset requests from backend
@@ -610,7 +670,24 @@ function RequestsView() {
                   <span style={styles.pendingBadge}>{item.status}</span>
                 </td>
                 <td style={styles.td}>
-                  {item.status === 'PENDING' && <button style={styles.actionButton} onClick={() => handleResetPassword.mutate(item.id)}>Approve reset</button>}
+                  {item.status === 'PENDING' && (
+                    <button
+                      style={styles.actionButton}
+                      onClick={() => {
+                        setConfirmation({
+                          title: 'Approve reset request',
+                          message: `Are you sure you want to approve the password reset request for ${item.name}?`,
+                          confirmLabel: 'Approve Reset',
+                          onConfirm: () => {
+                            setConfirmation(null);
+                            handleResetPassword.mutate(item.id);
+                          },
+                        });
+                      }}
+                    >
+                      Approve reset
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -655,6 +732,15 @@ function RequestsView() {
           </div>
         </div>
       </div>
+      {confirmation && (
+        <ConfirmationDialog
+          title={confirmation.title}
+          message={confirmation.message}
+          confirmLabel={confirmation.confirmLabel}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={confirmation.onConfirm}
+        />
+      )}
     </div>
   );
 }
@@ -863,6 +949,46 @@ const styles: Record<string, React.CSSProperties> = {
   content: {
     padding: '32px',
     flex: 1,
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '20px',
+    zIndex: 1000,
+  },
+  confirmationModal: {
+    width: '100%',
+    maxWidth: '420px',
+    backgroundColor: '#ffffff',
+    borderRadius: '16px',
+    border: '1px solid #e2e8f0',
+    boxShadow: '0 18px 48px rgba(15, 23, 42, 0.2)',
+    padding: '24px',
+  },
+  confirmationHeader: {
+    marginBottom: '8px',
+  },
+  confirmationTitle: {
+    margin: 0,
+    color: '#0f172a',
+    fontSize: '20px',
+    fontWeight: 700,
+  },
+  confirmationMessage: {
+    margin: 0,
+    color: '#475569',
+    fontSize: '14px',
+    lineHeight: 1.5,
+  },
+  confirmationActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    marginTop: '24px',
   },
 
   /* Metric Cards */

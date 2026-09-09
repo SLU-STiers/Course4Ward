@@ -6,7 +6,7 @@ import { ROLE_PATH } from '../routes/roleRoutes';
 
 export function ResetPassword() {
   const navigate = useNavigate();
-  const user = useAuthStore((state) => state.user);
+  const setAuth = useAuthStore((state) => state.setAuth);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -22,8 +22,9 @@ export function ResetPassword() {
 
     setSaving(true);
     try {
-      await authApi.changePassword(newPassword);
-      navigate(user?.role ? ROLE_PATH[user.role] : '/', { replace: true });
+      const { data } = await authApi.changePassword(newPassword);
+      setAuth(data.accessToken, data.refreshToken, data.user);
+      navigate(data.user.role ? ROLE_PATH[data.user.role] : '/', { replace: true });
     } catch (err: any) {
       setError(err?.response?.data?.message ?? 'Unable to update password.');
     } finally {

@@ -41,35 +41,52 @@ function mapPatient(patient: Patient): DashboardPatient {
   };
 }
 
-const MOCK_PATIENTS: {
+<<<<<<< HEAD
+type DashboardPatient = {
   id: string;
   name: string;
   patientId: string;
   admissionDate: string;
-  color: string;
   status: PatientStatus;
-}[] = [
-  { id: '1', name: 'Sarah Brown', patientId: '1123', admissionDate: '15/04/2026', color: '#ef4444', status: 'admitted' },
-  { id: '2', name: 'Michael Owen', patientId: '1122', admissionDate: '15/04/2026', color: '#22c55e', status: 'admitted' },
-  { id: '3', name: 'Mary Jane', patientId: '1121', admissionDate: '14/04/2026', color: '#84cc16', status: 'admitted' },
-  { id: '4', name: 'Peter Doolie', patientId: '1120', admissionDate: '14/04/2026', color: '#6366f1', status: 'admitted' },
-  { id: '5', name: 'Peter Doolie', patientId: '1119', admissionDate: '14/04/2026', color: '#ef4444', status: 'admitted' },
-  { id: '6', name: 'Peter Doolie', patientId: '1118', admissionDate: '15/04/2026', color: '#eab308', status: 'admitted' },
-  { id: '7', name: 'Liam Park', patientId: '1117', admissionDate: '15/04/2026', color: '#d946ef', status: 'admitted' },
-  { id: '8', name: 'Nora Reyes', patientId: '1116', admissionDate: '16/04/2026', color: '#f87171', status: 'admitted' },
-  { id: '9', name: 'James Cruz', patientId: '1115', admissionDate: '16/04/2026', color: '#06b6d4', status: 'admitted' },
-  { id: '10', name: 'Elena Santos', patientId: '1114', admissionDate: '17/04/2026', color: '#0ea5e9', status: 'admitted' },
-  { id: '11', name: 'Carlos Vega', patientId: '1113', admissionDate: '17/04/2026', color: '#f97316', status: 'admitted' },
-  { id: '12', name: 'Ava Lim', patientId: '1112', admissionDate: '18/04/2026', color: '#14b8a6', status: 'admitted' },
-  { id: '13', name: 'Ben Torres', patientId: '1111', admissionDate: '10/04/2026', color: '#64748b', status: 'discharged' },
-  { id: '14', name: 'Mia Chen', patientId: '1110', admissionDate: '09/04/2026', color: '#a855f7', status: 'discharged' },
-  { id: '15', name: 'Owen Blake', patientId: '1109', admissionDate: '08/04/2026', color: '#e11d48', status: 'discharged' },
-  { id: '16', name: 'Ruby Diaz', patientId: '1108', admissionDate: '07/04/2026', color: '#65a30d', status: 'discharged' },
-  { id: '17', name: 'Noah Kim', patientId: '1107', admissionDate: '06/04/2026', color: '#2563eb', status: 'discharged' },
-  { id: '18', name: 'Ivy Morales', patientId: '1106', admissionDate: '05/04/2026', color: '#db2777', status: 'discharged' },
-  { id: '19', name: 'Leo Santos', patientId: '1105', admissionDate: '04/04/2026', color: '#ca8a04', status: 'discharged' },
-  { id: '20', name: 'Paula Reed', patientId: '1104', admissionDate: '03/04/2026', color: '#7c3aed', status: 'discharged' },
-];
+  admissions?: Patient['admissions'];
+};
+
+function mapPatient(patient: Patient): DashboardPatient {
+  const admissionDate = patient.admissionDate ?? patient.admissions?.[0]?.admissionDate ?? '';
+  const status: PatientStatus = patient.dischargeDate || patient.admissions?.[0]?.dischargeDate ? 'discharged' : 'admitted';
+  return {
+    id: patient.id,
+    name: `${patient.firstName} ${patient.lastName}`,
+    patientId: patient.id,
+    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString('en-GB') : '—',
+    color: status === 'admitted' ? '#22c55e' : '#ef4444',
+    status,
+    admissions: patient.admissions,
+  };
+}
+
+const MOCK_PATIENTS: {
+  id: string;
+=======
+type DashboardPatient = Patient & {
+>>>>>>> 9d9114095f252f1eb158b45c3c6eb409d009587b
+  name: string;
+  patientId: string;
+  admissionDate: string;
+  status: PatientStatus;
+};
+
+function mapPatient(patient: Patient): DashboardPatient {
+  const admission = patient.admissions?.[0];
+  const admissionDate = admission?.admissionDate ?? patient.admissionDate ?? '';
+  return {
+    ...patient,
+    name: `${patient.firstName} ${patient.lastName}`,
+    patientId: patient.id,
+    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString() : '—',
+    status: admission?.dischargeDate ? 'discharged' : 'admitted',
+  };
+}
 
 const INITIAL_TODOS = [
   'Review newly admitted patients',
@@ -90,7 +107,6 @@ export function PhysicianDashboard() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
   const displayName = user ? `${user.firstName} ${user.lastName}` : 'Physician';
-  const initials = user ? `${user.firstName[0] ?? ''}${user.lastName[0] ?? ''}` : 'DR';
 
   const handleLogout = () => {
     logout();
@@ -102,6 +118,7 @@ export function PhysicianDashboard() {
       <CollapsibleSidebar
         nav={
           <>
+<<<<<<< HEAD
           <NavItem
             label="Overview"
             icon={<OverviewIcon />}
@@ -120,13 +137,39 @@ export function PhysicianDashboard() {
             active={activeTab === 'requests'}
             onClick={() => setActiveTab('requests')}
           />
+=======
+            <NavItem
+              label="Overview"
+              icon={<OverviewIcon />}
+              active={activeTab === 'overview'}
+              onClick={() => setActiveTab('overview')}
+            />
+            <NavItem
+              label="Manage"
+              icon={<ManageIcon />}
+              active={activeTab === 'manage'}
+              onClick={() => setActiveTab('manage')}
+            />
+            <NavItem
+              label="Requests"
+              icon={<img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />}
+              active={activeTab === 'requests'}
+              onClick={() => setActiveTab('requests')}
+            />
+>>>>>>> 9d9114095f252f1eb158b45c3c6eb409d009587b
           </>
         }
         profile={
           <div style={shell.sidebarProfile}>
+<<<<<<< HEAD
             <div style={shell.profileAvatar}>{initials}</div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={shell.profileName}>{displayName}</div>
+=======
+            <div style={shell.profileAvatar}>JD</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={shell.profileName}>Dr. {displayName}</div>
+>>>>>>> 9d9114095f252f1eb158b45c3c6eb409d009587b
               <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
             </div>
             <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
@@ -221,7 +264,11 @@ function sameDay(a: Date, b: Date) {
 function OverviewView() {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>('all');
+<<<<<<< HEAD
   const [patients, setPatients] = useState<DashboardPatient[]>(MOCK_PATIENTS);
+=======
+  const [patients, setPatients] = useState<DashboardPatient[]>([]);
+>>>>>>> 9d9114095f252f1eb158b45c3c6eb409d009587b
   const pageSize = 8;
 
   useEffect(() => {
@@ -1104,33 +1151,35 @@ function ManageView() {
             </div>
           </div>
 
-          <div style={manage.patientMeta}>
-            <div style={{ fontWeight: 700, color: '#0f172a' }}>Patient: {selected.name}</div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginTop: 8 }}>Orders:</div>
-          </div>
+          <div style={manage.orderBox}>
+            <div style={manage.patientMeta}>
+              <div style={{ fontWeight: 700, color: '#0f172a' }}>Patient: {selected.name}</div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginTop: 8 }}>Orders:</div>
+            </div>
 
-          <div style={manage.orderLines}>
-            {orders.map((line, idx) =>
-              editingOrders ? (
-                <div key={`${selected.id}-${idx}`} style={manage.orderEditRow}>
-                  <input
-                    value={line}
-                    onChange={(e) => updateOrder(idx, e.target.value)}
-                    style={manage.orderEditInput}
-                  />
-                  <button type="button" style={manage.removeOrderBtn} onClick={() => removeOrder(idx)}>
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <div key={`${selected.id}-${idx}`} style={manage.orderBullet}>
-                  • {line}
-                </div>
-              )
-            )}
-            {!orders.length && (
-              <div style={{ ...manage.orderLine, color: '#94a3b8' }}>No orders yet.</div>
-            )}
+            <div style={manage.orderLines}>
+              {orders.map((line, idx) =>
+                editingOrders ? (
+                  <div key={`${selected.id}-${idx}`} style={manage.orderEditRow}>
+                    <input
+                      value={line}
+                      onChange={(e) => updateOrder(idx, e.target.value)}
+                      style={manage.orderEditInput}
+                    />
+                    <button type="button" style={manage.removeOrderBtn} onClick={() => removeOrder(idx)}>
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div key={`${selected.id}-${idx}`} style={manage.orderBullet}>
+                    • {line}
+                  </div>
+                )
+              )}
+              {!orders.length && (
+                <div style={{ ...manage.orderLine, color: '#94a3b8' }}>No orders yet.</div>
+              )}
+            </div>
           </div>
 
           <textarea
@@ -1175,52 +1224,54 @@ function ManageView() {
             <span style={manage.aiBadge}>AI Draft ready</span>
           </div>
 
-          {editingSummary ? (
-            <textarea
-              value={summary}
-              onChange={(e) =>
-                setSummaryByPatient((prev) => ({ ...prev, [selected.id]: e.target.value }))
-              }
-              rows={6}
-              style={manage.aiEditor}
-            />
-          ) : (
-            <p style={manage.aiText}>{summary}</p>
-          )}
-
-          <div style={manage.aiActions}>
-            <button
-              type="button"
-              style={manage.aiLink}
-              onClick={() => {
-                if (!editingSummary) {
-                  setEditingSummary(true);
-                  return;
+          <div style={manage.aiBody}>
+            {editingSummary ? (
+              <textarea
+                value={summary}
+                onChange={(e) =>
+                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: e.target.value }))
                 }
-                const id = summaryIds[selected.id];
-                if (!id) return;
-                courseInWardApi.edit(id, summary).then(({ data }) => {
-                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
-                  setEditingSummary(false);
-                });
-              }}
-            >
-              {editingSummary ? 'Save Summary' : 'Edit Summary'}
-            </button>
-            <button
-              type="button"
-              style={manage.aiLink}
-              onClick={() => {
-                const id = summaryIds[selected.id];
-                if (!id) return;
-                courseInWardApi.regenerate(id).then(({ data }) => {
-                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
-                  setEditingSummary(false);
-                });
-              }}
-            >
-              ↻ Regenerate
-            </button>
+                rows={6}
+                style={manage.aiEditor}
+              />
+            ) : (
+              <p style={manage.aiText}>{summary}</p>
+            )}
+
+            <div style={manage.aiActions}>
+              <button
+                type="button"
+                style={manage.aiLink}
+                onClick={() => {
+                  if (!editingSummary) {
+                    setEditingSummary(true);
+                    return;
+                  }
+                  const id = summaryIds[selected.id];
+                  if (!id) return;
+                  courseInWardApi.edit(id, summary).then(({ data }) => {
+                    setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
+                    setEditingSummary(false);
+                  });
+                }}
+              >
+                {editingSummary ? 'Save Summary' : 'Edit Summary'}
+              </button>
+              <button
+                type="button"
+                style={manage.aiLink}
+                onClick={() => {
+                  const id = summaryIds[selected.id];
+                  if (!id) return;
+                  courseInWardApi.regenerate(id).then(({ data }) => {
+                    setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
+                    setEditingSummary(false);
+                  });
+                }}
+              >
+                ↻ Regenerate
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -1709,9 +1760,9 @@ const manage: Record<string, React.CSSProperties> = {
   },
   orderCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 18,
-    boxShadow: CARD_SHADOW,
+    borderRadius: 12,
+    padding: 20,
+    border: '1px solid #e2e8f0',
   },
   orderHeader: {
     display: 'flex',
@@ -1755,6 +1806,13 @@ const manage: Record<string, React.CSSProperties> = {
     backgroundColor: '#ffffff',
     fontSize: 12,
   },
+  orderBox: {
+    backgroundColor: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
   patientMeta: {
     marginBottom: 12,
   },
@@ -1762,7 +1820,6 @@ const manage: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: 8,
-    marginBottom: 12,
   },
   orderLine: {
     border: '1px solid #e2e8f0',
@@ -1815,30 +1872,34 @@ const manage: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   aiCard: {
-    backgroundColor: '#f3e8ff',
-    borderRadius: 20,
-    padding: 18,
-    boxShadow: CARD_SHADOW,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    border: '1px solid #e2e8f0',
+    overflow: 'hidden',
   },
   aiHeader: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    padding: '10px 16px',
+    backgroundColor: '#f1eaff',
   },
   aiTitle: {
     margin: 0,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 800,
-    color: '#0f172a',
+    color: '#7c00b8',
   },
   aiBadge: {
-    backgroundColor: '#d8a0f4',
-    color: '#7e22ce',
+    backgroundColor: '#d3a0f5',
+    color: '#7c00b8',
     fontSize: 11,
     fontWeight: 700,
-    padding: '4px 10px',
-    borderRadius: 999,
+    padding: '4px 14px',
+    borderRadius: 6,
+  },
+  aiBody: {
+    padding: '14px 16px 18px',
   },
   aiText: {
     margin: '0 0 14px',
@@ -1858,16 +1919,17 @@ const manage: Record<string, React.CSSProperties> = {
   },
   aiActions: {
     display: 'flex',
-    gap: 16,
+    gap: 10,
   },
   aiLink: {
-    border: 'none',
-    background: 'transparent',
-    color: '#2563eb',
-    fontSize: 13,
+    border: '1px solid #9cc8ff',
+    backgroundColor: '#ffffff',
+    color: '#0066cc',
+    fontSize: 12,
     fontWeight: 700,
+    borderRadius: 6,
+    padding: '6px 14px',
     cursor: 'pointer',
-    padding: 0,
   },
   dotsBtn: {
     border: 'none',

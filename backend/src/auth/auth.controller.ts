@@ -27,6 +27,12 @@ export class AuthController {
     return this.authService.login(dto, req.ip);
   }
 
+  @Get('session')
+  @UseGuards(JwtAuthGuard)
+  session(@CurrentUser() user: any) {
+    return { authenticated: true, user };
+  }
+
   @Post('password-reset/request')
   requestReset(@Body() dto: RequestPasswordResetDto, @Req() req: Request) {
     return this.authService.requestPasswordReset(dto, req.ip);

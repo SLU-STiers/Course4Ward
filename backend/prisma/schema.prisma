@@ -79,6 +79,7 @@ model User {
   role              Role
   isActive          Boolean  @default(true)
   mustResetPassword Boolean  @default(false)
+  sessionVersion    Int      @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -93,6 +94,13 @@ model User {
   summaryRequestsAsProcessor SummaryApprovalRequest[] @relation("RequestedProcessor")
 
   @@map("users")
+}
+
+model UserIdCounter {
+  role        Role @id
+  nextNumber  Int  @default(1)
+
+  @@map("user_id_counters")
 }
 
 model Patient {
