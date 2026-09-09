@@ -30,6 +30,21 @@ function buildLoginErrorMessage(_err: any): string {
 export function Login() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
+  const storedAccessToken = useAuthStore((s) => s.accessToken);
+  const storedUser = useAuthStore((s) => s.user);
+
+  // "Remember me" persists the session in localStorage (shared across
+  // tabs/windows), so if a remembered session already exists — e.g. the
+  // user opens a brand-new tab — skip the login form entirely and drop
+  // them straight into their dashboard.
+  useEffect(() => {
+    if (!storedAccessToken || !storedUser) return;
+    if (storedUser.mustResetPassword) {
+      navigate('/reset-password', { replace: true });
+      return;
+    }
+    navigate(ROLE_PATH[storedUser.role] ?? '/', { replace: true });
+  }, [storedAccessToken, storedUser, navigate]);
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
@@ -79,7 +94,7 @@ export function Login() {
 
     try {
       const { data } = await authApi.login(userId, password);
-      setAuth(data.accessToken, data.refreshToken, data.user);
+      setAuth(data.accessToken, data.refreshToken, data.user, rememberMe);
       sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
 
       if (data.user.mustResetPassword) {
