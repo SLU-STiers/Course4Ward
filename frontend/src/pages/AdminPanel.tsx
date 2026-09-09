@@ -6,6 +6,7 @@ import { adminApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
 import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
 import { NotificationBell } from '../components/layout/NotificationBell';
+import { FilterSortMenu, SearchField, SortDirectionToggle, StatusBadge } from '../components/ui/DashboardUi';
 import dashboardIcon from '../Img/dashboard.png';
 import userIcon from '../Img/user.png';
 import requestsIcon from '../Img/requests.png';
@@ -561,6 +562,10 @@ function RequestsView() {
   const qc = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'APPROVED' | 'REJECTED'>('all');
+  const [sortField, setSortField] = useState<'name' | 'date'>('date');
+  const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
+  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{
     title: string;
@@ -596,12 +601,18 @@ function RequestsView() {
   }));
 
   // Search filter
-  const filteredList = list.filter((req: any) =>
-    req.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (req.ipAddress ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    req.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredList = list
+    .filter((req: any) =>
+      req.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      req.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (req.ipAddress ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      req.id.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .filter((req: any) => statusFilter === 'all' || req.status === statusFilter)
+    .sort((a: any, b: any) => {
+      const comparison = String(a[sortField]).localeCompare(String(b[sortField]), undefined, { numeric: true });
+      return sortDirection === 'ascending' ? comparison : -comparison;
+    });
 
   // Pagination calculations
   const totalItems = filteredList.length;
@@ -632,18 +643,23 @@ function RequestsView() {
             <p style={styles.requestsSubTitle}>Review and manage user password reset requests.</p>
           </div>
 
-          <div style={styles.searchContainer}>
-            <input
-              type="text"
-              placeholder="Search requests..."
-              style={styles.searchInput}
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1); // Reset to page 1 on new search
-              }}
-            />
-            <span style={styles.searchIcon}>🔍</span>
+          <div className="dashboard-toolbar" style={{ marginBottom: 0 }}>
+            <SearchField value={searchTerm} onChange={(value) => { setSearchTerm(value); setCurrentPage(1); }} placeholder="Search requests..." ariaLabel="Search password reset requests" />
+            <FilterSortMenu label="Filter" open={openMenu === 'filter'} onToggle={() => setOpenMenu(openMenu === 'filter' ? null : 'filter')}>
+              <strong>Request status</strong>
+              {(['all', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((status) => (
+                <button type="button" key={status} className={statusFilter === status ? 'is-active' : ''} onClick={() => { setStatusFilter(status); setCurrentPage(1); }}>
+                  {status === 'all' ? 'All statuses' : status}
+                </button>
+              ))}
+            </FilterSortMenu>
+            <FilterSortMenu label="Sort" open={openMenu === 'sort'} onToggle={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')}>
+              <strong>Sort requests by</strong>
+              {([['date', 'Requested date'], ['name', 'User name']] as const).map(([field, label]) => (
+                <button type="button" key={field} className={sortField === field ? 'is-active' : ''} onClick={() => { setSortField(field); setCurrentPage(1); }}>{label}</button>
+              ))}
+              <SortDirectionToggle direction={sortDirection} onChange={(direction) => { setSortDirection(direction); setCurrentPage(1); }} />
+            </FilterSortMenu>
           </div>
         </div>
 
@@ -679,7 +695,7 @@ function RequestsView() {
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{item.time}</div>
                 </td>
                 <td style={styles.td}>
-                  <span style={styles.pendingBadge}>{item.status}</span>
+                  <StatusBadge tone={item.status === 'PENDING' ? 'pending' : item.status === 'APPROVED' ? 'success' : 'neutral'}>{item.status}</StatusBadge>
                 </td>
                 <td style={styles.td}>
                   {item.status === 'PENDING' && (
@@ -959,8 +975,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   content: {
-    padding: '32px',
-    flex: 1,
+  paddingLeft: '80px',
+  paddingRight: '80px',
   },
   modalOverlay: {
     position: 'fixed',
