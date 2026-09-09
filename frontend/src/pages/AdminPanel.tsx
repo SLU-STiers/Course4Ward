@@ -5,6 +5,7 @@ import { Filter, ArrowUpDown } from 'lucide-react';
 import { adminApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
 import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { NotificationBell } from '../components/layout/NotificationBell';
 import dashboardIcon from '../Img/dashboard.png';
 import userIcon from '../Img/user.png';
 import requestsIcon from '../Img/requests.png';
