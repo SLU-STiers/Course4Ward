@@ -259,6 +259,7 @@ const DEFAULT_SUMMARIES: Record<string, string> = {
 
 export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('management');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [charts, setCharts] = useState<Record<string, PatientChart>>(INITIAL_CHARTS);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -271,6 +272,8 @@ export function NurseDashboard() {
   return (
     <div style={shell.appContainer}>
       <CollapsibleSidebar
+        isOpen={sidebarOpen}
+        onOpenChange={setSidebarOpen}
         nav={
           <>
           <NavItem
@@ -301,7 +304,15 @@ export function NurseDashboard() {
         }
       />
 
-      <div style={shell.mainWrapper}>
+      <div
+        style={{
+          ...shell.mainWrapper,
+          marginLeft: sidebarOpen ? 232 : 0,
+          marginRight: 0,
+          width: 'auto',
+          maxWidth: 'none',
+        }}
+      >
         <header style={shell.header}>
           <h1 style={shell.headerTitle}>{activeTab === 'management' ? 'Management' : 'Patient Management'}</h1>
           <NotificationBell />

@@ -19,6 +19,7 @@ type ActivityRow = {
 
 export function AdminPanel() {
   const [activeNav, setActiveNav] = useState<'dashboard' | 'users' | 'requests'>('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
@@ -64,6 +65,8 @@ export function AdminPanel() {
   return (
     <div style={styles.appContainer}>
       <CollapsibleSidebar
+        isOpen={sidebarOpen}
+        onOpenChange={setSidebarOpen}
         nav={
           <>
   <button
@@ -116,7 +119,15 @@ export function AdminPanel() {
       />
 
       {/* MAIN CONTENT AREA */}
-      <div style={styles.mainWrapper}>
+      <div
+        style={{
+          ...styles.mainWrapper,
+          marginLeft: sidebarOpen ? 232 : 0,
+          marginRight: 0,
+          width: 'auto',
+          maxWidth: 'none',
+        }}
+      >
         {/* TOP HEADER */}
         <header style={styles.header}>
           <h1 style={styles.headerTitle}>Admin</h1>

@@ -112,6 +112,9 @@ export function PhysicianDashboard() {
         style={{
           ...shell.mainWrapper,
           marginLeft: sidebarOpen ? 232 : 0,
+          marginRight: 0,
+          width: 'auto',
+          maxWidth: 'none',
         }}
       >
         <header style={shell.header}>
