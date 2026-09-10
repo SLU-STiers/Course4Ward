@@ -132,7 +132,7 @@ describe('CourseInWardService', () => {
 
     const mockAiResponse = {
       batch_id: 'batch-123',
-      total: 2,
+      total_groups: 2,
       successful: 2,
       failed: 0,
       results: [
@@ -262,7 +262,7 @@ describe('CourseInWardService', () => {
       // Arrange
       const failedAiResponse = {
         batch_id: 'batch-123',
-        total: 1,
+        total_groups: 1,
         successful: 0,
         failed: 1,
         results: [{ 
@@ -288,7 +288,7 @@ describe('CourseInWardService', () => {
       // Arrange
       const partialFailedResponse = {
         batch_id: 'batch-123',
-        total: 2,
+        total_groups: 2,
         successful: 1,
         failed: 1,
         results: [
@@ -413,7 +413,7 @@ describe('CourseInWardService', () => {
     ];
     const mockAiResponse = {
       batch_id: 'batch-123',
-      total: 1,
+      total_groups: 1,
       successful: 1,
       failed: 0,
       results: [{ 
@@ -680,7 +680,7 @@ describe('CourseInWardService', () => {
       ];
       const mockAiResponse = {
         batch_id: 'batch-123',
-        total: 1,
+        total_groups: 1,
         successful: 1,
         failed: 0,
         results: [{ 
@@ -731,7 +731,7 @@ describe('CourseInWardService', () => {
       ];
       const mockAiResponse = {
         batch_id: 'batch-123',
-        total: 1,
+        total_groups: 1,
         successful: 1,
         failed: 0,
         results: [{ 
