@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { claimsApi, courseInWardApi, ordersApi, patientsApi } from '../services/domainApi';
 import type { Patient, PhysicianRequest } from '../types';
-import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
-import { FilterSortMenu, SearchField, SortDirectionToggle, StatusBadge } from '../components/ui/DashboardUi';
+import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
+import { useTableState } from '../hooks/useTableState';
 import searchImg from '../Img/search.png';
 import documentImg from '../Img/document.png';
 import requestsIcon from '../Img/requests.png';
@@ -57,7 +58,6 @@ const INITIAL_TODOS = [
 
 export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
@@ -69,96 +69,45 @@ export function PhysicianDashboard() {
   };
 
   return (
-    <div style={shell.appContainer}>
-      <CollapsibleSidebar
-        isOpen={sidebarOpen}
-        onOpenChange={setSidebarOpen}
-        nav={
-          <>
-            <NavItem
-              label="Overview"
-              icon={<OverviewIcon />}
-              active={activeTab === 'overview'}
-              onClick={() => setActiveTab('overview')}
-            />
-            <NavItem
-              label="Manage"
-              icon={<ManageIcon />}
-              active={activeTab === 'manage'}
-              onClick={() => setActiveTab('manage')}
-            />
-            <NavItem
-              label="Requests"
-              icon={<img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />}
-              active={activeTab === 'requests'}
-              onClick={() => setActiveTab('requests')}
-            />
-          </>
-        }
-        profile={
+    <Layout
+      navbarProps={{
+        ariaLabel: 'Physician navigation',
+        activeId: activeTab,
+        onNavigate: (id) => setActiveTab(id as TabType),
+        items: [
+          { id: 'overview', label: 'Overview', icon: <OverviewIcon /> },
+          { id: 'manage', label: 'Manage', icon: <ManageIcon /> },
+          {
+            id: 'requests',
+            label: 'Requests',
+            icon: <img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />,
+          },
+        ],
+        profile: (
           <div style={shell.sidebarProfile}>
             <div style={shell.profileAvatar}>JD</div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={shell.profileName}>Dr. {displayName}</div>
               <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
             </div>
-            <button type="button" title="Log out" onClick={handleLogout} style={shell.logoutBtn}>
+            <Button variant="secondary" size="sm" title="Log out" onClick={handleLogout}>
               Log out
-            </button>
+            </Button>
           </div>
-        }
-      />
-
-      <div
-        style={{
-          ...shell.mainWrapper,
-          marginLeft: sidebarOpen ? 232 : 0,
-          marginRight: 0,
-          width: 'auto',
-          maxWidth: 'none',
-        }}
-      >
-        <header style={shell.header}>
-          <div>
-            <h1 style={shell.headerTitle}>Good Day! Dr. John</h1>
-            <p style={shell.headerSubtitle}>We are pleased to have you!</p>
-          </div>
-          <NotificationBell />
-        </header>
-
-        <main style={shell.content}>
-          {activeTab === 'overview' && <OverviewView />}
-          {activeTab === 'manage' && <ManageView />}
-          {activeTab === 'requests' && <RequestsView />}
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function NavItem({
-  label,
-  icon,
-  active,
-  onClick,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        ...shell.navButton,
-        ...(active ? shell.navButtonActive : {}),
+        ),
       }}
+      header={
+        <PageHeader
+          title="Good Day! Dr. John"
+          description="We are pleased to have you!"
+          actions={<NotificationBell />}
+        />
+      }
     >
-      <span style={shell.navIcon}>{icon}</span>
-      {label}
-    </button>
+      {activeTab === 'overview' && <OverviewView />}
+      {activeTab === 'manage' && <ManageView />}
+      {activeTab === 'requests' && <RequestsView />}
+    </Layout>
   );
 }
 
@@ -504,15 +453,8 @@ function TodoListWidget() {
 }
 
 function RequestsView() {
-  const pageSize = 5;
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
   const [items, setItems] = useState<PhysicianRequest[]>([]);
   const [selected, setSelected] = useState<PhysicianRequest | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'reviewed'>('all');
-  const [sortField, setSortField] = useState<'id' | 'patient' | 'requestedAt'>('requestedAt');
-  const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
-  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | null>(null);
 
   const loadRequests = () => {
     claimsApi.physicianRequests().then(({ data }) => setItems(data)).catch(() => setItems([]));
@@ -522,57 +464,68 @@ function RequestsView() {
     loadRequests();
   }, []);
 
-  const filtered = items
-    .filter(
-      (r) =>
-      r.id.toLowerCase().includes(search.toLowerCase()) ||
-      `${r.summary.patient.firstName} ${r.summary.patient.lastName}`.toLowerCase().includes(search.toLowerCase()) ||
-      `${r.processor.firstName} ${r.processor.lastName}`.toLowerCase().includes(search.toLowerCase())
-    )
-    .filter((r) => {
-      if (statusFilter === 'all') return true;
-      const isPending = r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED';
-      return statusFilter === 'pending' ? isPending : !isPending;
-    })
-    .sort((a, b) => {
-      const left = sortField === 'patient' ? `${a.summary.patient.firstName} ${a.summary.patient.lastName}` : a[sortField];
-      const right = sortField === 'patient' ? `${b.summary.patient.firstName} ${b.summary.patient.lastName}` : b[sortField];
-      const comparison = String(left).localeCompare(String(right), undefined, { numeric: true });
-      return sortDirection === 'ascending' ? comparison : -comparison;
-    });
+  const isPending = (request: PhysicianRequest) =>
+    request.status === 'PENDING' || request.status === 'PHYSICIAN_VALIDATION_REQUESTED';
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const start = (safePage - 1) * pageSize;
-  const rows = filtered.slice(start, start + pageSize);
-  const displayPages = [1, 2, 3].filter((n) => n <= pageCount);
+  // Shared search / filter / sort / pagination state.
+  const table = useTableState<PhysicianRequest>({
+    items,
+    pageSize: 5,
+    searchFields: (request) => [
+      request.id,
+      `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
+      `${request.processor.firstName} ${request.processor.lastName}`,
+    ],
+    filterPredicates: {
+      status: (request, value) =>
+        value === 'all' || (value === 'pending' ? isPending(request) : !isPending(request)),
+    },
+    initialFilters: { status: 'all' },
+    sorters: {
+      id: (request) => request.id,
+      patient: (request) => `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
+      requestedAt: (request) => request.requestedAt,
+    },
+    initialSort: { field: 'requestedAt', direction: 'descending' },
+  });
 
   return (
     <section style={requests.card}>
-      <div style={requests.headerRow}>
-        <div>
-          <h2 style={requests.title}>Requests</h2>
-          <p style={requests.subtitle}>Review AI summaries submitted by Claims Processors.</p>
-        </div>
-        <div className="dashboard-toolbar" style={{ marginBottom: 0, flex: 1 }}>
-          <SearchField value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search requests..." ariaLabel="Search physician requests" />
-          <FilterSortMenu label="Filter" open={openMenu === 'filter'} onToggle={() => setOpenMenu(openMenu === 'filter' ? null : 'filter')}>
-            <strong>Request status</strong>
-            {(['all', 'pending', 'reviewed'] as const).map((status) => (
-              <button type="button" key={status} className={statusFilter === status ? 'is-active' : ''} onClick={() => { setStatusFilter(status); setPage(1); }}>
-                {status[0].toUpperCase() + status.slice(1)}
-              </button>
-            ))}
-          </FilterSortMenu>
-          <FilterSortMenu label="Sort" open={openMenu === 'sort'} onToggle={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')}>
-            <strong>Sort requests by</strong>
-            {([['requestedAt', 'Submitted date'], ['patient', 'Patient name'], ['id', 'Request ID']] as const).map(([field, label]) => (
-              <button type="button" key={field} className={sortField === field ? 'is-active' : ''} onClick={() => { setSortField(field); setPage(1); }}>{label}</button>
-            ))}
-            <SortDirectionToggle direction={sortDirection} onChange={(direction) => { setSortDirection(direction); setPage(1); }} />
-          </FilterSortMenu>
-        </div>
-      </div>
+      <PageHeader
+        title="Requests"
+        description="Review AI summaries submitted by Claims Processors."
+      />
+
+      <DataTableToolbar
+        searchProps={{
+          value: table.query,
+          onChange: table.setQuery,
+          placeholder: 'Search requests...',
+          ariaLabel: 'Search physician requests',
+        }}
+        filterProps={{
+          title: 'Request status',
+          options: [
+            { value: 'all', label: 'All' },
+            { value: 'pending', label: 'Pending' },
+            { value: 'reviewed', label: 'Reviewed' },
+          ],
+          value: table.filters.status ?? 'all',
+          onChange: (value) => table.setFilter('status', value),
+        }}
+        sortProps={{
+          title: 'Sort requests by',
+          options: [
+            { value: 'requestedAt', label: 'Submitted date' },
+            { value: 'patient', label: 'Patient name' },
+            { value: 'id', label: 'Request ID' },
+          ],
+          value: table.sort.field,
+          onChange: table.setSortField,
+          direction: table.sort.direction,
+          onDirectionChange: (direction) => table.setSort({ field: table.sort.field, direction }),
+        }}
+      />
 
       <table style={requests.table}>
         <thead>
@@ -586,12 +539,12 @@ function RequestsView() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {table.rows.map((r) => (
             <tr key={r.id}>
               <td style={requests.td}>
-                <button type="button" style={requests.idLink} onClick={() => setSelected(r)}>
+                <Button variant="ghost" size="sm" onClick={() => setSelected(r)}>
                   {r.id}
-                </button>
+                </Button>
               </td>
               <td style={requests.td}>
                 <div style={requests.primary}>{r.summary.patient.firstName} {r.summary.patient.lastName}</div>
@@ -606,68 +559,27 @@ function RequestsView() {
                 <div style={requests.secondary}>{new Date(r.requestedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
               </td>
               <td style={requests.td}>
-                <StatusBadge tone={r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED' ? 'pending' : 'success'}>
-                  {r.status === 'PENDING' || r.status === 'PHYSICIAN_VALIDATION_REQUESTED' ? 'Pending Review' : 'Reviewed'}
-                </StatusBadge>
+                <StatusBadge
+                  showDot
+                  status={isPending(r) ? 'pending' : 'approved'}
+                  label={isPending(r) ? 'Pending Review' : 'Reviewed'}
+                />
               </td>
               <td style={{ ...requests.td, textAlign: 'right' }}>
-                <button type="button" style={requests.reviewBtn} onClick={() => setSelected(r)}>
+                <Button variant="primary" size="sm" onClick={() => setSelected(r)}>
                   Review
-                </button>
+                </Button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div style={requests.pagination}>
-        <span style={requests.pageInfo}>
-          Showing {filtered.length ? start + 1 : 0} to {Math.min(start + pageSize, filtered.length)} of{' '}
-          {filtered.length} requests
+      <div className="ui-table-footer">
+        <span className="ui-table-footer__info">
+          Showing {table.rangeStart} to {table.rangeEnd} of {table.total} requests
         </span>
-        <div style={requests.pageControls}>
-          <button
-            type="button"
-            style={requests.pageBtn}
-            disabled={safePage === 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            ‹
-          </button>
-          {displayPages.map((n) => (
-            <button
-              key={n}
-              type="button"
-              style={{ ...requests.pageBtn, ...(n === safePage ? requests.pageActive : {}) }}
-              onClick={() => setPage(n)}
-            >
-              {n}
-            </button>
-          ))}
-          {pageCount > 3 && (
-            <>
-              <span style={{ color: '#94a3b8', fontSize: 13 }}>...</span>
-              <button
-                type="button"
-                style={{
-                  ...requests.pageBtn,
-                  ...(safePage === pageCount ? requests.pageActive : {}),
-                }}
-                onClick={() => setPage(pageCount)}
-              >
-                {pageCount}
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            style={requests.pageBtn}
-            disabled={safePage === pageCount}
-            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-          >
-            ›
-          </button>
-        </div>
+        <Pagination page={table.page} pageCount={table.pageCount} onPageChange={table.setPage} />
       </div>
 
       {selected && (

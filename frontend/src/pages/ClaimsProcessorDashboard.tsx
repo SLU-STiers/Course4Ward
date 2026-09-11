@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { DashboardShell } from '../components/layout/DashboardShell';
+import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
-import { SearchField } from '../components/ui/DashboardUi';
+import { Button, PageHeader, Popover, SearchField, StatusBadge } from '../components/ui';
 import overviewIcon from '../Img/overview.png';
 import requestsIcon from '../Img/requests.png';
 import exportIcon from '../Img/export.png';
@@ -152,17 +152,18 @@ function HoverMenu({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      style={overviewStyles.filterMenuWrap}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+    <Popover
+      ariaLabel={label}
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        <Button variant="secondary" leadingIcon={icon}>
+          {label}
+        </Button>
+      }
     >
-      <button type="button" style={overviewStyles.filterButton} aria-expanded={open}>
-        {icon}
-        {label}
-      </button>
-      {open && <div style={overviewStyles.filterDropdown}>{children}</div>}
-    </div>
+      {children}
+    </Popover>
   );
 }
 
@@ -323,72 +324,40 @@ export function ClaimsProcessorDashboard() {
   };
 
   return (
-    <DashboardShell
-        nav={
-          <>
-          <button
-            style={{
-              ...styles.navButton,
-              ...(activeTab === 'overview' ? styles.navButtonActive : {}),
-            }}
-            onClick={() => setActiveTab('overview')}
-          >
-            <img src={overviewIcon} alt="Overview" style={styles.navIconImage} />
-            Dashboard
-          </button>
-
-          <button
-            style={{
-              ...styles.navButton,
-              ...(activeTab === 'requests' ? styles.navButtonActive : {}),
-            }}
-            onClick={() => setActiveTab('requests')}
-          >
-            <img src={requestsIcon} alt="Requests" style={styles.navIconImage} />
-            Requests
-          </button>
-
-          <button
-            style={{
-              ...styles.navButton,
-              ...(activeTab === 'export' ? styles.navButtonActive : {}),
-            }}
-            onClick={() => {
-              setActiveTab('export');
-              setExportSubView('selection');
-            }}
-          >
-            <img src={exportIcon} alt="Export" style={styles.navIconImage} />
-            Export
-          </button>
-          </>
-        }
-        profile={
+    <Layout
+      navbarProps={{
+        ariaLabel: 'Claims processor navigation',
+        activeId: activeTab,
+        onNavigate: (id) => {
+          const tab = id as TabType;
+          setActiveTab(tab);
+          if (tab === 'export') setExportSubView('selection');
+        },
+        items: [
+          { id: 'overview', label: 'Dashboard', icon: <img src={overviewIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'export', label: 'Export', icon: <img src={exportIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+        ],
+        profile: (
           <div style={styles.sidebarProfile}>
-          <div style={styles.profileAvatar}>SJ</div>
-          <div style={styles.profileDetails}>
-            <div style={styles.profileName}>Steve Joabs</div>
-            <div style={styles.profileEmail}>Claims Processor</div>
+            <div style={styles.profileAvatar}>SJ</div>
+            <div style={styles.profileDetails}>
+              <div style={styles.profileName}>Steve Joabs</div>
+              <div style={styles.profileEmail}>Claims Processor</div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={handleLogout}>
+              Log out
+            </Button>
           </div>
-          <button type="button" style={styles.logoutBtn} onClick={handleLogout}>
-            Log out
-          </button>
-          </div>
-        }
-      >
-
-      {/* MAIN CONTAINER */}
-      <div style={styles.mainWrapper}>
-        {/* TOP HEADER */}
-        <header style={styles.header}>
-          <h1 style={styles.headerTitle}>Claims Processor</h1>
-          <div style={styles.headerRight}>
-            <NotificationBell showDot />
-          </div>
-        </header>
-
-        {/* CONTENT */}
-        <main style={styles.content}>
+        ),
+      }}
+      header={
+        <PageHeader
+          title="Claims Processor"
+          actions={<NotificationBell showDot />}
+        />
+      }
+    >
           {/* REQUESTS TAB */}
           {activeTab === 'requests' && (
             <div>
@@ -455,23 +424,26 @@ export function ClaimsProcessorDashboard() {
                           <div style={styles.timeText}>{req.time}</div>
                         </td>
                         <td style={styles.td}>
-                          <span
-                            style={
+                          <StatusBadge
+                            showDot
+                            status={
                               req.status === 'Pending Review'
-                                ? styles.statusPending
-                                : styles.statusApproved
+                                ? 'pending'
+                                : req.status === 'Approved'
+                                  ? 'approved'
+                                  : 'rejected'
                             }
-                          >
-                            {req.status}
-                          </span>
+                            label={req.status}
+                          />
                         </td>
                         <td style={{ ...styles.td, ...styles.requestActionCell }}>
-                          <button
-                            style={styles.reviewBtn}
+                          <Button
+                            variant="primary"
+                            size="sm"
                             onClick={() => setSelectedRequest(req)}
                           >
                             Review
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -958,15 +930,13 @@ export function ClaimsProcessorDashboard() {
                       <option>Dr. Agcaoili Diddy</option>
                       <option>Dr. Jecy Guillian</option>
                     </select>
-                    <button type="button" style={overviewStyles.submitButton} onClick={() => alert(`Submitted to ${evaluator}`)}>Submit</button>
+                    <Button variant="primary" size="sm" onClick={() => alert(`Submitted to ${evaluator}`)}>Submit</Button>
                   </div>
                 </div>
               </div>
             </div>
           )}
-        </main>
-      </div>
-    </DashboardShell>
+    </Layout>
   );
 }
 

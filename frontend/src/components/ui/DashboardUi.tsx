@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
-import searchImg from '../../Img/search.png';
+import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, ChevronRight, Filter, Search } from 'lucide-react';
 
 export type SortDirection = 'ascending' | 'descending';
 
@@ -17,7 +16,7 @@ export function SearchField({
 }) {
   return (
     <label className="dashboard-search" aria-label={ariaLabel}>
-      <img src={searchImg} alt="" aria-hidden="true" style={{ width: 14, height: 14 }} />
+      <Search size={17} strokeWidth={2} aria-hidden="true" />
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -42,15 +41,16 @@ export function ControlButton({
   'aria-expanded'?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      className={`dashboard-control-button${active ? ' is-active' : ''}`}
+    <Button
+      variant="secondary"
+      className={active ? 'is-active' : undefined}
+      leadingIcon={icon}
+      trailingIcon={<ChevronDown size={14} aria-hidden="true" />}
       onClick={onClick}
       aria-expanded={ariaExpanded}
     >
-      {icon}
-      <span>{label}</span>
-    </button>
+      {label}
+    </Button>
   );
 }
 
@@ -66,16 +66,23 @@ export function FilterSortMenu({
   children: ReactNode;
 }) {
   return (
-    <div className="dashboard-menu-wrap">
-      <ControlButton
-        label={label}
-        icon={label === 'Sort' ? <ArrowUpAZ size={16} /> : <Filter size={16} />}
-        active={open}
-        onClick={onToggle}
-        aria-expanded={open}
-      />
-      {open ? <div className="dashboard-menu">{children}</div> : null}
-    </div>
+    <Popover
+      ariaLabel={label}
+      open={open}
+      onOpenChange={onToggle}
+      trigger={
+        <Button
+          variant="secondary"
+          className={open ? 'is-active' : undefined}
+          leadingIcon={<Filter size={16} aria-hidden="true" />}
+          trailingIcon={<ChevronDown size={14} aria-hidden="true" />}
+        >
+          {label}
+        </Button>
+      }
+    >
+      <div className="ui-menu">{children}</div>
+    </Popover>
   );
 }
 
@@ -86,24 +93,7 @@ export function SortDirectionToggle({
   direction: SortDirection;
   onChange: (direction: SortDirection) => void;
 }) {
-  return (
-    <div className="dashboard-direction-toggle" role="group" aria-label="Sort direction">
-      <button
-        type="button"
-        className={direction === 'ascending' ? 'is-active' : ''}
-        onClick={() => onChange('ascending')}
-      >
-        <ArrowUpAZ size={15} /> Ascending
-      </button>
-      <button
-        type="button"
-        className={direction === 'descending' ? 'is-active' : ''}
-        onClick={() => onChange('descending')}
-      >
-        <ArrowDownAZ size={15} /> Descending
-      </button>
-    </div>
-  );
+  return <UnifiedSortDirectionToggle direction={direction} onChange={onChange} />;
 }
 
 export function ActionButton({
@@ -124,15 +114,16 @@ export function ActionButton({
   className?: string;
 }) {
   return (
-    <button
-      type={type}
-      className={`dashboard-action-button ${variant}${className ? ` ${className}` : ''}`}
+    <Button
+      variant={variant}
       onClick={onClick}
-      disabled={disabled || loading}
+      disabled={disabled}
+      loading={loading}
+      type={type}
+      className={className}
     >
-      {loading ? <Spinner size={15} /> : null}
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -167,8 +158,25 @@ export function EmptyState({
   );
 }
 
-export function StatusBadge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'pending' | 'success' | 'danger' }) {
-  return <span className={`dashboard-status-badge ${tone}`}>{children}</span>;
+const TONE_TO_STATUS: Record<'neutral' | 'pending' | 'success' | 'danger', StatusValue> = {
+  neutral: 'neutral',
+  pending: 'pending',
+  success: 'completed',
+  danger: 'rejected',
+};
+
+export function StatusBadge({
+  children,
+  tone = 'neutral',
+}: {
+  children?: ReactNode;
+  tone?: 'neutral' | 'pending' | 'success' | 'danger';
+}) {
+  return (
+    <UnifiedStatusBadge status={TONE_TO_STATUS[tone]} showDot>
+      {children}
+    </UnifiedStatusBadge>
+  );
 }
 
 export function Pagination({
