@@ -6,10 +6,10 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
 import {
   OrderEnteredBy,
-  SummaryStatus,
   OrderStatus,
   OrderType,
   PhilHealthCF4Status,
+  SummaryStatus,
 } from "@prisma/client";
 
 const mockPrismaService = {
@@ -64,6 +64,11 @@ describe("Patients Module", () => {
           {
             id: "order-1",
             orderContent: "Order content",
+            type: OrderType.DEFAULT,
+            status: OrderStatus.TO_ACCOMPLISH,
+            nurseComment: null,
+            executedById: null,
+            executedAt: null,
             dateCreated: new Date(),
             dateUpdated: null,
             orderEmbedding: null,

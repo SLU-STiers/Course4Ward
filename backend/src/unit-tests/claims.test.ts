@@ -4,7 +4,7 @@ import { ClaimsController } from "../claims/claims.controller";
 import { ClaimsService } from "../claims/claims.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
-import { SummaryStatus, PhilHealthCF4Status } from "@prisma/client";
+import { PhilHealthCF4Status, SummaryStatus } from "@prisma/client";
 
 const mockPrismaService = {
   courseInWard: {
