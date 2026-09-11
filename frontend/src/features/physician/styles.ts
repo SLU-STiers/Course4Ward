@@ -414,9 +414,12 @@ export const manage: Record<string, CSSProperties> = {
     backgroundColor: "#ffffff",
   },
   orderTime: {
-    fontSize: 11,
+    flexShrink: 0,
+    minWidth: 58,
+    fontSize: 12,
     fontWeight: 700,
-    color: "#94a3b8",
+    color: "#64748b",
+    fontVariantNumeric: "tabular-nums",
   },
   rightCol: {
     display: "flex",
@@ -478,22 +481,92 @@ export const manage: Record<string, CSSProperties> = {
     backgroundColor: "#f8fafc",
     border: "1px solid #e2e8f0",
     borderRadius: 8,
-    padding: 12,
+    padding: 14,
     marginBottom: 12,
   },
   patientMeta: {
     marginBottom: 12,
   },
-  orderLines: {
+  // Each day is its own card with an opaque, tinted header. The header sticks
+  // while its day scrolls, so a multi-date list never reads as one grey block:
+  // the tint marks where one day ends and the next begins, and text scrolling
+  // underneath is hidden by the header instead of clipped by a stray rule.
+  orderScroll: {
     display: "flex",
     flexDirection: "column",
+    gap: 14,
+    maxHeight: "min(560px, 62vh)",
+    overflowY: "auto",
+    paddingRight: 6,
+  },
+  orderDayGroup: {
+    // Deliberately no `overflow: hidden` — it would break the sticky header.
+    backgroundColor: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 8,
+  },
+  orderDayHeader: {
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 8,
+    padding: "9px 12px",
+    backgroundColor: "#e8f1f7",
+    borderBottom: "1px solid #cbd9e4",
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#0f172a",
+  },
+  orderDayLabel: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 8,
+    minWidth: 0,
+  },
+  orderDayRelative: {
+    flexShrink: 0,
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: TEAL,
+  },
+  orderDayCount: {
+    flexShrink: 0,
+    fontSize: 12,
+    fontWeight: 700,
+    color: "#475569",
+    backgroundColor: "#ffffff",
+    border: "1px solid #cbd9e4",
+    borderRadius: 999,
+    padding: "1px 8px",
+  },
+  orderDayBody: {
+    display: "flex",
+    flexDirection: "column",
+  },
+  dateClearBtn: {
+    border: "1px solid #dbe3ec",
+    backgroundColor: "#ffffff",
+    color: "#0369a1",
+    borderRadius: 8,
+    padding: "6px 10px",
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
   orderLine: {
     border: "1px solid #e2e8f0",
     borderRadius: 8,
     padding: "10px 12px",
-    fontSize: 13,
+    fontSize: 14,
+    lineHeight: 1.55,
     color: "#334155",
     backgroundColor: "#ffffff",
   },
@@ -632,22 +705,38 @@ export const manage: Record<string, CSSProperties> = {
     color: "#334155",
     cursor: "pointer",
   },
-  orderBullet: {
-    fontSize: 13,
-    color: "#334155",
-    lineHeight: 1.5,
+  // Order rows: the time is a fixed column so every order lines up under its
+  // day heading, and the order text gets the readable size.
+  orderRow: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 10,
+    padding: "8px 12px",
   },
   orderEditRow: {
     display: "flex",
-    gap: 8,
     alignItems: "center",
+    gap: 8,
+    padding: "8px 12px",
+  },
+  /** Hairline between two orders of the *same* day, so a long day stays scannable. */
+  orderRowDivided: {
+    borderTop: "1px solid #eef2f7",
+  },
+  orderText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 15,
+    lineHeight: 1.6,
+    color: "#1e293b",
+    overflowWrap: "break-word",
   },
   orderEditInput: {
     flex: 1,
     border: "1px solid #cbd5e1",
     borderRadius: 8,
-    padding: "8px 10px",
-    fontSize: 13,
+    padding: "9px 10px",
+    fontSize: 14,
   },
   removeOrderBtn: {
     border: "1px solid #fecaca",

@@ -5,6 +5,7 @@ import { DataTableToolbar, PageHeader, Pagination } from '../../components/ui';
 import { useTableState } from '../../hooks/useTableState';
 import { formatDateLongFromKey } from '../../lib/format';
 import documentImg from '../../Img/document.png';
+import llamaIcon from '../../Img/llama.png';
 import { ui } from './styles';
 
 import { DEFAULT_ORDER_SETS, DEFAULT_SUMMARIES, MOCK_PATIENTS, resolveChart } from './data';
@@ -235,7 +236,7 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
             <div style={ui.aiCard}>
               <div style={ui.aiHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>✨</span>
+                  <img src={llamaIcon} alt="" style={{ width: 16, height: 16, display: 'block', objectFit: 'contain' }} />
                   <span style={ui.aiTitle}>AI Summarized</span>
                 </div>
                 <span style={ui.aiBadge}>AI Draft ready</span>

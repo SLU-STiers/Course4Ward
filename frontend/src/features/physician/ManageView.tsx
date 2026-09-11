@@ -7,13 +7,33 @@ import type { PhysicianOrder } from '../../types';
 import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
 import { useTableState } from '../../hooks/useTableState';
 import documentImg from '../../Img/document.png';
-import { formatTimeClock, toDateInputValue, todayValue } from '../../lib/format';
+import llamaIcon from '../../Img/llama.png';
+import {
+  formatDateLongFromKey,
+  formatTimeClock,
+  toDateInputValue,
+  todayValue,
+} from '../../lib/format';
 import { overview, manage } from './styles';
 
 import { CalendarModal } from './CalendarModal';
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
 import { mapPatient } from './patient';
 import type { DashboardPatient } from './types';
+
+/** Epoch millis of an order timestamp; an unparseable timestamp sorts first. */
+function orderMillis(order: PhysicianOrder) {
+  const time = new Date(order.dateCreated).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+/** `Today` / `Yesterday` — a fast anchor once the list spans several dates. */
+function relativeDayLabel(day: string): string {
+  if (day === todayValue()) return "Today";
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return day === toDateInputValue(yesterday) ? "Yesterday" : "";
+}
 
 export function ManageView() {
   const user = useAuthStore((s) => s.user);
@@ -24,6 +44,9 @@ export function ManageView() {
   const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const orderScrollRef = useRef<HTMLDivElement>(null);
+  /** Raised when an order is added, so the list follows it to the bottom. */
+  const followNewOrder = useRef(false);
   const [ordersByPatient, setOrdersByPatient] = useState<
     Record<string, PhysicianOrder[]>
   >({});
@@ -34,7 +57,8 @@ export function ManageView() {
   const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
-  const [selectedOrderDate, setSelectedOrderDate] = useState(todayValue);
+  /** Order-date filter (`YYYY-MM-DD`); `null` means unfiltered — every order. */
+  const [orderDateFilter, setOrderDateFilter] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   // This tab only manages patients who are currently in the ward.
@@ -101,6 +125,14 @@ export function ManageView() {
           ...previous,
           [selected.id]: ordersResponse.data,
         }));
+        // Drop a date filter this patient has no orders on, so the filter state
+        // never disagrees with what the list is showing.
+        const loadedDays = new Set(
+          ordersResponse.data.map((order) => orderDayValue(order.dateCreated)),
+        );
+        setOrderDateFilter((previous) =>
+          previous && !loadedDays.has(previous) ? null : previous,
+        );
         const latest = summariesResponse.data[0];
         if (latest) {
           setSummaryByPatient((previous) => ({
@@ -118,23 +150,55 @@ export function ManageView() {
 
   const selectedOrders = selected ? ordersByPatient[selected.id] : undefined;
   const allOrders = useMemo(() => selectedOrders ?? [], [selectedOrders]);
-  // Only dates that actually hold orders are browsable in the calendar.
-  const orderDays = useMemo(() => {
-    const days = new Set<string>();
+  // Orders bucketed per calendar day — the unit a doctor's order is filed under.
+  // Each bucket is oldest-first so one day reads like an order sheet.
+  const ordersByDay = useMemo(() => {
+    const map = new Map<string, PhysicianOrder[]>();
     for (const order of allOrders) {
       const day = orderDayValue(order.dateCreated);
-      if (day) days.add(day);
+      if (!day) continue;
+      const bucket = map.get(day);
+      if (bucket) bucket.push(order);
+      else map.set(day, [order]);
     }
-    return Array.from(days).sort();
+    for (const bucket of map.values()) {
+      bucket.sort((a, b) => orderMillis(a) - orderMillis(b));
+    }
+    return map;
   }, [allOrders]);
-
-  // Fall back to a day that actually has orders so no order-less date is browsed.
-  const browsedOrderDate = orderDays.includes(selectedOrderDate)
-    ? selectedOrderDate
-    : (orderDays[orderDays.length - 1] ?? selectedOrderDate);
-  const dayOrders = allOrders.filter(
-    (order) => orderDayValue(order.dateCreated) === browsedOrderDate,
+  // Only dates that actually hold orders are browsable in the calendar.
+  const orderDays = useMemo(
+    () => Array.from(ordersByDay.keys()).sort(),
+    [ordersByDay],
   );
+
+  // A filter only sticks to a date this patient actually has orders on, so the
+  // list always has something to show.
+  const activeOrderDate =
+    orderDateFilter && ordersByDay.has(orderDateFilter) ? orderDateFilter : null;
+  // No filter (the default) lists every day, oldest first — the whole list reads
+  // chronologically, day by day, then time within each day.
+  const dayGroups = useMemo(
+    () =>
+      (activeOrderDate ? [activeOrderDate] : orderDays).map((day) => ({
+        day,
+        orders: ordersByDay.get(day) ?? [],
+      })),
+    [activeOrderDate, orderDays, ordersByDay],
+  );
+  const visibleOrderCount = dayGroups.reduce(
+    (total, group) => total + group.orders.length,
+    0,
+  );
+
+  // The list reads chronologically, so a freshly added order sits at the very
+  // end — follow it there instead of leaving it below the fold.
+  useEffect(() => {
+    if (!followNewOrder.current) return;
+    followNewOrder.current = false;
+    const node = orderScrollRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [allOrders]);
   const summary =
     (selected && summaryByPatient[selected.id]) ??
     "No AI summary yet. Submit orders to generate a draft.";
@@ -186,8 +250,12 @@ export function ManageView() {
         }));
         setDraft("");
         setSubmitted(false);
-        // Jump to the day the new order was filed so it is visible.
-        setSelectedOrderDate(orderDayValue(data.dateCreated) || todayValue());
+        // While filtering, follow the new order to its day; either way the list
+        // scrolls down to it so it is visible right away.
+        followNewOrder.current = true;
+        if (activeOrderDate) {
+          setOrderDateFilter(orderDayValue(data.dateCreated) || todayValue());
+        }
       })
       .catch(() => undefined);
   };
@@ -221,21 +289,27 @@ export function ManageView() {
       </div>
     );
 
-  const selectedDateLabel = browsedOrderDate
-    ? new Date(`${browsedOrderDate}T00:00:00`).toLocaleDateString("en-GB")
-    : "—";
-  const calendarFocusDate = browsedOrderDate
-    ? new Date(`${browsedOrderDate}T00:00:00`)
-    : new Date();
-  // Order dates are the only navigable stops — order-less days are skipped.
-  const hasPrevOrderDay = orderDays.some((day) => day < browsedOrderDate);
-  const hasNextOrderDay = orderDays.some((day) => day > browsedOrderDate);
+  const selectedDateLabel = activeOrderDate
+    ? new Date(`${activeOrderDate}T00:00:00`).toLocaleDateString("en-GB")
+    : "All dates";
+  // Open the calendar on whatever the physician is looking at, defaulting to the
+  // most recent day that has orders.
+  const calendarFocusDate = new Date(
+    `${activeOrderDate ?? orderDays[orderDays.length - 1] ?? todayValue()}T00:00:00`,
+  );
+  // Order dates are the only navigable stops — order-less days are skipped, and
+  // the arrows only make sense once a single day is in focus.
+  const hasPrevOrderDay =
+    !!activeOrderDate && orderDays.some((day) => day < activeOrderDate);
+  const hasNextOrderDay =
+    !!activeOrderDate && orderDays.some((day) => day > activeOrderDate);
   const goToAdjacentOrderDay = (direction: -1 | 1) => {
+    if (!activeOrderDate) return;
     const candidates = orderDays.filter((day) =>
-      direction < 0 ? day < browsedOrderDate : day > browsedOrderDate,
+      direction < 0 ? day < activeOrderDate : day > activeOrderDate,
     );
     if (!candidates.length) return;
-    setSelectedOrderDate(
+    setOrderDateFilter(
       direction < 0 ? candidates[candidates.length - 1] : candidates[0],
     );
   };
@@ -519,6 +593,7 @@ export function ManageView() {
                   hasPrevOrderDay ? manage.dateNavBtn : manage.dateNavBtnDisabled
                 }
                 disabled={!hasPrevOrderDay}
+                title="Previous day with orders"
                 aria-label="Previous date with orders"
                 onClick={() => goToAdjacentOrderDay(-1)}
               >
@@ -530,7 +605,11 @@ export function ManageView() {
                 onClick={() => setCalendarOpen(true)}
                 aria-haspopup="dialog"
                 aria-expanded={calendarOpen}
-                aria-label={`Order date ${selectedDateLabel}. Open calendar`}
+                aria-label={
+                  activeOrderDate
+                    ? `Filtered to orders on ${selectedDateLabel}. Open calendar`
+                    : "Showing orders from every date. Open calendar to filter by date"
+                }
               >
                 {selectedDateLabel}
               </button>
@@ -540,11 +619,22 @@ export function ManageView() {
                   hasNextOrderDay ? manage.dateNavBtn : manage.dateNavBtnDisabled
                 }
                 disabled={!hasNextOrderDay}
+                title="Next day with orders"
                 aria-label="Next date with orders"
                 onClick={() => goToAdjacentOrderDay(1)}
               >
                 ›
               </button>
+              {activeOrderDate && (
+                <button
+                  type="button"
+                  style={manage.dateClearBtn}
+                  title="Show orders from every date"
+                  onClick={() => setOrderDateFilter(null)}
+                >
+                  Show all
+                </button>
+              )}
             </div>
           </div>
 
@@ -556,44 +646,86 @@ export function ManageView() {
               <div
                 style={{
                   fontWeight: 700,
-                  fontSize: 13,
+                  fontSize: 15,
                   color: "#334155",
                   marginTop: 8,
                 }}
               >
-                Orders on {selectedDateLabel} ({dayOrders.length})
+                {activeOrderDate
+                  ? `Orders on ${selectedDateLabel} (${visibleOrderCount})`
+                  : `All doctor’s orders (${visibleOrderCount})`}
               </div>
             </div>
 
-            <div style={manage.orderLines}>
-              {dayOrders.map((order) =>
-                editingOrders ? (
-                  <div key={order.id} style={manage.orderEditRow}>
-                    <input
-                      value={order.orderContent}
-                      onChange={(e) => updateOrder(order.id, e.target.value)}
-                      style={manage.orderEditInput}
-                    />
-                    <button
-                      type="button"
-                      style={manage.removeOrderBtn}
-                      onClick={() => removeOrder(order.id)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  <div key={order.id} style={manage.orderBullet}>
-                    <span style={manage.orderTime}>
-                      {formatTimeClock(order.dateCreated)}
-                    </span>{" "}
-                    • {order.orderContent}
-                  </div>
-                ),
-              )}
-              {!dayOrders.length && (
+            <div ref={orderScrollRef} style={manage.orderScroll}>
+              {dayGroups.map(({ day, orders }) => {
+                const relative = relativeDayLabel(day);
+                return (
+                  <section key={day} style={manage.orderDayGroup}>
+                    {/* Each day keeps its own labelled, tinted header so orders
+                        read day by day, then by time within the day. */}
+                    <div style={manage.orderDayHeader}>
+                      <span style={manage.orderDayLabel}>
+                        <span>{formatDateLongFromKey(day)}</span>
+                        {relative ? (
+                          <span style={manage.orderDayRelative}>{relative}</span>
+                        ) : null}
+                      </span>
+                      <span style={manage.orderDayCount}>
+                        {orders.length} {orders.length === 1 ? "order" : "orders"}
+                      </span>
+                    </div>
+                    <div style={manage.orderDayBody}>
+                      {orders.map((order, index) => (
+                        <div
+                          key={order.id}
+                          style={{
+                            ...(editingOrders
+                              ? manage.orderEditRow
+                              : manage.orderRow),
+                            // Only between rows of the same day — the card edge
+                            // already separates one day from the next.
+                            ...(index > 0 ? manage.orderRowDivided : {}),
+                          }}
+                        >
+                          <span style={manage.orderTime}>
+                            {formatTimeClock(order.dateCreated)}
+                          </span>
+                          {editingOrders ? (
+                            <>
+                              <input
+                                value={order.orderContent}
+                                onChange={(e) =>
+                                  updateOrder(order.id, e.target.value)
+                                }
+                                style={manage.orderEditInput}
+                              />
+                              <button
+                                type="button"
+                                style={manage.removeOrderBtn}
+                                onClick={() => removeOrder(order.id)}
+                              >
+                                ✕
+                              </button>
+                            </>
+                          ) : (
+                            <span style={manage.orderText}>
+                              {order.orderContent}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+              {!visibleOrderCount && (
                 <div style={{ ...manage.orderLine, color: "#94a3b8" }}>
-                  No orders on {selectedDateLabel}.
+                  {selectedOrders === undefined
+                    ? "Loading doctor’s orders…"
+                    : activeOrderDate
+                      ? `No orders on ${selectedDateLabel}.`
+                      : "No doctor’s orders recorded for this patient yet."}
                 </div>
               )}
             </div>
@@ -643,7 +775,7 @@ export function ManageView() {
         <section style={manage.aiCard}>
           <div style={manage.aiHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span>✨</span>
+              <img src={llamaIcon} alt="" style={{ width: 16, height: 16, display: 'block', objectFit: 'contain' }} />
               <h3 style={manage.aiTitle}>AI Summarized</h3>
             </div>
             <span style={manage.aiBadge}>AI Draft ready</span>
@@ -725,7 +857,7 @@ export function ManageView() {
             focusDate={calendarFocusDate}
             orderDays={orderDays}
             onSelect={(date) => {
-              setSelectedOrderDate(toDateInputValue(date));
+              setOrderDateFilter(toDateInputValue(date));
               setCalendarOpen(false);
             }}
           />

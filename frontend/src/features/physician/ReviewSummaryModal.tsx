@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { PhysicianRequest } from '../../types';
+import llamaIcon from '../../Img/llama.png';
 import { review } from './styles';
 
 export function ReviewSummaryModal({
@@ -184,7 +185,10 @@ export function ReviewSummaryModal({
                   setEditing(false);
                 }}
               >
-                ✨ Regenerate
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <img src={llamaIcon} alt="" style={{ width: 14, height: 14, display: 'block', objectFit: 'contain' }} />
+                  Regenerate
+                </span>
               </button>
             </div>
           </div>

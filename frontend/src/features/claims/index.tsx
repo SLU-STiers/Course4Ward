@@ -9,6 +9,7 @@ import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../../compone
 import overviewIcon from '../../Img/overview.png';
 import requestsIcon from '../../Img/requests.png';
 import exportIcon from '../../Img/export.png';
+import llamaIcon from '../../Img/llama.png';
 import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
 import { formatDateMedium, formatTimeMedium } from '../../lib/format';
@@ -780,7 +781,7 @@ export function ClaimsProcessorDashboard() {
                 <div style={overviewStyles.aiCard}>
                   <div style={overviewStyles.aiHeader}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span aria-hidden="true">✨</span>
+                      <img src={llamaIcon} alt="" style={{ width: 16, height: 16, display: 'block', objectFit: 'contain' }} />
                       <h3 style={overviewStyles.aiTitle}>AI Summarized</h3>
                     </div>
                     <span style={overviewStyles.aiStatus}>{overviewRequest?.status ?? 'No claims'}</span>
