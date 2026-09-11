@@ -330,7 +330,8 @@ function WheelchairIcon() {
 
 function CalendarWidget() {
   const [cursor, setCursor] = useState(new Date(2026, 5, 1));
-  const [selected, setSelected] = useState(30);
+  const [selected, setSelected] = useState(new Date(2026, 5, 30));
+  const [pickerOpen, setPickerOpen] = useState(false);
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
@@ -338,47 +339,88 @@ function CalendarWidget() {
   const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
   while (cells.length % 7 !== 0) cells.push(null);
   const label = cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const monthNames = Array.from({ length: 12 }, (_, index) =>
+    new Date(2026, index, 1).toLocaleString('en-US', { month: 'short' }),
+  );
+  const pickerYears = Array.from({ length: 9 }, (_, index) => year - 4 + index);
+
+  const chooseMonth = (nextMonth: number) => {
+    const yearOffset = month === 11 && nextMonth === 0 ? 1 : month === 0 && nextMonth === 11 ? -1 : 0;
+    setCursor(new Date(year + yearOffset, nextMonth, 1));
+  };
+
+  const chooseYear = (nextYear: number) => {
+    setCursor(new Date(nextYear, month, 1));
+  };
 
   return (
     <section style={overview.widget}>
       <div style={overview.calNav}>
-        <button
-          type="button"
-          style={overview.pageChevron}
-          onClick={() => setCursor(new Date(year, month - 1, 1))}
-        >
-          ‹
-        </button>
-        <span style={overview.calMonth}>{label}</span>
-        <button
-          type="button"
-          style={overview.pageChevron}
-          onClick={() => setCursor(new Date(year, month + 1, 1))}
-        >
-          ›
+        <button type="button" style={overview.calMonthButton} onClick={() => setPickerOpen((open) => !open)} aria-expanded={pickerOpen}>
+          {label} <span aria-hidden>{pickerOpen ? '⌃' : '⌄'}</span>
         </button>
       </div>
+      {pickerOpen && (
+        <div style={overview.calPicker} aria-label="Choose month and year">
+          <div style={overview.calPickerColumn}>
+            <button type="button" style={overview.calPickerArrow} aria-label="Earlier months" onClick={() => chooseMonth(month === 0 ? 11 : month - 1)}>⌃</button>
+            {monthNames.slice(Math.max(0, month - 2), Math.min(12, month + 3)).map((monthName, index) => {
+              const monthIndex = Math.max(0, month - 2) + index;
+              return (
+                <button
+                  key={monthName}
+                  type="button"
+                  style={monthIndex === month ? overview.calPickerOptionActive : overview.calPickerOption}
+                  onClick={() => chooseMonth(monthIndex)}
+                >
+                  {monthName}
+                </button>
+              );
+            })}
+            <button type="button" style={overview.calPickerArrow} aria-label="Later months" onClick={() => chooseMonth(month === 11 ? 0 : month + 1)}>⌄</button>
+          </div>
+          <div style={overview.calPickerColumn}>
+            <button type="button" style={overview.calPickerArrow} aria-label="Earlier years" onClick={() => chooseYear(year - 1)}>⌃</button>
+            {pickerYears.map((pickerYear) => (
+              <button
+                key={pickerYear}
+                type="button"
+                style={pickerYear === year ? overview.calPickerOptionActive : overview.calPickerOption}
+                onClick={() => chooseYear(pickerYear)}
+              >
+                {pickerYear}
+              </button>
+            ))}
+            <button type="button" style={overview.calPickerArrow} aria-label="Later years" onClick={() => chooseYear(year + 1)}>⌄</button>
+          </div>
+        </div>
+      )}
       <div style={overview.calGrid}>
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
           <div key={`${d}-${i}`} style={overview.calDow}>
             {d}
           </div>
         ))}
-        {cells.map((day, i) => (
-          <button
-            key={i}
-            type="button"
-            disabled={!day}
-            onClick={() => day && setSelected(day)}
-            style={{
-              ...overview.calDay,
-              ...(day === selected ? overview.calDayActive : {}),
-              visibility: day ? 'visible' : 'hidden',
-            }}
-          >
-            {day}
-          </button>
-        ))}
+        {cells.map((day, i) => {
+          const date = day ? new Date(year, month, day) : null;
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={!date}
+              aria-label={date ? date.toLocaleDateString('en-US', { dateStyle: 'long' }) : undefined}
+              aria-pressed={Boolean(date && sameDay(date, selected))}
+              onClick={() => date && setSelected(date)}
+              style={{
+                ...overview.calDay,
+                ...(date && sameDay(date, selected) ? overview.calDayActive : {}),
+                visibility: date ? 'visible' : 'hidden',
+              }}
+            >
+              {day}
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -389,6 +431,7 @@ function TodoListWidget() {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingMode, setEditingMode] = useState(false);
 
   const addNote = () => {
     const text = draft.trim();
@@ -403,13 +446,31 @@ function TodoListWidget() {
     setAdding(false);
   };
 
+  const cancelNoteEdit = () => {
+    setDraft('');
+    setAdding(false);
+    setEditingIndex(null);
+  };
+
   return (
     <section style={{ ...overview.widget, flex: 1 }}>
       <div style={overview.todoHeader}>
         <h3 style={{ ...overview.sectionTitle, margin: 0 }}>To do List</h3>
-        <button type="button" style={overview.addNotesBtn} onClick={() => { setEditingIndex(null); setDraft(''); setAdding((v) => !v); }}>
-          Add Notes +
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" style={overview.addNotesBtn} onClick={() => { setEditingIndex(null); setDraft(''); setAdding(true); }}>
+            Add Notes +
+          </button>
+          <button
+            type="button"
+            style={editingMode ? overview.doneNotesBtn : overview.editNotesBtn}
+            onClick={() => {
+              setEditingMode((value) => !value);
+              cancelNoteEdit();
+            }}
+          >
+            {editingMode ? 'Done' : 'Edit'}
+          </button>
+        </div>
       </div>
       {adding && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
@@ -423,11 +484,24 @@ function TodoListWidget() {
           <button type="button" onClick={addNote} style={overview.addNotesBtn}>
             {editingIndex === null ? 'Save' : 'Update'}
           </button>
+          <button type="button" onClick={cancelNoteEdit} style={overview.cancelNotesBtn}>
+            Cancel
+          </button>
         </div>
       )}
       <ul style={overview.todoList}>
         {todos.map((item, idx) => (
-          <li key={`${item.text}-${idx}`} style={{ ...overview.todoItem, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <li
+            key={`${item.text}-${idx}`}
+            style={{
+              ...overview.todoItem,
+              ...(editingMode ? overview.todoItemEditing : {}),
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
             <label style={overview.todoLabel}>
               <input
                 type="checkbox"
@@ -437,13 +511,29 @@ function TodoListWidget() {
                 }
                 style={overview.checkbox}
               />
-              <span style={item.done ? { textDecoration: 'line-through', color: '#94a3b8' } : undefined}>
+              <span
+                style={{
+                  ...(item.done ? { textDecoration: 'line-through', color: '#94a3b8' } : {}),
+                  ...(editingMode ? { cursor: 'pointer' } : {}),
+                }}
+                onClick={(event) => {
+                  if (!editingMode) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setEditingIndex(idx);
+                  setDraft(item.text);
+                  setAdding(true);
+                }}
+              >
                 {item.text}
               </span>
             </label>
             <div style={overview.todoActions}>
-              <button type="button" style={overview.todoActionBtn} onClick={() => { setEditingIndex(idx); setDraft(item.text); setAdding(true); }}>Edit</button>
-              <button type="button" style={overview.todoDeleteBtn} onClick={() => setTodos((prev) => prev.filter((_, index) => index !== idx))}>Delete</button>
+              {editingMode && (
+                <button type="button" style={overview.todoDeleteBtn} onClick={() => setTodos((prev) => prev.filter((_, index) => index !== idx))}>
+                  Delete
+                </button>
+              )}
             </div>
           </li>
         ))}
@@ -1468,13 +1558,70 @@ const overview: Record<string, React.CSSProperties> = {
   calNav: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     marginBottom: 10,
   },
   calMonth: {
     fontSize: 13,
     fontWeight: 700,
     color: '#0f172a',
+  },
+  calMonthButton: {
+    border: '1px solid #86efac',
+    backgroundColor: '#dcfce7',
+    color: '#166534',
+    borderRadius: 6,
+    padding: '6px 10px',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  calPicker: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 12,
+    marginBottom: 10,
+    padding: '8px 12px',
+    backgroundColor: '#334155',
+    borderRadius: 8,
+  },
+  calPickerColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 2,
+  },
+  calPickerArrow: {
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#cbd5e1',
+    height: 18,
+    cursor: 'pointer',
+  },
+  calPickerOption: {
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#e2e8f0',
+    borderRadius: 4,
+    padding: '4px 6px',
+    fontSize: 11,
+    cursor: 'pointer',
+  },
+  calPickerOptionActive: {
+    border: 'none',
+    backgroundColor: '#6366c7',
+    color: '#ffffff',
+    borderRadius: 4,
+    padding: '4px 6px',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  calSelected: {
+    marginBottom: 8,
+    color: '#0f766e',
+    fontSize: 11,
+    fontWeight: 700,
   },
   calGrid: {
     display: 'grid',
@@ -1510,9 +1657,29 @@ const overview: Record<string, React.CSSProperties> = {
     marginBottom: 12,
   },
   addNotesBtn: {
-    border: '1.5px solid #38bdf8',
-    backgroundColor: '#ffffff',
-    color: '#0ea5e9',
+    border: '1.5px solid #0ea5e9',
+    backgroundColor: '#effaff',
+    color: '#0369a1',
+    borderRadius: 8,
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  editNotesBtn: {
+    border: '1.5px solid #f59e0b',
+    backgroundColor: '#fffbeb',
+    color: '#b45309',
+    borderRadius: 8,
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  doneNotesBtn: {
+    border: '1.5px solid #14b8a6',
+    backgroundColor: '#ccfbf1',
+    color: '#0f766e',
     borderRadius: 8,
     padding: '6px 12px',
     fontSize: 12,
@@ -1527,6 +1694,16 @@ const overview: Record<string, React.CSSProperties> = {
     fontSize: 13,
     outline: 'none',
   },
+  cancelNotesBtn: {
+    border: '1px solid #cbd5e1',
+    backgroundColor: '#f8fafc',
+    color: '#475569',
+    borderRadius: 8,
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
   todoList: {
     listStyle: 'none',
     margin: 0,
@@ -1539,6 +1716,12 @@ const overview: Record<string, React.CSSProperties> = {
   },
   todoItem: {
     margin: 0,
+  },
+  todoItemEditing: {
+    border: '1px dashed #2dd4bf',
+    backgroundColor: '#f0fdfa',
+    borderRadius: 8,
+    padding: '6px 8px',
   },
   todoLabel: {
     display: 'flex',
@@ -1559,10 +1742,11 @@ const overview: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   todoDeleteBtn: {
-    border: 'none',
-    backgroundColor: 'transparent',
+    border: '1px solid #fca5a5',
+    backgroundColor: '#fff1f2',
     color: '#dc2626',
-    padding: '2px 4px',
+    borderRadius: 6,
+    padding: '3px 7px',
     fontSize: 11,
     fontWeight: 700,
     cursor: 'pointer',
