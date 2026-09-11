@@ -1399,7 +1399,6 @@ function ManageView() {
             />
           </div>
         </div>
-        </div>
         <DataTableToolbar
           searchProps={{
             value: search,
