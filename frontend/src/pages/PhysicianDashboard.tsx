@@ -1,23 +1,34 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
-import { claimsApi, courseInWardApi, ordersApi, patientsApi } from '../services/domainApi';
-import type { Patient, PhysicianRequest } from '../types';
-import { Layout } from '../components/layout/Layout';
-import { NotificationBell } from '../components/layout/NotificationBell';
-import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
-import { useTableState } from '../hooks/useTableState';
-import searchImg from '../Img/search.png';
-import documentImg from '../Img/document.png';
-import requestsIcon from '../Img/requests.png';
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuthStore } from "../store/authStore";
+import {
+  claimsApi,
+  courseInWardApi,
+  ordersApi,
+  patientsApi,
+} from "../services/domainApi";
+import type { Patient, PhysicianRequest } from "../types";
+import { Layout } from "../components/layout/Layout";
+import { NotificationBell } from "../components/layout/NotificationBell";
+import {
+  Button,
+  DataTableToolbar,
+  PageHeader,
+  Pagination,
+  StatusBadge,
+} from "../components/ui";
+import { useTableState } from "../hooks/useTableState";
+import searchImg from "../Img/search.png";
+import documentImg from "../Img/document.png";
+import requestsIcon from "../Img/requests.png";
 
-type TabType = 'overview' | 'manage' | 'requests';
+type TabType = "overview" | "manage" | "requests";
 
-const TEAL = 'var(--dashboard-primary)';
-const CARD_SHADOW = '0 8px 28px rgba(10, 92, 131, 0.08)';
+const TEAL = "var(--dashboard-primary)";
+const CARD_SHADOW = "0 8px 28px rgba(10, 92, 131, 0.08)";
 
-type PatientStatus = 'admitted' | 'discharged';
-type OverviewFilter = 'all' | PatientStatus;
+type PatientStatus = "admitted" | "discharged";
+type OverviewFilter = "all" | PatientStatus;
 
 type DashboardPatient = {
   id: string;
@@ -26,61 +37,73 @@ type DashboardPatient = {
   admissionDate: string;
   color: string;
   status: PatientStatus;
-  admissions?: Patient['admissions'];
+  admissions?: Patient["admissions"];
 };
 
 function mapPatient(patient: Patient): DashboardPatient {
-  const admissionDate = patient.admissionDate ?? patient.admissions?.[0]?.admissionDate ?? '';
-  const status: PatientStatus = patient.dischargeDate || patient.admissions?.[0]?.dischargeDate ? 'discharged' : 'admitted';
+  const admissionDate =
+    patient.admissionDate ?? patient.admissions?.[0]?.admissionDate ?? "";
+  const status: PatientStatus =
+    patient.dischargeDate || patient.admissions?.[0]?.dischargeDate
+      ? "discharged"
+      : "admitted";
   return {
     id: patient.id,
     name: `${patient.firstName} ${patient.lastName}`,
     patientId: patient.id,
-    admissionDate: admissionDate ? new Date(admissionDate).toLocaleDateString('en-GB') : '—',
-    color: status === 'admitted' ? '#22c55e' : '#ef4444',
+    admissionDate: admissionDate
+      ? new Date(admissionDate).toLocaleDateString("en-GB")
+      : "—",
+    color: status === "admitted" ? "#22c55e" : "#ef4444",
     status,
     admissions: patient.admissions,
   };
 }
 
 const INITIAL_TODOS = [
-  'Review newly admitted patients',
-  'Update patient diagnoses',
-  'Check lab/test results',
-  'Monitor critical patients',
-  'Approve discharge requests',
-  'Review pending CF4 forms',
-  'Verify AI-generated summaries',
-  'Complete missing CF4 details',
-  'Validate records (BAG check)',
+  "Review newly admitted patients",
+  "Update patient diagnoses",
+  "Check lab/test results",
+  "Monitor critical patients",
+  "Approve discharge requests",
+  "Review pending CF4 forms",
+  "Verify AI-generated summaries",
+  "Complete missing CF4 details",
+  "Validate records (BAG check)",
 ];
 
-
 export function PhysicianDashboard() {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>("overview");
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const displayName = user ? `${user.firstName} ${user.lastName}` : 'Physician';
+  const displayName = user ? `${user.firstName} ${user.lastName}` : "Physician";
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   return (
     <Layout
       navbarProps={{
-        ariaLabel: 'Physician navigation',
+        ariaLabel: "Physician navigation",
         activeId: activeTab,
         onNavigate: (id) => setActiveTab(id as TabType),
         items: [
-          { id: 'overview', label: 'Overview', icon: <OverviewIcon /> },
-          { id: 'manage', label: 'Manage', icon: <ManageIcon /> },
+          { id: "overview", label: "Overview", icon: <OverviewIcon /> },
+          { id: "manage", label: "Manage", icon: <ManageIcon /> },
           {
-            id: 'requests',
-            label: 'Requests',
-            icon: <img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />,
+            id: "requests",
+            label: "Requests",
+            icon: (
+              <img
+                src={requestsIcon}
+                alt=""
+                aria-hidden="true"
+                style={{ width: 26, height: 26, objectFit: "contain" }}
+              />
+            ),
           },
         ],
         profile: (
@@ -88,9 +111,16 @@ export function PhysicianDashboard() {
             <div style={shell.profileAvatar}>JD</div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={shell.profileName}>Dr. {displayName}</div>
-              <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
+              <div style={shell.profileEmail}>
+                {user?.userId ?? "Physician account"}
+              </div>
             </div>
-            <Button variant="secondary" size="sm" title="Log out" onClick={handleLogout}>
+            <Button
+              variant="secondary"
+              size="sm"
+              title="Log out"
+              onClick={handleLogout}
+            >
               Log out
             </Button>
           </div>
@@ -104,9 +134,9 @@ export function PhysicianDashboard() {
         />
       }
     >
-      {activeTab === 'overview' && <OverviewView />}
-      {activeTab === 'manage' && <ManageView />}
-      {activeTab === 'requests' && <RequestsView />}
+      {activeTab === "overview" && <OverviewView />}
+      {activeTab === "manage" && <ManageView />}
+      {activeTab === "requests" && <RequestsView />}
     </Layout>
   );
 }
@@ -114,10 +144,42 @@ export function PhysicianDashboard() {
 function OverviewIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="9" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="1.5" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
-      <rect x="9" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <rect
+        x="1.5"
+        y="1.5"
+        width="5.5"
+        height="5.5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <rect
+        x="9"
+        y="1.5"
+        width="5.5"
+        height="5.5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <rect
+        x="1.5"
+        y="9"
+        width="5.5"
+        height="5.5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <rect
+        x="9"
+        y="9"
+        width="5.5"
+        height="5.5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
     </svg>
   );
 }
@@ -130,7 +192,11 @@ function ManageIcon() {
         stroke="currentColor"
         strokeWidth="1.5"
       />
-      <path d="M6 6.5V5a2 2 0 0 1 4 0v1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M6 6.5V5a2 2 0 0 1 4 0v1.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
     </svg>
   );
 }
@@ -145,29 +211,45 @@ function monthCells(year: number, month: number) {
 }
 
 function sameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 function OverviewView() {
   const [page, setPage] = useState(0);
-  const [filter, setFilter] = useState<OverviewFilter>('all');
+  const [filter, setFilter] = useState<OverviewFilter>("all");
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 
   useEffect(() => {
-    patientsApi.assignedToMe().then(({ data }) => setPatients(data.map(mapPatient))).catch(() => setPatients([]));
+    patientsApi
+      .assignedToMe()
+      .then(({ data }) => setPatients(data.map(mapPatient)))
+      .catch(() => setPatients([]));
   }, []);
 
-  const admittedCount = patients.filter((p) => p.status === 'admitted').length;
-  const dischargedCount = patients.filter((p) => p.status === 'discharged').length;
+  const admittedCount = patients.filter((p) => p.status === "admitted").length;
+  const dischargedCount = patients.filter(
+    (p) => p.status === "discharged",
+  ).length;
   const filteredPatients =
-    filter === 'all' ? patients : patients.filter((p) => p.status === filter);
+    filter === "all" ? patients : patients.filter((p) => p.status === filter);
 
   const pageCount = Math.max(1, Math.ceil(filteredPatients.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
-  const rows = filteredPatients.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const rows = filteredPatients.slice(
+    safePage * pageSize,
+    safePage * pageSize + pageSize,
+  );
   const listTitle =
-    filter === 'admitted' ? 'Admitted Patients' : filter === 'discharged' ? 'Discharged Patients' : 'Patient Lists';
+    filter === "admitted"
+      ? "Admitted Patients"
+      : filter === "discharged"
+        ? "Discharged Patients"
+        : "Patient Lists";
 
   const setFilterAndReset = (next: OverviewFilter) => {
     setFilter(next);
@@ -182,24 +264,24 @@ function OverviewView() {
           label="Total Patients"
           value={String(patients.length)}
           icon={<HeartIcon />}
-          active={filter === 'all'}
-          onClick={() => setFilterAndReset('all')}
+          active={filter === "all"}
+          onClick={() => setFilterAndReset("all")}
         />
         <StatCard
           color={TEAL}
           label="Admitted Patients"
           value={String(admittedCount)}
           icon={<BedIcon />}
-          active={filter === 'admitted'}
-          onClick={() => setFilterAndReset('admitted')}
+          active={filter === "admitted"}
+          onClick={() => setFilterAndReset("admitted")}
         />
         <StatCard
           color={TEAL}
           label="Discharged Patients"
           value={String(dischargedCount)}
           icon={<WheelchairIcon />}
-          active={filter === 'discharged'}
-          onClick={() => setFilterAndReset('discharged')}
+          active={filter === "discharged"}
+          onClick={() => setFilterAndReset("discharged")}
         />
       </div>
 
@@ -207,7 +289,7 @@ function OverviewView() {
         <section style={overview.patientCard}>
           <div style={overview.patientHeader}>
             <h2 style={overview.sectionTitle}>{listTitle}</h2>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: "flex", gap: 6 }}>
               <button
                 type="button"
                 style={overview.pageChevron}
@@ -232,12 +314,30 @@ function OverviewView() {
               {rows.map((p) => (
                 <tr key={p.id}>
                   <td style={{ ...overview.td, width: 22 }}>
-                    <span style={{ ...overview.dot, backgroundColor: p.status === 'admitted' ? '#22c55e' : '#ef4444' }} />
+                    <span
+                      style={{
+                        ...overview.dot,
+                        backgroundColor:
+                          p.status === "admitted" ? "#22c55e" : "#ef4444",
+                      }}
+                    />
                   </td>
-                  <td style={{ ...overview.td, fontWeight: 600, color: '#1e293b' }}>{p.name}</td>
-                  <td style={{ ...overview.td, color: '#64748b' }}>{p.patientId}</td>
-                  <td style={{ ...overview.td, color: '#64748b' }}>{p.admissionDate}</td>
-                  <td style={{ ...overview.td, textAlign: 'right', width: 36 }}>
+                  <td
+                    style={{
+                      ...overview.td,
+                      fontWeight: 600,
+                      color: "#1e293b",
+                    }}
+                  >
+                    {p.name}
+                  </td>
+                  <td style={{ ...overview.td, color: "#64748b" }}>
+                    {p.patientId}
+                  </td>
+                  <td style={{ ...overview.td, color: "#64748b" }}>
+                    {p.admissionDate}
+                  </td>
+                  <td style={{ ...overview.td, textAlign: "right", width: 36 }}>
                     <span style={overview.rowDots}>⋯</span>
                   </td>
                 </tr>
@@ -283,8 +383,10 @@ function StatCard({
       style={{
         ...overview.statCard,
         backgroundColor: color,
-        boxShadow: active ? '0 10px 28px rgba(16, 78, 101, 0.38)' : '0 10px 24px rgba(16, 78, 101, 0.22)',
-        transform: active ? 'translateY(-1px)' : 'none',
+        boxShadow: active
+          ? "0 10px 28px rgba(16, 78, 101, 0.38)"
+          : "0 10px 24px rgba(16, 78, 101, 0.22)",
+        transform: active ? "translateY(-1px)" : "none",
       }}
     >
       <div style={overview.statIcon}>{icon}</div>
@@ -304,7 +406,13 @@ function HeartIcon() {
         stroke={TEAL}
         strokeWidth="1.8"
       />
-      <path d="M8 14h3l1.5-3 2 6 1.5-3H20" stroke={TEAL} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M8 14h3l1.5-3 2 6 1.5-3H20"
+        stroke={TEAL}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -313,7 +421,12 @@ function BedIcon() {
   return (
     <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>
       <circle cx="9" cy="10" r="2.2" stroke={TEAL} strokeWidth="1.8" />
-      <path d="M5 20v-5.5h16A2.5 2.5 0 0 1 23.5 17v3M5 16.5h10" stroke={TEAL} strokeWidth="1.8" strokeLinecap="round" />
+      <path
+        d="M5 20v-5.5h16A2.5 2.5 0 0 1 23.5 17v3M5 16.5h10"
+        stroke={TEAL}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -322,7 +435,13 @@ function WheelchairIcon() {
   return (
     <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>
       <circle cx="11" cy="8" r="2" stroke={TEAL} strokeWidth="1.8" />
-      <path d="M11 10.5v4.5h6l2.5 5" stroke={TEAL} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M11 10.5v4.5h6l2.5 5"
+        stroke={TEAL}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <circle cx="11" cy="19" r="3.5" stroke={TEAL} strokeWidth="1.8" />
     </svg>
   );
@@ -336,16 +455,27 @@ function CalendarWidget() {
   const month = cursor.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: (number | null)[] = [...Array(firstDow).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
+  const cells: (number | null)[] = [
+    ...Array(firstDow).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
   while (cells.length % 7 !== 0) cells.push(null);
-  const label = cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const label = cursor.toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
   const monthNames = Array.from({ length: 12 }, (_, index) =>
-    new Date(2026, index, 1).toLocaleString('en-US', { month: 'short' }),
+    new Date(2026, index, 1).toLocaleString("en-US", { month: "short" }),
   );
   const pickerYears = Array.from({ length: 9 }, (_, index) => year - 4 + index);
 
   const chooseMonth = (nextMonth: number) => {
-    const yearOffset = month === 11 && nextMonth === 0 ? 1 : month === 0 && nextMonth === 11 ? -1 : 0;
+    const yearOffset =
+      month === 11 && nextMonth === 0
+        ? 1
+        : month === 0 && nextMonth === 11
+          ? -1
+          : 0;
     setCursor(new Date(year + yearOffset, nextMonth, 1));
   };
 
@@ -356,47 +486,90 @@ function CalendarWidget() {
   return (
     <section style={overview.widget}>
       <div style={overview.calNav}>
-        <button type="button" style={overview.calMonthButton} onClick={() => setPickerOpen((open) => !open)} aria-expanded={pickerOpen}>
-          {label} <span aria-hidden>{pickerOpen ? '⌃' : '⌄'}</span>
+        <button
+          type="button"
+          style={overview.calMonthButton}
+          onClick={() => setPickerOpen((open) => !open)}
+          aria-expanded={pickerOpen}
+        >
+          {label} <span aria-hidden>{pickerOpen ? "⌃" : "⌄"}</span>
         </button>
       </div>
       {pickerOpen && (
         <div style={overview.calPicker} aria-label="Choose month and year">
           <div style={overview.calPickerColumn}>
-            <button type="button" style={overview.calPickerArrow} aria-label="Earlier months" onClick={() => chooseMonth(month === 0 ? 11 : month - 1)}>⌃</button>
-            {monthNames.slice(Math.max(0, month - 2), Math.min(12, month + 3)).map((monthName, index) => {
-              const monthIndex = Math.max(0, month - 2) + index;
-              return (
-                <button
-                  key={monthName}
-                  type="button"
-                  style={monthIndex === month ? overview.calPickerOptionActive : overview.calPickerOption}
-                  onClick={() => chooseMonth(monthIndex)}
-                >
-                  {monthName}
-                </button>
-              );
-            })}
-            <button type="button" style={overview.calPickerArrow} aria-label="Later months" onClick={() => chooseMonth(month === 11 ? 0 : month + 1)}>⌄</button>
+            <button
+              type="button"
+              style={overview.calPickerArrow}
+              aria-label="Earlier months"
+              onClick={() => chooseMonth(month === 0 ? 11 : month - 1)}
+            >
+              ⌃
+            </button>
+            {monthNames
+              .slice(Math.max(0, month - 2), Math.min(12, month + 3))
+              .map((monthName, index) => {
+                const monthIndex = Math.max(0, month - 2) + index;
+                return (
+                  <button
+                    key={monthName}
+                    type="button"
+                    style={
+                      monthIndex === month
+                        ? overview.calPickerOptionActive
+                        : overview.calPickerOption
+                    }
+                    onClick={() => chooseMonth(monthIndex)}
+                  >
+                    {monthName}
+                  </button>
+                );
+              })}
+            <button
+              type="button"
+              style={overview.calPickerArrow}
+              aria-label="Later months"
+              onClick={() => chooseMonth(month === 11 ? 0 : month + 1)}
+            >
+              ⌄
+            </button>
           </div>
           <div style={overview.calPickerColumn}>
-            <button type="button" style={overview.calPickerArrow} aria-label="Earlier years" onClick={() => chooseYear(year - 1)}>⌃</button>
+            <button
+              type="button"
+              style={overview.calPickerArrow}
+              aria-label="Earlier years"
+              onClick={() => chooseYear(year - 1)}
+            >
+              ⌃
+            </button>
             {pickerYears.map((pickerYear) => (
               <button
                 key={pickerYear}
                 type="button"
-                style={pickerYear === year ? overview.calPickerOptionActive : overview.calPickerOption}
+                style={
+                  pickerYear === year
+                    ? overview.calPickerOptionActive
+                    : overview.calPickerOption
+                }
                 onClick={() => chooseYear(pickerYear)}
               >
                 {pickerYear}
               </button>
             ))}
-            <button type="button" style={overview.calPickerArrow} aria-label="Later years" onClick={() => chooseYear(year + 1)}>⌄</button>
+            <button
+              type="button"
+              style={overview.calPickerArrow}
+              aria-label="Later years"
+              onClick={() => chooseYear(year + 1)}
+            >
+              ⌄
+            </button>
           </div>
         </div>
       )}
       <div style={overview.calGrid}>
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
           <div key={`${d}-${i}`} style={overview.calDow}>
             {d}
           </div>
@@ -408,13 +581,19 @@ function CalendarWidget() {
               key={i}
               type="button"
               disabled={!date}
-              aria-label={date ? date.toLocaleDateString('en-US', { dateStyle: 'long' }) : undefined}
+              aria-label={
+                date
+                  ? date.toLocaleDateString("en-US", { dateStyle: "long" })
+                  : undefined
+              }
               aria-pressed={Boolean(date && sameDay(date, selected))}
               onClick={() => date && setSelected(date)}
               style={{
                 ...overview.calDay,
-                ...(date && sameDay(date, selected) ? overview.calDayActive : {}),
-                visibility: date ? 'visible' : 'hidden',
+                ...(date && sameDay(date, selected)
+                  ? overview.calDayActive
+                  : {}),
+                visibility: date ? "visible" : "hidden",
               }}
             >
               {day}
@@ -427,9 +606,11 @@ function CalendarWidget() {
 }
 
 function TodoListWidget() {
-  const [todos, setTodos] = useState(INITIAL_TODOS.map((text) => ({ text, done: false })));
+  const [todos, setTodos] = useState(
+    INITIAL_TODOS.map((text) => ({ text, done: false })),
+  );
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingMode, setEditingMode] = useState(false);
 
@@ -439,15 +620,19 @@ function TodoListWidget() {
     if (editingIndex === null) {
       setTodos((prev) => [...prev, { text, done: false }]);
     } else {
-      setTodos((prev) => prev.map((item, index) => (index === editingIndex ? { ...item, text } : item)));
+      setTodos((prev) =>
+        prev.map((item, index) =>
+          index === editingIndex ? { ...item, text } : item,
+        ),
+      );
       setEditingIndex(null);
     }
-    setDraft('');
+    setDraft("");
     setAdding(false);
   };
 
   const cancelNoteEdit = () => {
-    setDraft('');
+    setDraft("");
     setAdding(false);
     setEditingIndex(null);
   };
@@ -456,8 +641,16 @@ function TodoListWidget() {
     <section style={{ ...overview.widget, flex: 1 }}>
       <div style={overview.todoHeader}>
         <h3 style={{ ...overview.sectionTitle, margin: 0 }}>To do List</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" style={overview.addNotesBtn} onClick={() => { setEditingIndex(null); setDraft(''); setAdding(true); }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            style={overview.addNotesBtn}
+            onClick={() => {
+              setEditingIndex(null);
+              setDraft("");
+              setAdding(true);
+            }}
+          >
             Add Notes +
           </button>
           <button
@@ -468,23 +661,27 @@ function TodoListWidget() {
               cancelNoteEdit();
             }}
           >
-            {editingMode ? 'Done' : 'Edit'}
+            {editingMode ? "Done" : "Edit"}
           </button>
         </div>
       </div>
       {adding && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="New note"
             style={overview.addNoteInput}
-            onKeyDown={(e) => e.key === 'Enter' && addNote()}
+            onKeyDown={(e) => e.key === "Enter" && addNote()}
           />
           <button type="button" onClick={addNote} style={overview.addNotesBtn}>
-            {editingIndex === null ? 'Save' : 'Update'}
+            {editingIndex === null ? "Save" : "Update"}
           </button>
-          <button type="button" onClick={cancelNoteEdit} style={overview.cancelNotesBtn}>
+          <button
+            type="button"
+            onClick={cancelNoteEdit}
+            style={overview.cancelNotesBtn}
+          >
             Cancel
           </button>
         </div>
@@ -496,9 +693,9 @@ function TodoListWidget() {
             style={{
               ...overview.todoItem,
               ...(editingMode ? overview.todoItemEditing : {}),
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
               gap: 8,
             }}
           >
@@ -507,14 +704,20 @@ function TodoListWidget() {
                 type="checkbox"
                 checked={item.done}
                 onChange={() =>
-                  setTodos((prev) => prev.map((t, i) => (i === idx ? { ...t, done: !t.done } : t)))
+                  setTodos((prev) =>
+                    prev.map((t, i) =>
+                      i === idx ? { ...t, done: !t.done } : t,
+                    ),
+                  )
                 }
                 style={overview.checkbox}
               />
               <span
                 style={{
-                  ...(item.done ? { textDecoration: 'line-through', color: '#94a3b8' } : {}),
-                  ...(editingMode ? { cursor: 'pointer' } : {}),
+                  ...(item.done
+                    ? { textDecoration: "line-through", color: "#94a3b8" }
+                    : {}),
+                  ...(editingMode ? { cursor: "pointer" } : {}),
                 }}
                 onClick={(event) => {
                   if (!editingMode) return;
@@ -530,7 +733,13 @@ function TodoListWidget() {
             </label>
             <div style={overview.todoActions}>
               {editingMode && (
-                <button type="button" style={overview.todoDeleteBtn} onClick={() => setTodos((prev) => prev.filter((_, index) => index !== idx))}>
+                <button
+                  type="button"
+                  style={overview.todoDeleteBtn}
+                  onClick={() =>
+                    setTodos((prev) => prev.filter((_, index) => index !== idx))
+                  }
+                >
                   Delete
                 </button>
               )}
@@ -547,7 +756,10 @@ function RequestsView() {
   const [selected, setSelected] = useState<PhysicianRequest | null>(null);
 
   const loadRequests = () => {
-    claimsApi.physicianRequests().then(({ data }) => setItems(data)).catch(() => setItems([]));
+    claimsApi
+      .physicianRequests()
+      .then(({ data }) => setItems(data))
+      .catch(() => setItems([]));
   };
 
   useEffect(() => {
@@ -555,7 +767,8 @@ function RequestsView() {
   }, []);
 
   const isPending = (request: PhysicianRequest) =>
-    request.status === 'PENDING' || request.status === 'PHYSICIAN_VALIDATION_REQUESTED';
+    request.status === "PENDING" ||
+    request.status === "PHYSICIAN_VALIDATION_REQUESTED";
 
   // Shared search / filter / sort / pagination state.
   const table = useTableState<PhysicianRequest>({
@@ -568,15 +781,17 @@ function RequestsView() {
     ],
     filterPredicates: {
       status: (request, value) =>
-        value === 'all' || (value === 'pending' ? isPending(request) : !isPending(request)),
+        value === "all" ||
+        (value === "pending" ? isPending(request) : !isPending(request)),
     },
-    initialFilters: { status: 'all' },
+    initialFilters: { status: "all" },
     sorters: {
       id: (request) => request.id,
-      patient: (request) => `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
+      patient: (request) =>
+        `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
       requestedAt: (request) => request.requestedAt,
     },
-    initialSort: { field: 'requestedAt', direction: 'descending' },
+    initialSort: { field: "requestedAt", direction: "descending" },
   });
 
   return (
@@ -590,30 +805,31 @@ function RequestsView() {
         searchProps={{
           value: table.query,
           onChange: table.setQuery,
-          placeholder: 'Search requests...',
-          ariaLabel: 'Search physician requests',
+          placeholder: "Search requests...",
+          ariaLabel: "Search physician requests",
         }}
         filterProps={{
-          title: 'Request status',
+          title: "Request status",
           options: [
-            { value: 'all', label: 'All' },
-            { value: 'pending', label: 'Pending' },
-            { value: 'reviewed', label: 'Reviewed' },
+            { value: "all", label: "All" },
+            { value: "pending", label: "Pending" },
+            { value: "reviewed", label: "Reviewed" },
           ],
-          value: table.filters.status ?? 'all',
-          onChange: (value) => table.setFilter('status', value),
+          value: table.filters.status ?? "all",
+          onChange: (value) => table.setFilter("status", value),
         }}
         sortProps={{
-          title: 'Sort requests by',
+          title: "Sort requests by",
           options: [
-            { value: 'requestedAt', label: 'Submitted date' },
-            { value: 'patient', label: 'Patient name' },
-            { value: 'id', label: 'Request ID' },
+            { value: "requestedAt", label: "Submitted date" },
+            { value: "patient", label: "Patient name" },
+            { value: "id", label: "Request ID" },
           ],
           value: table.sort.field,
           onChange: table.setSortField,
           direction: table.sort.direction,
-          onDirectionChange: (direction) => table.setSort({ field: table.sort.field, direction }),
+          onDirectionChange: (direction) =>
+            table.setSort({ field: table.sort.field, direction }),
         }}
       />
 
@@ -625,38 +841,57 @@ function RequestsView() {
             <th style={requests.th}>Submitted By</th>
             <th style={requests.th}>Submitted On</th>
             <th style={requests.th}>Status</th>
-            <th style={{ ...requests.th, textAlign: 'right' }}>Action</th>
+            <th style={{ ...requests.th, textAlign: "right" }}>Action</th>
           </tr>
         </thead>
         <tbody>
           {table.rows.map((r) => (
             <tr key={r.id}>
               <td style={requests.td}>
-                <Button variant="ghost" size="sm" onClick={() => setSelected(r)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelected(r)}
+                >
                   {r.id}
                 </Button>
               </td>
               <td style={requests.td}>
-                <div style={requests.primary}>{r.summary.patient.firstName} {r.summary.patient.lastName}</div>
+                <div style={requests.primary}>
+                  {r.summary.patient.firstName} {r.summary.patient.lastName}
+                </div>
                 <div style={requests.secondary}>ID: {r.summary.patient.id}</div>
               </td>
               <td style={requests.td}>
-                <div style={requests.primary}>{r.processor.firstName} {r.processor.lastName}</div>
+                <div style={requests.primary}>
+                  {r.processor.firstName} {r.processor.lastName}
+                </div>
                 <div style={requests.secondary}>Claims Processor</div>
               </td>
               <td style={requests.td}>
-                <div style={requests.primary}>{new Date(r.requestedAt).toLocaleDateString('en-GB')}</div>
-                <div style={requests.secondary}>{new Date(r.requestedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                <div style={requests.primary}>
+                  {new Date(r.requestedAt).toLocaleDateString("en-GB")}
+                </div>
+                <div style={requests.secondary}>
+                  {new Date(r.requestedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
               </td>
               <td style={requests.td}>
                 <StatusBadge
                   showDot
-                  status={isPending(r) ? 'pending' : 'approved'}
-                  label={isPending(r) ? 'Pending Review' : 'Reviewed'}
+                  status={isPending(r) ? "pending" : "approved"}
+                  label={isPending(r) ? "Pending Review" : "Reviewed"}
                 />
               </td>
-              <td style={{ ...requests.td, textAlign: 'right' }}>
-                <Button variant="primary" size="sm" onClick={() => setSelected(r)}>
+              <td style={{ ...requests.td, textAlign: "right" }}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setSelected(r)}
+                >
                   Review
                 </Button>
               </td>
@@ -667,9 +902,14 @@ function RequestsView() {
 
       <div className="ui-table-footer">
         <span className="ui-table-footer__info">
-          Showing {table.rangeStart} to {table.rangeEnd} of {table.total} requests
+          Showing {table.rangeStart} to {table.rangeEnd} of {table.total}{" "}
+          requests
         </span>
-        <Pagination page={table.page} pageCount={table.pageCount} onPageChange={table.setPage} />
+        <Pagination
+          page={table.page}
+          pageCount={table.pageCount}
+          onPageChange={table.setPage}
+        />
       </div>
 
       {selected && (
@@ -699,7 +939,9 @@ function ReviewSummaryModal({
   const [showOrders, setShowOrders] = useState(true);
   const [editing, setEditing] = useState(false);
   const [summary, setSummary] = useState(request.summary.summaryContent);
-  const admissionDate = new Date(request.summary.summaryDate).toLocaleDateString('en-GB');
+  const admissionDate = new Date(
+    request.summary.summaryDate,
+  ).toLocaleDateString("en-GB");
 
   useEffect(() => {
     setSummary(request.summary.summaryContent);
@@ -716,10 +958,27 @@ function ReviewSummaryModal({
             <div style={review.ordersScroll}>
               {request.summary.orders.map((order) => (
                 <div key={order.id} style={review.orderCard}>
-                  <div style={review.orderWhen}>{new Date(order.dateCreated).toLocaleDateString('en-GB')}</div>
-                  <div style={review.orderTime}>{new Date(order.dateCreated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                  <div style={review.orderDoctor}>Dr. {order.orderedBy?.firstName} {order.orderedBy?.lastName}</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px' }}>Orders:</div>
+                  <div style={review.orderWhen}>
+                    {new Date(order.dateCreated).toLocaleDateString("en-GB")}
+                  </div>
+                  <div style={review.orderTime}>
+                    {new Date(order.dateCreated).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                  <div style={review.orderDoctor}>
+                    Dr. {order.orderedBy?.firstName} {order.orderedBy?.lastName}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      margin: "6px 0 4px",
+                    }}
+                  >
+                    Orders:
+                  </div>
                   <ul style={review.orderList}>
                     <li>{order.orderContent}</li>
                   </ul>
@@ -730,7 +989,12 @@ function ReviewSummaryModal({
         )}
 
         {showOrders && (
-          <button type="button" style={review.collapseBtn} onClick={() => setShowOrders(false)} title="Hide orders">
+          <button
+            type="button"
+            style={review.collapseBtn}
+            onClick={() => setShowOrders(false)}
+            title="Hide orders"
+          >
             ›
           </button>
         )}
@@ -750,8 +1014,8 @@ function ReviewSummaryModal({
             <div style={review.infoBanner}>
               <span>ℹ️</span>
               <span>
-                Please review the AI summary and let us know if it is accurate, needs changes, or is
-                incorrect.
+                Please review the AI summary and let us know if it is accurate,
+                needs changes, or is incorrect.
               </span>
             </div>
 
@@ -759,36 +1023,60 @@ function ReviewSummaryModal({
             <div style={review.patientGrid}>
               <label style={review.field}>
                 <span style={review.fieldLabel}>Name</span>
-                <input readOnly value={`${request.summary.patient.firstName} ${request.summary.patient.lastName}`} style={review.fieldInput} />
+                <input
+                  readOnly
+                  value={`${request.summary.patient.firstName} ${request.summary.patient.lastName}`}
+                  style={review.fieldInput}
+                />
               </label>
               <label style={review.field}>
                 <span style={review.fieldLabel}>Patient ID</span>
-                <input readOnly value={request.summary.patient.id} style={review.fieldInput} />
+                <input
+                  readOnly
+                  value={request.summary.patient.id}
+                  style={review.fieldInput}
+                />
               </label>
               <label style={review.field}>
                 <span style={review.fieldLabel}>Admission Date</span>
-                <input readOnly value={admissionDate} style={review.fieldInput} />
+                <input
+                  readOnly
+                  value={admissionDate}
+                  style={review.fieldInput}
+                />
               </label>
             </div>
 
             <div style={review.sectionLabel}>Submitted By</div>
             <div style={review.submittedCard}>
               <div>
-                <div style={{ fontWeight: 700, color: '#0f172a' }}>{request.processor.firstName} {request.processor.lastName}</div>
-                <div style={{ fontSize: 12, color: '#64748b' }}>Claims Processor</div>
+                <div style={{ fontWeight: 700, color: "#0f172a" }}>
+                  {request.processor.firstName} {request.processor.lastName}
+                </div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>
+                  Claims Processor
+                </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: '#64748b' }}>Submitted on</div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
-                  {new Date(request.requestedAt).toLocaleString('en-GB')}
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 11, color: "#64748b" }}>
+                  Submitted on
+                </div>
+                <div
+                  style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}
+                >
+                  {new Date(request.requestedAt).toLocaleString("en-GB")}
                 </div>
               </div>
             </div>
 
             <div style={review.aiHeader}>
               <div style={review.sectionLabel}>AI Summarization</div>
-              <button type="button" style={review.hideOrdersBtn} onClick={() => setShowOrders((v) => !v)}>
-                {showOrders ? 'Hide Orders' : 'Show Orders'}
+              <button
+                type="button"
+                style={review.hideOrdersBtn}
+                onClick={() => setShowOrders((v) => !v)}
+              >
+                {showOrders ? "Hide Orders" : "Show Orders"}
               </button>
             </div>
 
@@ -804,8 +1092,12 @@ function ReviewSummaryModal({
             )}
 
             <div style={review.aiActions}>
-              <button type="button" style={review.outlineBtn} onClick={() => setEditing((v) => !v)}>
-                ✎ {editing ? 'Save Summary' : 'Edit Summary'}
+              <button
+                type="button"
+                style={review.outlineBtn}
+                onClick={() => setEditing((v) => !v)}
+              >
+                ✎ {editing ? "Save Summary" : "Edit Summary"}
               </button>
               <button
                 type="button"
@@ -843,7 +1135,9 @@ function CalendarModal({
   onClose: () => void;
   focusDate: Date;
 }) {
-  const [cursor, setCursor] = useState(() => new Date(focusDate.getFullYear(), focusDate.getMonth(), 1));
+  const [cursor, setCursor] = useState(
+    () => new Date(focusDate.getFullYear(), focusDate.getMonth(), 1),
+  );
   const [selected, setSelected] = useState(focusDate);
 
   useEffect(() => {
@@ -857,8 +1151,11 @@ function CalendarModal({
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const cells = monthCells(year, month);
-  const label = cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const label = cursor.toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   return (
     <div style={manage.calOverlay} onClick={onClose}>
@@ -904,7 +1201,7 @@ function CalendarModal({
                 style={{
                   ...manage.calDay,
                   ...(isSelected ? manage.calDaySelected : {}),
-                  visibility: day ? 'visible' : 'hidden',
+                  visibility: day ? "visible" : "hidden",
                 }}
               >
                 {day}
@@ -920,52 +1217,71 @@ void CalendarModal;
 function ManageView() {
   const user = useAuthStore((s) => s.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
-  const [selectedId, setSelectedId] = useState('');
-  const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState("");
+  const [search, setSearch] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const selected = patients.find((p) => p.id === selectedId) ?? patients[0];
-  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, string[]>>({});
-  const [draft, setDraft] = useState('');
-  const [summaryByPatient, setSummaryByPatient] = useState<Record<string, string>>({});
+  const [ordersByPatient, setOrdersByPatient] = useState<
+    Record<string, string[]>
+  >({});
+  const [draft, setDraft] = useState("");
+  const [summaryByPatient, setSummaryByPatient] = useState<
+    Record<string, string>
+  >({});
   const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
-  const [selectedOrderDate, setSelectedOrderDate] = useState('2026-04-15');
+  const [selectedOrderDate, setSelectedOrderDate] = useState("2026-04-15");
 
   useEffect(() => {
-    patientsApi.assignedToMe().then(({ data }) => {
-      const mapped = data.map(mapPatient);
-      setPatients(mapped);
-      if (mapped[0]) setSelectedId(mapped[0].id);
-    }).catch(() => setPatients([]));
+    patientsApi
+      .assignedToMe()
+      .then(({ data }) => {
+        const mapped = data.map(mapPatient);
+        setPatients(mapped);
+        if (mapped[0]) setSelectedId(mapped[0].id);
+      })
+      .catch(() => setPatients([]));
   }, []);
 
   useEffect(() => {
     if (!selected) return;
-    Promise.all([ordersApi.forPatient(selected.id), courseInWardApi.forPatient(selected.id)]).then(([ordersResponse, summariesResponse]) => {
-      setOrdersByPatient((previous) => ({
-        ...previous,
-        [selected.id]: ordersResponse.data.map((order) => order.orderContent),
-      }));
-      const latest = summariesResponse.data[0];
-      if (latest) {
-        setSummaryByPatient((previous) => ({ ...previous, [selected.id]: latest.summaryContent }));
-        setSummaryIds((previous) => ({ ...previous, [selected.id]: latest.id }));
-      }
-    }).catch(() => undefined);
+    Promise.all([
+      ordersApi.forPatient(selected.id),
+      courseInWardApi.forPatient(selected.id),
+    ])
+      .then(([ordersResponse, summariesResponse]) => {
+        setOrdersByPatient((previous) => ({
+          ...previous,
+          [selected.id]: ordersResponse.data.map((order) => order.orderContent),
+        }));
+        const latest = summariesResponse.data[0];
+        if (latest) {
+          setSummaryByPatient((previous) => ({
+            ...previous,
+            [selected.id]: latest.summaryContent,
+          }));
+          setSummaryIds((previous) => ({
+            ...previous,
+            [selected.id]: latest.id,
+          }));
+        }
+      })
+      .catch(() => undefined);
   }, [selected?.id]);
 
-  const orders = selected ? ordersByPatient[selected.id] ?? [] : [];
+  const orders = selected ? (ordersByPatient[selected.id] ?? []) : [];
   const summary =
-    (selected && summaryByPatient[selected.id]) ?? 'No AI summary yet. Submit orders to generate a draft.';
+    (selected && summaryByPatient[selected.id]) ??
+    "No AI summary yet. Submit orders to generate a draft.";
 
   const filtered = patients.filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.patientId.includes(search)
+      p.patientId.includes(search),
   );
 
   useEffect(() => {
@@ -974,14 +1290,14 @@ function ManageView() {
         setMenuOpenId(null);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const openPatient = (id: string, edit = false) => {
     setSelectedId(id);
     setEditingSummary(false);
-    setDraft('');
+    setDraft("");
     setSubmitted(false);
     setEditingOrders(edit);
     setMenuOpenId(null);
@@ -991,10 +1307,18 @@ function ManageView() {
     const text = draft.trim();
     if (!text) return;
     if (!selected || !selected.admissions?.[0] || !user) return;
-    ordersApi.create({ admissionId: selected.admissions[0].id, orderedById: user.id, orderContent: text })
+    ordersApi
+      .create({
+        admissionId: selected.admissions[0].id,
+        orderedById: user.id,
+        orderContent: text,
+      })
       .then(() => {
-        setOrdersByPatient((prev) => ({ ...prev, [selected.id]: [...(prev[selected.id] ?? []), text] }));
-        setDraft('');
+        setOrdersByPatient((prev) => ({
+          ...prev,
+          [selected.id]: [...(prev[selected.id] ?? []), text],
+        }));
+        setDraft("");
         setSubmitted(false);
       });
   };
@@ -1018,7 +1342,12 @@ function ManageView() {
     setSubmitted(false);
   };
 
-  if (!selected) return <div style={{ color: '#64748b', padding: 24 }}>Loading assigned patients...</div>;
+  if (!selected)
+    return (
+      <div style={{ color: "#64748b", padding: 24 }}>
+        Loading assigned patients...
+      </div>
+    );
 
   return (
     <div style={manage.layout}>
@@ -1026,7 +1355,11 @@ function ManageView() {
         <div style={manage.listHeader}>
           <h2 style={manage.listTitle}>Patients List</h2>
           <div style={manage.searchWrap}>
-            <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
+            <img
+              src={searchImg}
+              alt="Search"
+              style={{ width: 14, height: 14 }}
+            />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -1052,20 +1385,43 @@ function ManageView() {
                   key={p.id}
                   onClick={() => openPatient(p.id, false)}
                   style={{
-                    backgroundColor: active ? '#eef6f8' : 'transparent',
-                    cursor: 'pointer',
+                    backgroundColor: active ? "#eef6f8" : "transparent",
+                    cursor: "pointer",
                   }}
                 >
                   <td style={overview.td}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ ...overview.dot, backgroundColor: p.status === 'admitted' ? '#22c55e' : '#ef4444' }} />
-                      <span style={{ fontWeight: 600, color: '#334155' }}>{p.name}</span>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 10 }}
+                    >
+                      <span
+                        style={{
+                          ...overview.dot,
+                          backgroundColor:
+                            p.status === "admitted" ? "#22c55e" : "#ef4444",
+                        }}
+                      />
+                      <span style={{ fontWeight: 600, color: "#334155" }}>
+                        {p.name}
+                      </span>
                     </div>
                   </td>
-                  <td style={{ ...overview.td, color: '#64748b' }}>{p.patientId}</td>
-                  <td style={{ ...overview.td, color: '#64748b' }}>{p.admissionDate}</td>
-                  <td style={{ ...overview.td, textAlign: 'right', position: 'relative' }}>
-                    <div ref={menuOpenId === p.id ? menuRef : undefined} style={{ position: 'relative', display: 'inline-block' }}>
+                  <td style={{ ...overview.td, color: "#64748b" }}>
+                    {p.patientId}
+                  </td>
+                  <td style={{ ...overview.td, color: "#64748b" }}>
+                    {p.admissionDate}
+                  </td>
+                  <td
+                    style={{
+                      ...overview.td,
+                      textAlign: "right",
+                      position: "relative",
+                    }}
+                  >
+                    <div
+                      ref={menuOpenId === p.id ? menuRef : undefined}
+                      style={{ position: "relative", display: "inline-block" }}
+                    >
                       <button
                         type="button"
                         style={manage.dotsBtn}
@@ -1077,11 +1433,22 @@ function ManageView() {
                         ⋯
                       </button>
                       {menuOpenId === p.id && (
-                        <div style={manage.rowMenu} onClick={(e) => e.stopPropagation()}>
-                          <button type="button" style={manage.rowMenuItem} onClick={() => openPatient(p.id, false)}>
+                        <div
+                          style={manage.rowMenu}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            style={manage.rowMenuItem}
+                            onClick={() => openPatient(p.id, false)}
+                          >
                             View doctor’s order
                           </button>
-                          <button type="button" style={manage.rowMenuItem} onClick={() => openPatient(p.id, true)}>
+                          <button
+                            type="button"
+                            style={manage.rowMenuItem}
+                            onClick={() => openPatient(p.id, true)}
+                          >
                             Edit doctor’s order
                           </button>
                         </div>
@@ -1098,33 +1465,77 @@ function ManageView() {
       <div style={manage.rightCol}>
         <section style={manage.orderCard}>
           <div style={manage.orderHeader}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <img src={documentImg} alt="Doctor's order" style={{ width: 18, height: 18 }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <img
+                src={documentImg}
+                alt="Doctor's order"
+                style={{ width: 18, height: 18 }}
+              />
               <h2 style={manage.panelTitle}>Doctor’s Order</h2>
             </div>
             <div style={manage.dateNavigator}>
-              <button type="button" style={manage.dateNavBtn} onClick={() => setSelectedOrderDate((value) => shiftDate(value, -1))}>‹</button>
-              <input type="date" value={selectedOrderDate} onChange={(event) => setSelectedOrderDate(event.target.value)} style={manage.dateInput} aria-label="Order date" />
-              <button type="button" style={manage.dateNavBtn} onClick={() => setSelectedOrderDate((value) => shiftDate(value, 1))}>›</button>
+              <button
+                type="button"
+                style={manage.dateNavBtn}
+                onClick={() =>
+                  setSelectedOrderDate((value) => shiftDate(value, -1))
+                }
+              >
+                ‹
+              </button>
+              <input
+                type="date"
+                value={selectedOrderDate}
+                onChange={(event) => setSelectedOrderDate(event.target.value)}
+                style={manage.dateInput}
+                aria-label="Order date"
+              />
+              <button
+                type="button"
+                style={manage.dateNavBtn}
+                onClick={() =>
+                  setSelectedOrderDate((value) => shiftDate(value, 1))
+                }
+              >
+                ›
+              </button>
             </div>
           </div>
 
           <div style={manage.orderBox}>
             <div style={manage.patientMeta}>
-              <div style={{ fontWeight: 700, color: '#0f172a' }}>Patient: {selected.name}</div>
-              <div style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginTop: 8 }}>Orders:</div>
+              <div style={{ fontWeight: 700, color: "#0f172a" }}>
+                Patient: {selected.name}
+              </div>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: 13,
+                  color: "#334155",
+                  marginTop: 8,
+                }}
+              >
+                Orders:
+              </div>
             </div>
 
             <div style={manage.orderLines}>
               {orders.map((line, idx) =>
                 editingOrders ? (
-                  <div key={`${selected.id}-${idx}`} style={manage.orderEditRow}>
+                  <div
+                    key={`${selected.id}-${idx}`}
+                    style={manage.orderEditRow}
+                  >
                     <input
                       value={line}
                       onChange={(e) => updateOrder(idx, e.target.value)}
                       style={manage.orderEditInput}
                     />
-                    <button type="button" style={manage.removeOrderBtn} onClick={() => removeOrder(idx)}>
+                    <button
+                      type="button"
+                      style={manage.removeOrderBtn}
+                      onClick={() => removeOrder(idx)}
+                    >
                       ✕
                     </button>
                   </div>
@@ -1132,10 +1543,12 @@ function ManageView() {
                   <div key={`${selected.id}-${idx}`} style={manage.orderBullet}>
                     • {line}
                   </div>
-                )
+                ),
               )}
               {!orders.length && (
-                <div style={{ ...manage.orderLine, color: '#94a3b8' }}>No orders yet.</div>
+                <div style={{ ...manage.orderLine, color: "#94a3b8" }}>
+                  No orders yet.
+                </div>
               )}
             </div>
           </div>
@@ -1152,10 +1565,18 @@ function ManageView() {
             <button type="button" style={manage.addBtn} onClick={addOrder}>
               Add
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {submitted && <span style={{ fontSize: 12, color: '#166534' }}>Orders saved</span>}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {submitted && (
+                <span style={{ fontSize: 12, color: "#166534" }}>
+                  Orders saved
+                </span>
+              )}
               {editingOrders && (
-                <button type="button" style={manage.cancelBtn} onClick={() => setEditingOrders(false)}>
+                <button
+                  type="button"
+                  style={manage.cancelBtn}
+                  onClick={() => setEditingOrders(false)}
+                >
                   Cancel
                 </button>
               )}
@@ -1175,7 +1596,7 @@ function ManageView() {
 
         <section style={manage.aiCard}>
           <div style={manage.aiHeader}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span>✨</span>
               <h3 style={manage.aiTitle}>AI Summarized</h3>
             </div>
@@ -1187,7 +1608,10 @@ function ManageView() {
               <textarea
                 value={summary}
                 onChange={(e) =>
-                  setSummaryByPatient((prev) => ({ ...prev, [selected.id]: e.target.value }))
+                  setSummaryByPatient((prev) => ({
+                    ...prev,
+                    [selected.id]: e.target.value,
+                  }))
                 }
                 rows={6}
                 style={manage.aiEditor}
@@ -1208,12 +1632,15 @@ function ManageView() {
                   const id = summaryIds[selected.id];
                   if (!id) return;
                   courseInWardApi.edit(id, summary).then(({ data }) => {
-                    setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
+                    setSummaryByPatient((prev) => ({
+                      ...prev,
+                      [selected.id]: data.summaryContent,
+                    }));
                     setEditingSummary(false);
                   });
                 }}
               >
-                {editingSummary ? 'Save Summary' : 'Edit Summary'}
+                {editingSummary ? "Save Summary" : "Edit Summary"}
               </button>
               <button
                 type="button"
@@ -1222,7 +1649,10 @@ function ManageView() {
                   const id = summaryIds[selected.id];
                   if (!id) return;
                   courseInWardApi.regenerate(id).then(({ data }) => {
-                    setSummaryByPatient((prev) => ({ ...prev, [selected.id]: data.summaryContent }));
+                    setSummaryByPatient((prev) => ({
+                      ...prev,
+                      [selected.id]: data.summaryContent,
+                    }));
                     setEditingSummary(false);
                   });
                 }}
@@ -1233,7 +1663,6 @@ function ManageView() {
           </div>
         </section>
       </div>
-
     </div>
   );
 }
@@ -1246,217 +1675,218 @@ function shiftDate(value: string, days: number) {
 
 const shell: Record<string, React.CSSProperties> = {
   appContainer: {
-    display: 'flex',
-    height: '100vh',
-    overflow: 'hidden',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-    backgroundColor: '#f3f4f6',
+    display: "flex",
+    height: "100vh",
+    overflow: "hidden",
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    backgroundColor: "#f3f4f6",
   },
   sidebar: {
     width: 232,
     flexShrink: 0,
-    backgroundColor: '#ffffff',
-    borderRight: '1px solid #e5e7eb',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '8px 0 16px',
-    overflow: 'hidden',
+    backgroundColor: "#ffffff",
+    borderRight: "1px solid #e5e7eb",
+    display: "flex",
+    flexDirection: "column",
+    padding: "8px 0 16px",
+    overflow: "hidden",
   },
   sidebarLogoContainer: {
-    padding: '16px 20px 24px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: "16px 20px 24px",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
   },
   sidebarLogo: {
     width: 180,
-    height: 'auto',
+    height: "auto",
     maxHeight: 44,
-    objectFit: 'contain',
-    display: 'block',
+    objectFit: "contain",
+    display: "block",
   },
   sidebarNav: {
-    display: 'flex',
-    flexDirection: 'column',
+    display: "flex",
+    flexDirection: "column",
     gap: 8,
-    padding: '0 14px',
+    padding: "0 14px",
     flex: 1,
   },
   navButton: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 16,
-    padding: '14px 14px',
-    border: 'none',
-    backgroundColor: 'transparent',
+    padding: "14px 14px",
+    border: "none",
+    backgroundColor: "transparent",
     borderRadius: 8,
-    color: '#64748b',
+    color: "#64748b",
     fontSize: 16,
     fontWeight: 600,
-    cursor: 'pointer',
-    textAlign: 'left',
+    cursor: "pointer",
+    textAlign: "left",
   },
   navButtonActive: {
-    backgroundColor: 'transparent',
-    color: '#0f172a',
+    backgroundColor: "transparent",
+    color: "#0f172a",
     fontWeight: 800,
   },
   navIcon: {
-    display: 'flex',
+    display: "flex",
     width: 22,
     height: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   sidebarProfile: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 10,
     minHeight: 56,
     flexShrink: 0,
-    margin: '0 14px',
-    padding: '10px 12px',
-    backgroundColor: '#f3f4f6',
+    margin: "0 14px",
+    padding: "10px 12px",
+    backgroundColor: "#f3f4f6",
     borderRadius: 14,
-    boxSizing: 'border-box',
+    boxSizing: "border-box",
   },
   profileAvatar: {
     width: 36,
     height: 36,
-    borderRadius: '50%',
-    backgroundColor: '#cbd5e1',
+    borderRadius: "50%",
+    backgroundColor: "#cbd5e1",
     color: TEAL,
     fontSize: 11,
     fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     flexShrink: 0,
   },
   profileName: {
     fontSize: 12,
     fontWeight: 700,
-    color: '#0f172a',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
+    color: "#0f172a",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   profileEmail: {
     fontSize: 10,
-    color: '#94a3b8',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
+    color: "#94a3b8",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   logoutBtn: {
     flexShrink: 0,
-    border: '1px solid #fecaca',
-    backgroundColor: '#fff',
-    color: '#ef4444',
+    border: "1px solid #fecaca",
+    backgroundColor: "#fff",
+    color: "#ef4444",
     borderRadius: 8,
-    padding: '6px 8px',
+    padding: "6px 8px",
     fontSize: 11,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   mainWrapper: {
     flex: 1,
-    width: '100%',
+    width: "100%",
     maxWidth: 1440,
-    margin: '0 auto',
-    display: 'flex',
-    flexDirection: 'column',
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
     minWidth: 0,
     minHeight: 0,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '28px 32px 8px',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "28px 32px 8px",
     flexShrink: 0,
   },
   headerTitle: {
     margin: 0,
     fontSize: 28,
     fontWeight: 800,
-    color: '#0f172a',
-    letterSpacing: '-0.02em',
+    color: "#0f172a",
+    letterSpacing: "-0.02em",
   },
   headerSubtitle: {
-    margin: '4px 0 0',
+    margin: "4px 0 0",
     fontSize: 13,
-    color: '#94a3b8',
+    color: "#94a3b8",
   },
   content: {
-    padding: '32px',
+    padding: "32px",
     flex: 1,
     minHeight: 0,
-    overflowY: 'auto',
+    overflowY: "auto",
   },
   bellWrap: {
-    position: 'relative',
+    position: "relative",
     width: 42,
     height: 42,
-    borderRadius: '50%',
-    backgroundColor: '#ffffff',
+    borderRadius: "50%",
+    backgroundColor: "#ffffff",
     boxShadow: CARD_SHADOW,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   bellBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: -2,
     right: -2,
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#2563eb',
-    color: '#fff',
+    backgroundColor: "#2563eb",
+    color: "#fff",
     fontSize: 10,
     fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '0 4px',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0 4px",
   },
 };
 
 const overview: Record<string, React.CSSProperties> = {
   page: {
-    display: 'flex',
-    flexDirection: 'column',
+    display: "flex",
+    flexDirection: "column",
     gap: 20,
   },
   statsRow: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 16,
   },
   statCard: {
     borderRadius: 22,
-    padding: '20px 22px',
-    color: '#ffffff',
-    display: 'flex',
-    alignItems: 'center',
+    padding: "20px 22px",
+    color: "#ffffff",
+    display: "flex",
+    alignItems: "center",
     gap: 16,
     minHeight: 96,
-    border: 'none',
-    width: '100%',
-    textAlign: 'left',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
+    border: "none",
+    width: "100%",
+    textAlign: "left",
+    cursor: "pointer",
+    fontFamily: "inherit",
   },
   statIcon: {
     width: 52,
     height: 52,
-    borderRadius: '50%',
-    backgroundColor: '#ffffff',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: "50%",
+    backgroundColor: "#ffffff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     flexShrink: 0,
   },
   statLabel: {
@@ -1471,69 +1901,69 @@ const overview: Record<string, React.CSSProperties> = {
     marginTop: 2,
   },
   grid: {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.35fr) minmax(280px, 0.75fr)',
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1.35fr) minmax(280px, 0.75fr)",
     gap: 16,
-    alignItems: 'start',
+    alignItems: "start",
   },
   patientCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 20,
-    padding: '20px 22px 12px',
+    padding: "20px 22px 12px",
     boxShadow: CARD_SHADOW,
   },
   patientHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
   sectionTitle: {
     margin: 0,
     fontSize: 18,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   pageChevron: {
     width: 28,
     height: 28,
     borderRadius: 8,
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    color: '#64748b',
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    color: "#64748b",
     fontSize: 18,
     padding: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   table: {
-    width: '100%',
-    borderCollapse: 'collapse',
+    width: "100%",
+    borderCollapse: "collapse",
   },
   th: {
-    textAlign: 'left',
+    textAlign: "left",
     fontSize: 12,
     fontWeight: 600,
-    color: '#64748b',
-    padding: '10px 8px',
-    borderBottom: '1px solid #f1f5f9',
+    color: "#64748b",
+    padding: "10px 8px",
+    borderBottom: "1px solid #f1f5f9",
   },
   td: {
-    padding: '14px 8px',
+    padding: "14px 8px",
     fontSize: 13,
-    borderBottom: 'none',
-    verticalAlign: 'middle',
+    borderBottom: "none",
+    verticalAlign: "middle",
   },
   checkbox: {
     width: 14,
     height: 14,
     accentColor: TEAL,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   rowDots: {
-    color: '#94a3b8',
+    color: "#94a3b8",
     fontSize: 18,
     letterSpacing: 1,
     lineHeight: 1,
@@ -1541,220 +1971,220 @@ const overview: Record<string, React.CSSProperties> = {
   dot: {
     width: 11,
     height: 11,
-    borderRadius: '50%',
-    display: 'inline-block',
+    borderRadius: "50%",
+    display: "inline-block",
   },
   rightCol: {
-    display: 'flex',
-    flexDirection: 'column',
+    display: "flex",
+    flexDirection: "column",
     gap: 16,
   },
   widget: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 20,
     padding: 18,
     boxShadow: CARD_SHADOW,
   },
   calNav: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 10,
   },
   calMonth: {
     fontSize: 13,
     fontWeight: 700,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   calMonthButton: {
-    border: '1px solid #86efac',
-    backgroundColor: '#dcfce7',
-    color: '#166534',
+    border: "1px solid #86efac",
+    backgroundColor: "#dcfce7",
+    color: "#166534",
     borderRadius: 6,
-    padding: '6px 10px',
+    padding: "6px 10px",
     fontSize: 13,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   calPicker: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
     gap: 12,
     marginBottom: 10,
-    padding: '8px 12px',
-    backgroundColor: '#334155',
+    padding: "8px 12px",
+    backgroundColor: "#334155",
     borderRadius: 8,
   },
   calPickerColumn: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'stretch',
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
     gap: 2,
   },
   calPickerArrow: {
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#cbd5e1',
+    border: "none",
+    backgroundColor: "transparent",
+    color: "#cbd5e1",
     height: 18,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   calPickerOption: {
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#e2e8f0',
+    border: "none",
+    backgroundColor: "transparent",
+    color: "#e2e8f0",
     borderRadius: 4,
-    padding: '4px 6px',
+    padding: "4px 6px",
     fontSize: 11,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   calPickerOptionActive: {
-    border: 'none',
-    backgroundColor: '#6366c7',
-    color: '#ffffff',
+    border: "none",
+    backgroundColor: "#6366c7",
+    color: "#ffffff",
     borderRadius: 4,
-    padding: '4px 6px',
+    padding: "4px 6px",
     fontSize: 11,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   calSelected: {
     marginBottom: 8,
-    color: '#0f766e',
+    color: "#0f766e",
     fontSize: 11,
     fontWeight: 700,
   },
   calGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
+    display: "grid",
+    gridTemplateColumns: "repeat(7, 1fr)",
     gap: 4,
   },
   calDow: {
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: 10,
     fontWeight: 700,
-    color: '#94a3b8',
-    padding: '4px 0',
+    color: "#94a3b8",
+    padding: "4px 0",
   },
   calDay: {
-    border: 'none',
-    background: 'transparent',
+    border: "none",
+    background: "transparent",
     height: 32,
     borderRadius: 16,
     fontSize: 12,
-    color: '#334155',
-    cursor: 'pointer',
+    color: "#334155",
+    cursor: "pointer",
     padding: 0,
   },
   calDayActive: {
     backgroundColor: TEAL,
-    color: '#ffffff',
+    color: "#ffffff",
     fontWeight: 700,
   },
   todoHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 12,
   },
   addNotesBtn: {
-    border: '1.5px solid #0ea5e9',
-    backgroundColor: '#effaff',
-    color: '#0369a1',
+    border: "1.5px solid #0ea5e9",
+    backgroundColor: "#effaff",
+    color: "#0369a1",
     borderRadius: 8,
-    padding: '6px 12px',
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   editNotesBtn: {
-    border: '1.5px solid #f59e0b',
-    backgroundColor: '#fffbeb',
-    color: '#b45309',
+    border: "1.5px solid #f59e0b",
+    backgroundColor: "#fffbeb",
+    color: "#b45309",
     borderRadius: 8,
-    padding: '6px 12px',
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   doneNotesBtn: {
-    border: '1.5px solid #14b8a6',
-    backgroundColor: '#ccfbf1',
-    color: '#0f766e',
+    border: "1.5px solid #14b8a6",
+    backgroundColor: "#ccfbf1",
+    color: "#0f766e",
     borderRadius: 8,
-    padding: '6px 12px',
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   addNoteInput: {
     flex: 1,
-    border: '1px solid #e2e8f0',
+    border: "1px solid #e2e8f0",
     borderRadius: 8,
-    padding: '8px 10px',
+    padding: "8px 10px",
     fontSize: 13,
-    outline: 'none',
+    outline: "none",
   },
   cancelNotesBtn: {
-    border: '1px solid #cbd5e1',
-    backgroundColor: '#f8fafc',
-    color: '#475569',
+    border: "1px solid #cbd5e1",
+    backgroundColor: "#f8fafc",
+    color: "#475569",
     borderRadius: 8,
-    padding: '6px 12px',
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   todoList: {
-    listStyle: 'none',
+    listStyle: "none",
     margin: 0,
     padding: 0,
-    display: 'flex',
-    flexDirection: 'column',
+    display: "flex",
+    flexDirection: "column",
     gap: 8,
     maxHeight: 280,
-    overflowY: 'auto',
+    overflowY: "auto",
   },
   todoItem: {
     margin: 0,
   },
   todoItemEditing: {
-    border: '1px dashed #2dd4bf',
-    backgroundColor: '#f0fdfa',
+    border: "1px dashed #2dd4bf",
+    backgroundColor: "#f0fdfa",
     borderRadius: 8,
-    padding: '6px 8px',
+    padding: "6px 8px",
   },
   todoLabel: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 8,
     fontSize: 13,
-    color: '#334155',
-    cursor: 'pointer',
+    color: "#334155",
+    cursor: "pointer",
   },
-  todoActions: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 },
+  todoActions: { display: "flex", alignItems: "center", gap: 6, flexShrink: 0 },
   todoActionBtn: {
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#2563eb',
-    padding: '2px 4px',
+    border: "none",
+    backgroundColor: "transparent",
+    color: "#2563eb",
+    padding: "2px 4px",
     fontSize: 11,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   todoDeleteBtn: {
-    border: '1px solid #fca5a5',
-    backgroundColor: '#fff1f2',
-    color: '#dc2626',
+    border: "1px solid #fca5a5",
+    backgroundColor: "#fff1f2",
+    color: "#dc2626",
     borderRadius: 6,
-    padding: '3px 7px',
+    padding: "3px 7px",
     fontSize: 11,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   pendingChip: {
-    backgroundColor: '#fef3c7',
-    color: '#b45309',
-    padding: '4px 10px',
+    backgroundColor: "#fef3c7",
+    color: "#b45309",
+    padding: "4px 10px",
     borderRadius: 12,
     fontSize: 11,
     fontWeight: 600,
@@ -1763,21 +2193,21 @@ const overview: Record<string, React.CSSProperties> = {
 
 const manage: Record<string, React.CSSProperties> = {
   layout: {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.15fr) minmax(320px, 0.85fr)',
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1.15fr) minmax(320px, 0.85fr)",
     gap: 20,
-    alignItems: 'start',
+    alignItems: "start",
   },
   listCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 20,
-    padding: '18px 20px 12px',
+    padding: "18px 20px 12px",
     boxShadow: CARD_SHADOW,
   },
   listHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
     marginBottom: 8,
   },
@@ -1785,82 +2215,82 @@ const manage: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: 20,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   searchWrap: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 8,
-    border: '1px solid #e2e8f0',
+    border: "1px solid #e2e8f0",
     borderRadius: 20,
-    padding: '6px 12px',
-    backgroundColor: '#ffffff',
+    padding: "6px 12px",
+    backgroundColor: "#ffffff",
     minWidth: 160,
   },
   searchInput: {
-    border: 'none',
-    outline: 'none',
+    border: "none",
+    outline: "none",
     fontSize: 13,
     width: 120,
     padding: 0,
-    background: 'transparent',
+    background: "transparent",
   },
   rightCol: {
-    display: 'flex',
-    flexDirection: 'column',
+    display: "flex",
+    flexDirection: "column",
     gap: 16,
   },
   orderCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 20,
-    border: '1px solid #e2e8f0',
+    border: "1px solid #e2e8f0",
   },
   orderHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 12,
   },
   panelTitle: {
     margin: 0,
     fontSize: 18,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   calendarBtn: {
-    border: '1px solid #cbd5e1',
-    backgroundColor: '#ffffff',
+    border: "1px solid #cbd5e1",
+    backgroundColor: "#ffffff",
     borderRadius: 10,
-    padding: '6px 12px',
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 600,
     color: TEAL,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
-  dateNavigator: { display: 'flex', alignItems: 'center', gap: 8 },
+  dateNavigator: { display: "flex", alignItems: "center", gap: 8 },
   dateNavBtn: {
     width: 28,
     height: 28,
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: '#64748b',
+    border: "none",
+    backgroundColor: "transparent",
+    color: "#64748b",
     fontSize: 18,
     padding: 0,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   dateInput: {
     width: 126,
-    border: '1px solid #dbe3ec',
+    border: "1px solid #dbe3ec",
     borderRadius: 8,
-    padding: '7px 8px',
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
+    padding: "7px 8px",
+    color: "#0f172a",
+    backgroundColor: "#ffffff",
     fontSize: 12,
   },
   orderBox: {
-    backgroundColor: '#f8fafc',
-    border: '1px solid #e2e8f0',
+    backgroundColor: "#f8fafc",
+    border: "1px solid #e2e8f0",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
@@ -1869,261 +2299,261 @@ const manage: Record<string, React.CSSProperties> = {
     marginBottom: 12,
   },
   orderLines: {
-    display: 'flex',
-    flexDirection: 'column',
+    display: "flex",
+    flexDirection: "column",
     gap: 8,
   },
   orderLine: {
-    border: '1px solid #e2e8f0',
+    border: "1px solid #e2e8f0",
     borderRadius: 8,
-    padding: '10px 12px',
+    padding: "10px 12px",
     fontSize: 13,
-    color: '#334155',
-    backgroundColor: '#ffffff',
+    color: "#334155",
+    backgroundColor: "#ffffff",
   },
   noteArea: {
-    width: '100%',
-    border: '1px solid #e2e8f0',
+    width: "100%",
+    border: "1px solid #e2e8f0",
     borderRadius: 8,
     padding: 10,
     fontSize: 13,
-    resize: 'vertical',
+    resize: "vertical",
     marginBottom: 12,
-    boxSizing: 'border-box',
+    boxSizing: "border-box",
   },
   orderActions: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   addBtn: {
     border: `1.5px solid ${TEAL}`,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     color: TEAL,
     borderRadius: 10,
-    padding: '8px 18px',
+    padding: "8px 18px",
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   submitBtn: {
-    border: 'none',
+    border: "none",
     backgroundColor: TEAL,
-    color: '#ffffff',
+    color: "#ffffff",
     borderRadius: 10,
-    padding: '8px 20px',
+    padding: "8px 20px",
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   cancelBtn: {
-    border: '1px solid #cbd5e1',
-    backgroundColor: '#ffffff',
-    color: '#64748b',
+    border: "1px solid #cbd5e1",
+    backgroundColor: "#ffffff",
+    color: "#64748b",
     borderRadius: 10,
-    padding: '8px 16px',
+    padding: "8px 16px",
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   aiCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 12,
-    border: '1px solid #e2e8f0',
-    overflow: 'hidden',
+    border: "1px solid #e2e8f0",
+    overflow: "hidden",
   },
   aiHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '10px 16px',
-    backgroundColor: '#f1eaff',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "10px 16px",
+    backgroundColor: "#f1eaff",
   },
   aiTitle: {
     margin: 0,
     fontSize: 15,
     fontWeight: 800,
-    color: '#7c00b8',
+    color: "#7c00b8",
   },
   aiBadge: {
-    backgroundColor: '#d3a0f5',
-    color: '#7c00b8',
+    backgroundColor: "#d3a0f5",
+    color: "#7c00b8",
     fontSize: 11,
     fontWeight: 700,
-    padding: '4px 14px',
+    padding: "4px 14px",
     borderRadius: 6,
   },
   aiBody: {
-    padding: '14px 16px 18px',
+    padding: "14px 16px 18px",
   },
   aiText: {
-    margin: '0 0 14px',
+    margin: "0 0 14px",
     fontSize: 13,
     lineHeight: 1.55,
-    color: '#1e293b',
+    color: "#1e293b",
   },
   aiEditor: {
-    width: '100%',
-    border: '1px solid #e2e8f0',
+    width: "100%",
+    border: "1px solid #e2e8f0",
     borderRadius: 8,
     padding: 10,
     fontSize: 13,
     marginBottom: 12,
-    boxSizing: 'border-box',
-    backgroundColor: '#f8fafc',
+    boxSizing: "border-box",
+    backgroundColor: "#f8fafc",
   },
   aiActions: {
-    display: 'flex',
+    display: "flex",
     gap: 10,
   },
   aiLink: {
-    border: '1px solid #9cc8ff',
-    backgroundColor: '#ffffff',
-    color: '#0066cc',
+    border: "1px solid #9cc8ff",
+    backgroundColor: "#ffffff",
+    color: "#0066cc",
     fontSize: 12,
     fontWeight: 700,
     borderRadius: 6,
-    padding: '6px 14px',
-    cursor: 'pointer',
+    padding: "6px 14px",
+    cursor: "pointer",
   },
   dotsBtn: {
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    color: '#64748b',
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    color: "#64748b",
     fontSize: 18,
-    padding: '4px 8px',
+    padding: "4px 8px",
     lineHeight: 1,
   },
   rowMenu: {
-    position: 'absolute',
+    position: "absolute",
     right: 0,
-    top: '100%',
+    top: "100%",
     zIndex: 12,
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
+    backgroundColor: "#ffffff",
+    border: "1px solid #e2e8f0",
     borderRadius: 8,
-    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.1)',
+    boxShadow: "0 8px 20px rgba(15, 23, 42, 0.1)",
     minWidth: 180,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   rowMenuItem: {
-    display: 'block',
-    width: '100%',
-    textAlign: 'left',
-    border: 'none',
-    background: 'transparent',
-    padding: '10px 12px',
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    border: "none",
+    background: "transparent",
+    padding: "10px 12px",
     fontSize: 12,
     fontWeight: 600,
-    color: '#334155',
-    cursor: 'pointer',
+    color: "#334155",
+    cursor: "pointer",
   },
   orderBullet: {
     fontSize: 13,
-    color: '#334155',
+    color: "#334155",
     lineHeight: 1.5,
   },
   orderEditRow: {
-    display: 'flex',
+    display: "flex",
     gap: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
   orderEditInput: {
     flex: 1,
-    border: '1px solid #cbd5e1',
+    border: "1px solid #cbd5e1",
     borderRadius: 8,
-    padding: '8px 10px',
+    padding: "8px 10px",
     fontSize: 13,
   },
   removeOrderBtn: {
-    border: '1px solid #fecaca',
-    background: '#fef2f2',
-    color: '#dc2626',
+    border: "1px solid #fecaca",
+    background: "#fef2f2",
+    color: "#dc2626",
     borderRadius: 6,
     width: 28,
     height: 28,
     padding: 0,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   calOverlay: {
-    position: 'fixed',
+    position: "fixed",
     inset: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(15, 23, 42, 0.35)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 50,
   },
   calModal: {
     width: 340,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 16,
     padding: 16,
-    boxShadow: '0 16px 40px rgba(15, 23, 42, 0.18)',
+    boxShadow: "0 16px 40px rgba(15, 23, 42, 0.18)",
   },
   calHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
   calTitle: {
     margin: 0,
     fontSize: 16,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   calClose: {
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    color: '#94a3b8',
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    color: "#94a3b8",
     fontSize: 16,
     padding: 4,
   },
   calNav: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 12,
   },
   calNavBtn: {
     width: 28,
     height: 28,
     borderRadius: 6,
-    border: '1px solid #e2e8f0',
-    background: '#fff',
-    cursor: 'pointer',
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    cursor: "pointer",
     padding: 0,
   },
   calMonth: {
     fontSize: 14,
     fontWeight: 700,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   calGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
+    display: "grid",
+    gridTemplateColumns: "repeat(7, 1fr)",
     gap: 4,
   },
   calDow: {
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: 10,
     fontWeight: 700,
-    color: '#94a3b8',
-    padding: '4px 0',
+    color: "#94a3b8",
+    padding: "4px 0",
   },
   calDay: {
-    border: 'none',
-    background: 'transparent',
+    border: "none",
+    background: "transparent",
     height: 36,
     borderRadius: 6,
     fontSize: 12,
-    color: '#334155',
-    cursor: 'pointer',
+    color: "#334155",
+    cursor: "pointer",
     padding: 0,
   },
   calDaySelected: {
     backgroundColor: TEAL,
-    color: '#ffffff',
+    color: "#ffffff",
     fontWeight: 700,
     borderRadius: 18,
   },
@@ -2131,15 +2561,15 @@ const manage: Record<string, React.CSSProperties> = {
 
 const requests: Record<string, React.CSSProperties> = {
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 20,
-    padding: '24px 24px 16px',
+    padding: "24px 24px 16px",
     boxShadow: CARD_SHADOW,
   },
   headerRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: 16,
     marginBottom: 20,
   },
@@ -2147,282 +2577,282 @@ const requests: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: 22,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   subtitle: {
-    margin: '4px 0 0',
+    margin: "4px 0 0",
     fontSize: 13,
-    color: '#64748b',
+    color: "#64748b",
   },
   searchWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    border: '1px solid #e2e8f0',
+    display: "flex",
+    alignItems: "center",
+    border: "1px solid #e2e8f0",
     borderRadius: 20,
-    padding: '8px 14px',
-    backgroundColor: '#ffffff',
+    padding: "8px 14px",
+    backgroundColor: "#ffffff",
     minWidth: 240,
   },
   searchInput: {
-    border: 'none',
-    outline: 'none',
+    border: "none",
+    outline: "none",
     fontSize: 13,
     flex: 1,
     padding: 0,
-    background: 'transparent',
+    background: "transparent",
   },
   searchIcon: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: "#94a3b8",
   },
   table: {
-    width: '100%',
-    borderCollapse: 'collapse',
+    width: "100%",
+    borderCollapse: "collapse",
   },
   th: {
-    textAlign: 'left',
+    textAlign: "left",
     fontSize: 12,
     fontWeight: 700,
     color: TEAL,
-    padding: '12px 14px',
-    backgroundColor: '#f1f5f9',
-    borderBottom: '1px solid #e2e8f0',
+    padding: "12px 14px",
+    backgroundColor: "#f1f5f9",
+    borderBottom: "1px solid #e2e8f0",
   },
   td: {
-    padding: '14px',
+    padding: "14px",
     fontSize: 13,
-    borderBottom: '1px solid #f1f5f9',
-    verticalAlign: 'middle',
+    borderBottom: "1px solid #f1f5f9",
+    verticalAlign: "middle",
   },
   idLink: {
-    border: 'none',
-    background: 'transparent',
+    border: "none",
+    background: "transparent",
     color: TEAL,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
     padding: 0,
     fontSize: 13,
   },
   primary: {
     fontWeight: 700,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   secondary: {
     fontSize: 12,
-    color: '#64748b',
+    color: "#64748b",
     marginTop: 2,
   },
   statusPending: {
-    display: 'inline-block',
-    backgroundColor: '#fff4e5',
-    color: '#b76e00',
-    padding: '4px 10px',
+    display: "inline-block",
+    backgroundColor: "#fff4e5",
+    color: "#b76e00",
+    padding: "4px 10px",
     borderRadius: 999,
     fontSize: 11,
     fontWeight: 700,
   },
   statusReviewed: {
-    display: 'inline-block',
-    backgroundColor: '#e8f5e9',
-    color: '#2e7d32',
-    padding: '4px 10px',
+    display: "inline-block",
+    backgroundColor: "#e8f5e9",
+    color: "#2e7d32",
+    padding: "4px 10px",
     borderRadius: 999,
     fontSize: 11,
     fontWeight: 700,
   },
   reviewBtn: {
     border: `1px solid ${TEAL}`,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     color: TEAL,
     borderRadius: 8,
-    padding: '6px 14px',
+    padding: "6px 14px",
     fontSize: 12,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   pagination: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px 4px 4px',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "16px 4px 4px",
   },
   pageInfo: {
     fontSize: 12,
-    color: '#64748b',
+    color: "#64748b",
   },
   pageControls: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 6,
   },
   pageBtn: {
     minWidth: 32,
     height: 32,
     borderRadius: 6,
-    border: '1px solid #e2e8f0',
-    backgroundColor: '#ffffff',
-    color: '#475569',
+    border: "1px solid #e2e8f0",
+    backgroundColor: "#ffffff",
+    color: "#475569",
     fontSize: 12,
     fontWeight: 600,
-    cursor: 'pointer',
+    cursor: "pointer",
     padding: 0,
   },
   pageActive: {
     backgroundColor: TEAL,
-    color: '#ffffff',
+    color: "#ffffff",
     borderColor: TEAL,
   },
   modalOverlay: {
-    position: 'fixed',
+    position: "fixed",
     inset: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 40,
   },
   modalCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 16,
     width: 560,
-    maxWidth: '90%',
+    maxWidth: "90%",
     padding: 24,
   },
   modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     marginBottom: 16,
   },
   modalTitle: {
     margin: 0,
     fontSize: 18,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   closeBtn: {
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    color: '#94a3b8',
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    color: "#94a3b8",
     fontSize: 16,
   },
   modalMeta: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 12,
   },
   modalBody: {
     fontSize: 13,
     lineHeight: 1.6,
-    color: '#334155',
-    margin: '0 0 20px',
+    color: "#334155",
+    margin: "0 0 20px",
   },
 };
 
 const review: Record<string, React.CSSProperties> = {
   overlay: {
-    position: 'fixed',
+    position: "fixed",
     inset: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     zIndex: 50,
     padding: 24,
   },
   shell: {
-    display: 'flex',
-    alignItems: 'stretch',
+    display: "flex",
+    alignItems: "stretch",
     maxWidth: 1080,
-    width: '100%',
-    maxHeight: '90vh',
-    position: 'relative',
+    width: "100%",
+    maxHeight: "90vh",
+    position: "relative",
   },
   ordersPanel: {
     width: 280,
     flexShrink: 0,
-    backgroundColor: '#ffffff',
-    borderRadius: '16px 0 0 16px',
+    backgroundColor: "#ffffff",
+    borderRadius: "16px 0 0 16px",
     padding: 16,
-    display: 'flex',
-    flexDirection: 'column',
-    border: '1px solid #e2e8f0',
-    borderRight: 'none',
+    display: "flex",
+    flexDirection: "column",
+    border: "1px solid #e2e8f0",
+    borderRight: "none",
   },
   ordersTitle: {
-    margin: '0 0 12px',
+    margin: "0 0 12px",
     fontSize: 15,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   ordersScroll: {
-    overflowY: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
     gap: 10,
     paddingRight: 4,
   },
   orderCard: {
-    backgroundColor: '#ecfdf5',
+    backgroundColor: "#ecfdf5",
     borderRadius: 10,
     padding: 12,
   },
   orderWhen: {
     fontSize: 11,
     fontWeight: 700,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   orderTime: {
     fontSize: 11,
-    color: '#64748b',
+    color: "#64748b",
     marginBottom: 6,
   },
   orderDoctor: {
     fontSize: 13,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
   },
   orderList: {
     margin: 0,
     paddingLeft: 16,
     fontSize: 12,
-    color: '#334155',
+    color: "#334155",
     lineHeight: 1.45,
   },
   collapseBtn: {
-    position: 'absolute',
+    position: "absolute",
     left: 268,
-    top: '50%',
-    transform: 'translateY(-50%)',
+    top: "50%",
+    transform: "translateY(-50%)",
     width: 24,
     height: 24,
-    borderRadius: '50%',
-    border: '1px solid #e2e8f0',
-    backgroundColor: '#ffffff',
-    cursor: 'pointer',
+    borderRadius: "50%",
+    border: "1px solid #e2e8f0",
+    backgroundColor: "#ffffff",
+    cursor: "pointer",
     zIndex: 2,
     padding: 0,
     fontSize: 14,
   },
   mainPanel: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 16,
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
     minWidth: 0,
-    boxShadow: '0 20px 50px rgba(15, 23, 42, 0.18)',
+    boxShadow: "0 20px 50px rgba(15, 23, 42, 0.18)",
   },
   header: {
     backgroundColor: TEAL,
-    color: '#ffffff',
-    padding: '14px 18px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    color: "#ffffff",
+    padding: "14px 18px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
   },
   headerTitle: {
     margin: 0,
@@ -2435,142 +2865,141 @@ const review: Record<string, React.CSSProperties> = {
     marginTop: 2,
   },
   headerClose: {
-    border: 'none',
-    background: 'transparent',
-    color: '#ffffff',
-    cursor: 'pointer',
+    border: "none",
+    background: "transparent",
+    color: "#ffffff",
+    cursor: "pointer",
     fontSize: 16,
     padding: 4,
   },
   body: {
     padding: 18,
-    overflowY: 'auto',
+    overflowY: "auto",
     flex: 1,
   },
   infoBanner: {
-    display: 'flex',
+    display: "flex",
     gap: 8,
-    alignItems: 'flex-start',
-    backgroundColor: '#e0f2fe',
-    color: '#0369a1',
+    alignItems: "flex-start",
+    backgroundColor: "#e0f2fe",
+    color: "#0369a1",
     borderRadius: 8,
-    padding: '10px 12px',
+    padding: "10px 12px",
     fontSize: 12,
     marginBottom: 16,
   },
   sectionLabel: {
     fontSize: 13,
     fontWeight: 800,
-    color: '#0f172a',
+    color: "#0f172a",
     marginBottom: 8,
   },
   patientGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 1fr",
     gap: 10,
     marginBottom: 16,
   },
   field: {
-    display: 'flex',
-    flexDirection: 'column',
+    display: "flex",
+    flexDirection: "column",
     gap: 4,
   },
   fieldLabel: {
     fontSize: 11,
-    color: '#64748b',
+    color: "#64748b",
   },
   fieldInput: {
-    border: '1px solid #e2e8f0',
+    border: "1px solid #e2e8f0",
     borderRadius: 8,
-    padding: '8px 10px',
+    padding: "8px 10px",
     fontSize: 13,
-    backgroundColor: '#f8fafc',
-    color: '#0f172a',
+    backgroundColor: "#f8fafc",
+    color: "#0f172a",
   },
   submittedCard: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    border: '1px solid #e2e8f0',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    border: "1px solid #e2e8f0",
     borderRadius: 10,
     padding: 12,
     marginBottom: 16,
-    backgroundColor: '#f8fafc',
+    backgroundColor: "#f8fafc",
   },
   aiHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 8,
   },
   hideOrdersBtn: {
     border: `1px solid ${TEAL}`,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     color: TEAL,
     borderRadius: 8,
-    padding: '6px 12px',
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   summaryBox: {
-    backgroundColor: '#ecfdf5',
+    backgroundColor: "#ecfdf5",
     borderRadius: 10,
     padding: 12,
     fontSize: 13,
     lineHeight: 1.6,
-    color: '#334155',
+    color: "#334155",
     marginBottom: 12,
   },
   summaryEditor: {
-    width: '100%',
-    boxSizing: 'border-box',
-    border: '1px solid #bbf7d0',
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #bbf7d0",
     borderRadius: 10,
     padding: 12,
     fontSize: 13,
     lineHeight: 1.6,
     marginBottom: 12,
-    backgroundColor: '#f0fdf4',
+    backgroundColor: "#f0fdf4",
   },
   aiActions: {
-    display: 'flex',
+    display: "flex",
     gap: 10,
   },
   outlineBtn: {
     border: `1px solid ${TEAL}`,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     color: TEAL,
     borderRadius: 8,
-    padding: '6px 12px',
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   footer: {
-    display: 'flex',
-    justifyContent: 'flex-end',
+    display: "flex",
+    justifyContent: "flex-end",
     gap: 10,
-    padding: '12px 18px 16px',
-    borderTop: '1px solid #f1f5f9',
+    padding: "12px 18px 16px",
+    borderTop: "1px solid #f1f5f9",
   },
   cancelBtn: {
-    border: '1px solid #cbd5e1',
-    backgroundColor: '#e2e8f0',
-    color: '#334155',
+    border: "1px solid #cbd5e1",
+    backgroundColor: "#e2e8f0",
+    color: "#334155",
     borderRadius: 8,
-    padding: '8px 18px',
+    padding: "8px 18px",
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
   approveBtn: {
-    border: 'none',
+    border: "none",
     backgroundColor: TEAL,
-    color: '#ffffff',
+    color: "#ffffff",
     borderRadius: 8,
-    padding: '8px 20px',
+    padding: "8px 20px",
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
 };
-
