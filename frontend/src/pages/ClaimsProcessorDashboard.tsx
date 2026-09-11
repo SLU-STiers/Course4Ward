@@ -3,7 +3,8 @@ import { Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
-import { Button, PageHeader, Popover, SearchField, StatusBadge } from '../components/ui';
+import { SidebarProfile } from '../components/layout/SidebarProfile';
+import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../components/ui';
 import overviewIcon from '../Img/overview.png';
 import requestsIcon from '../Img/requests.png';
 import exportIcon from '../Img/export.png';
@@ -159,8 +160,6 @@ export function ClaimsProcessorDashboard() {
   const [requestPage, setRequestPage] = useState(1);
   const [requestSortField, setRequestSortField] = useState<RequestSortField>('date');
   const [requestSortDirection, setRequestSortDirection] = useState<SortDirection>('descending');
-  const [showRequestFilter, setShowRequestFilter] = useState(false);
-  const [showRequestSort, setShowRequestSort] = useState(false);
   const [requestDateFrom, setRequestDateFrom] = useState('');
   const [requestDateTo, setRequestDateTo] = useState('');
   const [requestStatus, setRequestStatus] = useState<'all' | SummarizationRequest['status']>('all');
@@ -171,8 +170,6 @@ export function ClaimsProcessorDashboard() {
   const [patientPage, setPatientPage] = useState(1);
   const [patientSortField, setPatientSortField] = useState<PatientSortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('ascending');
-  const [showPatientFilter, setShowPatientFilter] = useState(false);
-  const [showPatientSort, setShowPatientSort] = useState(false);
   const [admissionFrom, setAdmissionFrom] = useState('');
   const [admissionTo, setAdmissionTo] = useState('');
   const [patientStatus, setPatientStatus] = useState<PatientStatus>('all');
@@ -214,7 +211,12 @@ export function ClaimsProcessorDashboard() {
 
   const filteredRequests = requests.filter((req) => {
     const [day, month, year] = req.date.split(' ');
-    const requestDate = `${year}-${{ Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' }[month] ?? '01'}-${day.padStart(2, '0')}`;
+    const requestDate = `${year}-${
+      {
+        Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+        Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
+      }[month] ?? '01'
+    }-${day.padStart(2, '0')}`;
     return (
       req.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       req.doctor.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -267,20 +269,8 @@ export function ClaimsProcessorDashboard() {
     setPatientPage(1);
   };
 
-  const setPatientSort = (field: PatientSortField, direction: SortDirection) => {
-    setPatientSortField(field);
-    setSortDirection(direction);
-    setPatientPage(1);
-  };
-
   const setRequestSearchAndResetPage = (value: string) => {
     setSearchQuery(value);
-    setRequestPage(1);
-  };
-
-  const setRequestSort = (field: RequestSortField, direction: SortDirection) => {
-    setRequestSortField(field);
-    setRequestSortDirection(direction);
     setRequestPage(1);
   };
 
@@ -345,69 +335,56 @@ export function ClaimsProcessorDashboard() {
           { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
           { id: 'export', label: 'Export', icon: <img src={exportIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
         ],
-        profile: (
-          <div style={styles.sidebarProfile}>
-            <div style={styles.profileAvatar}>SJ</div>
-            <div style={styles.profileDetails}>
-              <div style={styles.profileName}>Steve Joabs</div>
-              <div style={styles.profileEmail}>Claims Processor</div>
-            </div>
-            <Button variant="secondary" size="sm" onClick={handleLogout}>
-              Log out
-            </Button>
-          </div>
-        ),
+        profile: <SidebarProfile initials="SJ" name="Steve Joabs" subtitle="Claims Processor" onLogout={handleLogout} />,
       }}
       header={
         <PageHeader
           title="Claims Processor"
-          actions={<NotificationBell showDot />}
+          actions={<NotificationBell />}
         />
       }
     >
           {/* REQUESTS TAB */}
           {activeTab === 'requests' && (
             <div>
-              <div style={styles.requestToolbar}>
-                      <SearchField value={searchQuery} onChange={setRequestSearchAndResetPage} placeholder="Search requests..." ariaLabel="Search requests" />
-                <HoverMenu
-                  label="Filter"
-                  icon={<Filter size={15} aria-hidden="true" />}
-                  open={showRequestFilter}
-                  setOpen={setShowRequestFilter}
-                >
-                  <div style={overviewStyles.filterLabel}>Filter requests</div>
-                  <span style={overviewStyles.filterOptionLabel}>Submitted on</span>
-                  <input type="date" value={requestDateFrom} onChange={(e) => { setRequestDateFrom(e.target.value); setRequestPage(1); }} style={overviewStyles.dateFilterInput} aria-label="Requests from date" />
-                  <input type="date" value={requestDateTo} onChange={(e) => { setRequestDateTo(e.target.value); setRequestPage(1); }} style={overviewStyles.dateFilterInput} aria-label="Requests to date" />
-                  <span style={{ ...overviewStyles.filterOptionLabel, marginTop: '8px' }}>Status</span>
-                  {(['all', 'Pending Review', 'Approved', 'Rejected'] as const).map((status) => (
-                    <button type="button" key={status} style={overviewStyles.menuChoiceButton} onClick={() => { setRequestStatus(status === 'all' ? 'all' : status); setRequestPage(1); }}>
-                      {status === 'all' ? 'All' : status}
-                    </button>
-                  ))}
-                </HoverMenu>
-                <HoverMenu
-                  label="Sort by"
-                  open={showRequestSort}
-                  setOpen={setShowRequestSort}
-                >
-                  <div style={overviewStyles.filterLabel}>Sort requests by</div>
-                  {([
-                    ['id', 'Request ID'],
-                    ['date', 'Submitted on'],
-                    ['status', 'Status'],
-                  ] as [RequestSortField, string][]).map(([field, label]) => (
-                    <div key={field} style={overviewStyles.filterOptionGroup}>
-                      <span style={overviewStyles.filterOptionLabel}>{label}</span>
-                      <div style={overviewStyles.filterDirectionRow}>
-                        <button type="button" style={overviewStyles.filterDirectionButton} onClick={() => setRequestSort(field, 'ascending')}>Ascending</button>
-                        <button type="button" style={overviewStyles.filterDirectionButton} onClick={() => setRequestSort(field, 'descending')}>Descending</button>
-                      </div>
-                    </div>
-                  ))}
-                </HoverMenu>
-              </div>
+              <DataTableToolbar
+                searchProps={{
+                  value: searchQuery,
+                  onChange: setRequestSearchAndResetPage,
+                  placeholder: 'Search requests...',
+                  ariaLabel: 'Search requests',
+                }}
+                filterProps={{
+                  title: 'Filter requests',
+                  options: [
+                    { value: 'all', label: 'All' },
+                    { value: 'Pending Review', label: 'Pending Review' },
+                    { value: 'Approved', label: 'Approved' },
+                    { value: 'Rejected', label: 'Rejected' },
+                  ],
+                  value: requestStatus,
+                  onChange: (value) => { setRequestStatus(value as typeof requestStatus); setRequestPage(1); },
+                  extra: (
+                    <>
+                      <span className="ui-menu__heading">Submitted on</span>
+                      <input type="date" value={requestDateFrom} onChange={(e) => { setRequestDateFrom(e.target.value); setRequestPage(1); }} aria-label="Requests from date" />
+                      <input type="date" value={requestDateTo} onChange={(e) => { setRequestDateTo(e.target.value); setRequestPage(1); }} aria-label="Requests to date" />
+                    </>
+                  ),
+                }}
+                sortProps={{
+                  title: 'Sort requests by',
+                  options: [
+                    { value: 'id', label: 'Request ID' },
+                    { value: 'date', label: 'Submitted on' },
+                    { value: 'status', label: 'Status' },
+                  ],
+                  value: requestSortField,
+                  onChange: (value) => { setRequestSortField(value as RequestSortField); setRequestPage(1); },
+                  direction: requestSortDirection,
+                  onDirectionChange: (direction) => { setRequestSortDirection(direction); setRequestPage(1); },
+                }}
+              />
 
               <div style={styles.tableCard}>
                 <table style={styles.table}>
@@ -543,37 +520,43 @@ export function ClaimsProcessorDashboard() {
                     <div style={{ width: '120px' }} />
                   </div>
 
-                  <div style={styles.exportToolbar}>
-                    <SearchField value={patientSearch} onChange={setPatientSearchAndResetPage} placeholder="Search patient" ariaLabel="Search patients" />
-                    <HoverMenu label="Filter" icon={<Filter size={15} aria-hidden="true" />} open={showPatientFilter} setOpen={setShowPatientFilter}>
-                      <div style={overviewStyles.filterLabel}>Filter patients</div>
-                      <span style={overviewStyles.filterOptionLabel}>Admission date</span>
-                      <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); }} style={overviewStyles.dateFilterInput} aria-label="Admission date from" />
-                      <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); }} style={overviewStyles.dateFilterInput} aria-label="Admission date to" />
-                      <span style={{ ...overviewStyles.filterOptionLabel, marginTop: '8px' }}>Patient status</span>
-                      {(['all', 'admitted', 'discharged'] as PatientStatus[]).map((status) => (
-                        <button type="button" key={status} style={overviewStyles.menuChoiceButton} onClick={() => { setPatientStatus(status); setPatientPage(1); }}>
-                          {status[0].toUpperCase() + status.slice(1)}
-                        </button>
-                      ))}
-                    </HoverMenu>
-                    <HoverMenu label="Sort by" open={showPatientSort} setOpen={setShowPatientSort}>
-                      <div style={overviewStyles.filterLabel}>Sort patients by</div>
-                      {([
-                        ['name', 'Patient name'],
-                        ['patientId', 'Patient ID'],
-                        ['admissionDate', 'Admission date'],
-                      ] as [PatientSortField, string][]).map(([field, label]) => (
-                        <div key={field} style={overviewStyles.filterOptionGroup}>
-                          <span style={overviewStyles.filterOptionLabel}>{label}</span>
-                          <div style={overviewStyles.filterDirectionRow}>
-                            <button type="button" style={overviewStyles.filterDirectionButton} onClick={() => setPatientSort(field, 'ascending')}>Ascending</button>
-                            <button type="button" style={overviewStyles.filterDirectionButton} onClick={() => setPatientSort(field, 'descending')}>Descending</button>
-                          </div>
-                        </div>
-                      ))}
-                    </HoverMenu>
-                  </div>
+                  <DataTableToolbar
+                    searchProps={{
+                      value: patientSearch,
+                      onChange: setPatientSearchAndResetPage,
+                      placeholder: 'Search patient',
+                      ariaLabel: 'Search patients',
+                    }}
+                    filterProps={{
+                      title: 'Filter patients',
+                      options: [
+                        { value: 'all', label: 'All' },
+                        { value: 'admitted', label: 'Admitted' },
+                        { value: 'discharged', label: 'Discharged' },
+                      ],
+                      value: patientStatus,
+                      onChange: (value) => { setPatientStatus(value as PatientStatus); setPatientPage(1); },
+                      extra: (
+                        <>
+                          <span className="ui-menu__heading">Admission date</span>
+                          <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); }} aria-label="Admission date from" />
+                          <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); }} aria-label="Admission date to" />
+                        </>
+                      ),
+                    }}
+                    sortProps={{
+                      title: 'Sort patients by',
+                      options: [
+                        { value: 'name', label: 'Patient name' },
+                        { value: 'patientId', label: 'Patient ID' },
+                        { value: 'admissionDate', label: 'Admission date' },
+                      ],
+                      value: patientSortField,
+                      onChange: (value) => { setPatientSortField(value as PatientSortField); setPatientPage(1); },
+                      direction: sortDirection,
+                      onDirectionChange: (direction) => { setSortDirection(direction); setPatientPage(1); },
+                    }}
+                  />
 
                   <div style={styles.patientTableWrapper}>
                     <table style={styles.table}>
@@ -727,37 +710,43 @@ export function ClaimsProcessorDashboard() {
               <div style={overviewStyles.leftCard}>
                 <h2 style={overviewStyles.cardTitle}>Patient Overview</h2>
 
-                <div style={overviewStyles.patientToolbar}>
-                  <SearchField value={patientSearch} onChange={setPatientSearchAndResetPage} placeholder="Search patient" ariaLabel="Search patients" />
-                  <HoverMenu label="Filter" icon={<Filter size={15} aria-hidden="true" />} open={showPatientFilter} setOpen={setShowPatientFilter}>
-                    <div style={overviewStyles.filterLabel}>Filter patients</div>
-                    <span style={overviewStyles.filterOptionLabel}>Admission date</span>
-                    <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); }} style={overviewStyles.dateFilterInput} aria-label="Admission date from" />
-                    <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); }} style={overviewStyles.dateFilterInput} aria-label="Admission date to" />
-                    <span style={{ ...overviewStyles.filterOptionLabel, marginTop: '8px' }}>Patient status</span>
-                    {(['all', 'admitted', 'discharged'] as PatientStatus[]).map((status) => (
-                      <button type="button" key={status} style={overviewStyles.menuChoiceButton} onClick={() => { setPatientStatus(status); setPatientPage(1); }}>
-                        {status[0].toUpperCase() + status.slice(1)}
-                      </button>
-                    ))}
-                  </HoverMenu>
-                  <HoverMenu label="Sort by" open={showPatientSort} setOpen={setShowPatientSort}>
-                    <div style={overviewStyles.filterLabel}>Sort patients by</div>
-                    {([
-                      ['name', 'Patient name'],
-                      ['patientId', 'Patient ID'],
-                      ['admissionDate', 'Admission date'],
-                    ] as [PatientSortField, string][]).map(([field, label]) => (
-                      <div key={field} style={overviewStyles.filterOptionGroup}>
-                        <span style={overviewStyles.filterOptionLabel}>{label}</span>
-                        <div style={overviewStyles.filterDirectionRow}>
-                          <button type="button" style={overviewStyles.filterDirectionButton} onClick={() => setPatientSort(field, 'ascending')}>Ascending</button>
-                          <button type="button" style={overviewStyles.filterDirectionButton} onClick={() => setPatientSort(field, 'descending')}>Descending</button>
-                        </div>
-                      </div>
-                    ))}
-                  </HoverMenu>
-                </div>
+                <DataTableToolbar
+                  searchProps={{
+                    value: patientSearch,
+                    onChange: setPatientSearchAndResetPage,
+                    placeholder: 'Search patient',
+                    ariaLabel: 'Search patients',
+                  }}
+                  filterProps={{
+                    title: 'Filter patients',
+                    options: [
+                      { value: 'all', label: 'All' },
+                      { value: 'admitted', label: 'Admitted' },
+                      { value: 'discharged', label: 'Discharged' },
+                    ],
+                    value: patientStatus,
+                    onChange: (value) => { setPatientStatus(value as PatientStatus); setPatientPage(1); },
+                    extra: (
+                      <>
+                        <span className="ui-menu__heading">Admission date</span>
+                        <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); }} aria-label="Admission date from" />
+                        <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); }} aria-label="Admission date to" />
+                      </>
+                    ),
+                  }}
+                  sortProps={{
+                    title: 'Sort patients by',
+                    options: [
+                      { value: 'name', label: 'Patient name' },
+                      { value: 'patientId', label: 'Patient ID' },
+                      { value: 'admissionDate', label: 'Admission date' },
+                    ],
+                    value: patientSortField,
+                    onChange: (value) => { setPatientSortField(value as PatientSortField); setPatientPage(1); },
+                    direction: sortDirection,
+                    onDirectionChange: (direction) => { setSortDirection(direction); setPatientPage(1); },
+                  }}
+                />
 
                 <div style={{ overflowX: 'auto' }}>
                   <table style={styles.table}>
@@ -797,7 +786,7 @@ export function ClaimsProcessorDashboard() {
                           <td style={{ ...styles.td, textAlign: 'right' }}>
                             <button
                               style={{
-                                backgroundColor: '#004358',
+                                backgroundColor: 'var(--c4w-color-primary-active)',
                                 color: '#ffffff',
                                 border: 'none',
                                 padding: '6px 14px',
@@ -1177,7 +1166,7 @@ function ReviewRequestModal({
     },
     primaryBtn: {
       border: 'none',
-      backgroundColor: '#0a5c83',
+      backgroundColor: 'var(--c4w-color-primary)',
       color: '#ffffff',
       borderRadius: '8px',
       padding: '10px 18px',
@@ -1186,9 +1175,9 @@ function ReviewRequestModal({
       fontWeight: 700,
     },
     secondaryBtn: {
-      border: '1px solid #0a5c83',
+      border: '1px solid var(--c4w-color-primary)',
       backgroundColor: '#ffffff',
-      color: '#0a5c83',
+      color: 'var(--c4w-color-primary)',
       borderRadius: '8px',
       padding: '10px 18px',
       cursor: 'pointer',
@@ -1341,7 +1330,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: '36px',
     borderRadius: '50%',
     backgroundColor: '#cbd5e1',
-    color: '#0a5c83',
+    color: 'var(--c4w-color-primary)',
     fontSize: '11px',
     fontWeight: 700,
     display: 'flex',
@@ -1557,15 +1546,16 @@ const styles: Record<string, React.CSSProperties> = {
     tableLayout: 'fixed',
   },
   thRow: {
-    backgroundColor: '#f8fafc',
-    borderBottom: '1px solid #e2e8f0',
+    backgroundColor: 'var(--c4w-color-primary-soft)',
+    borderBottom: '1px solid var(--c4w-color-border)',
   },
   th: {
     padding: '12px 16px',
     fontSize: '12px',
-    fontWeight: 600,
-    color: '#64748b',
+    fontWeight: 700,
+    color: 'var(--c4w-color-primary)',
     textAlign: 'left',
+    whiteSpace: 'nowrap',
   },
   tr: {
     borderBottom: '1px solid #f1f5f9',
@@ -1612,7 +1602,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
   reviewBtn: {
-    backgroundColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
     color: '#ffffff',
     border: 'none',
     padding: '6px 16px',
@@ -1656,8 +1646,8 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   pageActive: {
-    backgroundColor: '#0a5c83',
-    borderColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
+    borderColor: 'var(--c4w-color-primary)',
     color: '#ffffff',
     fontWeight: 700,
   },
@@ -1708,7 +1698,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
     color: '#fff',
     borderRadius: '50%',
     width: '16px',
@@ -1732,7 +1722,7 @@ const styles: Record<string, React.CSSProperties> = {
   backButton: {
     border: 'none',
     backgroundColor: 'transparent',
-    color: '#0a5c83',
+    color: 'var(--c4w-color-primary)',
     fontSize: '13px',
     fontWeight: 600,
     cursor: 'pointer',
@@ -1749,9 +1739,9 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
   },
   cf4SelectBtn: {
-    border: '1px solid #0a5c83',
+    border: '1px solid var(--c4w-color-primary)',
     backgroundColor: 'transparent',
-    color: '#0a5c83',
+    color: 'var(--c4w-color-primary)',
     padding: '4px 12px',
     borderRadius: '4px',
     fontSize: '12px',
@@ -1776,7 +1766,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   proceedBtn: {
-    backgroundColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
     color: '#ffffff',
     border: 'none',
     padding: '8px 16px',
@@ -1906,7 +1896,7 @@ const overviewStyles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '6px',
     whiteSpace: 'nowrap',
-    color: '#004358',
+    color: 'var(--c4w-color-primary-active)',
     borderColor: '#b8cbd2',
     fontWeight: 600,
   },
@@ -1953,7 +1943,7 @@ const overviewStyles: Record<string, React.CSSProperties> = {
     border: '1px solid #e2e8f0',
     borderRadius: '4px',
     backgroundColor: '#ffffff',
-    color: '#0a5c83',
+    color: 'var(--c4w-color-primary)',
     fontSize: '10px',
     cursor: 'pointer',
   },
@@ -2006,8 +1996,8 @@ const overviewStyles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   pageActive: {
-    backgroundColor: '#0a5c83',
-    borderColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
+    borderColor: 'var(--c4w-color-primary)',
     color: '#ffffff',
     fontWeight: 700,
   },
@@ -2129,7 +2119,7 @@ const overviewStyles: Record<string, React.CSSProperties> = {
     width: '8px',
     height: '8px',
     borderRadius: '50%',
-    backgroundColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
   },
   orderBox: {
     backgroundColor: '#f8fafc',

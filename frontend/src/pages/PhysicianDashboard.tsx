@@ -140,8 +140,7 @@ export function PhysicianDashboard() {
       }}
       header={
         <PageHeader
-          title="Good Day! Dr. John"
-          description="We are pleased to have you!"
+          title="Physician"
           actions={<NotificationBell />}
         />
       }
@@ -1400,6 +1399,15 @@ function ManageView() {
             />
           </div>
         </div>
+        </div>
+        <DataTableToolbar
+          searchProps={{
+            value: search,
+            onChange: setSearch,
+            placeholder: 'Search patient...',
+            ariaLabel: 'Search patients',
+          }}
+        />
         <table style={overview.table}>
           <thead>
             <tr>

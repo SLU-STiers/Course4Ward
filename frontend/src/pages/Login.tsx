@@ -124,8 +124,11 @@ export function Login() {
       if ('Notification' in window && Notification.permission === 'default') {
         void Notification.requestPermission();
       }
-    } catch {
-      setResetMessage('Something went wrong. Please contact the IT desk.');
+    } catch (err: any) {
+      const backendMessage = err?.response?.data?.message;
+      setResetMessage(
+        backendMessage || 'Something went wrong. Please contact the IT desk.'
+      );
     }
   }
 

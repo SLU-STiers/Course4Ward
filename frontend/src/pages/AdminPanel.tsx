@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Filter, ArrowUpDown } from 'lucide-react';
+import { Users, KeyRound, Clock3, ClipboardList, TrendingUp } from 'lucide-react';
 import { adminApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
-import { Button, FilterSortMenu, PageHeader, SearchField, SortDirectionToggle, StatusBadge } from '../components/ui';
+import { SidebarProfile } from '../components/layout/SidebarProfile';
+import { DataTableToolbar, PageHeader, StatusBadge } from '../components/ui';
 import dashboardIcon from '../Img/dashboard.png';
 import userIcon from '../Img/user.png';
 import requestsIcon from '../Img/requests.png';
@@ -75,20 +76,12 @@ export function AdminPanel() {
           { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
         ],
         profile: (
-          <div style={styles.sidebarProfile}>
-            <div style={styles.profileAvatar}>
-              {user?.firstName?.[0] ?? 'A'}{user?.lastName?.[0] ?? 'D'}
-            </div>
-            <div style={styles.profileDetails}>
-              <div style={styles.profileName}>
-                {user?.firstName ? `${user.firstName} ${user.lastName}` : 'Admin User'}
-              </div>
-              <div style={styles.profileEmail}>Administrator</div>
-            </div>
-            <Button variant="secondary" size="sm" onClick={handleLogout}>
-              Log out
-            </Button>
-          </div>
+          <SidebarProfile
+            initials={`${user?.firstName?.[0] ?? 'A'}${user?.lastName?.[0] ?? 'D'}`}
+            name={user?.firstName ? `${user.firstName} ${user.lastName}` : 'Admin User'}
+            subtitle="Administrator"
+            onLogout={handleLogout}
+          />
         ),
       }}
       header={
@@ -119,7 +112,6 @@ function DashboardView() {
   const [sortField, setSortField] = useState<'id' | 'name' | 'date'>('id');
   const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('ascending');
   const [page, setPage] = useState(1);
-  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | null>(null);
   const pageSize = 5;
   const { data: logs } = useQuery({
     queryKey: ['audit-logs'],
@@ -166,77 +158,66 @@ function DashboardView() {
           title="Total Users"
           value={String(summary?.totalUsers ?? 0)}
           trend={`${summary?.activeUsers ?? 0} active accounts`}
-          isUp={true}
-          icon="👤"
+          icon={<Users size={24} strokeWidth={2} />}
         />
         <MetricCard
           title="Pending Resets"
           value={String(summary?.pendingResets ?? 0)}
           trend="Awaiting admin review"
-          isUp={true}
-          icon="🔐"
+          icon={<KeyRound size={24} strokeWidth={2} />}
         />
         <MetricCard
           title="Summaries Pending"
           value={String(summary?.pendingSummaries ?? 0)}
           trend={`${summary?.approvedSummaries ?? 0} approved`}
-          isUp={true}
-          icon="🕒"
+          icon={<Clock3 size={24} strokeWidth={2} />}
         />
         <MetricCard
           title="Orders Today"
           value={String(ordersAnalytics?.[0]?.count ?? 0)}
           trend="Latest daily bucket"
-          isUp={true}
-          icon="📋"
+          icon={<ClipboardList size={24} strokeWidth={2} />}
         />
       </div>
 
       {/* ACTIVITY LOGS SECTION */}
       <div style={styles.cardContainer}>
         {/* Table Filters Bar */}
-        <div style={styles.activityHeader}>
+        <div style={{ ...styles.activityHeader, flexDirection: 'column', alignItems: 'stretch' }}>
           <h3 style={styles.tableTitle}>Activity Logs</h3>
-          <div style={styles.activityToolbar}>
-            <div style={styles.activitySearch}>
-              <input
-                type="search"
-                placeholder="Search activity logs..."
-                value={searchTerm}
-                onChange={(event) => { setSearchTerm(event.target.value); setPage(1); }}
-                style={styles.activitySearchInput}
-              />
-              <span style={styles.activitySearchIcon}>⌕</span>
-            </div>
-            <div style={styles.hoverMenu} onMouseEnter={() => setOpenMenu('filter')} onMouseLeave={() => setOpenMenu(null)}>
-              <button type="button" style={styles.toolbarButton}><Filter size={14} /> Filter</button>
-              {openMenu === 'filter' && (
-                <div style={styles.activityMenu}>
-                  <span style={styles.menuTitle}>Profession</span>
-                  {['all', 'PHYSICIAN', 'NURSE', 'CLAIMS_PROCESSOR', 'ADMIN'].map((profession) => (
-                    <button type="button" key={profession} style={styles.menuOption} onClick={() => { setProfessionFilter(profession); setPage(1); }}>
-                      {profession[0].toUpperCase() + profession.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={styles.hoverMenu} onMouseEnter={() => setOpenMenu('sort')} onMouseLeave={() => setOpenMenu(null)}>
-              <button type="button" style={styles.toolbarButton}><ArrowUpDown size={14} /> Sort by</button>
-              {openMenu === 'sort' && (
-                <div style={styles.activityMenu}>
-                  {([['id', 'ID'], ['name', 'Name'], ['date', 'Date']] as const).map(([field, label]) => (
-                    <button type="button" key={field} style={styles.menuOption} onClick={() => { setSortField(field); setPage(1); }}>
-                      {label} {sortField === field ? (sortDirection === 'ascending' ? '↑' : '↓') : ''}
-                    </button>
-                  ))}
-                  <button type="button" style={styles.menuOption} onClick={() => setSortDirection((direction) => direction === 'ascending' ? 'descending' : 'ascending')}>
-                    {sortDirection === 'ascending' ? 'Descending' : 'Ascending'}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          <DataTableToolbar
+            className="admin-activity-toolbar"
+            searchProps={{
+              value: searchTerm,
+              onChange: (value) => { setSearchTerm(value); setPage(1); },
+              placeholder: 'Search activity logs...',
+              ariaLabel: 'Search activity logs',
+            }}
+            filterProps={{
+              title: 'Profession',
+              options: [
+                { value: 'all', label: 'All professions' },
+                { value: 'PHYSICIAN', label: 'Physician' },
+                { value: 'NURSE', label: 'Nurse' },
+                { value: 'CLAIMS_PROCESSOR', label: 'Claims processor' },
+                { value: 'ADMIN', label: 'Admin' },
+              ],
+              value: professionFilter,
+              onChange: (value) => { setProfessionFilter(value); setPage(1); },
+            }}
+            sortProps={{
+              title: 'Sort activity logs by',
+              options: [
+                { value: 'id', label: 'ID' },
+                { value: 'name', label: 'Name' },
+                { value: 'date', label: 'Date' },
+              ],
+              value: sortField,
+              onChange: (value) => { setSortField(value as typeof sortField); setPage(1); },
+              direction: sortDirection,
+              onDirectionChange: (direction) => { setSortDirection(direction); setPage(1); },
+            }}
+          />
         </div>
 
         {/* Activity Table */}
@@ -313,21 +294,18 @@ function ConfirmationDialog({
   );
 }
 
-function MetricCard({ title, value, trend, isUp, icon }: any) {
+function MetricCard({ title, value, trend, icon }: { title: string; value: string; trend: string; icon: ReactNode }) {
   return (
     <div style={styles.metricCard}>
       <div style={styles.metricHeader}>
-        <div>
-          <div style={styles.metricTitle}>
-            <span style={{ marginRight: '6px' }}>{icon}</span>
-            CF4
-          </div>
-          <div style={styles.metricSubTitle}>{title}</div>
+        <div style={styles.metricIcon}>{icon}</div>
+        <div style={styles.metricCopy}>
+          <div style={styles.metricTitle}>{title}</div>
+          <div style={styles.metricValue}>{value}</div>
         </div>
-        <div style={styles.metricValue}>{value}</div>
       </div>
-      <div style={{ ...styles.metricTrend, color: isUp ? '#10b981' : '#f43f5e' }}>
-        <span>{isUp ? '📈' : '📉'}</span> {trend}
+      <div style={styles.metricTrend}>
+        <TrendingUp size={14} aria-hidden="true" /> {trend}
       </div>
     </div>
   );
@@ -521,7 +499,6 @@ function RequestsView() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'PENDING' | 'APPROVED' | 'REJECTED'>('all');
   const [sortField, setSortField] = useState<'name' | 'date'>('date');
   const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
-  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{
     title: string;
@@ -593,31 +570,41 @@ function RequestsView() {
           </div>
         )}
         {/* Header Bar with Search */}
-        <div style={styles.requestsHeader}>
-          <div>
-            <h3 style={styles.requestsTitle}>Password Reset Requests</h3>
-            <p style={styles.requestsSubTitle}>Review and manage user password reset requests.</p>
-          </div>
+        <PageHeader
+          title="Password Reset Requests"
+          description="Review and manage user password reset requests."
+        />
 
-          <div className="dashboard-toolbar" style={{ marginBottom: 0 }}>
-            <SearchField value={searchTerm} onChange={(value) => { setSearchTerm(value); setCurrentPage(1); }} placeholder="Search requests..." ariaLabel="Search password reset requests" />
-            <FilterSortMenu label="Filter" open={openMenu === 'filter'} onToggle={() => setOpenMenu(openMenu === 'filter' ? null : 'filter')}>
-              <strong>Request status</strong>
-              {(['all', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((status) => (
-                <button type="button" key={status} className={statusFilter === status ? 'is-active' : ''} onClick={() => { setStatusFilter(status); setCurrentPage(1); }}>
-                  {status === 'all' ? 'All statuses' : status}
-                </button>
-              ))}
-            </FilterSortMenu>
-            <FilterSortMenu label="Sort" open={openMenu === 'sort'} onToggle={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')}>
-              <strong>Sort requests by</strong>
-              {([['date', 'Requested date'], ['name', 'User name']] as const).map(([field, label]) => (
-                <button type="button" key={field} className={sortField === field ? 'is-active' : ''} onClick={() => { setSortField(field); setCurrentPage(1); }}>{label}</button>
-              ))}
-              <SortDirectionToggle direction={sortDirection} onChange={(direction) => { setSortDirection(direction); setCurrentPage(1); }} />
-            </FilterSortMenu>
-          </div>
-        </div>
+        <DataTableToolbar
+          searchProps={{
+            value: searchTerm,
+            onChange: (value) => { setSearchTerm(value); setCurrentPage(1); },
+            placeholder: 'Search requests...',
+            ariaLabel: 'Search password reset requests',
+          }}
+          filterProps={{
+            title: 'Request status',
+            options: [
+              { value: 'all', label: 'All statuses' },
+              { value: 'PENDING', label: 'PENDING' },
+              { value: 'APPROVED', label: 'APPROVED' },
+              { value: 'REJECTED', label: 'REJECTED' },
+            ],
+            value: statusFilter,
+            onChange: (value) => { setStatusFilter(value as typeof statusFilter); setCurrentPage(1); },
+          }}
+          sortProps={{
+            title: 'Sort requests by',
+            options: [
+              { value: 'date', label: 'Requested date' },
+              { value: 'name', label: 'User name' },
+            ],
+            value: sortField,
+            onChange: (value) => { setSortField(value as typeof sortField); setCurrentPage(1); },
+            direction: sortDirection,
+            onDirectionChange: (direction) => { setSortDirection(direction); setCurrentPage(1); },
+          }}
+        />
 
         {/* Requests Table */}
         <table style={styles.table}>
@@ -635,7 +622,7 @@ function RequestsView() {
           <tbody>
             {currentData.map((item: any) => (
               <tr key={item.id} style={styles.tr}>
-                <td style={{ ...styles.td, fontWeight: 700, color: '#0284c7' }}>
+                <td style={{ ...styles.td, fontWeight: 700, color: 'var(--c4w-color-primary)' }}>
                   {item.id}
                 </td>
                 <td style={styles.td}>
@@ -814,7 +801,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: '36px',
     borderRadius: '50%',
     backgroundColor: '#cbd5e1',
-    color: '#0a5c83',
+    color: 'var(--c4w-color-primary)',
     fontSize: '11px',
     fontWeight: 700,
     display: 'flex',
@@ -872,7 +859,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'absolute',
     top: '-4px',
     right: '-4px',
-    backgroundColor: '#0284c7',
+    backgroundColor: 'var(--c4w-color-primary)',
     color: '#ffffff',
     fontSize: '10px',
     fontWeight: 700,
@@ -986,7 +973,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '16px',
   },
   metricCard: {
-    backgroundColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
     borderRadius: '12px',
     padding: '20px',
     color: '#ffffff',
@@ -996,26 +983,39 @@ const styles: Record<string, React.CSSProperties> = {
   },
   metricHeader: {
     display: 'flex',
-    justifyContent: 'space-between',
+    gap: '14px',
     alignItems: 'flex-start',
   },
-  metricTitle: {
-    fontSize: '11px',
-    fontWeight: 700,
-    opacity: 0.8,
+  metricIcon: {
+    width: '52px',
+    height: '52px',
+    flexShrink: 0,
+    borderRadius: '50%',
+    backgroundColor: '#ffffff',
+    color: 'var(--c4w-color-primary)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  metricSubTitle: {
-    fontSize: '16px',
+  metricCopy: {
+    minWidth: 0,
+  },
+  metricTitle: {
+    fontSize: '14px',
     fontWeight: 700,
+    color: '#ffffff',
   },
   metricValue: {
+    marginTop: '2px',
     fontSize: '32px',
     fontWeight: 800,
+    lineHeight: 1.1,
   },
   metricTrend: {
     marginTop: '12px',
     fontSize: '11px',
     fontWeight: 600,
+    color: '#ffffff',
     display: 'flex',
     alignItems: 'center',
     gap: '4px',
@@ -1041,7 +1041,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     alignItems: 'stretch',
     gap: '12px',
-    marginBottom: '20px',
+    marginBottom: '16px',
   },
   activityToolbar: {
     display: 'flex',
@@ -1082,7 +1082,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #b8cbd2',
     borderRadius: '8px',
     backgroundColor: '#ffffff',
-    color: '#004358',
+    color: 'var(--c4w-color-primary-active)',
     fontSize: '12px',
     fontWeight: 600,
     cursor: 'pointer',
@@ -1163,10 +1163,12 @@ const styles: Record<string, React.CSSProperties> = {
   th: {
     textAlign: 'left',
     padding: '12px 16px',
-    color: '#64748b',
+    color: 'var(--c4w-color-primary)',
+    backgroundColor: 'var(--c4w-color-primary-soft)',
     fontWeight: 700,
-    fontSize: '11px',
-    borderBottom: '1px solid #f1f5f9',
+    fontSize: '12px',
+    borderBottom: '1px solid var(--c4w-color-border)',
+    whiteSpace: 'nowrap',
   },
   tr: {
     borderBottom: '1px solid #f8fafc',
@@ -1187,7 +1189,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '10px 16px',
     borderRadius: '6px',
     border: 'none',
-    backgroundColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
     color: '#ffffff',
     fontWeight: 600,
     cursor: 'pointer',
@@ -1207,9 +1209,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '24px',
+    marginBottom: '16px',
     flexWrap: 'wrap',
-    gap: '16px',
+    gap: '12px',
   },
   requestsTitle: {
     fontSize: '20px',
@@ -1254,7 +1256,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-block',
   },
   actionButton: {
-    backgroundColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
     color: '#ffffff',
     border: 'none',
     padding: '8px 16px',
@@ -1295,9 +1297,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: '24px',
-    paddingTop: '16px',
-    borderTop: '1px solid #f1f5f9',
+    marginTop: '16px',
   },
   activityPagination: {
     display: 'flex',
@@ -1309,9 +1309,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: '1px solid #f1f5f9',
   },
   paginationInfo: {
-    fontSize: '12px',
+    fontSize: '13px',
     color: '#64748b',
-    fontWeight: 500,
   },
   paginationControls: {
     display: 'flex',
@@ -1333,9 +1332,9 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
   pageNumberActive: {
-    backgroundColor: '#0a5c83',
+    backgroundColor: 'var(--c4w-color-primary)',
     color: '#ffffff',
-    borderColor: '#0a5c83',
+    borderColor: 'var(--c4w-color-primary)',
   },
   pageArrowButton: {
     width: '32px',

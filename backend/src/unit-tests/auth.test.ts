@@ -13,6 +13,10 @@ const mockPrismaService = {
     findUnique: jest.fn(),
     update: jest.fn(),
   },
+  passwordResetRequest: {
+    updateMany: jest.fn(),
+    create: jest.fn(),
+  },
 } as unknown as jest.Mocked<PrismaService>;
 
 const mockJwtService = {
@@ -79,6 +83,21 @@ describe('AuthService', () => {
     (jwtService.signAsync as jest.Mock)
       .mockResolvedValueOnce('mock-access-token')
       .mockResolvedValueOnce('mock-refresh-token');
+  });
+
+  describe('requestPasswordReset', () => {
+    it('should throw a clear error when the user ID does not exist', async () => {
+      // Arrange
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+
+      // Act & Assert
+      await expect(
+        service.requestPasswordReset({ userId: 'INVALID-USER' }),
+      ).rejects.toThrow('User ID not found. Please enter the proper user ID.');
+
+      expect(prismaService.passwordResetRequest.updateMany).not.toHaveBeenCalled();
+      expect(prismaService.passwordResetRequest.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('login', () => {
