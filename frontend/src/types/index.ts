@@ -82,3 +82,20 @@ export interface Claim {
   status: ClaimStatus;
   cf4Generated: boolean;
 }
+
+export interface ClaimRecord {
+  id: string;
+  requestedAt: string;
+  status: string;
+  summary: CourseInWard & {
+    summaryDate: string;
+    patient: Patient;
+    orders: Array<PhysicianOrder & {
+      admission: {
+        admissionDate: string;
+        dischargeDate?: string | null;
+      };
+      orderedBy: { firstName: string; lastName: string };
+    }>;
+  };
+}

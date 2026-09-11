@@ -61,6 +61,7 @@ describe('Claims Module', () => {
     updatedAt: new Date(),
     validatedAt: new Date(),
     patient: mockPatient,
+    orders: [],
   };
 
   // Complete mock claim with all required fields
@@ -161,7 +162,18 @@ describe('Claims Module', () => {
         expect(prismaService.summaryApprovalRequest.findMany).toHaveBeenCalledWith({
           orderBy: { id: 'desc' },
           include: {
-            summary: { include: { patient: true } },
+            summary: {
+              include: {
+                patient: true,
+                orders: {
+                  orderBy: { dateCreated: 'desc' },
+                  include: {
+                    admission: { select: { admissionDate: true, dischargeDate: true } },
+                    orderedBy: { select: { firstName: true, lastName: true } },
+                  },
+                },
+              },
+            },
           },
         });
         expect(result).toEqual([mockClaim]);

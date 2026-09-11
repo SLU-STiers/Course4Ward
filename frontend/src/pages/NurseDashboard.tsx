@@ -5,7 +5,7 @@ import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
 import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
 import { useTableState } from '../hooks/useTableState';
-import searchImg from '../Img/search.png';
+import searchImg from '../Img/searchy.png';
 import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';

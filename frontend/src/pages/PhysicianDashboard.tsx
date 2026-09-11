@@ -18,7 +18,7 @@ import {
   StatusBadge,
 } from "../components/ui";
 import { useTableState } from "../hooks/useTableState";
-import searchImg from "../Img/search.png";
+import searchImg from "../Img/searchy.png";
 import documentImg from "../Img/document.png";
 import requestsIcon from "../Img/requests.png";
 
@@ -1234,6 +1234,7 @@ function ManageView() {
   >({});
   const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
+  const [regeneratingSummary, setRegeneratingSummary] = useState(false);
   const [selectedOrderDate, setSelectedOrderDate] = useState("2026-04-15");
 
   useEffect(() => {
@@ -1645,19 +1646,29 @@ function ManageView() {
               <button
                 type="button"
                 style={manage.aiLink}
+                disabled={regeneratingSummary}
+                aria-busy={regeneratingSummary}
                 onClick={() => {
                   const id = summaryIds[selected.id];
-                  if (!id) return;
-                  courseInWardApi.regenerate(id).then(({ data }) => {
-                    setSummaryByPatient((prev) => ({
-                      ...prev,
-                      [selected.id]: data.summaryContent,
-                    }));
-                    setEditingSummary(false);
-                  });
+                  if (!id || regeneratingSummary) return;
+                  setRegeneratingSummary(true);
+                  void courseInWardApi
+                    .regenerate(id)
+                    .then(({ data }) => {
+                      setSummaryByPatient((prev) => ({
+                        ...prev,
+                        [selected.id]: data.summaryContent,
+                      }));
+                      setEditingSummary(false);
+                    })
+                    .catch(() => undefined)
+                    .finally(() => setRegeneratingSummary(false));
                 }}
               >
-                ↻ Regenerate
+                {regeneratingSummary ? (
+                  <span className="ui-btn__spinner" aria-hidden="true" />
+                ) : null}
+                {regeneratingSummary ? "Regenerating..." : "↻ Regenerate"}
               </button>
             </div>
           </div>

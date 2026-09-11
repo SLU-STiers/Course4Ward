@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
@@ -8,6 +8,8 @@ import overviewIcon from '../Img/overview.png';
 import requestsIcon from '../Img/requests.png';
 import exportIcon from '../Img/export.png';
 import { useAuthStore } from '../store/authStore';
+import { claimsApi } from '../services/domainApi';
+import type { ClaimRecord } from '../types';
 
 type TabType = 'overview' | 'requests' | 'export';
 type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4';
@@ -31,10 +33,12 @@ interface SummarizationRequest {
     admissionDate: string;
   };
   summaryText: string;
+  orders: Array<{ content: string; dateCreated: string; doctor: string }>;
 }
 
 interface CF4Patient {
   id: string;
+  claimId: string;
   patientId: string;
   name: string;
   color: string;
@@ -43,100 +47,77 @@ interface CF4Patient {
   selected: boolean;
 }
 
-const MOCK_REQUESTS: SummarizationRequest[] = [
-  {
-    id: 'SUM-0001',
-    doctor: 'Dr. Mike Mentzer',
-    date: '15 Apr 2026',
-    time: '08:00 AM',
-    status: 'Pending Review',
-    patient: {
-      name: 'Sarah Brown',
-      initials: 'SB',
-      patientId: 'SH-2024-0123',
-      age: 29,
-      gender: 'Female',
-      admissionDate: '15 Apr 2026',
-    },
-    summaryText:
-      'Patient was maintained on IV Ceftriaxone every 12 hours, with Paracetamol given as needed for fever. Oxygen support was continued at 2L/min, and repeat laboratory tests were requested. Vital signs were monitored regularly, and the patient remained stable throughout the day.',
-  },
-  {
-    id: 'SUM-0002',
-    doctor: 'Dr. Agcaoili Diddy',
-    date: '15 Apr 2026',
-    time: '07:50 AM',
-    status: 'Pending Review',
-    patient: {
-      name: 'Micheal Owen',
-      initials: 'MO',
-      patientId: 'SH-2024-0122',
-      age: 45,
-      gender: 'Male',
-      admissionDate: '15 Apr 2026',
-    },
-    summaryText: 'Patient presented with mild hypertension. Administered routine meds.',
-  },
-  {
-    id: 'SUM-0003',
-    doctor: 'Dr. Jecy Guillian',
-    date: '14 Apr 2026',
-    time: '04:30 PM',
-    status: 'Approved',
-    patient: {
-      name: 'Mary Jane',
-      initials: 'MJ',
-      patientId: 'SH-2024-0121',
-      age: 32,
-      gender: 'Female',
-      admissionDate: '14 Apr 2026',
-    },
-    summaryText: 'Patient recovering well post-operation. Discharged with oral meds.',
-  },
-  {
-    id: 'SUM-0004',
-    doctor: 'Dr. Mike Mentzer',
-    date: '14 Apr 2026',
-    time: '02:15 PM',
-    status: 'Pending Review',
-    patient: {
-      name: 'Peter Dodle',
-      initials: 'PD',
-      patientId: 'SH-2024-0120',
-      age: 50,
-      gender: 'Male',
-      admissionDate: '14 Apr 2026',
-    },
-    summaryText: 'Observation for respiratory symptoms. Oxygen saturation steady.',
-  },
-  {
-    id: 'SUM-0005',
-    doctor: 'Dr. Agcaoili Diddy',
-    date: '14 Apr 2026',
-    time: '11:45 AM',
-    status: 'Approved',
-    patient: {
-      name: 'Anna Kendrick',
-      initials: 'AK',
-      patientId: 'SH-2024-0119',
-      age: 28,
-      gender: 'Female',
-      admissionDate: '14 Apr 2026',
-    },
-    summaryText: 'Routine checkup completed without complications.',
-  },
-];
+function formatDate(value: string | Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value));
+}
 
-const INITIAL_CF4_PATIENTS: CF4Patient[] = [
-  { id: '1', name: 'Sarah brown', patientId: '1123', admissionDate: '15/04/2026', color: '#ef4444', status: 'admitted', selected: false },
-  { id: '2', name: 'Micheal Owen', patientId: '1122', admissionDate: '15/04/2026', color: '#22c55e', status: 'admitted', selected: false },
-  { id: '3', name: 'Mary Jane', patientId: '1121', admissionDate: '14/04/2026', color: '#84cc16', status: 'admitted', selected: false },
-  { id: '4', name: 'Peter dodle', patientId: '1120', admissionDate: '14/04/2026', color: '#6366f1', status: 'admitted', selected: false },
-  { id: '5', name: 'Peter dodle', patientId: '1119', admissionDate: '14/04/2026', color: '#f43f5e', status: 'discharged', selected: false },
-  { id: '6', name: 'Peter dodle', patientId: '1119', admissionDate: '14/04/2026', color: '#eab308', status: 'discharged', selected: false },
-  
+function formatTime(value: string | Date) {
+  return new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
 
-];
+function calculateAge(dateOfBirth: string | null) {
+  if (!dateOfBirth) return 0;
+  const birthDate = new Date(dateOfBirth);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const birthdayThisYear = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+  if (birthdayThisYear > today) age -= 1;
+  return age;
+}
+
+function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
+  const patient = claim.summary.patient;
+  const order = claim.summary.orders[0];
+  const submittedAt = claim.requestedAt;
+  const admissionDate = order?.admission.admissionDate ?? claim.summary.summaryDate;
+  const patientName = `${patient.firstName} ${patient.lastName}`;
+
+  return {
+    id: claim.id,
+    doctor: order ? `${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Attending physician',
+    date: formatDate(submittedAt),
+    time: formatTime(submittedAt),
+    status: claim.status === 'CF4_GENERATED' || claim.status === 'VALIDATED' ? 'Approved' : 'Pending Review',
+    patient: {
+      name: patientName,
+      initials: `${patient.firstName[0] ?? ''}${patient.lastName[0] ?? ''}`.toUpperCase(),
+      patientId: patient.id,
+      age: calculateAge(patient.dateOfBirth),
+      gender: patient.gender ?? 'Not recorded',
+      admissionDate: formatDate(admissionDate),
+    },
+    summaryText: claim.summary.summaryContent,
+    orders: claim.summary.orders.map((summaryOrder) => ({
+      content: summaryOrder.orderContent,
+      dateCreated: summaryOrder.dateCreated,
+      doctor: `${summaryOrder.orderedBy.firstName} ${summaryOrder.orderedBy.lastName}`,
+    })),
+  };
+}
+
+function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
+  const patient = claim.summary.patient;
+  const admissionDate = claim.summary.orders[0]?.admission.admissionDate ?? claim.summary.summaryDate;
+  const dischargeDate = claim.summary.orders[0]?.admission.dischargeDate;
+
+  return {
+    id: claim.id,
+    claimId: claim.id,
+    name: `${patient.firstName} ${patient.lastName}`,
+    patientId: patient.id,
+    admissionDate: formatDate(admissionDate),
+    color: '#22c55e',
+    status: dischargeDate ? 'discharged' : 'admitted',
+    selected: false,
+  };
+}
 
 function HoverMenu({
   label,
@@ -173,7 +154,7 @@ export function ClaimsProcessorDashboard() {
 
   // Request State
   const [searchQuery, setSearchQuery] = useState('');
-  const [requests, setRequests] = useState<SummarizationRequest[]>(MOCK_REQUESTS);
+  const [requests, setRequests] = useState<SummarizationRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<SummarizationRequest | null>(null);
   const [requestPage, setRequestPage] = useState(1);
   const [requestSortField, setRequestSortField] = useState<RequestSortField>('date');
@@ -185,7 +166,7 @@ export function ClaimsProcessorDashboard() {
   const [requestStatus, setRequestStatus] = useState<'all' | SummarizationRequest['status']>('all');
 
   // CF4 Export State
-  const [cf4Patients, setCf4Patients] = useState<CF4Patient[]>(INITIAL_CF4_PATIENTS);
+  const [cf4Patients, setCf4Patients] = useState<CF4Patient[]>([]);
   const [patientSearch, setPatientSearch] = useState('');
   const [patientPage, setPatientPage] = useState(1);
   const [patientSortField, setPatientSortField] = useState<PatientSortField>('name');
@@ -195,9 +176,10 @@ export function ClaimsProcessorDashboard() {
   const [admissionFrom, setAdmissionFrom] = useState('');
   const [admissionTo, setAdmissionTo] = useState('');
   const [patientStatus, setPatientStatus] = useState<PatientStatus>('all');
-  const [, setPreviewPatient] = useState<CF4Patient | null>(null);
+  const [previewPatient, setPreviewPatient] = useState<CF4Patient | null>(null);
   const [selectedOrderDate, setSelectedOrderDate] = useState('2026-04-15');
   const [evaluator, setEvaluator] = useState('Dr. Mike Mentzer');
+  const overviewRequest = requests.find((request) => request.id === previewPatient?.claimId) ?? requests[0];
 
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
@@ -214,6 +196,16 @@ export function ClaimsProcessorDashboard() {
     progress: 'Uploading...',
     isUploading: true,
   });
+
+  useEffect(() => {
+    claimsApi.findAll().then(({ data }) => {
+      setRequests(data.map(mapClaimToRequest));
+      setCf4Patients(data.map(mapClaimToPatient));
+    }).catch(() => {
+      setRequests([]);
+      setCf4Patients([]);
+    });
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -321,6 +313,21 @@ export function ClaimsProcessorDashboard() {
         isUploading: true,
       });
     }
+  };
+
+  const handleGenerateCf4 = async () => {
+    const selectedPatient = cf4Patients.find((patient) => patient.selected);
+    if (!selectedPatient) return;
+
+    const { data } = await claimsApi.generateCf4(selectedPatient.claimId);
+    setRequests((prev) => prev.map((request) => (
+      request.id === selectedPatient.claimId ? { ...request, status: 'Approved' } : request
+    )));
+    setCf4Patients((prev) => prev.map((patient) => (
+      patient.claimId === selectedPatient.claimId ? { ...patient, selected: false } : patient
+    )));
+    setPreviewPatient(null);
+    alert(`CF4 generated for ${data.cf4Fields.patientName}`);
   };
 
   return (
@@ -471,12 +478,9 @@ export function ClaimsProcessorDashboard() {
               request={selectedRequest}
               onClose={() => setSelectedRequest(null)}
               onRequestRevisions={() => {
-                setRequests((prev) =>
-                  prev.map((req) =>
-                    req.id === selectedRequest.id ? { ...req, status: 'Rejected' } : req
-                  )
-                );
-                setSelectedRequest(null);
+                claimsApi.notifyPhysician(selectedRequest.id).then(() => {
+                  setSelectedRequest(null);
+                });
               }}
             />
           )}
@@ -629,7 +633,7 @@ export function ClaimsProcessorDashboard() {
                     </button>
                     <button
                       style={styles.proceedBtn}
-                      onClick={() => alert('Proceeding to Summary...')}
+                      onClick={handleGenerateCf4}
                     >
                       Proceed to Summary
                     </button>
@@ -707,7 +711,7 @@ export function ClaimsProcessorDashboard() {
                     </button>
                     <button
                       style={styles.proceedBtn}
-                      onClick={() => alert('Proceeding to Summary...')}
+                      onClick={handleGenerateCf4}
                     >
                       Proceed to Summary
                     </button>
@@ -892,45 +896,49 @@ export function ClaimsProcessorDashboard() {
 
                   <div style={overviewStyles.timelineContainer}>
                     <div style={overviewStyles.timelineLine} />
-
-                    <div style={overviewStyles.timelineItem}>
-                      <div style={overviewStyles.timelineMeta}>
-                        <div style={{ fontWeight: 700, color: '#0f172a' }}>April 15,2026</div>
-                        <div style={{ color: '#64748b' }}>Today, 8:00 AM</div>
-                      </div>
-                      <div style={overviewStyles.timelineDot} />
-                      <div style={overviewStyles.orderBox}>
-                        <div style={{ fontWeight: 700, fontSize: '14px', color: '#0f172a', marginBottom: '6px' }}>
-                          Dr. Mike Mentzer
+                    {overviewRequest?.orders.length ? overviewRequest.orders.map((order) => (
+                      <div style={overviewStyles.timelineItem} key={`${overviewRequest.id}-${order.dateCreated}`}>
+                        <div style={overviewStyles.timelineMeta}>
+                          <div style={{ fontWeight: 700, color: '#0f172a' }}>{formatDate(order.dateCreated)}</div>
+                          <div style={{ color: '#64748b' }}>{formatTime(order.dateCreated)}</div>
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: '11px', color: '#334155', marginBottom: '2px' }}>
-                          Orders:
+                        <div style={overviewStyles.timelineDot} />
+                        <div style={overviewStyles.orderBox}>
+                          <div style={{ fontWeight: 700, fontSize: '14px', color: '#0f172a', marginBottom: '6px' }}>
+                            {order.doctor}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: '1.4' }}>
+                            {order.content}
+                          </div>
                         </div>
-                        <ul style={{ margin: 0, paddingLeft: '12px', fontSize: '12px', color: '#334155', lineHeight: '1.4' }}>
-                          <li>• IV Ceftriaxone 1g q12h</li>
-                          <li>• Paracetamol 500mg PRN for fever</li>
-                          <li>• Monitor vital signs every 2 hours</li>
-                          <li>• Chest X-ray</li>
-                        </ul>
                       </div>
-                    </div>
+                    )) : (
+                      <div style={{ padding: '24px', color: '#64748b', fontSize: '13px' }}>
+                        No physician orders are available for the selected claim.
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div style={overviewStyles.aiCard}>
                   <div style={overviewStyles.aiHeader}>
                     <span style={overviewStyles.aiTitle}>AI Summarized</span>
-                    <span style={overviewStyles.aiStatus}>Pending</span>
+                    <span style={overviewStyles.aiStatus}>{overviewRequest?.status ?? 'No claims'}</span>
                   </div>
                   <p style={overviewStyles.aiSummary}>
-                    Patient was maintained on IV Ceftriaxone every 12 hours, with Paracetamol given as needed for fever. Oxygen support was continued at 2L/min, and repeat laboratory tests were requested. Vital signs were monitored regularly, and the patient remained stable throughout the day.
+                    {overviewRequest?.summaryText ?? 'Select a persisted claim to review its AI summary.'}
                   </p>
                   <div style={overviewStyles.aiActions}>
                     <select value={evaluator} onChange={(e) => setEvaluator(e.target.value)} style={overviewStyles.evaluatorSelect} aria-label="Evaluator">
-                      <option>Dr. Mike Mentzer</option>
-                      <option>Dr. Agcaoili Diddy</option>
-                      <option>Dr. Jecy Guillian</option>
+                      <option>{overviewRequest?.doctor ?? 'Attending physician'}</option>
                     </select>
-                    <Button variant="primary" size="sm" onClick={() => alert(`Submitted to ${evaluator}`)}>Submit</Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={!overviewRequest}
+                      onClick={() => overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)}
+                    >
+                      Submit
+                    </Button>
                   </div>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { Search } from 'lucide-react';
+import searchImg from '../../Img/searchy.png';
 
 export interface SearchFieldProps {
   value: string;
@@ -21,7 +21,12 @@ export function SearchField({
 }: SearchFieldProps) {
   return (
     <label className={['ui-search', className ?? ''].filter(Boolean).join(' ')} aria-label={ariaLabel}>
-      <Search size={17} strokeWidth={2} aria-hidden="true" />
+      <img
+        src={searchImg}
+        alt=""
+        aria-hidden="true"
+        style={{ width: 14, height: 14 }}
+      />
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}

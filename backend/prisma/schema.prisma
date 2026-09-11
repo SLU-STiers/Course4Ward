@@ -20,12 +20,21 @@ enum Role {
 }
 
 enum OrderType {
-  MEDICATION
   ADMISSION
   DISCHARGE
-  DIAGNOSTIC
-  OTHER
+  DEFAULT
+
+  @@map("order_type")
 }
+
+enum OrderStatus {
+  TO_ACCOMPLISH
+  ONGOING
+  FINISHED
+
+  @@map("order_status")
+}
+
 
 enum OrderEnteredBy {
   PHYSICIAN
@@ -61,6 +70,14 @@ enum ActionType {
   REGISTER_PATIENT
 }
 
+enum PhilHealthCF4Status {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("philhealth_cf4_status")
+}
+
 enum CommunicationChannel {
   SMS
   EMAIL
@@ -85,6 +102,7 @@ model User {
 
   ordersAsPhysician          PhysicianOrder[]         @relation("OrderingPhysician")
   ordersAsEncoder            PhysicianOrder[]         @relation("EnteredBy")
+  ordersExecuted             PhysicianOrder[]         @relation("ExecutedBy")
   notes                      PhysicianNote[]
   summariesValidated         CourseInWard[]           @relation("ApprovedBy")
   admissions                 PatientAdmission[]
@@ -120,15 +138,16 @@ model Patient {
 }
 
 model PatientAdmission {
-  id            String    @id @default(uuid())
-  admissionDate DateTime
-  dischargeDate DateTime?
-  patientId     String
-  physicianId   String
-
-  patient   Patient @relation(fields: [patientId], references: [id])
-  physician User    @relation(fields: [physicianId], references: [id])
-
+  id                String    @id @default(uuid())
+  admissionDate     DateTime
+  dischargeDate     DateTime?
+  isOutpatient      Boolean   @default(false)
+  outpatientSetAt DateTime?
+  initialAssessment String?
+  patientId         String
+  physicianId       String?      
+  patient           Patient @relation(fields: [patientId], references: [id])
+  physician         User?   @relation(fields: [physicianId], references: [id])
   orders PhysicianOrder[]
 
   @@map("patient_admissions")
@@ -137,6 +156,11 @@ model PatientAdmission {
 model PhysicianOrder {
   id             String                      @id @default(uuid())
   orderContent   String
+  type           OrderType                   @default(DEFAULT)
+  status         OrderStatus                 @default(TO_ACCOMPLISH)
+  nurseComment   String?                     
+  executedById   String?                     
+  executedAt     DateTime?                   
   dateCreated    DateTime                    @default(now())
   dateUpdated    DateTime?                   @updatedAt
   orderEmbedding Unsupported("vector(1024)")?
@@ -150,12 +174,14 @@ model PhysicianOrder {
 
   summarizationId String?
 
-  admission PatientAdmission @relation(fields: [admissionId], references: [id])
-  orderedBy User             @relation("OrderingPhysician", fields: [orderedById], references: [id])
-  encodedBy User             @relation("EnteredBy", fields: [encodedById], references: [id])
-  summary   CourseInWard?    @relation(fields: [summarizationId], references: [id])
+  admission  PatientAdmission @relation(fields: [admissionId], references: [id])
+  orderedBy  User             @relation("OrderingPhysician", fields: [orderedById], references: [id])
+  encodedBy  User             @relation("EnteredBy", fields: [encodedById], references: [id])
+  executedBy User?            @relation("ExecutedBy", fields: [executedById], references: [id])
+  summary    CourseInWard?    @relation(fields: [summarizationId], references: [id])
 
   @@index([admissionId, dateCreated])
+  @@index([executedById])   
   @@map("physician_orders")
 }
 
@@ -175,14 +201,17 @@ model PhysicianNote {
 }
 
 model CourseInWard {
-  id             String        @id @default(uuid())
-  summaryContent String
-  summaryDate    DateTime      @default(now())
-  approvedStatus Boolean?
-  status         SummaryStatus @default(DRAFT_AI)
-  validatorId    String?
-  validatedAt    DateTime?
-  patientId      String
+  id              String               @id @default(uuid())
+  summaryContent  String
+  summaryDate     DateTime             @default(now())
+  approvedStatus  Boolean?
+  status          SummaryStatus        @default(DRAFT_AI)
+  validatorId     String?
+  validatedAt     DateTime?
+  patientId       String
+
+  philhealthCf4Status    PhilHealthCF4Status @default(PENDING)   
+  philhealthCf4DecidedAt DateTime?                               
 
   patient    Patient                  @relation(fields: [patientId], references: [id])
   approvedBy User?                    @relation("ApprovedBy", fields: [validatorId], references: [id])
