@@ -83,11 +83,7 @@ export class AuthService {
       where: { userId: dto.userId },
     });
     if (!user) {
-      // Do not reveal whether a userId exists
-      return {
-        message: 'If the account exists, a reset code was issued.',
-        resetToken: randomBytes(32).toString('hex'),
-      };
+      throw new NotFoundException('User ID not found. Please enter the proper user ID.');
     }
 
     await this.prisma.passwordResetRequest.updateMany({
