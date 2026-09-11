@@ -1600,6 +1600,8 @@ function ManageView() {
     );
   };
 
+  const isToday = browsedOrderDate === todayValue();
+
   return (
     <div style={manage.layout}>
       <section style={manage.listCard}>
@@ -1915,45 +1917,49 @@ function ManageView() {
             </div>
           </div>
 
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Add a new order"
-            rows={2}
-            style={manage.noteArea}
-          />
+          {isToday && (
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Add a new order"
+              rows={2}
+              style={manage.noteArea}
+            />
+          )}
 
-          <div style={manage.orderActions}>
-            <button type="button" style={manage.addBtn} onClick={addOrder}>
-              Add
-            </button>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {submitted && (
-                <span style={{ fontSize: 12, color: "#166534" }}>
-                  Orders saved
-                </span>
-              )}
-              {editingOrders && (
+          {isToday && (
+            <div style={manage.orderActions}>
+              <button type="button" style={manage.addBtn} onClick={addOrder}>
+                Add
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {submitted && (
+                  <span style={{ fontSize: 12, color: "#166534" }}>
+                    Orders saved
+                  </span>
+                )}
+                {editingOrders && (
+                  <button
+                    type="button"
+                    style={manage.cancelBtn}
+                    onClick={() => setEditingOrders(false)}
+                  >
+                    Cancel
+                  </button>
+                )}
                 <button
                   type="button"
-                  style={manage.cancelBtn}
-                  onClick={() => setEditingOrders(false)}
+                  style={manage.submitBtn}
+                  onClick={() => {
+                    setSubmitted(true);
+                    setEditingOrders(false);
+                  }}
                 >
-                  Cancel
+                  Submit
                 </button>
-              )}
-              <button
-                type="button"
-                style={manage.submitBtn}
-                onClick={() => {
-                  setSubmitted(true);
-                  setEditingOrders(false);
-                }}
-              >
-                Submit
-              </button>
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
         <section style={manage.aiCard}>
