@@ -4,7 +4,7 @@ import { PatientsController } from '../patients/patients.controller';
 import { PatientsService } from '../patients/patients.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { OrderEnteredBy, SummaryStatus } from '@prisma/client'; // ✅ Added SummaryStatus
+import { OrderEnteredBy, OrderStatus, OrderType, PhilHealthCF4Status, SummaryStatus } from '@prisma/client';
 
 const mockPrismaService = {
   patient: {
@@ -50,12 +50,20 @@ describe('Patients Module', () => {
         physicianId: 'physician-123',
         admissionDate: new Date('2024-01-01'),
         dischargeDate: null,
+        isOutpatient: false,
+        outpatientSetAt: null,
+        initialAssessment: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         orders: [
           {
             id: 'order-1',
             orderContent: 'Order content',
+            type: OrderType.DEFAULT,
+            status: OrderStatus.TO_ACCOMPLISH,
+            nurseComment: null,
+            executedById: null,
+            executedAt: null,
             dateCreated: new Date(),
             dateUpdated: null,
             orderEmbedding: null,
@@ -93,6 +101,8 @@ describe('Patients Module', () => {
         approvedStatus: null,
         validatorId: null,
         validatedAt: null,
+        philhealthCf4Status: PhilHealthCF4Status.PENDING,
+        philhealthCf4DecidedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         orders: [],

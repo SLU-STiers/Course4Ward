@@ -6,5 +6,5 @@
             "packageManager": "ms-python.python:pip"
         }
     ],
-    "reasonix.model": "custom-api-deepseek-com/deepseek-v4-flash"
+    "reasonix.model": "custom-api-deepseek-com/deepseek-v4.1-flash"
 }

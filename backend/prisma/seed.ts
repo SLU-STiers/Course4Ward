@@ -36,11 +36,12 @@ async function main() {
   // 1) Users — upsert by unique userId (DOC001 may already exist from older seeds).
   const userIds = new Map<string, string>();
   for (const u of users) {
+    const fixedIdOwner = await prisma.user.findUnique({ where: { id: u.id } });
     const record = await prisma.user.upsert({
       where: { userId: u.userId },
       update: {},
       create: {
-        id: u.id,
+        ...(fixedIdOwner && fixedIdOwner.userId !== u.userId ? {} : { id: u.id }),
         userId: u.userId,
         firstName: u.firstName,
         lastName: u.lastName,
@@ -82,6 +83,9 @@ async function main() {
         physicianId: must(userIds.get(a.physicianUserId), `physician '${a.physicianUserId}'`),
         admissionDate: a.admissionDate,
         dischargeDate: a.dischargeDate ?? null,
+        isOutpatient: a.isOutpatient ?? false,
+        outpatientSetAt: a.outpatientSetAt ?? null,
+        initialAssessment: a.initialAssessment ?? null,
       },
     });
     admissionIds.set(a.key, a.id);
@@ -105,6 +109,8 @@ async function main() {
           ? must(userIds.get(c.validatorUserId), `validator '${c.validatorUserId}'`)
           : null,
         validatedAt: c.validatedAt ?? null,
+        philhealthCf4Status: c.philhealthCf4Status ?? undefined,
+        philhealthCf4DecidedAt: c.philhealthCf4DecidedAt ?? null,
       },
     });
     courseIds.set(c.key, c.id);
@@ -119,11 +125,19 @@ async function main() {
         id: o.id,
         orderContent: o.orderContent,
         dateCreated: o.dateCreated,
+        type: o.type ?? undefined,
+        status: o.status ?? undefined,
+        nurseComment: o.nurseComment ?? null,
+        executedById: o.executedByUserId
+          ? must(userIds.get(o.executedByUserId), `executor '${o.executedByUserId}'`)
+          : null,
+        executedAt: o.executedAt ?? null,
         admissionId: must(admissionIds.get(o.admissionKey), `admission '${o.admissionKey}'`),
         orderedById: must(userIds.get(o.orderedByUserId), `physician '${o.orderedByUserId}'`),
         encodedById: must(userIds.get(o.encodedByUserId), `encoder '${o.encodedByUserId}'`),
         enteredByRole: o.enteredByRole,
         active: o.active ?? true,
+        communicationChannel: o.communicationChannel ?? null,
         summarizationId: o.courseKey ? courseIds.get(o.courseKey) ?? null : null,
       },
     });

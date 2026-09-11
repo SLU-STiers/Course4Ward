@@ -4,7 +4,7 @@ import { ClaimsController } from '../claims/claims.controller';
 import { ClaimsService } from '../claims/claims.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { SummaryStatus } from '@prisma/client';
+import { PhilHealthCF4Status, SummaryStatus } from '@prisma/client';
 
 const mockPrismaService = {
   courseInWard: {
@@ -60,7 +60,10 @@ describe('Claims Module', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     validatedAt: new Date(),
+    philhealthCf4Status: PhilHealthCF4Status.PENDING,
+    philhealthCf4DecidedAt: null,
     patient: mockPatient,
+    orders: [],
   };
 
   // Complete mock claim with all required fields
@@ -161,7 +164,18 @@ describe('Claims Module', () => {
         expect(prismaService.summaryApprovalRequest.findMany).toHaveBeenCalledWith({
           orderBy: { id: 'desc' },
           include: {
-            summary: { include: { patient: true } },
+            summary: {
+              include: {
+                patient: true,
+                orders: {
+                  orderBy: { dateCreated: 'desc' },
+                  include: {
+                    admission: { select: { admissionDate: true, dischargeDate: true } },
+                    orderedBy: { select: { firstName: true, lastName: true } },
+                  },
+                },
+              },
+            },
           },
         });
         expect(result).toEqual([mockClaim]);

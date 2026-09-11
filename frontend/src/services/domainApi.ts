@@ -4,6 +4,7 @@ import type {
   PhysicianOrder,
   CourseInWard,
   Claim,
+  ClaimRecord,
   AuthUser,
   PhysicianRequest,
 } from '../types';
@@ -72,7 +73,7 @@ export const courseInWardApi = {
 // --- Claims ---
 export const claimsApi = {
   create: (courseInWardId: string) => api.post<Claim>('/claims', { courseInWardId }),
-  findAll: () => api.get<Claim[]>('/claims'),
+  findAll: () => api.get<ClaimRecord[]>('/claims'),
   physicianRequests: () => api.get<PhysicianRequest[]>('/claims/physician-requests'),
   approvePhysicianRequest: (id: string) => api.patch(`/claims/${id}/approve`),
   notifyPhysician: (id: string) => api.post(`/claims/${id}/notify-physician`),

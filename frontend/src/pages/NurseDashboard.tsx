@@ -6,6 +6,7 @@ import { NotificationBell } from '../components/layout/NotificationBell';
 import { SidebarProfile } from '../components/layout/SidebarProfile';
 import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
 import { useTableState } from '../hooks/useTableState';
+import searchImg from '../Img/searchy.png';
 import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';

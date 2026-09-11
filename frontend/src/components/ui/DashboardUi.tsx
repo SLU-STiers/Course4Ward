@@ -1,21 +1,36 @@
 import type { ReactNode } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Filter, Search } from 'lucide-react';
 import { Button } from './Button';
 import { Popover } from './Popover';
-import { SearchField } from './SearchField';
+import { SortDirectionToggle as UnifiedSortDirectionToggle } from './SortDirectionToggle';
 import { StatusBadge as UnifiedStatusBadge, type StatusValue } from './StatusBadge';
-import { SortDirectionToggle as UnifiedSortDirectionToggle, type SortDirection } from './SortDirectionToggle';
+import searchImg from '../../Img/searchy.png';
 
-/**
- * @deprecated Compatibility shim.
- *
- * This module now delegates to the unified primitives in
- * `src/components/ui` (Button, Popover, SearchField, StatusBadge,
- * SortDirectionToggle). Prefer importing those directly in new code.
- */
+export type SortDirection = 'ascending' | 'descending';
 
-export type { SortDirection };
-export { SearchField };
+export function SearchField({
+  value,
+  onChange,
+  placeholder = 'Search...',
+  ariaLabel = 'Search',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  ariaLabel?: string;
+}) {
+  return (
+    <label className="dashboard-search" aria-label={ariaLabel}>
+      <img src={searchImg} alt="" aria-hidden="true" style={{ width: 14, height: 14 }} />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+      />
+    </label>
+  );
+}
 
 export function ControlButton({
   label,
