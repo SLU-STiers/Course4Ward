@@ -19,6 +19,7 @@ import {
 } from "../components/ui";
 import { useTableState } from "../hooks/useTableState";
 import requestsIcon from "../Img/requests.png";
+import ollamaImg from "../Img/llama.png";
 
 type TabType = "overview" | "manage" | "requests";
 
@@ -360,7 +361,6 @@ function OverviewView() {
                   <th style={overview.th}>Admitted</th>
                   <th style={overview.th}>Days in care</th>
                   <th style={overview.th}>Status</th>
-                  <th style={{ ...overview.th, width: 36 }} />
                 </tr>
               </thead>
               <tbody>
@@ -395,9 +395,6 @@ function OverviewView() {
                   </td>
                   <td style={overview.td}>
                     <StatusBadge status={p.status} showDot />
-                  </td>
-                  <td style={{ ...overview.td, textAlign: "right", width: 36 }}>
-                    <span style={overview.rowDots}>⋯</span>
                   </td>
                 </tr>
               ))}
@@ -1796,50 +1793,6 @@ function ManageView() {
                     <td style={overview.td}>
                       <StatusBadge status={p.status} showDot />
                     </td>
-                    <td
-                      style={{
-                        ...overview.td,
-                        textAlign: "right",
-                        position: "relative",
-                      }}
-                    >
-                      <div
-                        ref={menuOpenId === p.id ? menuRef : undefined}
-                        style={{ position: "relative", display: "inline-block" }}
-                      >
-                        <button
-                          type="button"
-                          style={manage.dotsBtn}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMenuOpenId((id) => (id === p.id ? null : p.id));
-                          }}
-                        >
-                          ⋯
-                        </button>
-                        {menuOpenId === p.id && (
-                          <div
-                            style={manage.rowMenu}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              style={manage.rowMenuItem}
-                              onClick={() => openPatient(p.id, false)}
-                            >
-                              View doctor’s order
-                            </button>
-                            <button
-                              type="button"
-                              style={manage.rowMenuItem}
-                              onClick={() => openPatient(p.id, true)}
-                            >
-                              Edit doctor’s order
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </td>
                   </tr>
                 );
               })}
@@ -2040,7 +1993,12 @@ function ManageView() {
         <section style={manage.aiCard}>
           <div style={manage.aiHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span>✨</span>
+              <span><img
+        src={ollamaImg}
+        alt=""
+        aria-hidden="true"
+        style={{ width: 14, height: 17 }}
+      /></span>
               <h3 style={manage.aiTitle}>AI Summarized</h3>
             </div>
             <span style={manage.aiBadge}>AI Draft ready</span>
@@ -2422,12 +2380,6 @@ const overview: Record<string, React.CSSProperties> = {
     height: 14,
     accentColor: TEAL,
     cursor: "pointer",
-  },
-  rowDots: {
-    color: "#94a3b8",
-    fontSize: 18,
-    letterSpacing: 1,
-    lineHeight: 1,
   },
   dot: {
     width: 11,
