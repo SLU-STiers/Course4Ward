@@ -831,7 +831,7 @@ td {
 .ui-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--c4w-space-sm, 0.75rem);
   flex-wrap: nowrap;
   margin-bottom: var(--c4w-space-md, 1rem);
@@ -886,6 +886,14 @@ td {
 .ui-menu__direction { display: flex; flex-direction: column; gap: 4px; }
 .ui-menu__divider { height: 1px; margin: 8px 0; background: var(--c4w-color-border, #e2e8f0); }
 .ui-menu__extra { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+
+/* Combined filter menu: every filter group inside a single scrollable panel. */
+.ui-popover.ui-popover--filters {
+  min-width: 260px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 
 .ui-menu__option,
 .ui-menu button {

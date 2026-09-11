@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import {
@@ -7,7 +7,7 @@ import {
   ordersApi,
   patientsApi,
 } from "../services/domainApi";
-import type { Patient, PhysicianRequest } from "../types";
+import type { Patient, PhysicianOrder, PhysicianRequest } from "../types";
 import { Layout } from "../components/layout/Layout";
 import { NotificationBell } from "../components/layout/NotificationBell";
 import {
@@ -18,7 +18,6 @@ import {
   StatusBadge,
 } from "../components/ui";
 import { useTableState } from "../hooks/useTableState";
-import searchImg from "../Img/searchy.png";
 import documentImg from "../Img/document.png";
 import requestsIcon from "../Img/requests.png";
 
@@ -35,12 +34,41 @@ type DashboardPatient = {
   name: string;
   patientId: string;
   gender: string;
+  dateOfBirth: string | null;
+  age: number | null;
   admissionDate: string;
+  /** Raw ISO admission date — used for filtering/sorting, never displayed. */
+  admissionDateRaw: string;
   daysInCare: number;
   color: string;
   status: PatientStatus;
   admissions?: Patient["admissions"];
 };
+
+/** Calendar date (YYYY-MM-DD) in local time — safe for `<input type="date">`. */
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function todayValue() {
+  return toDateInputValue(new Date());
+}
+
+function computeAge(dateOfBirth?: string | null): number | null {
+  if (!dateOfBirth) return null;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDelta = today.getMonth() - dob.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age < 0 ? null : age;
+}
 
 function mapPatient(patient: Patient): DashboardPatient {
   const currentAdmission = patient.admissions?.[0];
@@ -62,9 +90,12 @@ function mapPatient(patient: Patient): DashboardPatient {
     name: `${patient.firstName} ${patient.lastName}`,
     patientId: patient.id,
     gender: patient.gender,
+    dateOfBirth: patient.dateOfBirth ?? null,
+    age: computeAge(patient.dateOfBirth),
     admissionDate: admissionDate
       ? new Date(admissionDate).toLocaleDateString("en-GB")
       : "—",
+    admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : "",
     daysInCare,
     color: status === "admitted" ? "#22c55e" : "#ef4444",
     status,
@@ -1153,26 +1184,20 @@ function ReviewSummaryModal({
 }
 
 function CalendarModal({
-  open,
   onClose,
   focusDate,
+  orderDays,
+  onSelect,
 }: {
-  open: boolean;
   onClose: () => void;
   focusDate: Date;
+  /** Order dates (`YYYY-MM-DD`) that may be picked; every other day is disabled. */
+  orderDays: string[];
+  onSelect: (date: Date) => void;
 }) {
   const [cursor, setCursor] = useState(
     () => new Date(focusDate.getFullYear(), focusDate.getMonth(), 1),
   );
-  const [selected, setSelected] = useState(focusDate);
-
-  useEffect(() => {
-    if (!open) return;
-    setCursor(new Date(focusDate.getFullYear(), focusDate.getMonth(), 1));
-    setSelected(focusDate);
-  }, [open, focusDate]);
-
-  if (!open) return null;
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -1182,6 +1207,24 @@ function CalendarModal({
     year: "numeric",
   });
   const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const orderDaySet = new Set(orderDays);
+  const focusKey = toDateInputValue(focusDate);
+
+  // A month may only be navigated to when it actually holds orders.
+  const monthHasOrders = (targetYear: number, targetMonth: number) => {
+    const prefix = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-`;
+    return orderDays.some((day) => day.startsWith(prefix));
+  };
+  const prevMonth = new Date(year, month - 1, 1);
+  const nextMonth = new Date(year, month + 1, 1);
+  const canGoPrev = monthHasOrders(
+    prevMonth.getFullYear(),
+    prevMonth.getMonth(),
+  );
+  const canGoNext = monthHasOrders(
+    nextMonth.getFullYear(),
+    nextMonth.getMonth(),
+  );
 
   return (
     <div style={manage.calOverlay} onClick={onClose}>
@@ -1195,16 +1238,20 @@ function CalendarModal({
         <div style={manage.calNav}>
           <button
             type="button"
-            style={manage.calNavBtn}
-            onClick={() => setCursor(new Date(year, month - 1, 1))}
+            style={canGoPrev ? manage.calNavBtn : manage.calNavBtnDisabled}
+            disabled={!canGoPrev}
+            aria-label="Previous month with orders"
+            onClick={() => setCursor(prevMonth)}
           >
             ‹
           </button>
           <span style={manage.calMonth}>{label}</span>
           <button
             type="button"
-            style={manage.calNavBtn}
-            onClick={() => setCursor(new Date(year, month + 1, 1))}
+            style={canGoNext ? manage.calNavBtn : manage.calNavBtnDisabled}
+            disabled={!canGoNext}
+            aria-label="Next month with orders"
+            onClick={() => setCursor(nextMonth)}
           >
             ›
           </button>
@@ -1217,15 +1264,26 @@ function CalendarModal({
           ))}
           {cells.map((day, i) => {
             const date = day ? new Date(year, month, day) : null;
-            const isSelected = Boolean(date && sameDay(date, selected));
+            const dayValue = date ? toDateInputValue(date) : "";
+            const hasOrders = Boolean(dayValue) && orderDaySet.has(dayValue);
+            const isSelected = hasOrders && dayValue === focusKey;
             return (
               <button
                 key={i}
                 type="button"
-                disabled={!day}
-                onClick={() => date && setSelected(date)}
+                disabled={!hasOrders}
+                aria-label={
+                  date
+                    ? `${date.toLocaleDateString("en-US", {
+                        dateStyle: "long",
+                      })}${hasOrders ? "" : " (no orders)"}`
+                    : undefined
+                }
+                aria-pressed={isSelected}
+                onClick={() => date && hasOrders && onSelect(date)}
                 style={{
                   ...manage.calDay,
+                  ...(hasOrders ? {} : manage.calDayDisabled),
                   ...(isSelected ? manage.calDaySelected : {}),
                   visibility: day ? "visible" : "hidden",
                 }}
@@ -1239,20 +1297,94 @@ function CalendarModal({
     </div>
   );
 }
-void CalendarModal;
+
+/** Admission-date filter presets. `custom:<from>:<to>` is also accepted. */
+const ADMISSION_FILTER_PRESETS: { value: string; label: string }[] = [
+  { value: "all", label: "Any admission date" },
+  { value: "today", label: "Admitted today" },
+  { value: "last7", label: "Admitted in the last 7 days" },
+  { value: "last30", label: "Admitted in the last 30 days" },
+  { value: "custom", label: "Custom range (use dates below)" },
+];
+
+const AGE_BANDS: { value: string; label: string; test: (age: number) => boolean }[] = [
+  { value: "all", label: "All ages", test: () => true },
+  { value: "pediatric", label: "Under 18", test: (age) => age < 18 },
+  { value: "young", label: "18 – 39", test: (age) => age >= 18 && age <= 39 },
+  { value: "middle", label: "40 – 59", test: (age) => age >= 40 && age <= 59 },
+  { value: "senior", label: "60 and above", test: (age) => age >= 60 },
+];
+
+const DAYS_IN_CARE_BANDS: {
+  value: string;
+  label: string;
+  test: (days: number) => boolean;
+}[] = [
+  { value: "all", label: "Any length of stay", test: () => true },
+  { value: "short", label: "0 – 3 days", test: (days) => days <= 3 },
+  { value: "medium", label: "4 – 7 days", test: (days) => days >= 4 && days <= 7 },
+  { value: "long", label: "8+ days", test: (days) => days >= 8 },
+];
+
+const MANAGE_FILTER_KEYS = ["gender", "age", "days", "admitted"];
+
+/** Local calendar date `days` days before today. */
+function daysAgoValue(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return toDateInputValue(date);
+}
+
+function parseCustomRange(value: string) {
+  if (!value.startsWith("custom:")) return { from: "", to: "" };
+  const [, from = "", to = ""] = value.split(":");
+  return { from, to };
+}
+
+function customRangeValue(from: string, to: string) {
+  return `custom:${from}:${to}`;
+}
+
+function admissionMatches(patient: DashboardPatient, value: string) {
+  if (!value || value === "all") return true;
+  const day = patient.admissionDateRaw;
+  if (!day) return false;
+  if (value === "today") return day === todayValue();
+  if (value === "last7") return day >= daysAgoValue(6) && day <= todayValue();
+  if (value === "last30") return day >= daysAgoValue(29) && day <= todayValue();
+  if (value.startsWith("custom:")) {
+    const { from, to } = parseCustomRange(value);
+    if (!from && !to) return true;
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    return true;
+  }
+  return true;
+}
+
+/** Local calendar date of an order timestamp, matching how it is displayed. */
+function orderDayValue(iso: string) {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : toDateInputValue(date);
+}
+
+function formatOrderTime(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function ManageView() {
   const user = useAuthStore((s) => s.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
-  const [search, setSearch] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  const selected = patients.find((p) => p.id === selectedId) ?? patients[0];
   const [ordersByPatient, setOrdersByPatient] = useState<
-    Record<string, string[]>
+    Record<string, PhysicianOrder[]>
   >({});
   const [draft, setDraft] = useState("");
   const [summaryByPatient, setSummaryByPatient] = useState<
@@ -1261,7 +1393,14 @@ function ManageView() {
   const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
-  const [selectedOrderDate, setSelectedOrderDate] = useState("2026-04-15");
+  const [selectedOrderDate, setSelectedOrderDate] = useState(todayValue);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
+  // This tab only manages patients who are currently in the ward.
+  const admittedPatients = useMemo(
+    () => patients.filter((p) => p.status === "admitted"),
+    [patients],
+  );
 
   useEffect(() => {
     patientsApi
@@ -1269,10 +1408,46 @@ function ManageView() {
       .then(({ data }) => {
         const mapped = data.map(mapPatient);
         setPatients(mapped);
-        if (mapped[0]) setSelectedId(mapped[0].id);
+        const firstAdmitted = mapped.find((p) => p.status === "admitted");
+        if (firstAdmitted) setSelectedId(firstAdmitted.id);
       })
-      .catch(() => setPatients([]));
+      .catch(() => setPatients([]))
+      .finally(() => setLoading(false));
   }, []);
+
+  // Shared search / filter / sort / pagination state for the patient list.
+  const table = useTableState<DashboardPatient>({
+    items: admittedPatients,
+    pageSize: 8,
+    searchFields: (p) => [p.name, p.gender],
+    filterPredicates: {
+      gender: (p, value) => value === "all" || p.gender.toLowerCase() === value,
+      age: (p, value) =>
+        value === "all" ||
+        (p.age !== null &&
+          (AGE_BANDS.find((band) => band.value === value)?.test(p.age) ?? true)),
+      days: (p, value) =>
+        value === "all" ||
+        (DAYS_IN_CARE_BANDS.find((band) => band.value === value)?.test(
+          p.daysInCare,
+        ) ?? true),
+      admitted: (p, value) => admissionMatches(p, value),
+    },
+    initialFilters: { gender: "all", age: "all", days: "all", admitted: "all" },
+    sorters: {
+      name: (p) => p.name,
+      admitted: (p) => p.admissionDateRaw,
+      days: (p) => p.daysInCare,
+      age: (p) => p.age ?? -1,
+    },
+    initialSort: { field: "admitted", direction: "descending" },
+  });
+
+  // Keep the selection on a patient that still matches the active filters.
+  const selected =
+    table.filtered.find((p) => p.id === selectedId) ??
+    table.rows[0] ??
+    table.filtered[0];
 
   useEffect(() => {
     if (!selected) return;
@@ -1283,7 +1458,7 @@ function ManageView() {
       .then(([ordersResponse, summariesResponse]) => {
         setOrdersByPatient((previous) => ({
           ...previous,
-          [selected.id]: ordersResponse.data.map((order) => order.orderContent),
+          [selected.id]: ordersResponse.data,
         }));
         const latest = summariesResponse.data[0];
         if (latest) {
@@ -1300,16 +1475,38 @@ function ManageView() {
       .catch(() => undefined);
   }, [selected?.id]);
 
-  const orders = selected ? (ordersByPatient[selected.id] ?? []) : [];
+  const selectedOrders = selected ? ordersByPatient[selected.id] : undefined;
+  const allOrders = useMemo(() => selectedOrders ?? [], [selectedOrders]);
+  // Only dates that actually hold orders are browsable in the calendar.
+  const orderDays = useMemo(() => {
+    const days = new Set<string>();
+    for (const order of allOrders) {
+      const day = orderDayValue(order.dateCreated);
+      if (day) days.add(day);
+    }
+    return Array.from(days).sort();
+  }, [allOrders]);
+
+  // Fall back to a day that actually has orders so no order-less date is browsed.
+  const browsedOrderDate = orderDays.includes(selectedOrderDate)
+    ? selectedOrderDate
+    : (orderDays[orderDays.length - 1] ?? selectedOrderDate);
+  const dayOrders = allOrders.filter(
+    (order) => orderDayValue(order.dateCreated) === browsedOrderDate,
+  );
   const summary =
     (selected && summaryByPatient[selected.id]) ??
     "No AI summary yet. Submit orders to generate a draft.";
 
-  const filtered = patients.filter(
-    (p) =>
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.patientId.includes(search),
-  );
+  const admissionFilter = table.filters.admitted ?? "all";
+  const customRange = parseCustomRange(admissionFilter);
+  const admissionPreset = admissionFilter.startsWith("custom:")
+    ? "custom"
+    : admissionFilter;
+  const activeFilterCount = MANAGE_FILTER_KEYS.filter((key) => {
+    const value = table.filters[key];
+    return value !== undefined && value !== "" && value !== "all";
+  }).length;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -1327,6 +1524,7 @@ function ManageView() {
     setDraft("");
     setSubmitted(false);
     setEditingOrders(edit);
+    setCalendarOpen(false);
     setMenuOpenId(null);
   };
 
@@ -1340,120 +1538,329 @@ function ManageView() {
         orderedById: user.id,
         orderContent: text,
       })
-      .then(() => {
+      .then(({ data }) => {
         setOrdersByPatient((prev) => ({
           ...prev,
-          [selected.id]: [...(prev[selected.id] ?? []), text],
+          [selected.id]: [...(prev[selected.id] ?? []), data],
         }));
         setDraft("");
         setSubmitted(false);
-      });
+        // Jump to the day the new order was filed so it is visible.
+        setSelectedOrderDate(orderDayValue(data.dateCreated) || todayValue());
+      })
+      .catch(() => undefined);
   };
 
-  const updateOrder = (idx: number, text: string) => {
+  const updateOrder = (orderId: string, text: string) => {
     if (!selected) return;
-    setOrdersByPatient((prev) => {
-      const next = [...(prev[selected.id] ?? [])];
-      next[idx] = text;
-      return { ...prev, [selected.id]: next };
-    });
+    setOrdersByPatient((prev) => ({
+      ...prev,
+      [selected.id]: (prev[selected.id] ?? []).map((order) =>
+        order.id === orderId ? { ...order, orderContent: text } : order,
+      ),
+    }));
     setSubmitted(false);
   };
 
-  const removeOrder = (idx: number) => {
+  const removeOrder = (orderId: string) => {
     if (!selected) return;
-    setOrdersByPatient((prev) => {
-      const next = (prev[selected.id] ?? []).filter((_, i) => i !== idx);
-      return { ...prev, [selected.id]: next };
-    });
+    setOrdersByPatient((prev) => ({
+      ...prev,
+      [selected.id]: (prev[selected.id] ?? []).filter(
+        (order) => order.id !== orderId,
+      ),
+    }));
     setSubmitted(false);
   };
 
-  if (!selected)
+  if (loading)
     return (
       <div style={{ color: "#64748b", padding: 24 }}>
         Loading assigned patients...
       </div>
     );
 
+  const selectedDateLabel = browsedOrderDate
+    ? new Date(`${browsedOrderDate}T00:00:00`).toLocaleDateString("en-GB")
+    : "—";
+  const calendarFocusDate = browsedOrderDate
+    ? new Date(`${browsedOrderDate}T00:00:00`)
+    : new Date();
+  // Order dates are the only navigable stops — order-less days are skipped.
+  const hasPrevOrderDay = orderDays.some((day) => day < browsedOrderDate);
+  const hasNextOrderDay = orderDays.some((day) => day > browsedOrderDate);
+  const goToAdjacentOrderDay = (direction: -1 | 1) => {
+    const candidates = orderDays.filter((day) =>
+      direction < 0 ? day < browsedOrderDate : day > browsedOrderDate,
+    );
+    if (!candidates.length) return;
+    setSelectedOrderDate(
+      direction < 0 ? candidates[candidates.length - 1] : candidates[0],
+    );
+  };
+
   return (
     <div style={manage.layout}>
       <section style={manage.listCard}>
         <div style={manage.listHeader}>
-          <h2 style={manage.listTitle}>Patients List</h2>
-          <div style={manage.searchWrap}>
-            <img
-              src={searchImg}
-              alt="Search"
-              style={{ width: 14, height: 14 }}
-            />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
-              style={manage.searchInput}
-            />
+          <div>
+            <h2 style={manage.listTitle}>Patients List</h2>
+            <p style={manage.listHint}>
+              Showing active patients currently admitted only.
+            </p>
           </div>
         </div>
+
         <DataTableToolbar
           searchProps={{
-            value: search,
-            onChange: setSearch,
-            placeholder: 'Search patient...',
-            ariaLabel: 'Search patients',
+            value: table.query,
+            onChange: table.setQuery,
+            placeholder: "Search patient...",
+            ariaLabel: "Search patients",
           }}
-        />
-        <table style={overview.table}>
-          <thead>
-            <tr>
-              <th style={overview.th}>Patient</th>
-              <th style={overview.th}>Patient ID</th>
-              <th style={overview.th}>Admission Date</th>
-              <th style={{ ...overview.th, width: 40 }} />
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((p) => {
-              const active = p.id === selected.id;
-              return (
-                <tr
-                  key={p.id}
-                  onClick={() => openPatient(p.id, false)}
-                  style={{
-                    backgroundColor: active ? "#eef6f8" : "transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  <td style={overview.td}>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 10 }}
-                    >
+          filters={[
+            {
+              label: "Sex",
+              title: "Sex",
+              options: [
+                { value: "all", label: "All" },
+                { value: "male", label: "Male" },
+                { value: "female", label: "Female" },
+              ],
+              value: table.filters.gender ?? "all",
+              onChange: (value) => table.setFilter("gender", value),
+            },
+            {
+              label: "Age",
+              title: "Age",
+              options: AGE_BANDS.map((band) => ({
+                value: band.value,
+                label: band.label,
+              })),
+              value: table.filters.age ?? "all",
+              onChange: (value) => table.setFilter("age", value),
+            },
+            {
+              label: "Days in care",
+              title: "Days in care",
+              options: DAYS_IN_CARE_BANDS.map((band) => ({
+                value: band.value,
+                label: band.label,
+              })),
+              value: table.filters.days ?? "all",
+              onChange: (value) => table.setFilter("days", value),
+            },
+            {
+              label: "Admission date",
+              title: "Admission date",
+              options: ADMISSION_FILTER_PRESETS,
+              value: admissionPreset,
+              onChange: (value) =>
+                table.setFilter(
+                  "admitted",
+                  value === "custom"
+                    ? admissionFilter.startsWith("custom:")
+                      ? admissionFilter
+                      : customRangeValue("", "")
+                    : value,
+                ),
+              extra: (
+                <div style={manage.filterRange}>
+                  <label style={manage.filterRangeField}>
+                    <span style={manage.filterRangeLabel}>From</span>
+                    <input
+                      type="date"
+                      value={customRange.from}
+                      onChange={(event) =>
+                        table.setFilter(
+                          "admitted",
+                          customRangeValue(event.target.value, customRange.to),
+                        )
+                      }
+                      style={manage.filterRangeInput}
+                    />
+                  </label>
+                  <label style={manage.filterRangeField}>
+                    <span style={manage.filterRangeLabel}>To</span>
+                    <input
+                      type="date"
+                      value={customRange.to}
+                      onChange={(event) =>
+                        table.setFilter(
+                          "admitted",
+                          customRangeValue(customRange.from, event.target.value),
+                        )
+                      }
+                      style={manage.filterRangeInput}
+                    />
+                  </label>
+                </div>
+              ),
+            },
+          ]}
+          activeFilterCount={activeFilterCount}
+          sortProps={{
+            title: "Sort patients by",
+            options: [
+              { value: "admitted", label: "Admission date" },
+              { value: "days", label: "Days in care" },
+              { value: "age", label: "Age" },
+              { value: "name", label: "Patient name" },
+            ],
+            value: table.sort.field,
+            onChange: table.setSortField,
+            direction: table.sort.direction,
+            onDirectionChange: (direction) =>
+              table.setSort({ field: table.sort.field, direction }),
+          }}
+        >
+          {activeFilterCount > 0 ? (
+            <Button variant="ghost" size="sm" onClick={table.resetFilters}>
+              Clear filters ({activeFilterCount})
+            </Button>
+          ) : null}
+        </DataTableToolbar>
+        <div style={manage.tableScroll}>
+          <table style={overview.table}>
+            <thead>
+              <tr>
+                <th style={{ ...overview.th, width: 22 }} />
+                <th style={overview.th}>Patient</th>
+                <th style={overview.th}>Sex</th>
+                <th style={overview.th}>Age</th>
+                <th style={overview.th}>Admitted</th>
+                <th style={overview.th}>Days in care</th>
+                <th style={overview.th}>Status</th>
+                <th style={{ ...overview.th, width: 44 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {table.rows.map((p) => {
+                const active = p.id === selected?.id;
+                return (
+                  <tr
+                    key={p.id}
+                    onClick={() => openPatient(p.id, false)}
+                    style={{
+                      backgroundColor: active ? "#eef6f8" : "transparent",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <td style={{ ...overview.td, width: 22 }}>
                       <span
-                        style={{
-                          ...overview.dot,
-                          backgroundColor:
-                            p.status === "admitted" ? "#22c55e" : "#ef4444",
-                        }}
+                        style={{ ...overview.dot, backgroundColor: p.color }}
                       />
-                      <span style={{ fontWeight: 600, color: "#334155" }}>
-                        {p.name}
-                      </span>
-                    </div>
-                  </td>
-                  <td style={{ ...overview.td, color: "#64748b" }}>
-                    {p.patientId}
-                  </td>
-                  <td style={{ ...overview.td, color: "#64748b" }}>
-                    {p.admissionDate}
+                    </td>
+                    <td
+                      style={{
+                        ...overview.td,
+                        fontWeight: 600,
+                        color: "#334155",
+                      }}
+                    >
+                      {p.name}
+                    </td>
+                    <td style={{ ...overview.td, color: "#64748b" }}>
+                      {p.gender}
+                    </td>
+                    <td style={{ ...overview.td, color: "#64748b" }}>
+                      {p.age ?? "—"}
+                    </td>
+                    <td style={{ ...overview.td, color: "#64748b" }}>
+                      {p.admissionDate}
+                    </td>
+                    <td style={{ ...overview.td, color: "#64748b" }}>
+                      {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
+                    </td>
+                    <td style={overview.td}>
+                      <StatusBadge status={p.status} showDot />
+                    </td>
+                    <td
+                      style={{
+                        ...overview.td,
+                        textAlign: "right",
+                        position: "relative",
+                      }}
+                    >
+                      <div
+                        ref={menuOpenId === p.id ? menuRef : undefined}
+                        style={{ position: "relative", display: "inline-block" }}
+                      >
+                        <button
+                          type="button"
+                          style={manage.dotsBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMenuOpenId((id) => (id === p.id ? null : p.id));
+                          }}
+                        >
+                          ⋯
+                        </button>
+                        {menuOpenId === p.id && (
+                          <div
+                            style={manage.rowMenu}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              style={manage.rowMenuItem}
+                              onClick={() => openPatient(p.id, false)}
+                            >
+                              View doctor’s order
+                            </button>
+                            <button
+                              type="button"
+                              style={manage.rowMenuItem}
+                              onClick={() => openPatient(p.id, true)}
+                            >
+                              Edit doctor’s order
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!table.rows.length && (
+                <tr>
+                  <td
+                    style={{ ...overview.td, color: "#94a3b8" }}
+                    colSpan={9}
+                  >
+                    {admittedPatients.length === 0
+                      ? "You have no admitted patients assigned to you."
+                      : "No admitted patients match the current filters."}
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="ui-table-footer">
+          <span className="ui-table-footer__info">
+            Showing {table.rangeStart} to {table.rangeEnd} of {table.total}{" "}
+            patients
+          </span>
+          <Pagination
+            page={table.page}
+            pageCount={table.pageCount}
+            onPageChange={table.setPage}
+          />
+        </div>
       </section>
 
       <div style={manage.rightCol}>
+        {!selected ? (
+          <section style={manage.orderCard}>
+            <p style={manage.listHint}>
+              Select a patient from the list to view their doctor’s orders and
+              AI summary.
+            </p>
+          </section>
+        ) : (
+          <>
         <section style={manage.orderCard}>
           <div style={manage.orderHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1467,26 +1874,33 @@ function ManageView() {
             <div style={manage.dateNavigator}>
               <button
                 type="button"
-                style={manage.dateNavBtn}
-                onClick={() =>
-                  setSelectedOrderDate((value) => shiftDate(value, -1))
+                style={
+                  hasPrevOrderDay ? manage.dateNavBtn : manage.dateNavBtnDisabled
                 }
+                disabled={!hasPrevOrderDay}
+                aria-label="Previous date with orders"
+                onClick={() => goToAdjacentOrderDay(-1)}
               >
                 ‹
               </button>
-              <input
-                type="date"
-                value={selectedOrderDate}
-                onChange={(event) => setSelectedOrderDate(event.target.value)}
-                style={manage.dateInput}
-                aria-label="Order date"
-              />
               <button
                 type="button"
-                style={manage.dateNavBtn}
-                onClick={() =>
-                  setSelectedOrderDate((value) => shiftDate(value, 1))
+                style={manage.dateInput}
+                onClick={() => setCalendarOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={calendarOpen}
+                aria-label={`Order date ${selectedDateLabel}. Open calendar`}
+              >
+                {selectedDateLabel}
+              </button>
+              <button
+                type="button"
+                style={
+                  hasNextOrderDay ? manage.dateNavBtn : manage.dateNavBtnDisabled
                 }
+                disabled={!hasNextOrderDay}
+                aria-label="Next date with orders"
+                onClick={() => goToAdjacentOrderDay(1)}
               >
                 ›
               </button>
@@ -1496,7 +1910,7 @@ function ManageView() {
           <div style={manage.orderBox}>
             <div style={manage.patientMeta}>
               <div style={{ fontWeight: 700, color: "#0f172a" }}>
-                Patient: {selected.name}
+                Patient: {selected?.name ?? "—"}
               </div>
               <div
                 style={{
@@ -1506,39 +1920,39 @@ function ManageView() {
                   marginTop: 8,
                 }}
               >
-                Orders:
+                Orders on {selectedDateLabel} ({dayOrders.length})
               </div>
             </div>
 
             <div style={manage.orderLines}>
-              {orders.map((line, idx) =>
+              {dayOrders.map((order) =>
                 editingOrders ? (
-                  <div
-                    key={`${selected.id}-${idx}`}
-                    style={manage.orderEditRow}
-                  >
+                  <div key={order.id} style={manage.orderEditRow}>
                     <input
-                      value={line}
-                      onChange={(e) => updateOrder(idx, e.target.value)}
+                      value={order.orderContent}
+                      onChange={(e) => updateOrder(order.id, e.target.value)}
                       style={manage.orderEditInput}
                     />
                     <button
                       type="button"
                       style={manage.removeOrderBtn}
-                      onClick={() => removeOrder(idx)}
+                      onClick={() => removeOrder(order.id)}
                     >
                       ✕
                     </button>
                   </div>
                 ) : (
-                  <div key={`${selected.id}-${idx}`} style={manage.orderBullet}>
-                    • {line}
+                  <div key={order.id} style={manage.orderBullet}>
+                    <span style={manage.orderTime}>
+                      {formatOrderTime(order.dateCreated)}
+                    </span>{" "}
+                    • {order.orderContent}
                   </div>
                 ),
               )}
-              {!orders.length && (
+              {!dayOrders.length && (
                 <div style={{ ...manage.orderLine, color: "#94a3b8" }}>
-                  No orders yet.
+                  No orders on {selectedDateLabel}.
                 </div>
               )}
             </div>
@@ -1601,7 +2015,7 @@ function ManageView() {
                 onChange={(e) =>
                   setSummaryByPatient((prev) => ({
                     ...prev,
-                    [selected.id]: e.target.value,
+                    [selected?.id ?? ""]: e.target.value,
                   }))
                 }
                 rows={6}
@@ -1663,15 +2077,23 @@ function ManageView() {
             </div>
           </div>
         </section>
+
+        {calendarOpen && (
+          <CalendarModal
+            onClose={() => setCalendarOpen(false)}
+            focusDate={calendarFocusDate}
+            orderDays={orderDays}
+            onSelect={(date) => {
+              setSelectedOrderDate(toDateInputValue(date));
+              setCalendarOpen(false);
+            }}
+          />
+        )}
+          </>
+        )}
       </div>
     </div>
   );
-}
-
-function shiftDate(value: string, days: number) {
-  const date = new Date(`${value}T00:00:00`);
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
 }
 
 const shell: Record<string, React.CSSProperties> = {
@@ -2212,23 +2634,41 @@ const manage: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     color: "#0f172a",
   },
-  searchWrap: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    border: "1px solid #e2e8f0",
-    borderRadius: 20,
-    padding: "6px 12px",
-    backgroundColor: "#ffffff",
-    minWidth: 160,
+  listHint: {
+    margin: "4px 0 0",
+    fontSize: 12,
+    color: "#64748b",
   },
-  searchInput: {
-    border: "none",
-    outline: "none",
-    fontSize: 13,
-    width: 120,
-    padding: 0,
-    background: "transparent",
+  tableScroll: {
+    overflowX: "auto",
+  },
+  filterRange: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  },
+  filterRangeField: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  },
+  filterRangeLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#64748b",
+  },
+  filterRangeInput: {
+    border: "1px solid #dbe3ec",
+    borderRadius: 8,
+    padding: "6px 8px",
+    fontSize: 12,
+    color: "#0f172a",
+    backgroundColor: "#ffffff",
+  },
+  orderTime: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#94a3b8",
   },
   rightCol: {
     display: "flex",
@@ -2274,6 +2714,16 @@ const manage: Record<string, React.CSSProperties> = {
     padding: 0,
     cursor: "pointer",
   },
+  dateNavBtnDisabled: {
+    width: 28,
+    height: 28,
+    border: "none",
+    backgroundColor: "transparent",
+    color: "#cbd5e1",
+    fontSize: 18,
+    padding: 0,
+    cursor: "not-allowed",
+  },
   dateInput: {
     width: 126,
     border: "1px solid #dbe3ec",
@@ -2282,6 +2732,9 @@ const manage: Record<string, React.CSSProperties> = {
     color: "#0f172a",
     backgroundColor: "#ffffff",
     fontSize: 12,
+    fontFamily: "inherit",
+    textAlign: "center",
+    cursor: "pointer",
   },
   orderBox: {
     backgroundColor: "#f8fafc",
@@ -2519,6 +2972,16 @@ const manage: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     padding: 0,
   },
+  calNavBtnDisabled: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    border: "1px solid #e2e8f0",
+    background: "#fff",
+    color: "#cbd5e1",
+    cursor: "not-allowed",
+    padding: 0,
+  },
   calMonth: {
     fontSize: 14,
     fontWeight: 700,
@@ -2545,6 +3008,10 @@ const manage: Record<string, React.CSSProperties> = {
     color: "#334155",
     cursor: "pointer",
     padding: 0,
+  },
+  calDayDisabled: {
+    color: "#cbd5e1",
+    cursor: "not-allowed",
   },
   calDaySelected: {
     backgroundColor: TEAL,
