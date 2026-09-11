@@ -1,4 +1,4 @@
-import searchImg from '../../Img/search.png';
+import searchImg from '../../Img/searchy.png';
 
 export interface SearchFieldProps {
   value: string;

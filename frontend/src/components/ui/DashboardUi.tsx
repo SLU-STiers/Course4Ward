@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { Popover } from './Popover';
 import { SortDirectionToggle as UnifiedSortDirectionToggle } from './SortDirectionToggle';
 import { StatusBadge as UnifiedStatusBadge, type StatusValue } from './StatusBadge';
+import searchImg from '../../Img/searchy.png';
 
 export type SortDirection = 'ascending' | 'descending';
 
