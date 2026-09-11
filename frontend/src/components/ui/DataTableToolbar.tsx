@@ -12,9 +12,12 @@ export interface ToolbarOption {
 }
 
 export interface FilterProps {
-  /** Accessible label for the trigger. Defaults to `Filter`. */
+  /**
+   * Short name of the criterion. Used as the trigger label for a standalone
+   * filter, and as the group heading when several filters share one button.
+   */
   label?: string;
-  /** Heading shown inside the menu. */
+  /** Heading shown inside the menu. Falls back to {@link label}. */
   title?: ReactNode;
   options: ToolbarOption[];
   value: string;
@@ -36,6 +39,13 @@ export interface SortProps {
 export interface DataTableToolbarProps {
   searchProps?: SearchFieldProps;
   filterProps?: FilterProps;
+  /**
+   * Several filters collapsed into a single `Filter` button. Each entry becomes
+   * a group inside one menu, so every criterion can still be combined at once.
+   */
+  filters?: FilterProps[];
+  /** Active-filter count shown on the combined filter button. */
+  activeFilterCount?: number;
   sortProps?: SortProps;
   /** Additional right-aligned controls (buttons, export, etc.). */
   children?: ReactNode;
@@ -50,6 +60,8 @@ export interface DataTableToolbarProps {
 export function DataTableToolbar({
   searchProps,
   filterProps,
+  filters,
+  activeFilterCount,
   sortProps,
   children,
   className,
@@ -66,6 +78,9 @@ export function DataTableToolbar({
 
       <div className="ui-toolbar__controls">
         {filterProps ? <FilterMenu {...filterProps} /> : null}
+        {filters?.length ? (
+          <FilterGroupMenu filters={filters} activeCount={activeFilterCount ?? 0} />
+        ) : null}
         {sortProps ? <SortMenu {...sortProps} /> : null}
         {children}
       </div>
@@ -104,6 +119,74 @@ function FilterMenu({ label = 'Filter', title, options, value, onChange, extra }
             ))}
           </div>
           {extra ? <div className="ui-menu__extra">{extra}</div> : null}
+        </>
+      )}
+    </Popover>
+  );
+}
+
+/**
+ * One `Filter` button holding every filter group.
+ *
+ * Picking an option keeps the menu open so criteria from different groups can
+ * be combined in a single visit; the page's own "Clear filters" control (passed
+ * as `children`) resets them all.
+ */
+function FilterGroupMenu({
+  filters,
+  activeCount = 0,
+}: {
+  filters: FilterProps[];
+  activeCount?: number;
+}) {
+  return (
+    <Popover
+      ariaLabel="Filter"
+      contentClassName="ui-popover--filters"
+      trigger={
+        <Button variant="secondary" leadingIcon={<Filter size={15} aria-hidden="true" />} trailingIcon={<ChevronDown size={14} aria-hidden="true" />}>
+          {activeCount > 0 ? `Filter (${activeCount})` : 'Filter'}
+        </Button>
+      }
+    >
+      {({ close }) => (
+        <>
+          {filters.map((filter, index) => {
+            const heading = filter.title ?? filter.label ?? `Filter ${index + 1}`;
+            return (
+              <div key={filter.label ?? `filter-${index}`} className="ui-menu__group">
+                {index > 0 ? <div className="ui-menu__divider" /> : null}
+                <div className="ui-menu__heading">{heading}</div>
+                <div
+                  className="ui-menu__options"
+                  role="group"
+                  aria-label={typeof heading === 'string' ? heading : undefined}
+                >
+                  {filter.options.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={option.value === filter.value}
+                      className={`ui-menu__option${option.value === filter.value ? ' is-active' : ''}`}
+                      // Deliberately does not close: filters from other groups
+                      // stay reachable so several criteria apply at once.
+                      onClick={() => filter.onChange(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                {filter.extra ? <div className="ui-menu__extra">{filter.extra}</div> : null}
+              </div>
+            );
+          })}
+          <div className="ui-menu__divider" />
+          <div className="ui-menu__options">
+            <button type="button" className="ui-menu__option" onClick={close}>
+              Done
+            </button>
+          </div>
         </>
       )}
     </Popover>
