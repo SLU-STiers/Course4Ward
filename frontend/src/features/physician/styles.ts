@@ -358,16 +358,32 @@ export const overview: Record<string, CSSProperties> = {
 
 export const manage: Record<string, CSSProperties> = {
   layout: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1.15fr) minmax(320px, 0.85fr)",
-    gap: 20,
-    alignItems: "start",
+    // Bounds the whole view to the space under the sticky header so the panels
+    // scroll internally and the AI summary + add-order controls stay on screen
+    // without any page scrolling. The two columns are user-resizable, so this
+    // only sets the height — the column widths are owned by the panel Group.
+    height: "calc(100dvh - 9.5rem)",
+    minHeight: 480,
+  },
+  /** A resizable panel's content box; fills whichever panel wraps it. */
+  panelFill: {
+    height: "100%",
+    minHeight: 0,
+    boxSizing: "border-box",
+  },
+  /** A panel Group nested inside another panel fills its parent. */
+  panelGroup: {
+    height: "100%",
+    minHeight: 0,
   },
   listCard: {
     backgroundColor: "#ffffff",
     borderRadius: 20,
     padding: "18px 20px 12px",
     boxShadow: CARD_SHADOW,
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 0,
   },
   listHeader: {
     display: "flex",
@@ -388,7 +404,10 @@ export const manage: Record<string, CSSProperties> = {
     color: "#64748b",
   },
   tableScroll: {
+    flex: "1 1 auto",
+    minHeight: 0,
     overflowX: "auto",
+    overflowY: "auto",
   },
   filterRange: {
     display: "flex",
@@ -421,16 +440,18 @@ export const manage: Record<string, CSSProperties> = {
     color: "#64748b",
     fontVariantNumeric: "tabular-nums",
   },
-  rightCol: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 16,
-  },
   orderCard: {
     backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 20,
     border: "1px solid #e2e8f0",
+    display: "flex",
+    flexDirection: "column",
+    // Fills the resizable panel it sits in — the order list gives up height
+    // first so the add-order controls stay visible at any panel size.
+    height: "100%",
+    minHeight: 0,
+    overflow: "hidden",
   },
   orderHeader: {
     display: "flex",
@@ -483,6 +504,10 @@ export const manage: Record<string, CSSProperties> = {
     borderRadius: 8,
     padding: 14,
     marginBottom: 12,
+    display: "flex",
+    flexDirection: "column",
+    flex: "1 1 auto",
+    minHeight: 0,
   },
   patientMeta: {
     marginBottom: 12,
@@ -495,7 +520,10 @@ export const manage: Record<string, CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: 14,
-    maxHeight: "min(560px, 62vh)",
+    // Fills whatever height the card has left instead of a fixed 62vh, so the
+    // add-order box and AI summary below always stay on screen.
+    flex: "1 1 auto",
+    minHeight: 120,
     overflowY: "auto",
     paddingRight: 6,
   },
@@ -579,11 +607,15 @@ export const manage: Record<string, CSSProperties> = {
     resize: "vertical",
     marginBottom: 12,
     boxSizing: "border-box",
+    // The order list above absorbs the panel resize; the composer keeps its
+    // own height (the physician can still drag its resize grip).
+    flexShrink: 0,
   },
   orderActions: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    flexShrink: 0,
   },
   addBtn: {
     border: `1.5px solid ${TEAL}`,
@@ -617,6 +649,11 @@ export const manage: Record<string, CSSProperties> = {
     borderRadius: 12,
     border: "1px solid #e2e8f0",
     overflow: "hidden",
+    // Fills the resizable panel it sits in — the summary scrolls inside rather
+    // than pushing the edit / regenerate actions out of view.
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
   },
   aiHeader: {
     display: "flex",
@@ -641,12 +678,22 @@ export const manage: Record<string, CSSProperties> = {
   },
   aiBody: {
     padding: "14px 16px 18px",
+    display: "flex",
+    flexDirection: "column",
+    flex: "1 1 auto",
+    minHeight: 0,
   },
   aiText: {
     margin: "0 0 14px",
     fontSize: 13,
     lineHeight: 1.55,
     color: "#1e293b",
+    // Takes whatever height the panel gives it, so a longer summary scrolls
+    // inside the card instead of growing the panel.
+    flex: "1 1 auto",
+    minHeight: 0,
+    overflowY: "auto",
+    paddingRight: 4,
   },
   aiEditor: {
     width: "100%",
@@ -657,10 +704,13 @@ export const manage: Record<string, CSSProperties> = {
     marginBottom: 12,
     boxSizing: "border-box",
     backgroundColor: "#f8fafc",
+    flex: "1 1 auto",
+    minHeight: 0,
   },
   aiActions: {
     display: "flex",
     gap: 10,
+    flexShrink: 0,
   },
   aiLink: {
     border: "1px solid #9cc8ff",

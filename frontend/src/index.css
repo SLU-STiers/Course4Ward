@@ -577,6 +577,64 @@ td {
   }
 }
 
+/* ---------- Resizable split panels ---------- */
+/* Separator between two panels of a `react-resizable-panels` Group. The hit
+   area is deliberately wider than the visible bar so the handle is easy to
+   grab, and the bar itself is drawn by `::after` so it can highlight on
+   hover / drag / keyboard focus. */
+.ui-split-separator {
+  position: relative;
+  flex: 0 0 auto;
+  border: none;
+  padding: 0;
+  background: transparent;
+  touch-action: none;
+}
+
+.ui-split-separator--column {
+  width: 20px;
+  cursor: col-resize;
+}
+
+.ui-split-separator--row {
+  height: 16px;
+  cursor: row-resize;
+}
+
+.ui-split-separator::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: var(--dashboard-border);
+  transition: background 160ms ease;
+}
+
+/* Kept inset from the panel corners so the bar reads as a handle, not a rule. */
+.ui-split-separator--column::after {
+  width: 4px;
+  height: 100%;
+  max-height: 96px;
+}
+
+.ui-split-separator--row::after {
+  width: 100%;
+  max-width: 96px;
+  height: 4px;
+}
+
+.ui-split-separator:hover::after,
+.ui-split-separator:active::after,
+.ui-split-separator:focus-visible::after {
+  background: var(--dashboard-primary);
+}
+
+.ui-split-separator:disabled::after {
+  background: transparent;
+}
+
 /* ---------- Sidebar navigation items ---------- */
 .ui-nav-item {
   display: flex;
