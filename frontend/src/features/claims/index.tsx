@@ -779,24 +779,29 @@ export function ClaimsProcessorDashboard() {
                 </div>
                 <div style={overviewStyles.aiCard}>
                   <div style={overviewStyles.aiHeader}>
-                    <span style={overviewStyles.aiTitle}>AI Summarized</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span aria-hidden="true">✨</span>
+                      <h3 style={overviewStyles.aiTitle}>AI Summarized</h3>
+                    </div>
                     <span style={overviewStyles.aiStatus}>{overviewRequest?.status ?? 'No claims'}</span>
                   </div>
-                  <p style={overviewStyles.aiSummary}>
-                    {overviewRequest?.summaryText ?? 'Select a persisted claim to review its AI summary.'}
-                  </p>
-                  <div style={overviewStyles.aiActions}>
-                    <select value={evaluator} onChange={(e) => setEvaluator(e.target.value)} style={overviewStyles.evaluatorSelect} aria-label="Evaluator">
-                      <option>{overviewRequest?.doctor ?? 'Attending physician'}</option>
-                    </select>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={!overviewRequest}
-                      onClick={() => overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)}
-                    >
-                      Submit
-                    </Button>
+                  <div style={overviewStyles.aiBody}>
+                    <p style={overviewStyles.aiSummary}>
+                      {overviewRequest?.summaryText ?? 'Select a persisted claim to review its AI summary.'}
+                    </p>
+                    <div style={overviewStyles.aiActions}>
+                      <select value={evaluator} onChange={(e) => setEvaluator(e.target.value)} style={overviewStyles.evaluatorSelect} aria-label="Evaluator">
+                        <option>{overviewRequest?.doctor ?? 'Attending physician'}</option>
+                      </select>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={!overviewRequest}
+                        onClick={() => overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)}
+                      >
+                        Submit
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
