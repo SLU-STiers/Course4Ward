@@ -4,7 +4,7 @@ import { ClaimsController } from '../claims/claims.controller';
 import { ClaimsService } from '../claims/claims.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { SummaryStatus } from '@prisma/client';
+import { PhilHealthCF4Status, SummaryStatus } from '@prisma/client';
 
 const mockPrismaService = {
   courseInWard: {
@@ -60,6 +60,8 @@ describe('Claims Module', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     validatedAt: new Date(),
+    philhealthCf4Status: PhilHealthCF4Status.PENDING,
+    philhealthCf4DecidedAt: null,
     patient: mockPatient,
     orders: [],
   };
