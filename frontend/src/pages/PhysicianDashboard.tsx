@@ -20,6 +20,7 @@ import {
 import { useTableState } from "../hooks/useTableState";
 import documentImg from "../Img/document.png";
 import requestsIcon from "../Img/requests.png";
+import ollamaImg from "../Img/llama.png";
 
 type TabType = "overview" | "manage" | "requests";
 
@@ -1958,7 +1959,12 @@ function ManageView() {
         <section style={manage.aiCard}>
           <div style={manage.aiHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span>✨</span>
+              <span><img
+        src={ollamaImg}
+        alt=""
+        aria-hidden="true"
+        style={{ width: 14, height: 17 }}
+      /></span>
               <h3 style={manage.aiTitle}>AI Summarized</h3>
             </div>
             <span style={manage.aiBadge}>AI Draft ready</span>
