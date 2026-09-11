@@ -6,7 +6,6 @@ import { NotificationBell } from '../components/layout/NotificationBell';
 import { SidebarProfile } from '../components/layout/SidebarProfile';
 import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
 import { useTableState } from '../hooks/useTableState';
-import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';
 
@@ -150,6 +149,82 @@ type AdmissionRecord = {
   dischargedOn: string | null;
   status: AdmissionStatus;
 };
+
+function monthCells(year: number, month: number) {
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = Array.from({ length: firstDow }, () => null);
+  for (let day = 1; day <= daysInMonth; day += 1) cells.push(day);
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+function NurseCalendarModal({
+  onClose,
+  focusDate,
+  orderDays,
+  onSelect,
+}: {
+  onClose: () => void;
+  focusDate: Date;
+  orderDays: string[];
+  onSelect: (date: Date) => void;
+}) {
+  const [cursor, setCursor] = useState(
+    () => new Date(focusDate.getFullYear(), focusDate.getMonth(), 1),
+  );
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const cells = monthCells(year, month);
+  const orderDaySet = new Set(orderDays);
+  const focusKey = focusDate.toISOString().slice(0, 10);
+  const monthLabel = cursor.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const monthHasOrders = (targetYear: number, targetMonth: number) => {
+    const prefix = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-`;
+    return orderDays.some((day) => day.startsWith(prefix));
+  };
+  const previousMonth = new Date(year, month - 1, 1);
+  const nextMonth = new Date(year, month + 1, 1);
+  const canGoPrevious = monthHasOrders(previousMonth.getFullYear(), previousMonth.getMonth());
+  const canGoNext = monthHasOrders(nextMonth.getFullYear(), nextMonth.getMonth());
+
+  return (
+    <div style={ui.calOverlay} onClick={onClose}>
+      <div style={ui.calModal} onClick={(event) => event.stopPropagation()}>
+        <div style={ui.calHeader}>
+          <h3 style={ui.calTitle}>Calendar</h3>
+          <button type="button" style={ui.calClose} onClick={onClose}>✕</button>
+        </div>
+        <div style={ui.calNav}>
+          <button type="button" style={canGoPrevious ? ui.calNavBtn : ui.calNavBtnDisabled} disabled={!canGoPrevious} onClick={() => setCursor(previousMonth)} aria-label="Previous month with orders">‹</button>
+          <span style={ui.calMonth}>{monthLabel}</span>
+          <button type="button" style={canGoNext ? ui.calNavBtn : ui.calNavBtnDisabled} disabled={!canGoNext} onClick={() => setCursor(nextMonth)} aria-label="Next month with orders">›</button>
+        </div>
+        <div style={ui.calGrid}>
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} style={ui.calDow}>{day}</div>)}
+          {cells.map((day, index) => {
+            const date = day ? new Date(year, month, day) : null;
+            const dayValue = date ? date.toISOString().slice(0, 10) : '';
+            const hasOrders = Boolean(dayValue) && orderDaySet.has(dayValue);
+            const isSelected = hasOrders && dayValue === focusKey;
+            return (
+              <button
+                key={index}
+                type="button"
+                disabled={!hasOrders}
+                aria-pressed={isSelected}
+                onClick={() => date && hasOrders && onSelect(date)}
+                style={{ ...ui.calDay, ...(hasOrders ? {} : ui.calDayDisabled), ...(isSelected ? ui.calDaySelected : {}), visibility: day ? 'visible' : 'hidden' }}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const INITIAL_ADMISSIONS: AdmissionRecord[] = [
   { id: 'ADM-0001', name: 'Sarah Brown', admittedOn: '15 Apr 2026', dischargedOn: null, status: 'Admitted' },
@@ -624,6 +699,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
   const [selectedId, setSelectedId] = useState<string | null>(MOCK_PATIENTS[0].id);
   const [viewedIds, setViewedIds] = useState<string[]>([MOCK_PATIENTS[0].id]);
   const [selectedDate, setSelectedDate] = useState('2026-04-15');
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [ordersByPatient] = useState<Record<string, OrderSet[]>>(DEFAULT_ORDER_SETS);
   const [detailName, setDetailName] = useState<string | null>(null);
 
@@ -654,6 +730,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
     const sets = ordersByPatient[id] ?? [];
     const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '2026-04-15';
     setSelectedDate(latest);
+    setCalendarOpen(false);
     setViewedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
 
@@ -760,23 +837,10 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
       <section style={ui.detailCol}>
         {selected ? (
           <>
-            <div style={ui.patientHeader}>
-              <div style={{ ...ui.patientAvatar, backgroundColor: selected.color }}>{selected.initials}</div>
-              <div>
-                <h2 style={{ ...ui.sectionTitle, margin: 0 }}>{selected.name}</h2>
-                <div style={ui.metaRow}>
-                  <span>Patient ID: {selected.recordId}</span>
-                  <span>Age: {selected.age}</span>
-                  <span>Gender: {selected.gender}</span>
-                  <span>Admission Date: {selected.admissionDate}</span>
-                </div>
-              </div>
-            </div>
-
             <div style={ui.orderCard}>
               <div style={ui.orderHeader}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <img src={documentImg} alt="Doctor's order" style={{ width: 16, height: 16 }} />
+                  <span aria-hidden="true" style={{ fontSize: 20 }}>📝</span>
                   <strong>Doctor’s Order</strong>
                 </div>
                 <div style={ui.dateNav}>
@@ -789,12 +853,15 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
                   >
                     ‹
                   </button>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
+                  <button
+                    type="button"
                     style={ui.dateInput}
-                  />
+                    onClick={() => setCalendarOpen(true)}
+                    aria-haspopup="dialog"
+                    aria-expanded={calendarOpen}
+                  >
+                    {formatDateLabel(selectedDate)}
+                  </button>
                   <button
                     type="button"
                     style={ui.navChevron}
@@ -807,12 +874,25 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
                 </div>
               </div>
 
-              {ordersForDate.length ? (
-                <div style={ui.orderBox}>
+              <div style={ui.orderBox}>
+                <div style={ui.orderPatientHeader}>
+                  <div style={{ ...ui.patientAvatar, backgroundColor: selected.color }}>{selected.initials}</div>
+                  <div>
+                    <h2 style={{ ...ui.sectionTitle, margin: 0 }}>{selected.name}</h2>
+                    <div style={ui.metaRow}>
+                      <span>Patient ID: {selected.recordId}</span>
+                      <span>Age: {selected.age}</span>
+                      <span>Gender: {selected.gender}</span>
+                      <span>Admission Date: {selected.admissionDate}</span>
+                    </div>
+                  </div>
+                </div>
+                {ordersForDate.length ? (
                   <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>
                     Showing physician orders for {formatDateLabel(selectedDate)}
                   </div>
-                  {ordersForDate.map((set) => (
+                ) : null}
+                {ordersForDate.length ? ordersForDate.map((set) => (
                     <div key={`${set.doctor}-${set.time}`} style={{ marginBottom: 14 }}>
                       <div style={ui.orderMeta}>
                         <div>
@@ -830,14 +910,10 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
                         ))}
                       </ul>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={ui.muted}>
-                  No physician orders for {formatDateLabel(selectedDate)}. Choose another date to view previous
-                  orders.
-                </p>
-              )}
+                  )) : (
+                  <p style={ui.muted}>No physician orders for {formatDateLabel(selectedDate)}. Choose another date to view previous orders.</p>
+                )}
+              </div>
             </div>
 
             <div style={ui.aiCard}>
@@ -860,6 +936,18 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
           <p style={ui.muted}>Select a patient to view physician orders.</p>
         )}
       </section>
+
+      {calendarOpen && (
+        <NurseCalendarModal
+          onClose={() => setCalendarOpen(false)}
+          focusDate={new Date(`${selectedDate}T00:00:00`)}
+          orderDays={datesWithOrders}
+          onSelect={(date) => {
+            setSelectedDate(date.toISOString().slice(0, 10));
+            setCalendarOpen(false);
+          }}
+        />
+      )}
 
       {detailChart && (
         <PatientDetailModal
@@ -952,6 +1040,14 @@ const ui: Record<string, React.CSSProperties> = {
     border: '1px solid #e2e8f0',
     borderRadius: 8,
     padding: 12,
+  },
+  orderPatientHeader: {
+    display: 'flex',
+    gap: 14,
+    alignItems: 'center',
+    paddingBottom: 14,
+    marginBottom: 12,
+    borderBottom: '1px solid #e2e8f0',
   },
   orderHeader: {
     display: 'flex',
@@ -1215,5 +1311,75 @@ const ui: Record<string, React.CSSProperties> = {
     padding: '4px 8px',
     fontSize: 12,
     fontWeight: 600,
+    background: '#fff',
+    color: '#0f172a',
+    cursor: 'pointer',
   },
+  calOverlay: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 1000,
+  },
+  calModal: {
+    position: 'absolute',
+    top: '170px',
+    right: '32px',
+    width: 244,
+    padding: 12,
+    background: '#fff',
+    border: '1px solid #cbd5e1',
+    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.16)',
+  },
+  calHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  calTitle: { margin: 0, fontSize: 14, color: '#0f172a' },
+  calClose: {
+    border: 'none',
+    background: 'transparent',
+    color: '#64748b',
+    cursor: 'pointer',
+  },
+  calNav: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  calNavBtn: {
+    border: 'none',
+    background: 'transparent',
+    color: '#0f172a',
+    fontSize: 20,
+    cursor: 'pointer',
+  },
+  calNavBtnDisabled: {
+    border: 'none',
+    background: 'transparent',
+    color: '#cbd5e1',
+    fontSize: 20,
+    cursor: 'not-allowed',
+  },
+  calMonth: { fontSize: 13, fontWeight: 700, color: '#0f172a' },
+  calGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: 4,
+    textAlign: 'center',
+  },
+  calDow: { fontSize: 10, color: '#64748b', fontWeight: 700, paddingBottom: 4 },
+  calDay: {
+    width: 26,
+    height: 26,
+    border: 'none',
+    borderRadius: 4,
+    background: '#fff',
+    color: '#334155',
+    cursor: 'pointer',
+  },
+  calDayDisabled: { color: '#cbd5e1', cursor: 'not-allowed' },
+  calDaySelected: { background: 'var(--c4w-color-primary)', color: '#fff', fontWeight: 700 },
 };

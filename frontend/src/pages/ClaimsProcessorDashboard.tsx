@@ -880,24 +880,29 @@ export function ClaimsProcessorDashboard() {
                 </div>
                 <div style={overviewStyles.aiCard}>
                   <div style={overviewStyles.aiHeader}>
-                    <span style={overviewStyles.aiTitle}>AI Summarized</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span aria-hidden="true">✨</span>
+                      <h3 style={overviewStyles.aiTitle}>AI Summarized</h3>
+                    </div>
                     <span style={overviewStyles.aiStatus}>{overviewRequest?.status ?? 'No claims'}</span>
                   </div>
-                  <p style={overviewStyles.aiSummary}>
-                    {overviewRequest?.summaryText ?? 'Select a persisted claim to review its AI summary.'}
-                  </p>
-                  <div style={overviewStyles.aiActions}>
-                    <select value={evaluator} onChange={(e) => setEvaluator(e.target.value)} style={overviewStyles.evaluatorSelect} aria-label="Evaluator">
-                      <option>{overviewRequest?.doctor ?? 'Attending physician'}</option>
-                    </select>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={!overviewRequest}
-                      onClick={() => overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)}
-                    >
-                      Submit
-                    </Button>
+                  <div style={overviewStyles.aiBody}>
+                    <p style={overviewStyles.aiSummary}>
+                      {overviewRequest?.summaryText ?? 'Select a persisted claim to review its AI summary.'}
+                    </p>
+                    <div style={overviewStyles.aiActions}>
+                      <select value={evaluator} onChange={(e) => setEvaluator(e.target.value)} style={overviewStyles.evaluatorSelect} aria-label="Evaluator">
+                        <option>{overviewRequest?.doctor ?? 'Attending physician'}</option>
+                      </select>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={!overviewRequest}
+                        onClick={() => overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)}
+                      >
+                        Submit
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1981,51 +1986,53 @@ const overviewStyles: Record<string, React.CSSProperties> = {
   },
   aiCard: {
     backgroundColor: '#ffffff',
-    borderRadius: '8px',
+    borderRadius: '12px',
     border: '1px solid #e2e8f0',
     overflow: 'hidden',
   },
   aiHeader: {
     display: 'flex',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '8px 14px',
+    justifyContent: 'space-between',
+    padding: '10px 16px',
     backgroundColor: '#f1eaff',
   },
   aiTitle: {
+    margin: 0,
     color: '#7c00b8',
-    fontSize: '11px',
-    fontWeight: 600,
+    fontSize: '15px',
+    fontWeight: 800,
   },
   aiStatus: {
-    padding: '4px 18px',
+    padding: '4px 14px',
     borderRadius: '6px',
     backgroundColor: '#d3a0f5',
     color: '#7c00b8',
     fontSize: '11px',
-    fontWeight: 600,
+    fontWeight: 700,
+  },
+  aiBody: {
+    padding: '14px 16px 18px',
   },
   aiSummary: {
-    margin: 0,
-    padding: '8px 14px',
-    color: '#0f172a',
-    fontSize: '11px',
-    lineHeight: 1.35,
+    margin: '0 0 14px',
+    color: '#1e293b',
+    fontSize: '13px',
+    lineHeight: 1.55,
   },
   aiActions: {
     display: 'flex',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '0 14px 9px',
+    gap: 10,
   },
   evaluatorSelect: {
-    width: '118px',
-    padding: '5px 8px',
+    width: '180px',
+    padding: '6px 10px',
     border: '1px solid #9cc8ff',
-    borderRadius: '6px',
+    borderRadius: '8px',
     color: '#0066cc',
     backgroundColor: '#ffffff',
-    fontSize: '11px',
+    fontSize: '12px',
   },
   submitButton: {
     padding: '5px 16px',

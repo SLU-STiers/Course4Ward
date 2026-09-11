@@ -18,7 +18,6 @@ import {
   StatusBadge,
 } from "../components/ui";
 import { useTableState } from "../hooks/useTableState";
-import documentImg from "../Img/document.png";
 import requestsIcon from "../Img/requests.png";
 
 type TabType = "overview" | "manage" | "requests";
@@ -1378,6 +1377,12 @@ function formatOrderTime(iso: string) {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatOrderDate(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB");
+}
+
 function ManageView() {
   const user = useAuthStore((s) => s.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
@@ -1397,7 +1402,7 @@ function ManageView() {
   const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
-  const [selectedOrderDate, setSelectedOrderDate] = useState(todayValue);
+  const [selectedOrderDate, setSelectedOrderDate] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   // This tab only manages patients who are currently in the ward.
@@ -1491,13 +1496,20 @@ function ManageView() {
     return Array.from(days).sort();
   }, [allOrders]);
 
-  // Fall back to a day that actually has orders so no order-less date is browsed.
-  const browsedOrderDate = orderDays.includes(selectedOrderDate)
-    ? selectedOrderDate
-    : (orderDays[orderDays.length - 1] ?? selectedOrderDate);
-  const dayOrders = allOrders.filter(
-    (order) => orderDayValue(order.dateCreated) === browsedOrderDate,
+  const chronologicalOrders = useMemo(
+    () =>
+      [...allOrders].sort(
+        (left, right) =>
+          new Date(left.dateCreated).getTime() -
+          new Date(right.dateCreated).getTime(),
+      ),
+    [allOrders],
   );
+  const displayedOrders = selectedOrderDate
+    ? chronologicalOrders.filter(
+        (order) => orderDayValue(order.dateCreated) === selectedOrderDate,
+      )
+    : chronologicalOrders;
   const summary =
     (selected && summaryByPatient[selected.id]) ??
     "No AI summary yet. Submit orders to generate a draft.";
@@ -1549,8 +1561,6 @@ function ManageView() {
         }));
         setDraft("");
         setSubmitted(false);
-        // Jump to the day the new order was filed so it is visible.
-        setSelectedOrderDate(orderDayValue(data.dateCreated) || todayValue());
       })
       .catch(() => undefined);
   };
@@ -1584,18 +1594,25 @@ function ManageView() {
       </div>
     );
 
-  const selectedDateLabel = browsedOrderDate
-    ? new Date(`${browsedOrderDate}T00:00:00`).toLocaleDateString("en-GB")
-    : "—";
-  const calendarFocusDate = browsedOrderDate
-    ? new Date(`${browsedOrderDate}T00:00:00`)
-    : new Date();
+  const selectedDateLabel = selectedOrderDate
+    ? new Date(`${selectedOrderDate}T00:00:00`).toLocaleDateString("en-GB")
+    : "All dates";
+  const calendarFocusDate = selectedOrderDate
+    ? new Date(`${selectedOrderDate}T00:00:00`)
+    : orderDays.length
+      ? new Date(`${orderDays[orderDays.length - 1]}T00:00:00`)
+      : new Date();
   // Order dates are the only navigable stops — order-less days are skipped.
-  const hasPrevOrderDay = orderDays.some((day) => day < browsedOrderDate);
-  const hasNextOrderDay = orderDays.some((day) => day > browsedOrderDate);
+  const hasPrevOrderDay = Boolean(
+    selectedOrderDate && orderDays.some((day) => day < selectedOrderDate),
+  );
+  const hasNextOrderDay = Boolean(
+    selectedOrderDate && orderDays.some((day) => day > selectedOrderDate),
+  );
   const goToAdjacentOrderDay = (direction: -1 | 1) => {
+    if (!selectedOrderDate) return;
     const candidates = orderDays.filter((day) =>
-      direction < 0 ? day < browsedOrderDate : day > browsedOrderDate,
+      direction < 0 ? day < selectedOrderDate : day > selectedOrderDate,
     );
     if (!candidates.length) return;
     setSelectedOrderDate(
@@ -1868,11 +1885,7 @@ function ManageView() {
         <section style={manage.orderCard}>
           <div style={manage.orderHeader}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <img
-                src={documentImg}
-                alt="Doctor's order"
-                style={{ width: 18, height: 18 }}
-              />
+              <span aria-hidden="true" style={{ fontSize: 20 }}>📝</span>
               <h2 style={manage.panelTitle}>Doctor’s Order</h2>
             </div>
             <div style={manage.dateNavigator}>
@@ -1897,6 +1910,15 @@ function ManageView() {
               >
                 {selectedDateLabel}
               </button>
+              {selectedOrderDate && (
+                <button
+                  type="button"
+                  style={manage.clearDateBtn}
+                  onClick={() => setSelectedOrderDate(null)}
+                >
+                  All dates
+                </button>
+              )}
               <button
                 type="button"
                 style={
@@ -1924,12 +1946,18 @@ function ManageView() {
                   marginTop: 8,
                 }}
               >
-                Orders on {selectedDateLabel} ({dayOrders.length})
+                {selectedOrderDate ? "Orders on" : "All orders"} {selectedDateLabel !== "All dates" ? selectedDateLabel : ""} ({displayedOrders.length})
               </div>
             </div>
 
-            <div style={manage.orderLines}>
-              {dayOrders.map((order) =>
+            <div style={manage.orderTimeline}>
+              <div style={manage.orderTimelineHeader}>
+                <span>Date</span>
+                <span>Time</span>
+                <span>Order</span>
+              </div>
+              <div style={manage.orderLines}>
+              {displayedOrders.map((order) =>
                 editingOrders ? (
                   <div key={order.id} style={manage.orderEditRow}>
                     <input
@@ -1947,18 +1975,24 @@ function ManageView() {
                   </div>
                 ) : (
                   <div key={order.id} style={manage.orderBullet}>
+                    <span style={manage.orderDate}>
+                      {formatOrderDate(order.dateCreated)}
+                    </span>
                     <span style={manage.orderTime}>
                       {formatOrderTime(order.dateCreated)}
                     </span>{" "}
-                    • {order.orderContent}
+                    <span style={manage.orderContent}>{order.orderContent}</span>
                   </div>
                 ),
               )}
-              {!dayOrders.length && (
+              {!displayedOrders.length && (
                 <div style={{ ...manage.orderLine, color: "#94a3b8" }}>
-                  No orders on {selectedDateLabel}.
+                  {selectedOrderDate
+                    ? `No orders on ${selectedDateLabel}.`
+                    : "No orders available."}
                 </div>
               )}
+              </div>
             </div>
           </div>
 
@@ -2675,11 +2709,6 @@ const manage: Record<string, React.CSSProperties> = {
     color: "#0f172a",
     backgroundColor: "#ffffff",
   },
-  orderTime: {
-    fontSize: 11,
-    fontWeight: 700,
-    color: "#94a3b8",
-  },
   rightCol: {
     display: "flex",
     flexDirection: "column",
@@ -2746,12 +2775,37 @@ const manage: Record<string, React.CSSProperties> = {
     textAlign: "center",
     cursor: "pointer",
   },
+  clearDateBtn: {
+    border: "none",
+    background: "transparent",
+    color: "var(--c4w-color-primary)",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
+    padding: "4px 0",
+  },
   orderBox: {
     backgroundColor: "#f8fafc",
     border: "1px solid #e2e8f0",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
+  },
+  orderTimeline: {
+    maxHeight: 320,
+    overflowY: "auto",
+    paddingRight: 4,
+  },
+  orderTimelineHeader: {
+    display: "grid",
+    gridTemplateColumns: "104px 88px minmax(0, 1fr)",
+    gap: 12,
+    padding: "0 12px 8px",
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
   },
   patientMeta: {
     marginBottom: 12,
@@ -2905,9 +2959,30 @@ const manage: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   orderBullet: {
+    display: "grid",
+    gridTemplateColumns: "104px 88px minmax(0, 1fr)",
+    gap: 12,
+    alignItems: "start",
+    padding: "10px 12px",
+    borderTop: "1px solid #e2e8f0",
     fontSize: 13,
     color: "#334155",
-    lineHeight: 1.5,
+    lineHeight: 1.45,
+    backgroundColor: "#ffffff",
+  },
+  orderDate: {
+    color: "#475569",
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
+  orderTime: {
+    color: "#7892b2",
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+  },
+  orderContent: {
+    minWidth: 0,
+    overflowWrap: "anywhere",
   },
   orderEditRow: {
     display: "flex",
