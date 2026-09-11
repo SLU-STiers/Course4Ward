@@ -70,7 +70,7 @@ export function CollapsibleSidebar({ nav, profile, isOpen: controlledIsOpen, onO
         style={{
           position: 'absolute',
           top: '50%',
-          right: -20,
+          right: isOpen ? -20 : -44,
           transform: `translateY(-50%) rotate(${isOpen ? 0 : 180}deg)`,
           width: 42,
           height: 64,
