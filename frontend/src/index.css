@@ -831,7 +831,7 @@ td {
 .ui-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--c4w-space-sm, 0.75rem);
   flex-wrap: nowrap;
   margin-bottom: var(--c4w-space-md, 1rem);

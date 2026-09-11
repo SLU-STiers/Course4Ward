@@ -6,7 +6,6 @@ import { NotificationBell } from '../components/layout/NotificationBell';
 import { SidebarProfile } from '../components/layout/SidebarProfile';
 import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
 import { useTableState } from '../hooks/useTableState';
-import searchImg from '../Img/searchy.png';
 import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';
@@ -622,20 +621,29 @@ function PatientView({
 
 function ManagementPortalView({ charts }: { charts: Record<string, PatientChart> }) {
   const [patients] = useState(MOCK_PATIENTS);
-  const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(MOCK_PATIENTS[0].id);
   const [viewedIds, setViewedIds] = useState<string[]>([MOCK_PATIENTS[0].id]);
   const [selectedDate, setSelectedDate] = useState('2026-04-15');
   const [ordersByPatient] = useState<Record<string, OrderSet[]>>(DEFAULT_ORDER_SETS);
   const [detailName, setDetailName] = useState<string | null>(null);
 
+  const table = useTableState<NursePatient>({
+    items: patients,
+    pageSize: 8,
+    searchFields: (patient) => [patient.name, patient.patientId, patient.recordId],
+    filterPredicates: {
+      status: (patient, value) => value === 'all' || (patient.status ?? 'admitted') === value,
+    },
+    initialFilters: { status: 'all' },
+    sorters: {
+      name: (patient) => patient.name,
+      patientId: (patient) => patient.patientId,
+      admissionDate: (patient) => patient.admissionDate,
+    },
+    initialSort: { field: 'admissionDate', direction: 'descending' },
+  });
+
   const selected = patients.find((p) => p.id === selectedId) ?? null;
-  const filtered = patients.filter(
-    (p) =>
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.patientId.includes(search) ||
-      p.recordId.toLowerCase().includes(search.toLowerCase())
-  );
 
   const orderSets = selected ? ordersByPatient[selected.id] ?? [] : [];
   const datesWithOrders = [...new Set(orderSets.map((o) => o.dateKey))].sort().reverse();
@@ -664,13 +672,36 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
         <PageHeader title="Patient Overview" />
         <DataTableToolbar
           searchProps={{
-            value: search,
-            onChange: setSearch,
+            value: table.query,
+            onChange: table.setQuery,
             placeholder: 'Search patient',
             ariaLabel: 'Search patients',
           }}
+          filterProps={{
+            title: 'Patient status',
+            options: [
+              { value: 'all', label: 'All patients' },
+              { value: 'admitted', label: 'Admitted' },
+              { value: 'discharged', label: 'Discharged' },
+            ],
+            value: table.filters.status ?? 'all',
+            onChange: (value) => table.setFilter('status', value),
+          }}
+          sortProps={{
+            title: 'Sort patients by',
+            options: [
+              { value: 'name', label: 'Patient name' },
+              { value: 'patientId', label: 'Patient ID' },
+              { value: 'admissionDate', label: 'Admission date' },
+            ],
+            value: table.sort.field,
+            onChange: table.setSortField,
+            direction: table.sort.direction,
+            onDirectionChange: (direction) => table.setSort({ field: table.sort.field, direction }),
+          }}
         />
-        <table style={ui.table}>
+        <div style={ui.tableWrap}>
+          <table style={ui.table}>
           <thead>
             <tr>
               <th style={ui.th}>Patient</th>
@@ -680,7 +711,7 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => {
+            {table.rows.map((p) => {
               const active = p.id === selectedId;
               return (
                 <tr
@@ -716,7 +747,14 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
               );
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
+        <div className="ui-table-footer">
+          <span className="ui-table-footer__info">
+            Showing {table.rangeStart} to {table.rangeEnd} of {table.total} patients
+          </span>
+          <Pagination page={table.page} pageCount={table.pageCount} onPageChange={table.setPage} />
+        </div>
       </section>
 
       <section style={ui.detailCol}>

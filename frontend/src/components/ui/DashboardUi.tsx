@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Filter, Search } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { Button } from './Button';
 import { Popover } from './Popover';
 import { SortDirectionToggle as UnifiedSortDirectionToggle } from './SortDirectionToggle';

@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
@@ -118,35 +117,6 @@ function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
     status: dischargeDate ? 'discharged' : 'admitted',
     selected: false,
   };
-}
-
-function HoverMenu({
-  label,
-  icon,
-  open,
-  setOpen,
-  children,
-}: {
-  label: string;
-  icon?: React.ReactNode;
-  open: boolean;
-  setOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  children: React.ReactNode;
-}) {
-  return (
-    <Popover
-      ariaLabel={label}
-      open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <Button variant="secondary" leadingIcon={icon}>
-          {label}
-        </Button>
-      }
-    >
-      {children}
-    </Popover>
-  );
 }
 
 export function ClaimsProcessorDashboard() {
@@ -1574,15 +1544,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#0f172a',
   },
   docName: {
-    fontSize: '12px',
+    fontSize: '13px',
     color: '#64748b',
   },
   dateText: {
-    fontSize: '13px',
+    fontSize: '14px',
     color: '#334155',
   },
   timeText: {
-    fontSize: '11px',
+    fontSize: '12px',
     color: '#94a3b8',
   },
   statusPending: {
