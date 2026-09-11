@@ -128,3 +128,7 @@ The following technologies are used in the development of the Course4Ward Web Ap
 # Development and Deployment
 - GitHub
 - Docker
+
+
+TO BE ADDED:
+python.exe -m uvicorn ollama_client:app --port 8000
