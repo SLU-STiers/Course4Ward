@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { Filter, ArrowUpDown } from 'lucide-react';
 import { adminApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
-import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
-import { FilterSortMenu, SearchField, SortDirectionToggle, StatusBadge } from '../components/ui/DashboardUi';
+import { Button, FilterSortMenu, PageHeader, SearchField, SortDirectionToggle, StatusBadge } from '../components/ui';
 import dashboardIcon from '../Img/dashboard.png';
 import userIcon from '../Img/user.png';
 import requestsIcon from '../Img/requests.png';
@@ -21,7 +21,6 @@ type ActivityRow = {
 
 export function AdminPanel() {
   const [activeNav, setActiveNav] = useState<'dashboard' | 'users' | 'requests'>('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
@@ -65,92 +64,49 @@ export function AdminPanel() {
   };
 
   return (
-    <div style={styles.appContainer}>
-      <CollapsibleSidebar
-        isOpen={sidebarOpen}
-        onOpenChange={setSidebarOpen}
-        nav={
-          <>
-  <button
-    style={{
-      ...styles.navButton,
-      ...(activeNav === 'dashboard' ? styles.navButtonActive : {}),
-    }}
-    onClick={() => setActiveNav('dashboard')}
-  >
-    <img src={dashboardIcon} alt="Dashboard" style={styles.navIconImage} /> Dashboard
-  </button>
-
-  <button
-    style={{
-      ...styles.navButton,
-      ...(activeNav === 'users' ? styles.navButtonActive : {}),
-    }}
-    onClick={() => setActiveNav('users')}
-  >
-    <img src={userIcon} alt="Users" style={styles.navIconImage} /> Users
-  </button>
-
-  <button
-    style={{
-      ...styles.navButton,
-      ...(activeNav === 'requests' ? styles.navButtonActive : {}),
-    }}
-    onClick={() => setActiveNav('requests')}
-  >
-    <img src={requestsIcon} alt="Requests" style={styles.navIconImage} /> Requests
-  </button>
-          </>
-        }
-        profile={
+    <Layout
+      navbarProps={{
+        ariaLabel: 'Admin navigation',
+        activeId: activeNav,
+        onNavigate: (id) => setActiveNav(id as 'dashboard' | 'users' | 'requests'),
+        items: [
+          { id: 'dashboard', label: 'Dashboard', icon: <img src={dashboardIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'users', label: 'Users', icon: <img src={userIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+        ],
+        profile: (
           <div style={styles.sidebarProfile}>
-          <div style={styles.profileAvatar}>
-            {user?.firstName?.[0] ?? 'A'}{user?.lastName?.[0] ?? 'D'}
-          </div>
-          <div style={styles.profileDetails}>
-            <div style={styles.profileName}>
-              {user?.firstName ? `${user.firstName} ${user.lastName}` : 'Admin User'}
+            <div style={styles.profileAvatar}>
+              {user?.firstName?.[0] ?? 'A'}{user?.lastName?.[0] ?? 'D'}
             </div>
-            <div style={styles.profileEmail}>Administrator</div>
+            <div style={styles.profileDetails}>
+              <div style={styles.profileName}>
+                {user?.firstName ? `${user.firstName} ${user.lastName}` : 'Admin User'}
+              </div>
+              <div style={styles.profileEmail}>Administrator</div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={handleLogout}>
+              Log out
+            </Button>
           </div>
-          <button type="button" style={styles.logoutBtn} onClick={handleLogout}>
-            Log out
-          </button>
-          </div>
-        }
-      />
-
-      {/* MAIN CONTENT AREA */}
-      <div
-        style={{
-          ...styles.mainWrapper,
-          marginLeft: sidebarOpen ? 232 : 0,
-          marginRight: 0,
-          width: 'auto',
-          maxWidth: 'none',
-        }}
-      >
-        {/* TOP HEADER */}
-        <header style={styles.header}>
-          <h1 style={styles.headerTitle}>Admin</h1>
-
-          <div style={styles.headerRight}>
+        ),
+      }}
+      header={
+        <PageHeader
+          title="Admin"
+          actions={
             <NotificationBell
               count={String(pendingResetRequests.length)}
               onClick={() => setActiveNav('requests')}
             />
-
-          </div>
-        </header>
-
-        {/* BODY CONTENT */}
-        <main style={styles.content}>
-          {activeNav === 'dashboard' && <DashboardView />}
-          {activeNav === 'users' && <AccountsPanel />}
-          {activeNav === 'requests' && <RequestsView />}
-        </main>
-      </div>
-    </div>
+          }
+        />
+      }
+    >
+      {activeNav === 'dashboard' && <DashboardView />}
+      {activeNav === 'users' && <AccountsPanel />}
+      {activeNav === 'requests' && <RequestsView />}
+    </Layout>
   );
 }
 
@@ -695,7 +651,11 @@ function RequestsView() {
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{item.time}</div>
                 </td>
                 <td style={styles.td}>
-                  <StatusBadge tone={item.status === 'PENDING' ? 'pending' : item.status === 'APPROVED' ? 'success' : 'neutral'}>{item.status}</StatusBadge>
+                  <StatusBadge
+                    showDot
+                    status={item.status === 'PENDING' ? 'pending' : item.status === 'APPROVED' ? 'approved' : 'neutral'}
+                    label={item.status}
+                  />
                 </td>
                 <td style={styles.td}>
                   {item.status === 'PENDING' && (

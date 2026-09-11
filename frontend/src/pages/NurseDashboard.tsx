@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { CollapsibleSidebar } from '../components/layout/CollapsibleSidebar';
+import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
-import { FilterSortMenu, SearchField, SortDirectionToggle, StatusBadge } from '../components/ui/DashboardUi';
+import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
+import { useTableState } from '../hooks/useTableState';
 import searchImg from '../Img/search.png';
 import documentImg from '../Img/document.png';
 
@@ -260,7 +261,6 @@ const DEFAULT_SUMMARIES: Record<string, string> = {
 
 export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('management');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [charts, setCharts] = useState<Record<string, PatientChart>>(INITIAL_CHARTS);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -271,87 +271,38 @@ export function NurseDashboard() {
   };
 
   return (
-    <div style={shell.appContainer}>
-      <CollapsibleSidebar
-        isOpen={sidebarOpen}
-        onOpenChange={setSidebarOpen}
-        nav={
-          <>
-          <NavItem
-            label="Management"
-            icon={<ManagementIcon />}
-            active={activeTab === 'management'}
-            onClick={() => setActiveTab('management')}
-          />
-          <NavItem
-            label="Patient"
-            icon={<PatientIcon />}
-            active={activeTab === 'patient'}
-            onClick={() => setActiveTab('patient')}
-          />
-          </>
-        }
-        profile={
+    <Layout
+      navbarProps={{
+        ariaLabel: 'Nurse navigation',
+        activeId: activeTab,
+        onNavigate: (id) => setActiveTab(id as TabType),
+        items: [
+          { id: 'management', label: 'Management', icon: <ManagementIcon /> },
+          { id: 'patient', label: 'Patient', icon: <PatientIcon /> },
+        ],
+        profile: (
           <div style={shell.sidebarProfile}>
-          <div style={shell.profileAvatar}>AT</div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={shell.profileName}>Adrian Tabalvaro</div>
-            <div style={shell.profileEmail}>ID 2246787</div>
+            <div style={shell.profileAvatar}>AT</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={shell.profileName}>Adrian Tabalvaro</div>
+              <div style={shell.profileEmail}>ID 2246787</div>
+            </div>
+            <Button variant="secondary" size="sm" onClick={handleLogout}>
+              Log out
+            </Button>
           </div>
-          <button type="button" style={shell.logoutBtn} onClick={handleLogout}>
-            Log out
-          </button>
-          </div>
-        }
-      />
-
-      <div
-        style={{
-          ...shell.mainWrapper,
-          marginLeft: sidebarOpen ? 232 : 0,
-          marginRight: 0,
-          width: 'auto',
-          maxWidth: 'none',
-        }}
-      >
-        <header style={shell.header}>
-          <h1 style={shell.headerTitle}>{activeTab === 'management' ? 'Management' : 'Patient Management'}</h1>
-          <NotificationBell />
-        </header>
-
-        <main style={shell.content}>
-          {activeTab === 'management' && (
-            <ManagementPortalView charts={charts} />
-          )}
-          {activeTab === 'patient' && (
-            <PatientView charts={charts} setCharts={setCharts} />
-          )}
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function NavItem({
-  label,
-  icon,
-  active,
-  onClick,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{ ...shell.navButton, ...(active ? shell.navButtonActive : {}) }}
+        ),
+      }}
+      header={
+        <PageHeader
+          title={activeTab === 'management' ? 'Management' : 'Patient Management'}
+          actions={<NotificationBell />}
+        />
+      }
     >
-      <span style={shell.navIcon}>{icon}</span>
-      {label}
-    </button>
+      {activeTab === 'management' && <ManagementPortalView charts={charts} />}
+      {activeTab === 'patient' && <PatientView charts={charts} setCharts={setCharts} />}
+    </Layout>
   );
 }
 
@@ -532,36 +483,25 @@ function PatientView({
   charts: Record<string, PatientChart>;
   setCharts: React.Dispatch<React.SetStateAction<Record<string, PatientChart>>>;
 }) {
-  const pageSize = 8;
   const [records, setRecords] = useState(INITIAL_ADMISSIONS);
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
   const [viewingName, setViewingName] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | AdmissionStatus>('all');
-  const [sortField, setSortField] = useState<'id' | 'name' | 'admittedOn'>('admittedOn');
-  const [sortDirection, setSortDirection] = useState<'ascending' | 'descending'>('descending');
-  const [openMenu, setOpenMenu] = useState<'filter' | 'sort' | null>(null);
 
-  const filtered = records
-    .filter(
-      (r) =>
-      r.id.toLowerCase().includes(search.toLowerCase()) ||
-      r.name.toLowerCase().includes(search.toLowerCase())
-    )
-    .filter((r) => statusFilter === 'all' || r.status === statusFilter)
-    .sort((a, b) => {
-      const left = a[sortField];
-      const right = b[sortField];
-      const comparison = left.localeCompare(right);
-      return sortDirection === 'ascending' ? comparison : -comparison;
-    });
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const start = (safePage - 1) * pageSize;
-  const rows = filtered.slice(start, start + pageSize);
-  const pages = Array.from({ length: pageCount }, (_, i) => i + 1);
-  const visiblePages =
-    pageCount <= 4 ? pages : [...pages.slice(0, 3), pageCount].filter((n, i, arr) => arr.indexOf(n) === i);
+  // Shared search / filter / sort / pagination state.
+  const table = useTableState<AdmissionRecord>({
+    items: records,
+    pageSize: 8,
+    searchFields: (record) => [record.id, record.name],
+    filterPredicates: {
+      status: (record, value) => value === 'all' || record.status === value,
+    },
+    initialFilters: { status: 'all' },
+    sorters: {
+      id: (record) => record.id,
+      name: (record) => record.name,
+      admittedOn: (record) => record.admittedOn,
+    },
+    initialSort: { field: 'admittedOn', direction: 'descending' },
+  });
 
   const viewing = viewingName ? resolveChart(viewingName, charts) : null;
   const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;
@@ -588,38 +528,38 @@ function PatientView({
 
   return (
     <section style={ui.card}>
-      <div style={ui.pmHeader}>
-        <div>
-          <h2 style={{ ...ui.sectionTitle, margin: 0 }}>Patient Management</h2>
-          <p style={ui.muted}>Manage admissions and discharges.</p>
-        </div>
-      </div>
+      <PageHeader title="Patient Management" description="Manage admissions and discharges." />
 
-      <div style={ui.pmToolbar} className="dashboard-toolbar">
-        <SearchField
-          value={search}
-          onChange={(value) => { setSearch(value); setPage(1); }}
-          placeholder="Search patient, admission ID..."
-          ariaLabel="Search patients and admissions"
-        />
-        <FilterSortMenu label="Filter" open={openMenu === 'filter'} onToggle={() => setOpenMenu(openMenu === 'filter' ? null : 'filter')}>
-          <strong>Admission status</strong>
-          {(['all', 'Admitted', 'Discharged'] as const).map((status) => (
-            <button type="button" key={status} className={statusFilter === status ? 'is-active' : ''} onClick={() => { setStatusFilter(status); setPage(1); }}>
-              {status === 'all' ? 'All statuses' : status}
-            </button>
-          ))}
-        </FilterSortMenu>
-        <FilterSortMenu label="Sort" open={openMenu === 'sort'} onToggle={() => setOpenMenu(openMenu === 'sort' ? null : 'sort')}>
-          <strong>Sort patients by</strong>
-          {([['admittedOn', 'Admission date'], ['name', 'Patient name'], ['id', 'Admission ID']] as const).map(([field, label]) => (
-            <button type="button" key={field} className={sortField === field ? 'is-active' : ''} onClick={() => { setSortField(field); setPage(1); }}>
-              {label}
-            </button>
-          ))}
-          <SortDirectionToggle direction={sortDirection} onChange={(direction) => { setSortDirection(direction); setPage(1); }} />
-        </FilterSortMenu>
-      </div>
+      <DataTableToolbar
+        searchProps={{
+          value: table.query,
+          onChange: table.setQuery,
+          placeholder: 'Search patient, admission ID...',
+          ariaLabel: 'Search patients and admissions',
+        }}
+        filterProps={{
+          title: 'Admission status',
+          options: [
+            { value: 'all', label: 'All statuses' },
+            { value: 'Admitted', label: 'Admitted' },
+            { value: 'Discharged', label: 'Discharged' },
+          ],
+          value: table.filters.status ?? 'all',
+          onChange: (value) => table.setFilter('status', value),
+        }}
+        sortProps={{
+          title: 'Sort patients by',
+          options: [
+            { value: 'admittedOn', label: 'Admission date' },
+            { value: 'name', label: 'Patient name' },
+            { value: 'id', label: 'Admission ID' },
+          ],
+          value: table.sort.field,
+          onChange: table.setSortField,
+          direction: table.sort.direction,
+          onDirectionChange: (direction) => table.setSort({ field: table.sort.field, direction }),
+        }}
+      />
 
       <div style={ui.tableWrap}>
         <table style={ui.table}>
@@ -634,7 +574,7 @@ function PatientView({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {table.rows.map((r) => (
               <tr key={r.id}>
                 <td style={ui.td}>
                   <button type="button" style={ui.idLink} onClick={() => setViewingName(r.name)}>
@@ -649,13 +589,16 @@ function PatientView({
                 <td style={{ ...ui.td, color: '#334155' }}>{r.admittedOn}</td>
                 <td style={{ ...ui.td, color: '#64748b' }}>{r.dischargedOn ?? '—'}</td>
                 <td style={ui.td}>
-                  <StatusBadge tone={r.status === 'Admitted' ? 'success' : 'neutral'}>{r.status}</StatusBadge>
+                  <StatusBadge
+                    showDot
+                    status={r.status === 'Admitted' ? 'admitted' : 'discharged'}
+                  />
                 </td>
                 <td style={{ ...ui.td, textAlign: 'right' }}>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                    <button type="button" style={ui.outlineBtn} onClick={() => setViewingName(r.name)}>
+                    <Button variant="secondary" size="sm" onClick={() => setViewingName(r.name)}>
                       View Record
-                    </button>
+                    </Button>
                   </div>
                 </td>
               </tr>
@@ -664,43 +607,11 @@ function PatientView({
         </table>
       </div>
 
-      <div style={ui.pagination}>
-        <span style={ui.pageInfo}>
-          Showing {filtered.length ? start + 1 : 0} to {Math.min(start + pageSize, filtered.length)} of{' '}
-          {filtered.length} patients
+      <div className="ui-table-footer">
+        <span className="ui-table-footer__info">
+          Showing {table.rangeStart} to {table.rangeEnd} of {table.total} patients
         </span>
-        <div style={ui.pageControls}>
-          <button
-            type="button"
-            style={ui.pageBtn}
-            disabled={safePage === 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            ‹
-          </button>
-          {visiblePages.map((n, i) => (
-            <React.Fragment key={n}>
-              {i === visiblePages.length - 1 && n - visiblePages[i - 1] > 1 && (
-                <span style={{ color: '#94a3b8', fontSize: 13 }}>...</span>
-              )}
-              <button
-                type="button"
-                style={{ ...ui.pageBtn, ...(n === safePage ? ui.pageActive : {}) }}
-                onClick={() => setPage(n)}
-              >
-                {n}
-              </button>
-            </React.Fragment>
-          ))}
-          <button
-            type="button"
-            style={ui.pageBtn}
-            disabled={safePage === pageCount}
-            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-          >
-            ›
-          </button>
-        </div>
+        <Pagination page={table.page} pageCount={table.pageCount} onPageChange={table.setPage} />
       </div>
 
       {viewing && (
