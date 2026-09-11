@@ -34,26 +34,38 @@ type DashboardPatient = {
   id: string;
   name: string;
   patientId: string;
+  gender: string;
   admissionDate: string;
+  daysInCare: number;
   color: string;
   status: PatientStatus;
   admissions?: Patient["admissions"];
 };
 
 function mapPatient(patient: Patient): DashboardPatient {
-  const admissionDate =
-    patient.admissionDate ?? patient.admissions?.[0]?.admissionDate ?? "";
+  const currentAdmission = patient.admissions?.[0];
+  const admissionDate = patient.admissionDate ?? currentAdmission?.admissionDate ?? "";
   const status: PatientStatus =
-    patient.dischargeDate || patient.admissions?.[0]?.dischargeDate
+    patient.dischargeDate || currentAdmission?.dischargeDate
       ? "discharged"
       : "admitted";
+  const startDate = admissionDate ? new Date(admissionDate) : new Date();
+  const endDate = currentAdmission?.dischargeDate
+    ? new Date(currentAdmission.dischargeDate)
+    : new Date();
+  const daysInCare = Math.max(
+    1,
+    Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1,
+  );
   return {
     id: patient.id,
     name: `${patient.firstName} ${patient.lastName}`,
     patientId: patient.id,
+    gender: patient.gender,
     admissionDate: admissionDate
       ? new Date(admissionDate).toLocaleDateString("en-GB")
       : "—",
+    daysInCare,
     color: status === "admitted" ? "#22c55e" : "#ef4444",
     status,
     admissions: patient.admissions,
@@ -220,7 +232,7 @@ function sameDay(a: Date, b: Date) {
 
 function OverviewView() {
   const [page, setPage] = useState(0);
-  const [filter, setFilter] = useState<OverviewFilter>("all");
+  const [filter, setFilter] = useState<OverviewFilter>("admitted");
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 
@@ -309,8 +321,20 @@ function OverviewView() {
             </div>
           </div>
 
-          <table style={overview.table}>
-            <tbody>
+          <div style={overview.tableScroll}>
+            <table style={overview.table}>
+              <thead>
+                <tr>
+                  <th style={{ ...overview.th, width: 22 }} />
+                  <th style={overview.th}>Patient</th>
+                  <th style={overview.th}>Sex</th>
+                  <th style={overview.th}>Admitted</th>
+                  <th style={overview.th}>Days in care</th>
+                  <th style={overview.th}>Status</th>
+                  <th style={{ ...overview.th, width: 36 }} />
+                </tr>
+              </thead>
+              <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
                   <td style={{ ...overview.td, width: 22 }}>
@@ -332,18 +356,25 @@ function OverviewView() {
                     {p.name}
                   </td>
                   <td style={{ ...overview.td, color: "#64748b" }}>
-                    {p.patientId}
+                    {p.gender}
                   </td>
                   <td style={{ ...overview.td, color: "#64748b" }}>
                     {p.admissionDate}
+                  </td>
+                  <td style={{ ...overview.td, color: "#64748b" }}>
+                    {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
+                  </td>
+                  <td style={overview.td}>
+                    <StatusBadge status={p.status} showDot />
                   </td>
                   <td style={{ ...overview.td, textAlign: "right", width: 36 }}>
                     <span style={overview.rowDots}>⋯</span>
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <div style={overview.rightCol}>
