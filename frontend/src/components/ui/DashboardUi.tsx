@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Filter, Search } from 'lucide-react';
 import { Button } from './Button';
 import { Popover } from './Popover';
 import { SortDirectionToggle as UnifiedSortDirectionToggle } from './SortDirectionToggle';
 import { StatusBadge as UnifiedStatusBadge, type StatusValue } from './StatusBadge';
-import searchImg from '../../Img/search.png';
 
 export type SortDirection = 'ascending' | 'descending';
 
