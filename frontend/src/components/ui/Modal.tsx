@@ -85,7 +85,7 @@ export function Modal({
             </button>
           </header>
         ) : null}
-        <div className="ui-modal__body">{children}</div>
+        {children ? <div className="ui-modal__body">{children}</div> : null}
         {footer ? <footer className="ui-modal__footer">{footer}</footer> : null}
       </div>
     </div>,

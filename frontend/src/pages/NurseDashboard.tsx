@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
+import { SidebarProfile } from '../components/layout/SidebarProfile';
 import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
 import { useTableState } from '../hooks/useTableState';
-import searchImg from '../Img/search.png';
 import documentImg from '../Img/document.png';
 
 type TabType = 'management' | 'patient';
@@ -280,22 +280,11 @@ export function NurseDashboard() {
           { id: 'management', label: 'Management', icon: <ManagementIcon /> },
           { id: 'patient', label: 'Patient', icon: <PatientIcon /> },
         ],
-        profile: (
-          <div style={shell.sidebarProfile}>
-            <div style={shell.profileAvatar}>AT</div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={shell.profileName}>Adrian Tabalvaro</div>
-              <div style={shell.profileEmail}>ID 2246787</div>
-            </div>
-            <Button variant="secondary" size="sm" onClick={handleLogout}>
-              Log out
-            </Button>
-          </div>
-        ),
+        profile: <SidebarProfile initials="AT" name="Adrian Tabalvaro" subtitle="ID 2246787" onLogout={handleLogout} />,
       }}
       header={
         <PageHeader
-          title={activeTab === 'management' ? 'Management' : 'Patient Management'}
+          title="Nurse"
           actions={<NotificationBell />}
         />
       }
@@ -671,16 +660,15 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
   return (
     <div style={ui.layout}>
       <section style={ui.card}>
-        <h2 style={ui.sectionTitle}>Patient Overview</h2>
-        <div style={ui.searchWrap}>
-          <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search patient"
-            style={ui.searchInput}
-          />
-        </div>
+        <PageHeader title="Patient Overview" />
+        <DataTableToolbar
+          searchProps={{
+            value: search,
+            onChange: setSearch,
+            placeholder: 'Search patient',
+            ariaLabel: 'Search patients',
+          }}
+        />
         <table style={ui.table}>
           <thead>
             <tr>
@@ -845,147 +833,6 @@ function ManagementPortalView({ charts }: { charts: Record<string, PatientChart>
   );
 }
 
-const shell: Record<string, React.CSSProperties> = {
-  appContainer: {
-    display: 'flex',
-    height: '100vh',
-    overflow: 'hidden',
-    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    backgroundColor: '#f3f4f6',
-  },
-  sidebar: {
-    width: 232,
-    flexShrink: 0,
-    backgroundColor: '#ffffff',
-    borderRight: '1px solid #e5e7eb',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '8px 0 16px',
-    overflow: 'hidden',
-  },
-  sidebarLogoContainer: {
-    padding: '16px 20px 24px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sidebarLogo: { width: 180, height: 'auto', maxHeight: 44, objectFit: 'contain', display: 'block' },
-  sidebarNav: { display: 'flex', flexDirection: 'column', gap: 8, padding: '0 14px', flex: 1 },
-  navButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 16,
-    padding: '14px 14px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    borderRadius: 8,
-    color: '#64748b',
-    fontSize: 16,
-    fontWeight: 600,
-    cursor: 'pointer',
-    textAlign: 'left',
-  },
-  navButtonActive: { backgroundColor: '#f1f5f9', color: '#0f172a' },
-  navIcon: { display: 'flex', width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
-  sidebarProfile: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    minHeight: 56,
-    flexShrink: 0,
-    margin: '0 14px',
-    padding: '10px 8px',
-    borderTop: '1px solid #f1f5f9',
-    boxSizing: 'border-box',
-  },
-  profileAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    backgroundColor: '#cbd5e1',
-    color: TEAL,
-    fontSize: 11,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  profileName: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: '#0f172a',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  profileEmail: {
-    fontSize: 10,
-    color: '#94a3b8',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  logoutBtn: {
-    flexShrink: 0,
-    border: '1px solid #fecaca',
-    backgroundColor: '#fff',
-    color: '#ef4444',
-    borderRadius: 8,
-    padding: '6px 8px',
-    fontSize: 11,
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-  mainWrapper: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 1440,
-    margin: '0 auto',
-    display: 'flex',
-    flexDirection: 'column',
-    minWidth: 0,
-    minHeight: 0,
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '28px 32px 8px',
-    flexShrink: 0,
-  },
-  headerTitle: { margin: 0, fontSize: 28, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' },
-  bellWrap: {
-    position: 'relative',
-    width: 40,
-    height: 40,
-    borderRadius: '50%',
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bellBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#2563eb',
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '0 4px',
-  },
-  content: { padding: '32px', flex: 1, minHeight: 0, overflowY: 'auto' },
-};
-
 const ui: Record<string, React.CSSProperties> = {
   layout: {
     display: 'grid',
@@ -1022,10 +869,12 @@ const ui: Record<string, React.CSSProperties> = {
   th: {
     textAlign: 'left',
     fontSize: 12,
-    fontWeight: 600,
-    color: '#64748b',
-    padding: '10px 8px',
-    borderBottom: '1px solid #f1f5f9',
+    fontWeight: 700,
+    color: 'var(--c4w-color-primary)',
+    backgroundColor: 'var(--c4w-color-primary-soft)',
+    padding: '12px 14px',
+    borderBottom: '1px solid var(--c4w-color-border)',
+    whiteSpace: 'nowrap',
   },
   td: { padding: '12px 8px', fontSize: 13, borderBottom: '1px solid #f8fafc', verticalAlign: 'middle' },
   dot: { width: 10, height: 10, borderRadius: '50%', display: 'inline-block' },
@@ -1184,10 +1033,10 @@ const ui: Record<string, React.CSSProperties> = {
     textAlign: 'left',
     fontSize: 12,
     fontWeight: 700,
-    color: '#0f172a',
+    color: 'var(--c4w-color-primary)',
     padding: '12px 14px',
-    backgroundColor: '#e0f2fe',
-    borderBottom: '1px solid #bae6fd',
+    backgroundColor: 'var(--c4w-color-primary-soft)',
+    borderBottom: '1px solid var(--c4w-color-border)',
   },
   idLink: {
     border: 'none',

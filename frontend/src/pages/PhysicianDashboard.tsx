@@ -5,9 +5,9 @@ import { claimsApi, courseInWardApi, ordersApi, patientsApi } from '../services/
 import type { Patient, PhysicianRequest } from '../types';
 import { Layout } from '../components/layout/Layout';
 import { NotificationBell } from '../components/layout/NotificationBell';
+import { SidebarProfile } from '../components/layout/SidebarProfile';
 import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../components/ui';
 import { useTableState } from '../hooks/useTableState';
-import searchImg from '../Img/search.png';
 import documentImg from '../Img/document.png';
 import requestsIcon from '../Img/requests.png';
 
@@ -83,23 +83,11 @@ export function PhysicianDashboard() {
             icon: <img src={requestsIcon} alt="" aria-hidden="true" style={{ width: 26, height: 26, objectFit: 'contain' }} />,
           },
         ],
-        profile: (
-          <div style={shell.sidebarProfile}>
-            <div style={shell.profileAvatar}>JD</div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={shell.profileName}>Dr. {displayName}</div>
-              <div style={shell.profileEmail}>{user?.userId ?? 'Physician account'}</div>
-            </div>
-            <Button variant="secondary" size="sm" title="Log out" onClick={handleLogout}>
-              Log out
-            </Button>
-          </div>
-        ),
+        profile: <SidebarProfile initials="JD" name={`Dr. ${displayName}`} subtitle={user?.userId ?? 'Physician account'} onLogout={handleLogout} />,
       }}
       header={
         <PageHeader
-          title="Good Day! Dr. John"
-          description="We are pleased to have you!"
+          title="Physician"
           actions={<NotificationBell />}
         />
       }
@@ -935,16 +923,15 @@ function ManageView() {
       <section style={manage.listCard}>
         <div style={manage.listHeader}>
           <h2 style={manage.listTitle}>Patients List</h2>
-          <div style={manage.searchWrap}>
-            <img src={searchImg} alt="Search" style={{ width: 14, height: 14 }} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
-              style={manage.searchInput}
-            />
-          </div>
         </div>
+        <DataTableToolbar
+          searchProps={{
+            value: search,
+            onChange: setSearch,
+            placeholder: 'Search patient...',
+            ariaLabel: 'Search patients',
+          }}
+        />
         <table style={overview.table}>
           <thead>
             <tr>
@@ -1153,186 +1140,6 @@ function shiftDate(value: string, days: number) {
   date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
 }
-
-const shell: Record<string, React.CSSProperties> = {
-  appContainer: {
-    display: 'flex',
-    height: '100vh',
-    overflow: 'hidden',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-    backgroundColor: '#f3f4f6',
-  },
-  sidebar: {
-    width: 232,
-    flexShrink: 0,
-    backgroundColor: '#ffffff',
-    borderRight: '1px solid #e5e7eb',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '8px 0 16px',
-    overflow: 'hidden',
-  },
-  sidebarLogoContainer: {
-    padding: '16px 20px 24px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sidebarLogo: {
-    width: 180,
-    height: 'auto',
-    maxHeight: 44,
-    objectFit: 'contain',
-    display: 'block',
-  },
-  sidebarNav: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 8,
-    padding: '0 14px',
-    flex: 1,
-  },
-  navButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 16,
-    padding: '14px 14px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    borderRadius: 8,
-    color: '#64748b',
-    fontSize: 16,
-    fontWeight: 600,
-    cursor: 'pointer',
-    textAlign: 'left',
-  },
-  navButtonActive: {
-    backgroundColor: 'transparent',
-    color: '#0f172a',
-    fontWeight: 800,
-  },
-  navIcon: {
-    display: 'flex',
-    width: 22,
-    height: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sidebarProfile: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    minHeight: 56,
-    flexShrink: 0,
-    margin: '0 14px',
-    padding: '10px 12px',
-    backgroundColor: '#f3f4f6',
-    borderRadius: 14,
-    boxSizing: 'border-box',
-  },
-  profileAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    backgroundColor: '#cbd5e1',
-    color: TEAL,
-    fontSize: 11,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  profileName: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: '#0f172a',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  profileEmail: {
-    fontSize: 10,
-    color: '#94a3b8',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  logoutBtn: {
-    flexShrink: 0,
-    border: '1px solid #fecaca',
-    backgroundColor: '#fff',
-    color: '#ef4444',
-    borderRadius: 8,
-    padding: '6px 8px',
-    fontSize: 11,
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-  mainWrapper: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 1440,
-    margin: '0 auto',
-    display: 'flex',
-    flexDirection: 'column',
-    minWidth: 0,
-    minHeight: 0,
-    overflow: 'hidden',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '28px 32px 8px',
-    flexShrink: 0,
-  },
-  headerTitle: {
-    margin: 0,
-    fontSize: 28,
-    fontWeight: 800,
-    color: '#0f172a',
-    letterSpacing: '-0.02em',
-  },
-  headerSubtitle: {
-    margin: '4px 0 0',
-    fontSize: 13,
-    color: '#94a3b8',
-  },
-  content: {
-    padding: '32px',
-    flex: 1,
-    minHeight: 0,
-    overflowY: 'auto',
-  },
-  bellWrap: {
-    position: 'relative',
-    width: 42,
-    height: 42,
-    borderRadius: '50%',
-    backgroundColor: '#ffffff',
-    boxShadow: CARD_SHADOW,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bellBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#2563eb',
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '0 4px',
-  },
-};
 
 const overview: Record<string, React.CSSProperties> = {
   page: {
