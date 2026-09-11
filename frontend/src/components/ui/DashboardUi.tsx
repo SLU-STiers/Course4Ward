@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, ChevronRight, Filter, Search } from 'lucide-react';
+import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import searchImg from '../../Img/search.png';
 
 export type SortDirection = 'ascending' | 'descending';
 
@@ -16,7 +17,7 @@ export function SearchField({
 }) {
   return (
     <label className="dashboard-search" aria-label={ariaLabel}>
-      <Search size={17} strokeWidth={2} aria-hidden="true" />
+      <img src={searchImg} alt="" aria-hidden="true" style={{ width: 14, height: 14 }} />
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
