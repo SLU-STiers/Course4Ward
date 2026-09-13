@@ -1,20 +1,53 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Check, Copy, Eye, EyeOff } from 'lucide-react';
 import { authApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
 import { ROLE_PATH } from '../routes/roleRoutes';
+import { ActionButton } from '../components/ui/DashboardUi';
 
 // Import images from src/Img/
 import logoImg from '../Img/Course4Ward-Logo.png';
 import bgImg from '../Img/Course4Ward-Background.png';
-import foregroundImg from '../Img/Course4Ward-Foreground.png';
+import stiersImg from '../Img/S-tiers.png';
+
+const RESET_TOKEN_STORAGE_KEY = 'cims_password_reset_token';
+
+const INCORRECT_CREDENTIALS_MESSAGE = 'Invalid credentials. Please check your user ID and password.';
+
+/**
+ * Turns a failed-login Axios error into a single, consistent message. The
+ * backend can respond with either a plain string (e.g. "Invalid
+ * credentials" from a bad User ID/password) or an array of class-validator
+ * messages (e.g. "password must be longer than or equal to 8 characters"),
+ * but the login form always shows the same friendly wording either way.
+ */
+function buildLoginErrorMessage(_err: any): string {
+  return INCORRECT_CREDENTIALS_MESSAGE;
+}
 
 export function Login() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
+  const storedAccessToken = useAuthStore((s) => s.accessToken);
+  const storedUser = useAuthStore((s) => s.user);
+
+  // "Remember me" persists the session in localStorage (shared across
+  // tabs/windows), so if a remembered session already exists — e.g. the
+  // user opens a brand-new tab — skip the login form entirely and drop
+  // them straight into their dashboard.
+  useEffect(() => {
+    if (!storedAccessToken || !storedUser) return;
+    if (storedUser.mustResetPassword) {
+      navigate('/reset-password', { replace: true });
+      return;
+    }
+    navigate(ROLE_PATH[storedUser.role] ?? '/', { replace: true });
+  }, [storedAccessToken, storedUser, navigate]);
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,6 +55,36 @@ export function Login() {
   const [showReset, setShowReset] = useState(false);
   const [resetUserId, setResetUserId] = useState('');
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState<string | null>(() =>
+    sessionStorage.getItem(RESET_TOKEN_STORAGE_KEY),
+  );
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
+  const [passwordCopied, setPasswordCopied] = useState(false);
+
+  useEffect(() => {
+    if (!resetToken || temporaryPassword) return;
+
+    const checkResetStatus = async () => {
+      try {
+        const { data } = await authApi.passwordResetStatus(resetToken);
+        if (data.status === 'APPROVED' && data.temporaryPassword) {
+          setTemporaryPassword(data.temporaryPassword);
+          setResetMessage('Your reset request was approved. Use this temporary password to log in.');
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Password reset approved', {
+              body: 'Your temporary password is ready on the login page.',
+            });
+          }
+        }
+      } catch {
+        // Keep polling; a brief network interruption should not lose the notification.
+      }
+    };
+
+    void checkResetStatus();
+    const intervalId = window.setInterval(checkResetStatus, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [resetToken, temporaryPassword]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -30,7 +93,8 @@ export function Login() {
 
     try {
       const { data } = await authApi.login(userId, password);
-      setAuth(data.accessToken, data.refreshToken, data.user);
+      setAuth(data.accessToken, data.refreshToken, data.user, rememberMe);
+      sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
 
       if (data.user.mustResetPassword) {
         navigate('/reset-password');
@@ -38,7 +102,7 @@ export function Login() {
         navigate(ROLE_PATH[data.user.role] ?? '/', { replace: true });
       }
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Login failed. Check your credentials.');
+      setError(buildLoginErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -47,273 +111,153 @@ export function Login() {
   async function handleResetRequest(e: React.FormEvent) {
     e.preventDefault();
     setResetMessage(null);
+    setTemporaryPassword(null);
+    setPasswordCopied(false);
     try {
-      await authApi.requestPasswordReset(resetUserId);
+      const { data } = await authApi.requestPasswordReset(resetUserId);
+      setResetToken(data.resetToken);
+      sessionStorage.setItem(RESET_TOKEN_STORAGE_KEY, data.resetToken);
+      setShowReset(false);
       setResetMessage(
-        'If that user ID exists, a reset code has been issued. Contact IT desk to retrieve it.'
+        'Your request was submitted. Keep this login page open while an administrator reviews it.'
       );
-    } catch {
-      setResetMessage('Something went wrong. Please contact the IT desk.');
+      if ('Notification' in window && Notification.permission === 'default') {
+        void Notification.requestPermission();
+      }
+    } catch (err: any) {
+      const backendMessage = err?.response?.data?.message;
+      setResetMessage(
+        backendMessage || 'Something went wrong. Please contact the IT desk.'
+      );
     }
   }
 
   return (
     <div
-      style={{
-        ...styles.page,
-        backgroundImage: `url(${bgImg})`,
-      }}
+      className="auth-page"
+      style={{ backgroundImage: `url(${bgImg})` }}
     >
-      {/* Central Blue Banner / Foreground Section */}
-      <div
-        style={{
-          ...styles.blueBannerContainer,
-          backgroundImage: `url(${foregroundImg})`,
-        }}
-      >
-        {/* Floating White Login Card */}
-        <div style={styles.card}>
-          {/* Logo */}
-          <div style={styles.logoContainer}>
-            <img
-              src={logoImg}
-              alt="Course4Ward Logo"
-              style={styles.logo}
-            />
-          </div>
+      {/* Floating White Login Card */}
+      <div className="auth-card">
+        {/* Logo */}
+        <div className="auth-logo-container">
+          <img src={logoImg} alt="Course4Ward Logo" className="auth-logo" />
+        </div>
 
-          {!showReset ? (
-            <form onSubmit={handleLogin} style={styles.form}>
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>User ID</label>
-                <input
-                  style={styles.input}
-                  value={userId}
-                  onChange={(e) => setUserId(e.target.value)}
-                  placeholder="Enter User ID..."
-                  required
-                />
-              </div>
+        {!showReset ? (
+          <form onSubmit={handleLogin} className="auth-form">
+            <div className="auth-field">
+              <label className="auth-label">User ID</label>
+              <input
+                className="auth-input"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                placeholder="Enter User ID..."
+                required
+              />
+            </div>
 
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>Password</label>
+            <div className="auth-field">
+              <label className="auth-label">Password</label>
+              <div className="auth-password-wrap">
                 <input
-                  style={styles.input}
-                  type="password"
+                  className="auth-input auth-input-password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter Password..."
                   required
                 />
-              </div>
-
-              {error && <p style={styles.error}>{error}</p>}
-
-              {/* Options Row */}
-              <div style={styles.optionsRow}>
-                <label style={styles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    style={styles.checkbox}
-                  />
-                  Remember me
-                </label>
-
                 <button
                   type="button"
-                  style={styles.linkButton}
-                  onClick={() => setShowReset(true)}
+                  className="auth-toggle-button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  Forgot Password?
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              {error && <p className="auth-error" role="alert">{error}</p>}
+            </div>
 
-              <button style={styles.button} type="submit" disabled={loading}>
-                {loading ? 'Signing in...' : 'Login'}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleResetRequest} style={styles.form}>
-              <div style={styles.fieldGroup}>
-                <label style={styles.label}>User ID</label>
-                <input
-                  style={styles.input}
-                  value={resetUserId}
-                  onChange={(e) => setResetUserId(e.target.value)}
-                  placeholder="Enter User ID..."
-                  required
-                />
+            {resetMessage && <p className="auth-info">{resetMessage}</p>}
+
+            {temporaryPassword && (
+              <div className="auth-notification" role="status">
+                <div className="auth-notification-row">
+                  <strong>Temporary password:</strong>
+                  <code className="auth-notification-value">{temporaryPassword}</code>
+                  <button
+                    type="button"
+                    aria-label="Copy temporary password"
+                    title="Copy temporary password"
+                    className="auth-copy-button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(temporaryPassword);
+                      setPasswordCopied(true);
+                    }}
+                  >
+                    {passwordCopied ? <Check size={16} /> : <Copy size={16} />}
+                  </button>
+                </div>
+                <span>Enter it on the login screen to continue.</span>
               </div>
+            )}
 
-              {resetMessage && <p style={styles.info}>{resetMessage}</p>}
+            {/* Options Row */}
+            <div className="auth-options-row">
+              <label className="auth-checkbox-label">
+                <input
+                  type="checkbox"
+                  className="auth-checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                Remember me
+              </label>
 
-              <button style={styles.button} type="submit">
+              <button type="button" className="auth-link" onClick={() => setShowReset(true)}>
+                Forgot Password?
+              </button>
+            </div>
+
+            <ActionButton className="auth-submit" type="submit" disabled={loading} loading={loading}>
+              {loading ? 'Signing in...' : 'Login'}
+            </ActionButton>
+          </form>
+        ) : (
+          <form onSubmit={handleResetRequest} className="auth-form">
+            <div className="auth-field">
+              <label className="auth-label">User ID</label>
+              <input
+                className="auth-input"
+                value={resetUserId}
+                onChange={(e) => setResetUserId(e.target.value)}
+                placeholder="Enter User ID..."
+                required
+              />
+            </div>
+
+            {resetMessage && <p className="auth-info">{resetMessage}</p>}
+
+            {!temporaryPassword && (
+              <ActionButton className="auth-submit" type="submit">
                 Request reset code
-              </button>
+              </ActionButton>
+            )}
 
-              <button
-                type="button"
-                style={styles.linkButtonCenter}
-                onClick={() => setShowReset(false)}
-              >
-                Back to login
-              </button>
-            </form>
-          )}
+            <button type="button" className="auth-link-center" onClick={() => setShowReset(false)}>
+              Back to login
+            </button>
+          </form>
+        )}
 
-          {/* Footer / Developed by */}
-          <div style={styles.footer}>
-            <span style={styles.footerText}>Developed by:</span>
-            <span style={styles.stiersText}>S-TIERS</span>
-          </div>
+        {/* Footer / Developed by */}
+        <div className="auth-footer">
+          <span className="auth-footer-text">Developed by:</span>
+          <img src={stiersImg} alt="S-TIERS" className="auth-footer-logo" />
         </div>
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: '100vh',
-    width: '100vw',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    backgroundRepeat: 'repeat',
-    backgroundSize: '900px auto',
-    backgroundPosition: 'center',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    padding: '20px',
-    boxSizing: 'border-box',
-  },
-  blueBannerContainer: {
-    width: '100%',
-    maxWidth: '1080px',
-    minHeight: '620px',
-    borderRadius: '16px',
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-    padding: '20px',
-    boxSizing: 'border-box',
-  },
-  card: {
-    width: '100%',
-    maxWidth: '380px',
-    backgroundColor: '#ffffff',
-    borderRadius: '20px',
-    padding: '36px 32px 28px 32px',
-    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.12)',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  logoContainer: {
-    display: 'flex',
-    justifyContent: 'center',
-    marginBottom: '28px',
-  },
-  logo: {
-    height: '42px',
-    objectFit: 'contain',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  fieldGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  label: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#64748b',
-  },
-  input: {
-    padding: '10px 14px',
-    borderRadius: '6px',
-    border: '1px solid #e2e8f0',
-    fontSize: '13px',
-    color: '#1e293b',
-    outline: 'none',
-    backgroundColor: '#ffffff',
-  },
-  optionsRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    fontSize: '12px',
-    marginTop: '2px',
-  },
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    color: '#64748b',
-    cursor: 'pointer',
-    fontSize: '12px',
-  },
-  checkbox: {
-    cursor: 'pointer',
-    accentColor: '#0a5c83',
-  },
-  button: {
-    marginTop: '8px',
-    padding: '12px',
-    borderRadius: '6px',
-    border: 'none',
-    backgroundColor: '#0a5c83',
-    color: '#ffffff',
-    fontWeight: 600,
-    fontSize: '14px',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s ease',
-  },
-  linkButton: {
-    background: 'none',
-    border: 'none',
-    color: '#0a5c83',
-    fontSize: '12px',
-    cursor: 'pointer',
-    padding: 0,
-    fontWeight: 500,
-  },
-  linkButtonCenter: {
-    background: 'none',
-    border: 'none',
-    color: '#0a5c83',
-    fontSize: '12px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    padding: '4px',
-    marginTop: '6px',
-  },
-  footer: {
-    marginTop: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '6px',
-  },
-  footerText: {
-    fontSize: '11px',
-    color: '#94a3b8',
-    fontWeight: 500,
-  },
-  stiersText: {
-    fontSize: '12px',
-    fontWeight: 700,
-    color: '#0f4c81',
-    letterSpacing: '0.5px',
-  },
-  error: { color: '#dc2626', fontSize: '12px', margin: 0 },
-  info: { color: '#0a5c83', fontSize: '12px', margin: 0 },
-};

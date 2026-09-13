@@ -4,20 +4,32 @@ import type {
   PhysicianOrder,
   CourseInWard,
   Claim,
+  ClaimRecord,
   AuthUser,
+  PhysicianRequest,
 } from '../types';
 
 // --- Auth ---
 export const authApi = {
+  session: () => api.get<{ authenticated: boolean }>('/auth/session'),
   login: (userId: string, password: string) =>
     api.post<{ accessToken: string; refreshToken: string; user: AuthUser; mustResetPassword: boolean }>(
       '/auth/login',
       { userId, password },
     ),
   requestPasswordReset: (userId: string) =>
-    api.post('/auth/password-reset/request', { userId }),
+    api.post<{ message: string; resetToken: string }>('/auth/password-reset/request', { userId }),
+  passwordResetStatus: (resetToken: string) =>
+    api.get<{ status: string; temporaryPassword?: string | null }>('/auth/password-reset/status', {
+      params: { resetToken },
+    }),
   confirmPasswordReset: (userId: string, resetToken: string, newPassword: string) =>
     api.post('/auth/password-reset/confirm', { userId, resetToken, newPassword }),
+  changePassword: (newPassword: string) =>
+    api.post<{ accessToken: string; refreshToken: string; user: AuthUser }>(
+      '/auth/password-change',
+      { newPassword },
+    ),
 };
 
 // --- Patients ---
@@ -61,7 +73,9 @@ export const courseInWardApi = {
 // --- Claims ---
 export const claimsApi = {
   create: (courseInWardId: string) => api.post<Claim>('/claims', { courseInWardId }),
-  findAll: () => api.get<Claim[]>('/claims'),
+  findAll: () => api.get<ClaimRecord[]>('/claims'),
+  physicianRequests: () => api.get<PhysicianRequest[]>('/claims/physician-requests'),
+  approvePhysicianRequest: (id: string) => api.patch(`/claims/${id}/approve`),
   notifyPhysician: (id: string) => api.post(`/claims/${id}/notify-physician`),
   generateCf4: (id: string) => api.post(`/claims/${id}/generate-cf4`),
 };
@@ -71,14 +85,13 @@ export const adminApi = {
   listUsers: () => api.get('/admin/users'),
   createUser: (data: any) => api.post('/admin/users', data),
   updateUser: (id: string, data: any) => api.patch(`/admin/users/${id}`, data),
-  deactivateUser: (id: string) => api.delete(`/admin/users/${id}`),
-  auditLogs: (params?: { skip?: number; take?: number; entityType?: string }) =>
+  auditLogs: (params?: { skip?: number; take?: number }) =>
     api.get('/admin/audit-logs', { params }),
+  analyticsSummary: () => api.get('/admin/audit-logs/analytics/summary'),
   ordersAnalytics: (bucket: 'day' | 'week' | 'month' | 'year') =>
     api.get('/admin/audit-logs/analytics/orders', { params: { bucket } }),
-  getResetRequests: () => 
+  getResetRequests: () =>
     api.get('/admin/password-reset-requests'),
-  
-  approveResetRequest: (requestId: string) => 
+  approveResetRequest: (requestId: string) =>
     api.post(`/admin/password-reset-requests/${requestId}/approve`),
 };

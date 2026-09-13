@@ -61,4 +61,17 @@ export class AuditLogService {
       LIMIT 100;
     `);
   }
+
+  async summary() {
+    const [totalUsers, activeUsers, pendingResets, pendingSummaries, approvedSummaries] =
+      await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.user.count({ where: { isActive: true } }),
+        this.prisma.passwordResetRequest.count({ where: { status: 'PENDING' } }),
+        this.prisma.courseInWard.count({ where: { status: 'DRAFT_AI' } }),
+        this.prisma.courseInWard.count({ where: { status: 'APPROVED' } }),
+      ]);
+
+    return { totalUsers, activeUsers, pendingResets, pendingSummaries, approvedSummaries };
+  }
 }

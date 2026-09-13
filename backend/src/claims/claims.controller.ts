@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { IsUUID } from 'class-validator';
 import { Role } from '@prisma/client';
@@ -16,27 +16,42 @@ class CreateClaimDto {
 @ApiTags('claims')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.CLAIMS_PROCESSOR)
 @Controller('claims')
 export class ClaimsController {
   constructor(private claimsService: ClaimsService) {}
 
   @Post()
+  @Roles(Role.CLAIMS_PROCESSOR)
   create(@Body() dto: CreateClaimDto, @CurrentUser() user: any) {
     return this.claimsService.createFromSummary(dto.courseInWardId, user.id);
   }
 
   @Get()
+  @Roles(Role.CLAIMS_PROCESSOR)
   findAll() {
     return this.claimsService.findAll();
   }
 
+  @Get('physician-requests')
+  @Roles(Role.PHYSICIAN)
+  findForPhysician(@CurrentUser() user: any) {
+    return this.claimsService.findForPhysician(user.id);
+  }
+
+  @Patch(':id/approve')
+  @Roles(Role.PHYSICIAN)
+  approve(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.claimsService.approveForPhysician(id, user.id);
+  }
+
   @Post(':id/notify-physician')
+  @Roles(Role.CLAIMS_PROCESSOR)
   notifyPhysician(@Param('id') id: string, @CurrentUser() user: any) {
     return this.claimsService.notifyPhysician(id, user.id);
   }
 
   @Post(':id/generate-cf4')
+  @Roles(Role.CLAIMS_PROCESSOR)
   generateCf4(@Param('id') id: string, @CurrentUser() user: any) {
     return this.claimsService.generateCf4(id, user.id);
   }

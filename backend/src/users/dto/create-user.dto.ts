@@ -3,10 +3,6 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
 export class CreateUserDto {
-  @ApiProperty({ example: 'DRJ-0231' })
-  @IsString()
-  userId: string;
-
   @ApiProperty()
   @IsString()
   firstName: string;

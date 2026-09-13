@@ -2,10 +2,12 @@ import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { PATH_ROLE } from '../../routes/roleRoutes';
+import { useIdleLogout } from '../../hooks/useIdleLogout';
 
 const KNOWN_SHELL_PATHS = ['/physician', '/nurse', '/claims', '/admin'];
 
 export function AppLayout() {
+  useIdleLogout();
   const { user, logout, setAuth, accessToken, refreshToken } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
@@ -19,6 +21,12 @@ export function AppLayout() {
     (path) => lowerPath === path || lowerPath.startsWith(`${path}/`)
   );
 
+  // Dev-only convenience: visiting a different role's URL while logged in
+  // (e.g. a Physician session visiting /admin) reassigns the session to
+  // that role so the matching dashboard renders without a separate login.
+  // Intentionally NOT guarded beyond `import.meta.env.DEV` — this bypasses
+  // real role-based access control on purpose, for local testing only. It
+  // is dead-code-eliminated in production builds.
   useEffect(() => {
     if (!import.meta.env.DEV || !user || !accessToken || !refreshToken) return;
     const role = PATH_ROLE[lowerPath];
@@ -36,45 +44,28 @@ export function AppLayout() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: 'system-ui, sans-serif' }}>
-      <header
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '14px 24px',
-          background: '#0f172a',
-          color: 'white',
-        }}
-      >
-        <div>
+    <div className="app-fallback-shell">
+      <header className="app-fallback-header">
+        <div className="app-fallback-brand">
           <strong>SLU Sacred Heart CIMS</strong>
-          <span style={{ marginLeft: 12, fontSize: 13, opacity: 0.75 }}>{user?.role}</span>
+          <span className="app-fallback-role">{user?.role}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ fontSize: 13 }}>
+        <div className="app-fallback-userarea">
+          <span className="app-fallback-username">
             {user?.firstName} {user?.lastName}
           </span>
           <button
+            className="app-fallback-logout"
             onClick={() => {
               logout();
               navigate('/login');
-            }}
-            style={{
-              background: '#1e293b',
-              color: 'white',
-              border: 'none',
-              padding: '6px 12px',
-              borderRadius: 6,
-              cursor: 'pointer',
-              fontSize: 13,
             }}
           >
             Log out
           </button>
         </div>
       </header>
-      <main style={{ padding: 24 }}>
+      <main className="app-fallback-main">
         <Outlet />
       </main>
     </div>
