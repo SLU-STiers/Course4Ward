@@ -33,6 +33,7 @@ export const authApi = {
 
 // --- Patients ---
 export const patientsApi = {
+  list: () => api.get<Patient[]>('/patients'),
   assignedToMe: () => api.get<Patient[]>('/patients/assigned-to-me'),
   nurseAssigned: () => api.get<Patient[]>('/patients/nurse-assigned'),
   getOne: (id: string) => api.get<Patient>(`/patients/${id}`),

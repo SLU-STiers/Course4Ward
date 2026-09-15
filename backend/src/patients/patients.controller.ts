@@ -29,6 +29,12 @@ export class PatientsController {
     return this.patientsService.create(dto, user.id);
   }
 
+  @Get()
+  @Roles(Role.PHYSICIAN, Role.NURSE, Role.CLAIMS_PROCESSOR)
+  findAll(@CurrentUser() user: any) {
+    return this.patientsService.findAssignedTo(user.id, user.role);
+  }
+
   @Get('assigned-to-me')
   @Roles(Role.PHYSICIAN, Role.NURSE)
   findAssignedToMe(@CurrentUser() user: any) {

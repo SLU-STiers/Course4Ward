@@ -412,6 +412,20 @@ describe("Patients Module", () => {
       });
     });
 
+    describe("findAll", () => {
+      it("should return the correct patient list for the current user role", async () => {
+        jest.spyOn(service, "findAssignedTo").mockResolvedValue([mockPatient]);
+
+        const result = await controller.findAll(mockUser);
+
+        expect(service.findAssignedTo).toHaveBeenCalledWith(
+          mockUser.id,
+          mockUser.role,
+        );
+        expect(result).toEqual([mockPatient]);
+      });
+    });
+
     describe("findAssignedToMe", () => {
       it("should call service.findAssignedTo with user id", async () => {
         jest.spyOn(service, "findAssignedTo").mockResolvedValue([mockPatient]);
