@@ -28,6 +28,10 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     gender: patient.gender ?? '—',
     initials: `${patient.firstName[0] ?? ''}${patient.lastName[0] ?? ''}`,
     status: admission?.dischargeDate ? 'discharged' : 'admitted',
+    initialAssessment: admission?.initialAssessment,
+    assignedDoctor: admission?.physician
+      ? `Dr. ${admission.physician.firstName} ${admission.physician.lastName}`
+      : null,
   };
 }
 
@@ -111,8 +115,19 @@ export function ManagementPortalView() {
     gender: detailPatient.gender,
     admissionDate: detailPatient.admissionDate,
     recordId: detailPatient.recordId,
-    assignedDoctors: [],
-    triage: { time: '—', heartRate: '—', respRate: '—', spo2: '—', bp: '—', temp: '—', pain: '—', notes: 'No triage assessment recorded.' },
+    assignedDoctors: detailPatient.assignedDoctor
+      ? [detailPatient.assignedDoctor]
+      : [],
+    triage: {
+      time: '—',
+      heartRate: '—',
+      respRate: '—',
+      spo2: '—',
+      bp: '—',
+      temp: '—',
+      pain: '—',
+      notes: detailPatient.initialAssessment ?? 'No triage assessment recorded.',
+    },
   } : null;
 
   return (

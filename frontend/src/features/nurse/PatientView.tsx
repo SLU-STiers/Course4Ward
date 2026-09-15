@@ -63,7 +63,9 @@ export function PatientView({
     gender: viewingPatient.gender ?? '—',
     admissionDate: viewingAdmission ? new Date(viewingAdmission.admissionDate).toLocaleDateString('en-GB') : '—',
     recordId: viewingAdmission?.id ?? viewingPatient.id,
-    assignedDoctors: [],
+    assignedDoctors: viewingAdmission?.physician
+      ? [`Dr. ${viewingAdmission.physician.firstName} ${viewingAdmission.physician.lastName}`]
+      : [],
     triage: { time: '—', heartRate: '—', respRate: '—', spo2: '—', bp: '—', temp: '—', pain: '—', notes: viewingAdmission?.initialAssessment ?? 'No triage assessment recorded.' },
   } : null;
   const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;

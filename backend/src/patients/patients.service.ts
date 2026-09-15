@@ -53,7 +53,13 @@ export class PatientsService {
       include: {
         admissions: {
           orderBy: { admissionDate: 'desc' },
-          select: { id: true, admissionDate: true, dischargeDate: true, initialAssessment: true },
+          select: {
+            id: true,
+            admissionDate: true,
+            dischargeDate: true,
+            initialAssessment: true,
+            physician: { select: { firstName: true, lastName: true } },
+          },
         },
       },
       orderBy: { updatedAt: 'desc' },

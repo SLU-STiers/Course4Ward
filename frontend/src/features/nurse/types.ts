@@ -13,6 +13,8 @@ export type NursePatient = {
   gender: string;
   initials: string;
   status?: 'admitted' | 'discharged';
+  initialAssessment?: string | null;
+  assignedDoctor?: string | null;
 };
 export type TriageAssessment = {
   time: string;
