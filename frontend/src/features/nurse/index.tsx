@@ -8,15 +8,14 @@ import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { PageHeader } from '../../components/ui';
 
-import { INITIAL_CHARTS } from './data';
 import { ManagementIcon, PatientIcon } from './icons';
 import { ManagementPortalView } from './ManagementPortalView';
 import { PatientView } from './PatientView';
-import type { PatientChart, TabType } from './types';
+import type { TabType } from './types';
 
 export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('management');
-  const [charts, setCharts] = useState<Record<string, PatientChart>>(INITIAL_CHARTS);
+  const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
@@ -35,7 +34,7 @@ export function NurseDashboard() {
           { id: 'management', label: 'Management', icon: <ManagementIcon /> },
           { id: 'patient', label: 'Patient', icon: <PatientIcon /> },
         ],
-        profile: <SidebarProfile initials="AT" name="Adrian Tabalvaro" subtitle="ID 2246787" onLogout={handleLogout} />,
+        profile: <SidebarProfile initials={`${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`} name={user ? `${user.firstName} ${user.lastName}` : 'Nurse'} subtitle={user?.userId ?? 'Nurse account'} onLogout={handleLogout} />,
       }}
       header={
         <PageHeader
@@ -44,8 +43,8 @@ export function NurseDashboard() {
         />
       }
     >
-      {activeTab === 'management' && <ManagementPortalView charts={charts} />}
-      {activeTab === 'patient' && <PatientView charts={charts} setCharts={setCharts} />}
+      {activeTab === 'management' && <ManagementPortalView />}
+      {activeTab === 'patient' && <PatientView />}
     </Layout>
   );
 }

@@ -35,6 +35,12 @@ export class PatientsController {
     return this.patientsService.findAssignedTo(user.id);
   }
 
+  @Get('nurse-assigned')
+  @Roles(Role.NURSE)
+  findForNurse() {
+    return this.patientsService.findAllForNurse();
+  }
+
   @Get(':id')
   @Roles(Role.PHYSICIAN, Role.NURSE, Role.CLAIMS_PROCESSOR)
   findOne(@Param('id') id: string) {
@@ -45,5 +51,11 @@ export class PatientsController {
   @Roles(Role.NURSE, Role.PHYSICIAN)
   update(@Param('id') id: string, @Body() dto: UpdatePatientDto, @CurrentUser() user: any) {
     return this.patientsService.update(id, dto, user.id);
+  }
+
+  @Patch('admissions/:id/discharge')
+  @Roles(Role.NURSE)
+  discharge(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.patientsService.dischargeAdmission(id, user.id);
   }
 }

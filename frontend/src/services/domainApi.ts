@@ -35,9 +35,11 @@ export const authApi = {
 // --- Patients ---
 export const patientsApi = {
   assignedToMe: () => api.get<Patient[]>('/patients/assigned-to-me'),
+  nurseAssigned: () => api.get<Patient[]>('/patients/nurse-assigned'),
   getOne: (id: string) => api.get<Patient>(`/patients/${id}`),
   create: (data: Partial<Patient>) => api.post<Patient>('/patients', data),
   update: (id: string, data: Partial<Patient>) => api.patch<Patient>(`/patients/${id}`, data),
+  discharge: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/discharge`),
 };
 
 // --- Orders ---

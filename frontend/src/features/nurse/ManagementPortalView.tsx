@@ -1,24 +1,71 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DataTableToolbar, PageHeader, Pagination } from '../../components/ui';
 import { useTableState } from '../../hooks/useTableState';
 import { formatDateLongFromKey } from '../../lib/format';
 import documentImg from '../../Img/document.png';
 import llamaIcon from '../../Img/llama.png';
 import { ui } from './styles';
-
-import { DEFAULT_ORDER_SETS, DEFAULT_SUMMARIES, MOCK_PATIENTS, resolveChart } from './data';
 import { PatientDetailModal } from './PatientDetailModal';
-import type { NursePatient, OrderSet, PatientChart } from './types';
+import type { NursePatient, OrderSet } from './types';
+import { ordersApi, patientsApi } from '../../services/domainApi';
+import type { Patient, PhysicianOrder } from '../../types';
 
-export function ManagementPortalView({ charts }: { charts: Record<string, PatientChart> }) {
-  const [patients] = useState(MOCK_PATIENTS);
-  const [selectedId, setSelectedId] = useState<string | null>(MOCK_PATIENTS[0].id);
-  const [viewedIds, setViewedIds] = useState<string[]>([MOCK_PATIENTS[0].id]);
-  const [selectedDate, setSelectedDate] = useState('2026-04-15');
-  const [ordersByPatient] = useState<Record<string, OrderSet[]>>(DEFAULT_ORDER_SETS);
+const colors = ['#ef4444', '#22c55e', '#84cc16', '#6366f1', '#eab308', '#06b6d4'];
+
+function mapPatient(patient: Patient, index: number): NursePatient {
+  const admission = patient.admissions?.[0];
+  const name = `${patient.firstName} ${patient.lastName}`;
+  return {
+    id: patient.id,
+    name,
+    patientId: patient.id,
+    recordId: admission?.id ?? patient.id,
+    admissionDate: admission ? new Date(admission.admissionDate).toLocaleDateString('en-GB') : '—',
+    color: colors[index % colors.length],
+    age: patient.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()) : 0,
+    gender: patient.gender ?? '—',
+    initials: `${patient.firstName[0] ?? ''}${patient.lastName[0] ?? ''}`,
+    status: admission?.dischargeDate ? 'discharged' : 'admitted',
+  };
+}
+
+function mapOrder(order: PhysicianOrder): OrderSet {
+  const date = new Date(order.dateCreated);
+  return {
+    dateKey: date.toISOString().slice(0, 10),
+    dateLabel: date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+    time: date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    doctor: order.orderedBy ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Physician',
+    orders: [order.orderContent],
+  };
+}
+
+export function ManagementPortalView() {
+  const [patients, setPatients] = useState<NursePatient[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [viewedIds, setViewedIds] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [detailName, setDetailName] = useState<string | null>(null);
+
+  useEffect(() => {
+    patientsApi.nurseAssigned().then(({ data }) => {
+      const mapped = data.map(mapPatient);
+      setPatients(mapped);
+      if (mapped[0]) setSelectedId(mapped[0].id);
+    }).catch(() => setPatients([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    ordersApi.forPatient(selectedId).then(({ data }) => {
+      const mapped = data.filter((order) => order.active).map(mapOrder);
+      setOrdersByPatient((previous) => ({ ...previous, [selectedId]: mapped }));
+      setSelectedDate((current) => current || mapped[0]?.dateKey || '');
+    }).catch(() => setOrdersByPatient((previous) => ({ ...previous, [selectedId]: [] })));
+  }, [selectedId]);
 
   const table = useTableState<NursePatient>({
     items: patients,
@@ -45,7 +92,7 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
   const openPatient = (id: string) => {
     setSelectedId(id);
     const sets = ordersByPatient[id] ?? [];
-    const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '2026-04-15';
+    const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '';
     setSelectedDate(latest);
     setViewedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
@@ -57,7 +104,16 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
     if (next) setSelectedDate(next);
   };
 
-  const detailChart = detailName ? resolveChart(detailName, charts) : null;
+  const detailPatient = detailName ? patients.find((patient) => patient.name === detailName) : null;
+  const detailChart = detailPatient ? {
+    name: detailPatient.name,
+    age: detailPatient.age,
+    gender: detailPatient.gender,
+    admissionDate: detailPatient.admissionDate,
+    recordId: detailPatient.recordId,
+    assignedDoctors: [],
+    triage: { time: '—', heartRate: '—', respRate: '—', spo2: '—', bp: '—', temp: '—', pain: '—', notes: 'No triage assessment recorded.' },
+  } : null;
 
   return (
     <div style={ui.layout}>
@@ -243,8 +299,7 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
               </div>
               <div style={ui.aiBody}>
                 <p style={ui.aiText}>
-                  {DEFAULT_SUMMARIES[selected.id] ??
-                    `No AI summary yet for ${selected.name}. Physician orders will appear here once summarized.`}
+                  {`No AI summary loaded for ${selected.name}. Physician summaries are available through the physician workflow.`}
                 </p>
               </div>
             </div>
@@ -257,7 +312,6 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
       {detailChart && (
         <PatientDetailModal
           chart={detailChart}
-          canAddDoctor={false}
           onClose={() => setDetailName(null)}
         />
       )}

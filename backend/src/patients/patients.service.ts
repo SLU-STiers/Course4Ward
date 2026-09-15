@@ -47,6 +47,19 @@ export class PatientsService {
     });
   }
 
+  findAllForNurse() {
+    return this.prisma.patient.findMany({
+      where: { admissions: { some: {} } },
+      include: {
+        admissions: {
+          orderBy: { admissionDate: 'desc' },
+          select: { id: true, admissionDate: true, dischargeDate: true, initialAssessment: true },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   async findOne(id: string) {
     const patient = await this.prisma.patient.findUnique({
       where: { id },
@@ -76,6 +89,17 @@ export class PatientsService {
     });
 
     return patient;
+  }
+
+  async dischargeAdmission(id: string, userId: string) {
+    const admission = await this.prisma.patientAdmission.findUnique({ where: { id } });
+    if (!admission) throw new NotFoundException('Admission not found');
+    const updated = await this.prisma.patientAdmission.update({
+      where: { id },
+      data: { dischargeDate: new Date() },
+    });
+    await this.auditLog.record({ userId, action: 'REGISTER_PATIENT' });
+    return updated;
   }
 
 }

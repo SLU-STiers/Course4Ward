@@ -1,29 +1,20 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useState } from 'react';
 import { ui } from './styles';
 
-import { AVAILABLE_DOCTORS } from './data';
 import type { AdmissionStatus, PatientChart } from './types';
 
 export function PatientDetailModal({
   chart,
-  canAddDoctor,
   onClose,
-  onAddDoctor,
   status,
   onDischarge,
 }: {
   chart: PatientChart;
-  canAddDoctor: boolean;
   onClose: () => void;
-  onAddDoctor?: (doctor: string) => void;
   status?: AdmissionStatus;
   onDischarge?: () => void;
 }) {
-  const [doctorPick, setDoctorPick] = useState('');
-  const unusedDoctors = AVAILABLE_DOCTORS.filter((d) => !chart.assignedDoctors.includes(d));
-
   return (
     <div style={ui.overlay} onClick={onClose}>
       <div style={ui.modalWide} onClick={(e) => e.stopPropagation()}>
@@ -84,35 +75,6 @@ export function PatientDetailModal({
           </ul>
         ) : (
           <p style={ui.muted}>No doctor assigned yet.</p>
-        )}
-
-        {canAddDoctor && (
-          <div style={ui.addDoctorRow}>
-            <select
-              value={doctorPick}
-              onChange={(e) => setDoctorPick(e.target.value)}
-              style={{ ...ui.input, flex: 1 }}
-            >
-              <option value="">Select doctor</option>
-              {unusedDoctors.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              style={ui.primaryBtn}
-              disabled={!doctorPick}
-              onClick={() => {
-                if (!doctorPick || !onAddDoctor) return;
-                onAddDoctor(doctorPick);
-                setDoctorPick('');
-              }}
-            >
-              Add Doctor
-            </button>
-          </div>
         )}
 
         <div style={ui.modalActions}>

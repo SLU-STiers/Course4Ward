@@ -1,23 +1,42 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import React, { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../../components/ui';
 import { useTableState } from '../../hooks/useTableState';
 import { ui } from './styles';
 
-import { INITIAL_ADMISSIONS, resolveChart } from './data';
 import { PatientDetailModal } from './PatientDetailModal';
-import type { AdmissionRecord, PatientChart } from './types';
+import type { AdmissionRecord } from './types';
+import { patientsApi } from '../../services/domainApi';
+import type { Patient } from '../../types';
+
+function toRecord(patient: Patient): AdmissionRecord {
+  const admission = patient.admissions?.[0];
+  return {
+    id: admission?.id ?? patient.id,
+    name: `${patient.firstName} ${patient.lastName}`,
+    admittedOn: admission ? new Date(admission.admissionDate).toLocaleDateString('en-GB') : '—',
+    dischargedOn: admission?.dischargeDate ? new Date(admission.dischargeDate).toLocaleDateString('en-GB') : null,
+    status: admission?.dischargeDate ? 'Discharged' : 'Admitted',
+  };
+}
 
 export function PatientView({
-  charts,
-  setCharts,
 }: {
-  charts: Record<string, PatientChart>;
-  setCharts: React.Dispatch<React.SetStateAction<Record<string, PatientChart>>>;
 }) {
-  const [records, setRecords] = useState(INITIAL_ADMISSIONS);
+  const [records, setRecords] = useState<AdmissionRecord[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [viewingName, setViewingName] = useState<string | null>(null);
+
+  useEffect(() => {
+    patientsApi.nurseAssigned().then(({ data }) => {
+      setPatients(data);
+      setRecords(data.map(toRecord));
+    }).catch(() => {
+      setPatients([]);
+      setRecords([]);
+    });
+  }, []);
 
   // Shared search / filter / sort / pagination state.
   const table = useTableState<AdmissionRecord>({
@@ -36,26 +55,24 @@ export function PatientView({
     initialSort: { field: 'admittedOn', direction: 'descending' },
   });
 
-  const viewing = viewingName ? resolveChart(viewingName, charts) : null;
+  const viewingPatient = viewingName ? patients.find((patient) => `${patient.firstName} ${patient.lastName}` === viewingName) : null;
+  const viewingAdmission = viewingPatient?.admissions?.[0];
+  const viewing = viewingPatient ? {
+    name: viewingName ?? '',
+    age: viewingPatient.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(viewingPatient.dateOfBirth).getFullYear()) : 0,
+    gender: viewingPatient.gender ?? '—',
+    admissionDate: viewingAdmission ? new Date(viewingAdmission.admissionDate).toLocaleDateString('en-GB') : '—',
+    recordId: viewingAdmission?.id ?? viewingPatient.id,
+    assignedDoctors: [],
+    triage: { time: '—', heartRate: '—', respRate: '—', spo2: '—', bp: '—', temp: '—', pain: '—', notes: viewingAdmission?.initialAssessment ?? 'No triage assessment recorded.' },
+  } : null;
   const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;
 
   const discharge = (id: string) => {
-    setRecords((prev) =>
-      prev.map((r) =>
-        r.id === id ? { ...r, status: 'Discharged', dischargedOn: '01 Sep 2026' } : r
-      )
-    );
-  };
-
-  const addDoctor = (doctor: string) => {
-    if (!viewingName) return;
-    setCharts((prev) => {
-      const current = resolveChart(viewingName, prev);
-      if (current.assignedDoctors.includes(doctor)) return prev;
-      return {
-        ...prev,
-        [viewingName]: { ...current, assignedDoctors: [...current.assignedDoctors, doctor] },
-      };
+    patientsApi.discharge(id).then(() => {
+      setRecords((prev) => prev.map((r) => r.id === id
+        ? { ...r, status: 'Discharged', dischargedOn: new Date().toLocaleDateString('en-GB') }
+        : r));
     });
   };
 
@@ -150,9 +167,7 @@ export function PatientView({
       {viewing && (
         <PatientDetailModal
           chart={viewing}
-          canAddDoctor
           onClose={() => setViewingName(null)}
-          onAddDoctor={addDoctor}
           status={viewingRecord?.status}
           onDischarge={
             viewingRecord ? () => discharge(viewingRecord.id) : undefined
