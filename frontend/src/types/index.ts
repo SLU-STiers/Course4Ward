@@ -45,6 +45,15 @@ export interface PhysicianOrder {
   encodedBy?: { firstName: string; lastName: string; role: Role };
 }
 
+export interface PhysicianNote {
+  id: string;
+  notesArray: string;
+  physicianId: string;
+  patientId: string;
+  createdAt: string;
+  reminderAt?: string | null;
+}
+
 export type SummaryStatus = 'DRAFT_AI' | 'DRAFT_EDITED' | 'APPROVED';
 
 export interface CourseInWard {

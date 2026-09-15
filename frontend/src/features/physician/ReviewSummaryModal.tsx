@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { PhysicianRequest } from '../../types';
+import { courseInWardApi } from '../../services/domainApi';
 import llamaIcon from '../../Img/llama.png';
 import { review } from './styles';
 
@@ -17,6 +18,8 @@ export function ReviewSummaryModal({
   const [showOrders, setShowOrders] = useState(true);
   const [editing, setEditing] = useState(false);
   const [summary, setSummary] = useState(request.summary.summaryContent);
+  const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const admissionDate = new Date(
     request.summary.summaryDate,
   ).toLocaleDateString("en-GB");
@@ -173,21 +176,42 @@ export function ReviewSummaryModal({
               <button
                 type="button"
                 style={review.outlineBtn}
-                onClick={() => setEditing((v) => !v)}
+                disabled={saving || regenerating}
+                onClick={() => {
+                  if (!editing) {
+                    setEditing(true);
+                    return;
+                  }
+                  setSaving(true);
+                  void courseInWardApi.edit(request.summary.id, summary)
+                    .then(({ data }) => {
+                      setSummary(data.summaryContent);
+                      setEditing(false);
+                    })
+                    .catch(() => undefined)
+                    .finally(() => setSaving(false));
+                }}
               >
-                ✎ {editing ? "Save Summary" : "Edit Summary"}
+                ✎ {saving ? "Saving..." : editing ? "Save Summary" : "Edit Summary"}
               </button>
               <button
                 type="button"
                 style={review.outlineBtn}
+                disabled={saving || regenerating}
                 onClick={() => {
-                  setSummary(request.summary.summaryContent);
-                  setEditing(false);
+                  setRegenerating(true);
+                  void courseInWardApi.regenerate(request.summary.id)
+                    .then(({ data }) => {
+                      setSummary(data.summaryContent);
+                      setEditing(false);
+                    })
+                    .catch(() => undefined)
+                    .finally(() => setRegenerating(false));
                 }}
               >
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <img src={llamaIcon} alt="" style={{ width: 14, height: 14, display: 'block', objectFit: 'contain' }} />
-                  Regenerate
+                  {regenerating ? 'Regenerating...' : 'Regenerate'}
                 </span>
               </button>
             </div>

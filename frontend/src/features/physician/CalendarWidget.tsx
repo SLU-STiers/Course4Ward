@@ -27,16 +27,6 @@ export function CalendarWidget() {
   );
   const pickerYears = Array.from({ length: 9 }, (_, index) => year - 4 + index);
 
-  const chooseMonth = (nextMonth: number) => {
-    const yearOffset =
-      month === 11 && nextMonth === 0
-        ? 1
-        : month === 0 && nextMonth === 11
-          ? -1
-          : 0;
-    setCursor(new Date(year + yearOffset, nextMonth, 1));
-  };
-
   const chooseYear = (nextYear: number) => {
     setCursor(new Date(nextYear, month, 1));
   };
@@ -56,73 +46,34 @@ export function CalendarWidget() {
       {pickerOpen && (
         <div style={overview.calPicker} aria-label="Choose month and year">
           <div style={overview.calPickerColumn}>
-            <button
-              type="button"
-              style={overview.calPickerArrow}
-              aria-label="Earlier months"
-              onClick={() => chooseMonth(month === 0 ? 11 : month - 1)}
-            >
-              ⌃
-            </button>
-            {monthNames
-              .slice(Math.max(0, month - 2), Math.min(12, month + 3))
-              .map((monthName, index) => {
-                const monthIndex = Math.max(0, month - 2) + index;
-                return (
-                  <button
-                    key={monthName}
-                    type="button"
-                    style={
-                      monthIndex === month
-                        ? overview.calPickerOptionActive
-                        : overview.calPickerOption
-                    }
-                    onClick={() => chooseMonth(monthIndex)}
-                  >
-                    {monthName}
-                  </button>
-                );
-              })}
-            <button
-              type="button"
-              style={overview.calPickerArrow}
-              aria-label="Later months"
-              onClick={() => chooseMonth(month === 11 ? 0 : month + 1)}
-            >
-              ⌄
-            </button>
+            <div style={overview.calPickerLabel}>Month</div>
+            <div style={overview.calPickerOptionsGrid}>
+              {monthNames.map((monthName, monthIndex) => (
+                <button
+                  key={monthName}
+                  type="button"
+                  style={monthIndex === month ? overview.calPickerOptionActive : overview.calPickerOption}
+                  onClick={() => setCursor(new Date(year, monthIndex, 1))}
+                >
+                  {monthName}
+                </button>
+              ))}
+            </div>
           </div>
           <div style={overview.calPickerColumn}>
-            <button
-              type="button"
-              style={overview.calPickerArrow}
-              aria-label="Earlier years"
-              onClick={() => chooseYear(year - 1)}
-            >
-              ⌃
-            </button>
-            {pickerYears.map((pickerYear) => (
-              <button
-                key={pickerYear}
-                type="button"
-                style={
-                  pickerYear === year
-                    ? overview.calPickerOptionActive
-                    : overview.calPickerOption
-                }
-                onClick={() => chooseYear(pickerYear)}
-              >
-                {pickerYear}
-              </button>
-            ))}
-            <button
-              type="button"
-              style={overview.calPickerArrow}
-              aria-label="Later years"
-              onClick={() => chooseYear(year + 1)}
-            >
-              ⌄
-            </button>
+            <div style={overview.calPickerLabel}>Year</div>
+            <div style={overview.calPickerOptionsGrid}>
+              {pickerYears.map((pickerYear) => (
+                <button
+                  key={pickerYear}
+                  type="button"
+                  style={pickerYear === year ? overview.calPickerOptionActive : overview.calPickerOption}
+                  onClick={() => chooseYear(pickerYear)}
+                >
+                  {pickerYear}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

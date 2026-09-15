@@ -1,7 +1,7 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
 import { useState } from 'react';
-import { toDateInputValue } from '../../lib/format';
+import { formatDateLongFromKey, toDateInputValue } from '../../lib/format';
 import { manage } from './styles';
 
 import { monthCells } from './calendar';
@@ -11,12 +11,14 @@ export function CalendarModal({
   focusDate,
   orderDays,
   onSelect,
+  onClear,
 }: {
   onClose: () => void;
   focusDate: Date;
   /** Order dates (`YYYY-MM-DD`) that may be picked; every other day is disabled. */
   orderDays: string[];
   onSelect: (date: Date) => void;
+  onClear: () => void;
 }) {
   const [cursor, setCursor] = useState(
     () => new Date(focusDate.getFullYear(), focusDate.getMonth(), 1),
@@ -53,7 +55,10 @@ export function CalendarModal({
     <div style={manage.calOverlay} onClick={onClose}>
       <div style={manage.calModal} onClick={(e) => e.stopPropagation()}>
         <div style={manage.calHeader}>
-          <h3 style={manage.calTitle}>Calendar</h3>
+          <div>
+            <h3 style={manage.calTitle}>Select order date</h3>
+            <p style={manage.calSubtitle}>Filter the order list by a day</p>
+          </div>
           <button type="button" style={manage.calClose} onClick={onClose}>
             ✕
           </button>
@@ -78,6 +83,10 @@ export function CalendarModal({
           >
             ›
           </button>
+        </div>
+        <div style={manage.calHint}>
+          <span style={manage.calHintDot} />
+          <span>Dates with recorded orders</span>
         </div>
         <div style={manage.calGrid}>
           {weekdays.map((d) => (
@@ -106,6 +115,7 @@ export function CalendarModal({
                 onClick={() => date && hasOrders && onSelect(date)}
                 style={{
                   ...manage.calDay,
+                  ...(hasOrders ? manage.calDayHasOrders : {}),
                   ...(hasOrders ? {} : manage.calDayDisabled),
                   ...(isSelected ? manage.calDaySelected : {}),
                   visibility: day ? "visible" : "hidden",
@@ -115,6 +125,16 @@ export function CalendarModal({
               </button>
             );
           })}
+        </div>
+        <div style={manage.calFooter}>
+          <span style={manage.calFooterText}>
+            {focusKey && orderDaySet.has(focusKey)
+              ? `Selected: ${formatDateLongFromKey(focusKey)}`
+              : 'Showing all order dates'}
+          </span>
+          <button type="button" style={manage.calClearBtn} onClick={onClear}>
+            Show all
+          </button>
         </div>
       </div>
     </div>

@@ -15,3 +15,15 @@ export class CreateNoteDto {
   @IsDateString()
   reminderAt?: string;
 }
+
+export class UpdateNoteDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @ApiPropertyOptional({ description: 'Optional reminder date/time' })
+  @IsOptional()
+  @IsDateString()
+  reminderAt?: string | null;
+}

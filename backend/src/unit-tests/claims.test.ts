@@ -227,6 +227,18 @@ describe("Claims Module", () => {
         });
         expect(result).toEqual(updatedClaim);
       });
+
+      it("should throw NotFoundException when claim id is unknown", async () => {
+        (
+          prismaService.summaryApprovalRequest.update as jest.Mock
+        ).mockRejectedValue({ code: "P2025" });
+
+        await expect(
+          service.notifyPhysician("unknown-claim-id", mockUser.id),
+        ).rejects.toThrow("Claim not found");
+
+        expect(auditLogService.record).not.toHaveBeenCalled();
+      });
     });
 
     describe("generateCf4", () => {

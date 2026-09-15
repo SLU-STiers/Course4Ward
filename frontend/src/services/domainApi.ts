@@ -2,6 +2,7 @@ import { api } from './api';
 import type {
   Patient,
   PhysicianOrder,
+  PhysicianNote,
   CourseInWard,
   Claim,
   ClaimRecord,
@@ -47,14 +48,20 @@ export const ordersApi = {
     orderedById: string;
     orderContent: string;
   }) => api.post<PhysicianOrder>('/orders', data),
+  update: (id: string, orderContent: string) =>
+    api.patch<PhysicianOrder>(`/orders/${id}`, { orderContent }),
+  remove: (id: string) => api.delete(`/orders/${id}`),
   forPatient: (patientId: string) => api.get<PhysicianOrder[]>(`/orders/patient/${patientId}`),
 };
 
 // --- Notes ---
 export const notesApi = {
   create: (data: { patientId: string; content: string; reminderAt?: string }) =>
-    api.post('/notes', data),
-  forPatient: (patientId: string) => api.get(`/notes/patient/${patientId}`),
+    api.post<PhysicianNote>('/notes', data),
+  update: (id: string, data: { content?: string; reminderAt?: string | null }) =>
+    api.patch<PhysicianNote>(`/notes/${id}`, data),
+  remove: (id: string) => api.delete(`/notes/${id}`),
+  forPatient: (patientId: string) => api.get<PhysicianNote[]>(`/notes/patient/${patientId}`),
   myReminders: () => api.get('/notes/reminders/me'),
 };
 

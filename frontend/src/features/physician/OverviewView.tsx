@@ -156,7 +156,7 @@ export function OverviewView() {
 
         <div style={overview.rightCol}>
           <CalendarWidget />
-          <TodoListWidget />
+          <TodoListWidget patients={patients} />
         </div>
       </div>
     </div>
