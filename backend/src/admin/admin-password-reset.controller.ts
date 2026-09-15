@@ -24,4 +24,9 @@ export class AdminPasswordResetController {
   approve(@Param('id') id: string, @CurrentUser() admin: any) {
     return this.authService.approvePasswordReset(id, admin.id);
   }
+
+  @Post(':id/reject')
+  reject(@Param('id') id: string, @CurrentUser() admin: any) {
+    return this.authService.rejectPasswordReset(id, admin.id);
+  }
 }

@@ -78,12 +78,13 @@ export class AuthService {
   // hands off to an IT-desk-issued one-time code rather than email, since
   // this is a LAN-only system. Stubbed here to return a token directly for
   // local development.
-  async requestPasswordReset(dto: RequestPasswordResetDto, ipAddress?: string) {
+  async createPasswordResetRequest(userId: string, ipAddress?: string) {
     const user = await this.prisma.user.findUnique({
-      where: { userId: dto.userId },
+      where: { userId },
     });
+
     if (!user) {
-      throw new NotFoundException('User ID not found. Please enter the proper user ID.');
+      return null;
     }
 
     await this.prisma.passwordResetRequest.updateMany({
@@ -101,9 +102,21 @@ export class AuthService {
       },
     });
 
+    return resetToken;
+  }
+
+  async requestPasswordReset(dto: RequestPasswordResetDto, ipAddress?: string) {
+    const resetToken = await this.createPasswordResetRequest(dto.userId, ipAddress);
+
+    if (!resetToken) {
+      return {
+        message:
+          'If the user ID exists, a reset request has been submitted for administrator approval.',
+      };
+    }
+
     return {
       message: 'Reset request submitted for administrator approval.',
-      resetToken,
     };
   }
 
@@ -113,8 +126,16 @@ export class AuthService {
       select: { status: true, expiresAt: true, temporaryPassword: true },
     });
 
-    if (!request || request.expiresAt < new Date()) {
-      return { status: 'PENDING' as const };
+    if (!request || request.status === 'EXPIRED') {
+      return { status: 'EXPIRED' as const };
+    }
+
+    if (request.status === 'REJECTED') {
+      return { status: 'REJECTED' as const, temporaryPassword: null };
+    }
+
+    if (request.expiresAt < new Date()) {
+      return { status: 'EXPIRED' as const };
     }
 
     return {
@@ -168,6 +189,44 @@ export class AuthService {
     return {
       message: 'Password reset approved.',
       temporaryPassword,
+      user: {
+        userId: request.user.userId,
+        firstName: request.user.firstName,
+        lastName: request.user.lastName,
+      },
+    };
+  }
+
+  async rejectPasswordReset(requestId: string, actingAdminId: string) {
+    const request = await this.prisma.passwordResetRequest.findUnique({
+      where: { id: requestId },
+      include: { user: true },
+    });
+
+    if (!request) throw new NotFoundException('Password reset request not found');
+    if (request.status !== 'PENDING' || request.expiresAt < new Date()) {
+      throw new BadRequestException('Password reset request is no longer pending');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: request.userId },
+        data: { sessionVersion: { increment: 1 } },
+      }),
+      this.prisma.passwordResetRequest.update({
+        where: { id: request.id },
+        data: {
+          status: 'REJECTED',
+          resolvedAt: new Date(),
+          temporaryPassword: null,
+        },
+      }),
+    ]);
+
+    await this.auditLog.record({ userId: actingAdminId, action: 'PASSWORD_RESET' });
+
+    return {
+      message: 'Password reset request rejected.',
       user: {
         userId: request.user.userId,
         firstName: request.user.firstName,

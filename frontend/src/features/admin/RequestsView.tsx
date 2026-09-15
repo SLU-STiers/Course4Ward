@@ -39,6 +39,13 @@ export function RequestsView() {
     },
   });
 
+  const handleRejectPassword = useMutation({
+    mutationFn: (requestId: string) => adminApi.rejectResetRequest(requestId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reset-requests'] });
+    },
+  });
+
   const list = (requestsData ?? []).map((request: any) => ({
     ...request,
     name: `${request.user.firstName} ${request.user.lastName}`,
@@ -156,28 +163,54 @@ export function RequestsView() {
                 <td style={styles.td}>
                   <StatusBadge
                     showDot
-                    status={item.status === 'PENDING' ? 'pending' : item.status === 'APPROVED' ? 'approved' : 'neutral'}
+                    status={
+                      item.status === 'PENDING'
+                        ? 'pending'
+                        : item.status === 'APPROVED'
+                          ? 'approved'
+                          : item.status === 'REJECTED'
+                            ? 'rejected'
+                            : 'neutral'
+                    }
                     label={item.status}
                   />
                 </td>
                 <td style={styles.td}>
                   {item.status === 'PENDING' && (
-                    <button
-                      style={styles.actionButton}
-                      onClick={() => {
-                        setConfirmation({
-                          title: 'Approve reset request',
-                          message: `Are you sure you want to approve the password reset request for ${item.name}?`,
-                          confirmLabel: 'Approve Reset',
-                          onConfirm: () => {
-                            setConfirmation(null);
-                            handleResetPassword.mutate(item.id);
-                          },
-                        });
-                      }}
-                    >
-                      Approve reset
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        style={styles.actionButton}
+                        onClick={() => {
+                          setConfirmation({
+                            title: 'Approve reset request',
+                            message: `Are you sure you want to approve the password reset request for ${item.name}?`,
+                            confirmLabel: 'Approve Reset',
+                            onConfirm: () => {
+                              setConfirmation(null);
+                              handleResetPassword.mutate(item.id);
+                            },
+                          });
+                        }}
+                      >
+                        Approve reset
+                      </button>
+                      <button
+                        style={{ ...styles.actionButton, background: 'var(--c4w-color-danger, #dc2626)', borderColor: 'var(--c4w-color-danger, #dc2626)' }}
+                        onClick={() => {
+                          setConfirmation({
+                            title: 'Reject reset request',
+                            message: `Are you sure you want to reject the password reset request for ${item.name}?`,
+                            confirmLabel: 'Reject Reset',
+                            onConfirm: () => {
+                              setConfirmation(null);
+                              handleRejectPassword.mutate(item.id);
+                            },
+                          });
+                        }}
+                      >
+                        Reject reset
+                      </button>
+                    </div>
                   )}
                 </td>
               </tr>

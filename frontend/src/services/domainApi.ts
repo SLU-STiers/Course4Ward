@@ -18,11 +18,9 @@ export const authApi = {
       { userId, password },
     ),
   requestPasswordReset: (userId: string) =>
-    api.post<{ message: string; resetToken: string }>('/auth/password-reset/request', { userId }),
-  passwordResetStatus: (resetToken: string) =>
-    api.get<{ status: string; temporaryPassword?: string | null }>('/auth/password-reset/status', {
-      params: { resetToken },
-    }),
+    api.post<{ message: string }>('/auth/password-reset/request', { userId }),
+  passwordResetStatus: () =>
+    api.get<{ status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED'; temporaryPassword?: string | null }>('/auth/password-reset/status'),
   confirmPasswordReset: (userId: string, resetToken: string, newPassword: string) =>
     api.post('/auth/password-reset/confirm', { userId, resetToken, newPassword }),
   changePassword: (newPassword: string) =>
@@ -96,4 +94,6 @@ export const adminApi = {
     api.get('/admin/password-reset-requests'),
   approveResetRequest: (requestId: string) =>
     api.post(`/admin/password-reset-requests/${requestId}/approve`),
+  rejectResetRequest: (requestId: string) =>
+    api.post(`/admin/password-reset-requests/${requestId}/reject`),
 };
