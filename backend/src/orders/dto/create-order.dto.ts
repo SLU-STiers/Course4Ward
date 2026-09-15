@@ -16,3 +16,9 @@ export class CreateOrderDto {
   @IsString()
   orderContent: string;
 }
+
+export class UpdateOrderDto {
+  @ApiProperty({ example: 'Paracetamol 500mg' })
+  @IsString()
+  orderContent: string;
+}

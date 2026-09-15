@@ -269,11 +269,13 @@ export function ManageView() {
         order.id === orderId ? { ...order, orderContent: text } : order,
       ),
     }));
+    void ordersApi.update(orderId, text).catch(() => undefined);
     setSubmitted(false);
   };
 
   const removeOrder = (orderId: string) => {
     if (!selected) return;
+    void ordersApi.remove(orderId).catch(() => undefined);
     setOrdersByPatient((prev) => ({
       ...prev,
       [selected.id]: (prev[selected.id] ?? []).filter(
@@ -281,6 +283,22 @@ export function ManageView() {
       ),
     }));
     setSubmitted(false);
+  };
+
+  const submitOrders = () => {
+    if (!selected) return;
+    setSubmitted(false);
+    void courseInWardApi.generate(selected.id)
+      .then(({ data }) => {
+        setSummaryByPatient((previous) => ({
+          ...previous,
+          [selected.id]: data.summaryContent,
+        }));
+        setSummaryIds((previous) => ({ ...previous, [selected.id]: data.id }));
+        setEditingOrders(false);
+        setSubmitted(true);
+      })
+      .catch(() => undefined);
   };
 
   if (loading)
@@ -291,8 +309,8 @@ export function ManageView() {
     );
 
   const selectedDateLabel = activeOrderDate
-    ? new Date(`${activeOrderDate}T00:00:00`).toLocaleDateString("en-GB")
-    : "All dates";
+    ? formatDateLongFromKey(activeOrderDate)
+    : "All order dates";
   // Open the calendar on whatever the physician is looking at, defaulting to the
   // most recent day that has orders.
   const calendarFocusDate = new Date(
@@ -793,10 +811,7 @@ export function ManageView() {
                     <button
                       type="button"
                       style={manage.submitBtn}
-                      onClick={() => {
-                        setSubmitted(true);
-                        setEditingOrders(false);
-                      }}
+                      onClick={submitOrders}
                     >
                       Submit
                     </button>
@@ -910,6 +925,10 @@ export function ManageView() {
             onClose={() => setCalendarOpen(false)}
             focusDate={calendarFocusDate}
             orderDays={orderDays}
+            onClear={() => {
+              setOrderDateFilter(null);
+              setCalendarOpen(false);
+            }}
             onSelect={(date) => {
               setOrderDateFilter(toDateInputValue(date));
               setCalendarOpen(false);

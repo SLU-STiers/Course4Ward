@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OrderEnteredBy, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -82,6 +82,20 @@ export class OrdersService {
         encodedBy: { select: { firstName: true, lastName: true, role: true } },
       },
     });
+  }
+
+  async update(id: string, orderContent: string, physicianId: string) {
+    const order = await this.prisma.physicianOrder.findFirst({ where: { id, orderedById: physicianId } });
+    if (!order) throw new NotFoundException('Order not found');
+    const updated = await this.prisma.physicianOrder.update({ where: { id }, data: { orderContent } });
+    void this.persistOrderEmbedding(updated.id, updated.orderContent);
+    return updated;
+  }
+
+  async remove(id: string, physicianId: string) {
+    const order = await this.prisma.physicianOrder.findFirst({ where: { id, orderedById: physicianId } });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.prisma.physicianOrder.delete({ where: { id } });
   }
 
   // Orders placed "today" for a patient -- input to the AI summarization step
