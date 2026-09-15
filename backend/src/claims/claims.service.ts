@@ -103,12 +103,20 @@ export class ClaimsService {
 
   // Claims processor notifies the attending physician to validate the entry
   async notifyPhysician(claimId: string, claimsProcessorId: string) {
-    const claim = await this.prisma.summaryApprovalRequest.update({
-      where: { id: claimId },
-      data: {
-        status: 'PHYSICIAN_VALIDATION_REQUESTED',
-      },
-    });
+    let claim;
+    try {
+      claim = await this.prisma.summaryApprovalRequest.update({
+        where: { id: claimId },
+        data: {
+          status: 'PHYSICIAN_VALIDATION_REQUESTED',
+        },
+      });
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2025') {
+        throw new NotFoundException('Claim not found');
+      }
+      throw error;
+    }
 
     // TODO: wire to an actual notification channel (in-app alert / pager
     // integration) -- out of scope for this scaffold.
