@@ -29,7 +29,7 @@ export function PatientView({
   const [viewingName, setViewingName] = useState<string | null>(null);
 
   useEffect(() => {
-    patientsApi.nurseAssigned().then(({ data }) => {
+    patientsApi.assignedToMe().then(({ data }) => {
       setPatients(data);
       setRecords(data.map(toRecord));
     }).catch(() => {

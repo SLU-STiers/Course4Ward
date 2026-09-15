@@ -32,7 +32,7 @@ export class PatientsController {
   @Get('assigned-to-me')
   @Roles(Role.PHYSICIAN, Role.NURSE)
   findAssignedToMe(@CurrentUser() user: any) {
-    return this.patientsService.findAssignedTo(user.id);
+    return this.patientsService.findAssignedTo(user.id, user.role);
   }
 
   @Get('nurse-assigned')

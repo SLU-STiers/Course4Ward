@@ -9,6 +9,7 @@ import {
   OrderStatus,
   OrderType,
   PhilHealthCF4Status,
+  Role,
   SummaryStatus,
 } from "@prisma/client";
 
@@ -213,7 +214,7 @@ describe("Patients Module", () => {
           mockPatient,
         ]);
 
-        const result = await service.findAssignedTo(mockUser.id);
+        const result = await service.findAssignedTo(mockUser.id, Role.PHYSICIAN);
 
         expect(prismaService.patient.findMany).toHaveBeenCalledWith({
           where: {
@@ -234,9 +235,35 @@ describe("Patients Module", () => {
       it("should return empty array when no patients assigned", async () => {
         (prismaService.patient.findMany as jest.Mock).mockResolvedValue([]);
 
-        const result = await service.findAssignedTo(mockUser.id);
+        const result = await service.findAssignedTo(mockUser.id, Role.PHYSICIAN);
 
         expect(result).toEqual([]);
+      });
+
+      it("should return all admitted patients for a nurse", async () => {
+        (prismaService.patient.findMany as jest.Mock).mockResolvedValue([
+          mockPatient,
+        ]);
+
+        const result = await service.findAssignedTo(mockUser.id, Role.NURSE);
+
+        expect(prismaService.patient.findMany).toHaveBeenCalledWith({
+          where: { admissions: { some: {} } },
+          include: {
+            admissions: {
+              orderBy: { admissionDate: "desc" },
+              select: {
+                id: true,
+                admissionDate: true,
+                dischargeDate: true,
+                initialAssessment: true,
+                physician: { select: { firstName: true, lastName: true } },
+              },
+            },
+          },
+          orderBy: { updatedAt: "desc" },
+        });
+        expect(result).toEqual([mockPatient]);
       });
     });
 
@@ -391,7 +418,10 @@ describe("Patients Module", () => {
 
         const result = await controller.findAssignedToMe(mockUser);
 
-        expect(service.findAssignedTo).toHaveBeenCalledWith(mockUser.id);
+        expect(service.findAssignedTo).toHaveBeenCalledWith(
+          mockUser.id,
+          mockUser.role,
+        );
         expect(result).toEqual([mockPatient]);
       });
     });
