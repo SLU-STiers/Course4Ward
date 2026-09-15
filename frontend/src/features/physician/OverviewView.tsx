@@ -112,7 +112,6 @@ export function OverviewView() {
                   <th style={overview.th}>Admitted</th>
                   <th style={overview.th}>Days in care</th>
                   <th style={overview.th}>Status</th>
-                  <th style={{ ...overview.th, width: 36 }} />
                 </tr>
               </thead>
               <tbody>
@@ -147,9 +146,6 @@ export function OverviewView() {
                   </td>
                   <td style={overview.td}>
                     <StatusBadge status={p.status} showDot />
-                  </td>
-                  <td style={{ ...overview.td, textAlign: "right", width: 36 }}>
-                    <span style={overview.rowDots}>⋯</span>
                   </td>
                 </tr>
               ))}
