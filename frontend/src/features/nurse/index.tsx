@@ -8,7 +8,7 @@ import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { PageHeader } from '../../components/ui';
 
-import { ManagementIcon, PatientIcon } from './icons';
+import { ManageIcon, PatientIcon } from '../../components/icons/NavIcons';
 import { ManagementPortalView } from './ManagementPortalView';
 import { PatientView } from './PatientView';
 import type { TabType } from './types';
@@ -31,7 +31,7 @@ export function NurseDashboard() {
         activeId: activeTab,
         onNavigate: (id) => setActiveTab(id as TabType),
         items: [
-          { id: 'management', label: 'Management', icon: <ManagementIcon /> },
+          { id: 'management', label: 'Management', icon: <ManageIcon /> },
           { id: 'patient', label: 'Patient', icon: <PatientIcon /> },
         ],
         profile: <SidebarProfile initials={`${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`} name={user ? `${user.firstName} ${user.lastName}` : 'Nurse'} subtitle={user?.userId ?? 'Nurse account'} onLogout={handleLogout} />,

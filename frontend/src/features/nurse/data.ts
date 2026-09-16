@@ -3,14 +3,14 @@
 import type { AdmissionRecord, NursePatient, OrderSet, PatientChart, TriageAssessment } from './types';
 
 export const MOCK_PATIENTS: NursePatient[] = [
-  { id: '1', name: 'Sarah Brown', patientId: '1123', recordId: 'SH-2024-0123', admissionDate: '15/04/2026', color: '#ef4444', age: 28, gender: 'Female', initials: 'SB' },
-  { id: '2', name: 'Michael Owen', patientId: '1122', recordId: 'SH-2024-0122', admissionDate: '15/04/2026', color: '#22c55e', age: 45, gender: 'Male', initials: 'MO' },
-  { id: '3', name: 'Mary Jane', patientId: '1121', recordId: 'SH-2024-0121', admissionDate: '14/04/2026', color: '#84cc16', age: 32, gender: 'Female', initials: 'MJ' },
-  { id: '4', name: 'Peter Doolie', patientId: '1120', recordId: 'SH-2024-0120', admissionDate: '14/04/2026', color: '#6366f1', age: 50, gender: 'Male', initials: 'PD' },
-  { id: '5', name: 'Peter Doolie', patientId: '1119', recordId: 'SH-2024-0119', admissionDate: '14/04/2026', color: '#ef4444', age: 50, gender: 'Male', initials: 'PD' },
-  { id: '6', name: 'Liam Park', patientId: '1117', recordId: 'SH-2024-0117', admissionDate: '15/04/2026', color: '#eab308', age: 41, gender: 'Male', initials: 'LP' },
-  { id: '7', name: 'Nora Reyes', patientId: '1116', recordId: 'SH-2024-0116', admissionDate: '16/04/2026', color: '#d946ef', age: 36, gender: 'Female', initials: 'NR' },
-  { id: '8', name: 'James Cruz', patientId: '1115', recordId: 'SH-2024-0115', admissionDate: '16/04/2026', color: '#06b6d4', age: 29, gender: 'Male', initials: 'JC' },
+  { id: '1', name: 'Sarah Brown', patientId: '1123', recordId: 'SH-2024-0123', admissionDate: '15/04/2026', admissionDateRaw: '2026-04-15', daysInCare: 2, color: '#ef4444', age: 28, gender: 'Female', initials: 'SB' },
+  { id: '2', name: 'Michael Owen', patientId: '1122', recordId: 'SH-2024-0122', admissionDate: '15/04/2026', admissionDateRaw: '2026-04-15', daysInCare: 2, color: '#22c55e', age: 45, gender: 'Male', initials: 'MO' },
+  { id: '3', name: 'Mary Jane', patientId: '1121', recordId: 'SH-2024-0121', admissionDate: '14/04/2026', admissionDateRaw: '2026-04-14', daysInCare: 3, color: '#84cc16', age: 32, gender: 'Female', initials: 'MJ' },
+  { id: '4', name: 'Peter Doolie', patientId: '1120', recordId: 'SH-2024-0120', admissionDate: '14/04/2026', admissionDateRaw: '2026-04-14', daysInCare: 3, color: '#6366f1', age: 50, gender: 'Male', initials: 'PD' },
+  { id: '5', name: 'Peter Doolie', patientId: '1119', recordId: 'SH-2024-0119', admissionDate: '14/04/2026', admissionDateRaw: '2026-04-14', daysInCare: 3, color: '#ef4444', age: 50, gender: 'Male', initials: 'PD' },
+  { id: '6', name: 'Liam Park', patientId: '1117', recordId: 'SH-2024-0117', admissionDate: '15/04/2026', admissionDateRaw: '2026-04-15', daysInCare: 2, color: '#eab308', age: 41, gender: 'Male', initials: 'LP' },
+  { id: '7', name: 'Nora Reyes', patientId: '1116', recordId: 'SH-2024-0116', admissionDate: '16/04/2026', admissionDateRaw: '2026-04-16', daysInCare: 1, color: '#d946ef', age: 36, gender: 'Female', initials: 'NR' },
+  { id: '8', name: 'James Cruz', patientId: '1115', recordId: 'SH-2024-0115', admissionDate: '16/04/2026', admissionDateRaw: '2026-04-16', daysInCare: 1, color: '#06b6d4', age: 29, gender: 'Male', initials: 'JC' },
 ];
 export const AVAILABLE_DOCTORS = [
   'Dr. Mike Mentzer',

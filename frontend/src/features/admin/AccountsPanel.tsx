@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/domainApi';
 import { styles } from './styles';
+import type { StaffAccount } from '../../types';
 
 import { ConfirmationDialog } from './ConfirmationDialog';
 
@@ -45,7 +46,7 @@ export function AccountsPanel() {
     },
   });
 
-  const beginEdit = (user: any) => {
+  const beginEdit = (user: StaffAccount) => {
     setEditingId(user.id);
     setEditForm({ firstName: user.firstName, lastName: user.lastName, role: user.role, isActive: user.isActive });
   };
@@ -117,7 +118,7 @@ export function AccountsPanel() {
             </tr>
           </thead>
           <tbody>
-            {users?.map((u: any) => (
+            {users?.map((u) => (
               <tr key={u.id} style={styles.tr}>
                 <td style={styles.td}>{u.userId}</td>
                 <td style={styles.td}>

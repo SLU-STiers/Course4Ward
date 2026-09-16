@@ -26,8 +26,13 @@ const mockPrismaService = {
   patient: {
     findUnique: jest.fn(),
   },
+  physicianOrder: {
+    findMany: jest.fn(),
+    updateMany: jest.fn(),
+  },
   courseInWard: {
     create: jest.fn(),
+    findFirst: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
     findMany: jest.fn(),
@@ -39,6 +44,7 @@ const mockAuditLogService = {
 };
 
 const mockOrdersService = {
+  findOrdersForDay: jest.fn(),
   findTodaysOrders: jest.fn(),
 };
 
@@ -113,42 +119,45 @@ describe('CourseInWardService', () => {
       gender: 'MALE',
     };
 
+    // Both orders are written on the same local calendar day, so the AI folds
+    // them into ONE admission-day group.
+    const ordersDay = new Date(2026, 2, 4, 9, 15);
     const mockOrders = [
       {
         id: 'order-1',
-        type: 'Medication',
-        description: 'Amoxicillin',
-        dosage: '500mg',
-        frequency: 'Twice daily',
+        admissionId: 'admission-1',
+        orderContent: 'Amoxicillin 500mg twice daily',
+        dateCreated: ordersDay,
+        admission: { id: 'admission-1', admissionDate: new Date(2026, 2, 2) },
       },
       {
         id: 'order-2',
-        type: 'Lab Test',
-        description: 'Blood work',
-        dosage: null,
-        frequency: null,
+        admissionId: 'admission-1',
+        orderContent: 'Blood work',
+        dateCreated: new Date(2026, 2, 4, 13, 40),
+        admission: { id: 'admission-1', admissionDate: new Date(2026, 2, 2) },
       },
     ];
 
+    // The AI service answers per admission-day group and echoes the orders that
+    // were folded into each summary.
     const mockAiResponse = {
       batch_id: 'batch-123',
-      total_groups: 2,
-      successful: 2,
+      total_groups: 1,
+      successful: 1,
       failed: 0,
       results: [
-        { 
-          id: 'order-1', 
-          success: true, 
-          summary: 'Patient received Amoxicillin 500mg twice daily.',
+        {
+          group_id: 'admission-1-day-3',
+          summary: 'Amoxicillin 500mg twice daily was given. Blood work was ordered.',
+          success: true,
           processing_time_seconds: 1.5,
-          error: null
-        },
-        { 
-          id: 'order-2', 
-          success: true, 
-          summary: 'Blood work ordered.',
-          processing_time_seconds: 1.2,
-          error: null
+          error: null,
+          orders: mockOrders.map((order) => ({
+            id: order.id,
+            text: order.orderContent,
+            dateCreated: order.dateCreated.toISOString(),
+          })),
         },
       ],
     };
@@ -156,59 +165,127 @@ describe('CourseInWardService', () => {
     const mockCreatedSummary = {
       id: 'summary-789',
       patientId: mockPatientId,
-      summaryContent: 'Patient received Amoxicillin 500mg twice daily. Blood work ordered.',
+      summaryContent: 'Amoxicillin 500mg twice daily was given. Blood work was ordered.',
       status: SummaryStatus.DRAFT_AI,
-      summaryDate: new Date(),
+      summaryDate: new Date(2026, 2, 4),
       approvedStatus: false,
       validatorId: null,
       validatedAt: null,
     };
 
-    it('should generate a summary successfully', async () => {
+    beforeEach(() => {
+      // No working draft for the day yet, so generation creates one.
+      mockPrismaService.courseInWard.findFirst.mockResolvedValue(null);
+      mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 2 });
+      mockPrismaService.physicianOrder.findMany.mockResolvedValue(mockOrders);
+    });
+
+    it('should generate one summary for the requested order day', async () => {
       // Arrange
       mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
-      mockOrdersService.findTodaysOrders.mockResolvedValue(mockOrders);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
       mockPrismaService.courseInWard.create.mockResolvedValue(mockCreatedSummary);
       mockAuditLogService.record.mockResolvedValue({});
 
       // Act
-      const result = await service.generateSummary(mockPatientId, mockRequestedById);
+      const result = await service.generateSummary(
+        mockPatientId,
+        mockRequestedById,
+        '2026-03-04',
+      );
 
       // Assert
       expect(mockPrismaService.patient.findUnique).toHaveBeenCalledWith({
         where: { id: mockPatientId },
       });
-      expect(mockOrdersService.findTodaysOrders).toHaveBeenCalledWith(mockPatientId);
-      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: 'order-1',
-            text: 'Medication Amoxicillin 500mg Twice daily',
-          }),
-          expect.objectContaining({
-            id: 'order-2',
-            text: 'Lab Test Blood work',
-          }),
-        ])
+      expect(mockOrdersService.findOrdersForDay).toHaveBeenCalledWith(
+        mockPatientId,
+        '2026-03-04',
       );
+      // One admission-day group is sent, carrying the day's orders.
+      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            admissionId: 'admission-1',
+            orders: [
+              expect.objectContaining({
+                id: 'order-1',
+                text: 'Amoxicillin 500mg twice daily',
+              }),
+              expect.objectContaining({ id: 'order-2', text: 'Blood work' }),
+            ],
+          }),
+        ],
+        expect.objectContaining({ temperature: 0.1 }),
+      );
+      // The summary is filed under the day its orders came from.
       expect(mockPrismaService.courseInWard.create).toHaveBeenCalledWith({
         data: {
           patientId: mockPatientId,
-          summaryContent: 'Patient received Amoxicillin 500mg twice daily. Blood work ordered.',
+          summaryContent: mockCreatedSummary.summaryContent,
+          summaryDate: new Date(2026, 2, 4),
           status: SummaryStatus.DRAFT_AI,
         },
+      });
+      // ...and those orders are linked to it for RAG.
+      expect(mockPrismaService.physicianOrder.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['order-1', 'order-2'] } },
+        data: { summarizationId: 'summary-789' },
       });
       expect(mockAuditLogService.record).toHaveBeenCalledWith({
         userId: mockRequestedById,
         action: 'SUMMARY_GENERATED_AI',
       });
-      expect(result).toEqual(mockCreatedSummary);
+      expect(result).toEqual([mockCreatedSummary]);
+    });
+
+    it('should default to today when no day is given', async () => {
+      // Arrange
+      mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
+      mockPrismaService.courseInWard.create.mockResolvedValue(mockCreatedSummary);
+      mockAuditLogService.record.mockResolvedValue({});
+
+      // Act
+      await service.generateSummary(mockPatientId, mockRequestedById);
+
+      // Assert
+      expect(mockOrdersService.findOrdersForDay).toHaveBeenCalledWith(
+        mockPatientId,
+        null,
+      );
+    });
+
+    it('should refresh the day’s working draft instead of duplicating it', async () => {
+      // Arrange
+      const existingDraft = { id: 'summary-existing', patientId: mockPatientId };
+      mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
+      mockPrismaService.courseInWard.findFirst.mockResolvedValue(existingDraft);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockCreatedSummary);
+      mockAuditLogService.record.mockResolvedValue({});
+
+      // Act
+      await service.generateSummary(mockPatientId, mockRequestedById, '2026-03-04');
+
+      // Assert
+      expect(mockPrismaService.courseInWard.update).toHaveBeenCalledWith({
+        where: { id: 'summary-existing' },
+        data: {
+          summaryContent: mockCreatedSummary.summaryContent,
+          status: SummaryStatus.DRAFT_AI,
+        },
+      });
+      expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if patient not found', async () => {
       // Arrange
       mockPrismaService.patient.findUnique.mockResolvedValue(null);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
 
       // Act & Assert
       await expect(
@@ -217,35 +294,28 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.patient.findUnique).toHaveBeenCalledWith({
         where: { id: mockPatientId },
       });
-      // FIX: The service calls findTodaysOrders after finding the patient, but since patient is null,
-      // it should not reach that point. However, the test is failing because it's being called.
-      // Let's check if the service actually calls it or if the mock is being called unexpectedly.
-      // Actually, the service throws NotFoundException before calling findTodaysOrders,
-      // so this expectation should pass.
-      expect(mockOrdersService.findTodaysOrders).not.toHaveBeenCalled();
       expect(mockOllamaClient.summarizeBatch).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException if no orders found for today', async () => {
+    it('should throw BadRequestException if the day has no orders', async () => {
       // Arrange
       mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
-      mockOrdersService.findTodaysOrders.mockResolvedValue([]);
+      mockOrdersService.findOrdersForDay.mockResolvedValue([]);
 
       // Act & Assert
       await expect(
-        service.generateSummary(mockPatientId, mockRequestedById)
+        service.generateSummary(mockPatientId, mockRequestedById, '2026-03-04')
       ).rejects.toThrow(BadRequestException);
       await expect(
-        service.generateSummary(mockPatientId, mockRequestedById)
-      ).rejects.toThrow('No orders recorded for this patient today');
-      expect(mockOrdersService.findTodaysOrders).toHaveBeenCalledWith(mockPatientId);
+        service.generateSummary(mockPatientId, mockRequestedById, '2026-03-04')
+      ).rejects.toThrow('No orders recorded for this patient on 2026-03-04');
       expect(mockOllamaClient.summarizeBatch).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException if AI service fails', async () => {
       // Arrange
       mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
-      mockOrdersService.findTodaysOrders.mockResolvedValue(mockOrders);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockRejectedValue(new Error('AI service unavailable'));
 
       // Act & Assert
@@ -265,16 +335,19 @@ describe('CourseInWardService', () => {
         total_groups: 1,
         successful: 0,
         failed: 1,
-        results: [{ 
-          id: 'order-1', 
-          success: false, 
-          summary: null,
-          processing_time_seconds: 1.0,
-          error: 'Failed to summarize'
-        }],
+        results: [
+          {
+            group_id: 'admission-1-day-3',
+            summary: null,
+            success: false,
+            processing_time_seconds: 1.0,
+            error: 'Failed to summarize',
+            orders: [],
+          },
+        ],
       };
       mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
-      mockOrdersService.findTodaysOrders.mockResolvedValue(mockOrders);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(failedAiResponse);
 
       // Act & Assert
@@ -284,39 +357,64 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
     });
 
-    it('should handle AI response with some failed results', async () => {
+    it('should store one summary per day group when the AI reports several', async () => {
       // Arrange
-      const partialFailedResponse = {
+      const twoDayResponse = {
         batch_id: 'batch-123',
         total_groups: 2,
-        successful: 1,
-        failed: 1,
+        successful: 2,
+        failed: 0,
         results: [
-          { 
-            id: 'order-1', 
-            success: true, 
-            summary: 'First order summary.',
+          {
+            group_id: 'admission-1-day-3',
+            summary: 'Day three summary.',
+            success: true,
             processing_time_seconds: 1.0,
-            error: null
+            error: null,
+            orders: [
+              {
+                id: 'order-1',
+                text: 'Amoxicillin 500mg twice daily',
+                dateCreated: new Date(2026, 2, 4, 9, 15).toISOString(),
+              },
+            ],
           },
-          { 
-            id: 'order-2', 
-            success: false, 
-            summary: null,
+          {
+            group_id: 'admission-1-day-4',
+            summary: 'Day four summary.',
+            success: true,
             processing_time_seconds: 1.0,
-            error: 'Failed to summarize'
+            error: null,
+            orders: [
+              {
+                id: 'order-2',
+                text: 'Blood work',
+                dateCreated: new Date(2026, 2, 5, 9, 15).toISOString(),
+              },
+            ],
           },
         ],
       };
       mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
-      mockOrdersService.findTodaysOrders.mockResolvedValue(mockOrders);
-      mockOllamaClient.summarizeBatch.mockResolvedValue(partialFailedResponse);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockResolvedValue(twoDayResponse);
+      mockPrismaService.courseInWard.create
+        .mockResolvedValueOnce({ ...mockCreatedSummary, id: 'summary-1' })
+        .mockResolvedValueOnce({ ...mockCreatedSummary, id: 'summary-2' });
+      mockAuditLogService.record.mockResolvedValue({});
 
-      // Act & Assert
-      await expect(
-        service.generateSummary(mockPatientId, mockRequestedById)
-      ).rejects.toThrow(BadRequestException);
-      expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
+      // Act
+      const result = await service.generateSummary(mockPatientId, mockRequestedById);
+
+      // Assert
+      expect(mockPrismaService.courseInWard.create).toHaveBeenCalledTimes(2);
+      expect(mockPrismaService.courseInWard.create).toHaveBeenNthCalledWith(1, {
+        data: expect.objectContaining({ summaryDate: new Date(2026, 2, 4) }),
+      });
+      expect(mockPrismaService.courseInWard.create).toHaveBeenNthCalledWith(2, {
+        data: expect.objectContaining({ summaryDate: new Date(2026, 2, 5) }),
+      });
+      expect(result).toHaveLength(2);
     });
   });
 
@@ -390,25 +488,21 @@ describe('CourseInWardService', () => {
       patientId: 'patient-123',
       summaryContent: 'Original AI summary',
       status: SummaryStatus.DRAFT_AI,
-      summaryDate: new Date(),
+      // A Course in the Ward covers one order day.
+      summaryDate: new Date(2026, 2, 4),
       approvedStatus: false,
       validatorId: null,
       validatedAt: null,
     };
-    const mockPatient = {
-      id: 'patient-123',
-      firstName: 'John',
-      lastName: 'Doe',
-      dateOfBirth: new Date('1980-01-01'),
-      gender: 'MALE',
-    };
+    // Built from local time so the order day is the same on any runner.
+    const orderDate = new Date(2026, 2, 4, 9, 15);
     const mockOrders = [
       {
         id: 'order-1',
-        type: 'Medication',
-        description: 'Amoxicillin',
-        dosage: '500mg',
-        frequency: 'Twice daily',
+        admissionId: 'admission-1',
+        orderContent: 'Amoxicillin 500mg twice daily',
+        dateCreated: orderDate,
+        admission: { id: 'admission-1', admissionDate: new Date(2026, 2, 2) },
       },
     ];
     const mockAiResponse = {
@@ -416,13 +510,22 @@ describe('CourseInWardService', () => {
       total_groups: 1,
       successful: 1,
       failed: 0,
-      results: [{ 
-        id: 'order-1', 
-        success: true, 
-        summary: 'Regenerated AI summary.',
-        processing_time_seconds: 1.0,
-        error: null
-      }],
+      results: [
+        {
+          group_id: 'admission-1-day-3',
+          summary: 'Regenerated AI summary.',
+          success: true,
+          processing_time_seconds: 1.0,
+          error: null,
+          orders: [
+            {
+              id: 'order-1',
+              text: 'Amoxicillin 500mg twice daily',
+              dateCreated: orderDate.toISOString(),
+            },
+          ],
+        },
+      ],
     };
     const mockUpdatedSummary = {
       ...mockExistingSummary,
@@ -433,11 +536,11 @@ describe('CourseInWardService', () => {
     it('should regenerate a summary successfully', async () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
-      mockOrdersService.findTodaysOrders.mockResolvedValue(mockOrders);
-      mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
+      mockPrismaService.physicianOrder.findMany.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
       mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
       mockAuditLogService.record.mockResolvedValue({});
+      mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
 
       // Act
       const result = await service.regenerateSummary(mockSummaryId, mockPhysicianId);
@@ -446,25 +549,45 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.findUnique).toHaveBeenCalledWith({
         where: { id: mockSummaryId },
       });
-      expect(mockOrdersService.findTodaysOrders).toHaveBeenCalledWith(
-        mockExistingSummary.patientId
+      // Rebuild from the orders this summary is linked to, not from today's.
+      expect(mockPrismaService.physicianOrder.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { summarizationId: mockSummaryId },
+        }),
       );
-      expect(mockPrismaService.patient.findUnique).toHaveBeenCalledWith({
-        where: { id: mockExistingSummary.patientId },
-      });
       expect(mockOllamaClient.summarizeBatch).toHaveBeenCalled();
       expect(mockPrismaService.courseInWard.update).toHaveBeenCalledWith({
         where: { id: mockSummaryId },
-        data: {
+        data: expect.objectContaining({
           summaryContent: 'Regenerated AI summary.',
           status: SummaryStatus.DRAFT_AI,
-        },
+        }),
       });
       expect(mockAuditLogService.record).toHaveBeenCalledWith({
         userId: mockPhysicianId,
         action: 'SUMMARY_REGENERATED_AI',
       });
       expect(result).toEqual(mockUpdatedSummary);
+    });
+
+    it('should fall back to the orders of the day the summary covers', async () => {
+      // Arrange
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockPrismaService.physicianOrder.findMany.mockResolvedValue([]);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockAuditLogService.record.mockResolvedValue({});
+      mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
+
+      // Act
+      await service.regenerateSummary(mockSummaryId, mockPhysicianId);
+
+      // Assert
+      expect(mockOrdersService.findOrdersForDay).toHaveBeenCalledWith(
+        mockExistingSummary.patientId,
+        '2026-03-04',
+      );
     });
 
     it('should throw NotFoundException if summary does not exist', async () => {
@@ -483,8 +606,7 @@ describe('CourseInWardService', () => {
     it('should throw BadRequestException if AI service fails during regeneration', async () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
-      mockOrdersService.findTodaysOrders.mockResolvedValue(mockOrders);
-      mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
+      mockPrismaService.physicianOrder.findMany.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockRejectedValue(new Error('AI service unavailable'));
 
       // Act & Assert
@@ -634,6 +756,8 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.findMany).toHaveBeenCalledWith({
         where: { patientId: mockPatientId },
         orderBy: { summaryDate: 'desc' },
+        // The linked orders tell the UI which order day each summary covers.
+        include: { orders: { select: { id: true, dateCreated: true } } },
       });
       expect(result).toEqual(mockSummaries);
       expect(result.length).toBe(2);
@@ -651,6 +775,7 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.findMany).toHaveBeenCalledWith({
         where: { patientId: mockPatientId },
         orderBy: { summaryDate: 'desc' },
+        include: { orders: { select: { id: true, dateCreated: true } } },
       });
     });
   });
@@ -667,91 +792,76 @@ describe('CourseInWardService', () => {
       gender: 'MALE',
     };
 
-    it('should handle null/undefined fields in order text', async () => {
-      // Arrange
-      const ordersWithNulls = [
-        {
-          id: 'order-1',
-          type: 'Medication',
-          description: null,
-          dosage: null,
-          frequency: null,
-        },
-      ];
-      const mockAiResponse = {
-        batch_id: 'batch-123',
-        total_groups: 1,
-        successful: 1,
-        failed: 0,
-        results: [{ 
-          id: 'order-1', 
-          success: true, 
-          summary: 'Medication order.',
-          processing_time_seconds: 1.0,
-          error: null
-        }],
-      };
-
-      mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
-      mockOrdersService.findTodaysOrders.mockResolvedValue(ordersWithNulls);
-      mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
-      mockPrismaService.courseInWard.create.mockResolvedValue({
-        id: 'summary-789',
-        patientId: mockPatientId,
-        summaryContent: 'Medication order.',
-        status: SummaryStatus.DRAFT_AI,
-        summaryDate: new Date(),
-        approvedStatus: false,
-        validatorId: null,
-        validatedAt: null,
-      });
-
-      // Act
-      await service.generateSummary(mockPatientId, mockRequestedById);
-
-      // Assert
-      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith([
-        expect.objectContaining({
-          id: 'order-1',
-          text: 'Medication', // Only the type field since others are null
-        }),
-      ]);
+    beforeEach(() => {
+      mockPrismaService.courseInWard.findFirst.mockResolvedValue(null);
+      mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
+      mockAuditLogService.record.mockResolvedValue({});
     });
 
-    it('should filter out empty strings from order text', async () => {
+    it('should send the raw order content, one entry per admission', async () => {
       // Arrange
-      const ordersWithEmpty = [
+      const orders = [
         {
           id: 'order-1',
-          type: 'Medication',
-          description: '',
-          dosage: '500mg',
-          frequency: '',
+          admissionId: 'admission-1',
+          orderContent: 'Amoxicillin 500mg twice daily',
+          dateCreated: new Date(2026, 2, 4, 8, 0),
+          admission: { id: 'admission-1', admissionDate: new Date(2026, 2, 2) },
+        },
+        {
+          id: 'order-2',
+          admissionId: 'admission-2',
+          orderContent: 'Chest X-ray',
+          dateCreated: new Date(2026, 2, 4, 9, 0),
+          admission: { id: 'admission-2', admissionDate: new Date(2026, 2, 4) },
         },
       ];
       const mockAiResponse = {
         batch_id: 'batch-123',
-        total_groups: 1,
-        successful: 1,
+        total_groups: 2,
+        successful: 2,
         failed: 0,
-        results: [{ 
-          id: 'order-1', 
-          success: true, 
-          summary: 'Medication 500mg.',
-          processing_time_seconds: 1.0,
-          error: null
-        }],
+        results: [
+          {
+            group_id: 'admission-1-day-3',
+            summary: 'Amoxicillin was given.',
+            success: true,
+            processing_time_seconds: 1.0,
+            error: null,
+            orders: [
+              {
+                id: 'order-1',
+                text: 'Amoxicillin 500mg twice daily',
+                dateCreated: new Date(2026, 2, 4, 8, 0).toISOString(),
+              },
+            ],
+          },
+          {
+            group_id: 'admission-2-day-1',
+            summary: 'A chest X-ray was taken.',
+            success: true,
+            processing_time_seconds: 1.0,
+            error: null,
+            orders: [
+              {
+                id: 'order-2',
+                text: 'Chest X-ray',
+                dateCreated: new Date(2026, 2, 4, 9, 0).toISOString(),
+              },
+            ],
+          },
+        ],
       };
 
       mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
-      mockOrdersService.findTodaysOrders.mockResolvedValue(ordersWithEmpty);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(orders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
       mockPrismaService.courseInWard.create.mockResolvedValue({
         id: 'summary-789',
         patientId: mockPatientId,
-        summaryContent: 'Medication 500mg.',
+        summaryContent: 'Amoxicillin was given.',
         status: SummaryStatus.DRAFT_AI,
-        summaryDate: new Date(),
+        summaryDate: new Date(2026, 2, 4),
         approvedStatus: false,
         validatorId: null,
         validatedAt: null,
@@ -761,12 +871,36 @@ describe('CourseInWardService', () => {
       await service.generateSummary(mockPatientId, mockRequestedById);
 
       // Assert
-      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith([
+      const [admissions] = mockOllamaClient.summarizeBatch.mock.calls[0];
+      expect(admissions).toHaveLength(2);
+      expect(admissions[0]).toEqual(
         expect.objectContaining({
-          id: 'order-1',
-          text: 'Medication 500mg', // Empty strings filtered out
+          admissionId: 'admission-1',
+          // Carried through so the AI can label the group "Day N of Admission".
+          admissionDate: new Date(2026, 2, 2).toISOString(),
+          orders: [
+            expect.objectContaining({
+              id: 'order-1',
+              text: 'Amoxicillin 500mg twice daily',
+            }),
+          ],
         }),
-      ]);
+      );
+      expect(admissions[1]).toEqual(
+        expect.objectContaining({
+          admissionId: 'admission-2',
+          orders: [expect.objectContaining({ id: 'order-2', text: 'Chest X-ray' })],
+        }),
+      );
+      // Both groups cover the same day but different admissions, so the day
+      // holds one Course in the Ward per admission.
+      expect(mockPrismaService.courseInWard.create).toHaveBeenCalledTimes(2);
+      expect(mockPrismaService.courseInWard.create).toHaveBeenNthCalledWith(1, {
+        data: expect.objectContaining({ summaryDate: new Date(2026, 2, 4) }),
+      });
+      expect(mockPrismaService.courseInWard.create).toHaveBeenNthCalledWith(2, {
+        data: expect.objectContaining({ summaryDate: new Date(2026, 2, 4) }),
+      });
     });
   });
 });

@@ -8,6 +8,17 @@ import type {
   ClaimRecord,
   AuthUser,
   PhysicianRequest,
+  ActivityTrend,
+  AdminUserInput,
+  AuditLogAggregate,
+  AuditLogAggregateQuery,
+  AuditLogPage,
+  AuditLogQuery,
+  ReportSummary,
+  PasswordResetApproval,
+  PasswordResetRequestRow,
+  StaffAccount,
+  TrendBucket,
 } from '../types';
 
 // --- Auth ---
@@ -72,8 +83,9 @@ export const notesApi = {
 
 // --- Course in the Ward (AI summaries) ---
 export const courseInWardApi = {
-  generate: (patientId: string) =>
-    api.post<CourseInWard>('/course-in-ward/generate', { patientId }),
+  /** Summarize one order day (today when `day` is omitted); returns that day's summary rows. */
+  generate: (patientId: string, day?: string) =>
+    api.post<CourseInWard[]>('/course-in-ward/generate', day ? { patientId, day } : { patientId }),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
   regenerate: (id: string) => api.post<CourseInWard>(`/course-in-ward/${id}/regenerate`),
@@ -94,18 +106,33 @@ export const claimsApi = {
 
 // --- Admin ---
 export const adminApi = {
-  listUsers: () => api.get('/admin/users'),
-  createUser: (data: any) => api.post('/admin/users', data),
-  updateUser: (id: string, data: any) => api.patch(`/admin/users/${id}`, data),
-  auditLogs: (params?: { skip?: number; take?: number }) =>
-    api.get('/admin/audit-logs', { params }),
+  listUsers: () => api.get<StaffAccount[]>('/admin/users'),
+  createUser: (data: AdminUserInput) => api.post('/admin/users', data),
+  updateUser: (id: string, data: AdminUserInput) => api.patch(`/admin/users/${id}`, data),
+  /** One page of activity logs, filtered server-side. */
+  auditLogs: (params?: AuditLogQuery) =>
+    api.get<AuditLogPage>('/admin/audit-logs', { params }),
+
+  auditLogAggregate: (params?: AuditLogAggregateQuery) =>
+    api.get<AuditLogAggregate>('/admin/audit-logs/aggregate', { params }),
   analyticsSummary: () => api.get('/admin/audit-logs/analytics/summary'),
   ordersAnalytics: (bucket: 'day' | 'week' | 'month' | 'year') =>
     api.get('/admin/audit-logs/analytics/orders', { params: { bucket } }),
+  /** Current distributions + flow counts for the reporting section. */
+  reportSummary: (params?: ReportRangeParams) =>
+    api.get<ReportSummary>('/admin/reports/summary', { params }),
+  activityTrend: (params?: ReportRangeParams & { bucket?: TrendBucket }) =>
+    api.get<ActivityTrend>('/admin/reports/activity-trend', { params }),
   getResetRequests: () =>
-    api.get('/admin/password-reset-requests'),
+    api.get<PasswordResetRequestRow[]>('/admin/password-reset-requests'),
   approveResetRequest: (requestId: string) =>
-    api.post(`/admin/password-reset-requests/${requestId}/approve`),
+    api.post<PasswordResetApproval>(`/admin/password-reset-requests/${requestId}/approve`),
   rejectResetRequest: (requestId: string) =>
     api.post(`/admin/password-reset-requests/${requestId}/reject`),
 };
+
+/** Reporting window; date-only values cover the whole UTC day. */
+interface ReportRangeParams {
+  from?: string;
+  to?: string;
+}

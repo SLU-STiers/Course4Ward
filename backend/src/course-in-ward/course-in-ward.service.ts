@@ -16,6 +16,37 @@ interface SimilarReferenceRow {
   similarity: number;
 }
 
+/** The AI's output for ONE admission-day group. */
+interface DaySummaryGroup {
+  /** Local `YYYY-MM-DD` of the group's orders; `null` when the date was unusable. */
+  day: string | null;
+  summary: string;
+  /** Ids of the orders this group was built from. */
+  orderIds: string[];
+}
+
+/** Local `YYYY-MM-DD` key of a timestamp, matching how the UI buckets order days. */
+function dayKeyOf(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** Midnight (local) of a `YYYY-MM-DD` key: the `summaryDate` of that day's Course in the Ward. */
+function dayStart(day: string): Date {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, date || 1);
+}
+
+/** ISO string for either a `Date` or an already-serialized timestamp. */
+function toIso(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : value;
+}
+
 @Injectable()
 export class CourseInWardService {
   private readonly aiServiceUrl: string;
@@ -34,33 +65,44 @@ export class CourseInWardService {
 
   // Calls the Python/FastAPI + Ollama microservice. This service is the ONLY
   // caller of ai-service -- the frontend never talks to it directly.
-  private async callAiSummarizer(orders: any[]): Promise<string> {
-    try {
-      if (!orders || orders.length === 0) {
-        this.logger.warn('[ai] callAiSummarizer received no orders');
-        throw new BadRequestException('No orders found to summarize');
-      }
+  //
+  // The AI summarizes per admission PER DAY, so a batch spanning several days
+  // comes back as one group per (admission, calendar day). Each group keeps the
+  // orders it was built from, which is how the caller files it under a day.
+  private async callAiSummarizer(orders: any[]): Promise<DaySummaryGroup[]> {
+    if (!orders || orders.length === 0) {
+      this.logger.warn('[ai] callAiSummarizer received no orders');
+      throw new BadRequestException('No orders found to summarize');
+    }
 
+    try {
       // Group the incoming orders by admission so the AI service can label each
       // admission-day group correctly.
-      const byAdmission = new Map<string, any[]>();
+      interface AdmissionBucket {
+        admissionDate: Date | null;
+        orders: any[];
+      }
+      const byAdmission = new Map<string, AdmissionBucket>();
       for (const order of orders) {
-        const key = order.admissionId ?? 'no-admission';
-        const bucket = byAdmission.get(key) ?? [];
-        bucket.push(order);
-        byAdmission.set(key, bucket);
+        const key: string = order.admissionId ?? 'no-admission';
+        let bucket = byAdmission.get(key);
+        if (!bucket) {
+          bucket = {
+            admissionDate: order.admission?.admissionDate ?? null,
+            orders: [] as any[],
+          };
+          byAdmission.set(key, bucket);
+        }
+        bucket.orders.push(order);
       }
 
       const admissions = Array.from(byAdmission.entries()).map(([admissionId, bucket]) => ({
         admissionId,
-        admissionDate: null,
-        orders: bucket.map((order) => ({
+        admissionDate: toIso(bucket.admissionDate),
+        orders: bucket.orders.map((order) => ({
           id: String(order.id),
           text: order.orderContent,
-          dateCreated:
-            order.dateCreated instanceof Date
-              ? order.dateCreated.toISOString()
-              : (order.dateCreated ?? null),
+          dateCreated: toIso(order.dateCreated),
         })),
       }));
 
@@ -85,13 +127,29 @@ export class CourseInWardService {
         throw new Error('One or more order summaries failed');
       }
 
-      return response.results.map((result) => result.summary ?? '').filter(Boolean).join(' ');
+      return response.results
+        .filter((result) => Boolean(result.summary))
+        .map((result) => {
+          const memberOrders = result.orders ?? [];
+          // Every member order of a group shares the group's calendar day, so
+          // the earliest one names the day the summary belongs to.
+          const groupDays = memberOrders
+            .map((order) => dayKeyOf(order.dateCreated))
+            .filter((day): day is string => Boolean(day))
+            .sort();
+          return {
+            day: groupDays[0] ?? null,
+            summary: result.summary as string,
+            orderIds: memberOrders.map((order) => String(order.id)),
+          };
+        });
     } catch (err) {
       throw new BadRequestException(
         'AI summarization service is unavailable. Try again or write the summary manually.',
       );
     }
   }
+
 
   /**
    * Retrieve up to `limit` DISTINCT APPROVED "Course in the Ward" summaries whose
@@ -165,33 +223,107 @@ export class CourseInWardService {
     }
   }
 
-  // "Summarized Physician's Orders" -- generate today's Course in the Ward
-  async generateSummary(patientId: string, requestedById: string) {
-    const [patient, todaysOrders] = await Promise.all([
+  // "Summarized Physician's Orders" -- generate the Course in the Ward of ONE
+  // order day (today by default). The AI groups its output per admission-day,
+  // so a day spent under two admissions still files as one summary per
+  // admission, each stored against the day it summarizes.
+  async generateSummary(patientId: string, requestedById: string, day?: string | null) {
+    const targetDay = day ?? dayKeyOf(new Date())!;
+    const [patient, targetOrders] = await Promise.all([
       this.prisma.patient.findUnique({ where: { id: patientId } }),
-      this.ordersService.findTodaysOrders(patientId),
+      this.ordersService.findOrdersForDay(patientId, day ?? null),
     ]);
     if (!patient) throw new NotFoundException('Patient not found');
-    if (todaysOrders.length === 0) {
-      throw new BadRequestException('No orders recorded for this patient today');
+    if (targetOrders.length === 0) {
+      throw new BadRequestException(
+        `No orders recorded for this patient on ${targetDay}`,
+      );
     }
 
-    const aiText = await this.callAiSummarizer(todaysOrders);
+    const groups = await this.callAiSummarizer(targetOrders);
 
-    const summary = await this.prisma.courseInWard.create({
-      data: {
+    const summaries = [];
+    for (const [index, group] of groups.entries()) {
+      const summaryDay = group.day ?? targetDay;
+      const orderIds = group.orderIds.length
+        ? group.orderIds
+        : targetOrders.map((order) => String(order.id));
+
+      const summary = await this.upsertDaySummary(
         patientId,
-        summaryContent: aiText,
-        status: SummaryStatus.DRAFT_AI,
-      },
-    });
+        summaryDay,
+        group.summary,
+        index,
+      );
+      await this.linkOrdersToSummary(summary.id, orderIds);
+      summaries.push(summary);
+    }
 
     await this.auditLog.record({
       userId: requestedById,
       action: 'SUMMARY_GENERATED_AI',
     });
 
-    return summary;
+    return summaries;
+  }
+
+  /**
+   * One Course in the Ward per patient per day: re-submitting a day refreshes
+   * that day's *working draft* in place instead of piling up duplicate rows.
+   * An APPROVED summary is never overwritten -- a claim may already reference
+   * it -- so a fresh draft is filed alongside it.
+   *
+   * `groupIndex` pairs the Nth group of a day with the Nth draft of that day,
+   * which keeps day-by-day regeneration stable when a day holds more than one
+   * admission.
+   */
+  private async upsertDaySummary(
+    patientId: string,
+    day: string,
+    content: string,
+    groupIndex = 0,
+  ) {
+    const summaryDate = dayStart(day);
+    const existingDraft = await this.prisma.courseInWard.findFirst({
+      where: { patientId, summaryDate, status: { not: SummaryStatus.APPROVED } },
+      orderBy: { id: 'asc' },
+      skip: groupIndex,
+    });
+
+    if (existingDraft) {
+      return this.prisma.courseInWard.update({
+        where: { id: existingDraft.id },
+        data: { summaryContent: content, status: SummaryStatus.DRAFT_AI },
+      });
+    }
+
+    return this.prisma.courseInWard.create({
+      data: {
+        patientId,
+        summaryContent: content,
+        summaryDate,
+        status: SummaryStatus.DRAFT_AI,
+      },
+    });
+  }
+
+  /**
+   * Point a summary's source orders at it (`summarizationId`). Best effort: the
+   * summary itself is already saved and a failed link only costs the RAG corpus
+   * one exemplar.
+   */
+  private async linkOrdersToSummary(summaryId: string, orderIds: string[]) {
+    if (orderIds.length === 0) return;
+    try {
+      await this.prisma.physicianOrder.updateMany({
+        where: { id: { in: orderIds } },
+        data: { summarizationId: summaryId },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[summary] could not link orders to summary ${summaryId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   // "Resummarized Physician's Orders" -- option 1: physician manually edits
@@ -217,35 +349,30 @@ export class CourseInWardService {
   async regenerateSummary(id: string, physicianId: string) {
     const existing = await this.findOne(id);
 
-    // Prefer orders written today; otherwise fall back to the orders this
-    // summary was originally created from (or any of the patient's orders) so
-    // regenerating an older summary still has content instead of sending an
-    // empty batch to the AI service.
-    let sourceOrders = await this.ordersService.findTodaysOrders(existing.patientId);
-    if (sourceOrders.length === 0) {
-      sourceOrders = await this.prisma.physicianOrder.findMany({
-        where: {
-          OR: [
-            { summarizationId: existing.id },
-            { admission: { patientId: existing.patientId } },
-          ],
-        },
-        orderBy: { dateCreated: 'asc' },
-      });
-    }
+    const sourceOrders = await this.findSummarySourceOrders(existing);
     if (sourceOrders.length === 0) {
       throw new BadRequestException('No orders found to regenerate this summary');
     }
 
-    const aiText = await this.callAiSummarizer(sourceOrders);
+    // Keep the summary filed under the day it already covers: when the source
+    // orders span more than one day, take that day's group.
+    const summaryDay = dayKeyOf(existing.summaryDate);
+    const groups = await this.callAiSummarizer(sourceOrders);
+    const group = groups.find((candidate) => candidate.day === summaryDay) ?? groups[0];
+    if (!group?.summary) {
+      throw new BadRequestException('No orders found to regenerate this summary');
+    }
 
     const updated = await this.prisma.courseInWard.update({
       where: { id },
       data: {
-        summaryContent: aiText,
+        summaryContent: group.summary,
         status: SummaryStatus.DRAFT_AI,
+        ...(group.day ? { summaryDate: dayStart(group.day) } : {}),
       },
     });
+
+    await this.linkOrdersToSummary(updated.id, group.orderIds);
 
     await this.auditLog.record({
       userId: physicianId,
@@ -253,6 +380,33 @@ export class CourseInWardService {
     });
 
     return updated;
+  }
+
+  /**
+   * The orders a summary should be rebuilt from, most specific first: the
+   * orders it is linked to, then the orders of the day it covers, and finally
+   * anything the patient has -- so regenerating an older summary still has
+   * content instead of sending an empty batch to the AI service.
+   */
+  private async findSummarySourceOrders(summary: { id: string; patientId: string; summaryDate: Date }) {
+    const linked = await this.prisma.physicianOrder.findMany({
+      where: { summarizationId: summary.id },
+      orderBy: { dateCreated: 'asc' },
+      include: { admission: { select: { id: true, admissionDate: true } } },
+    });
+    if (linked.length) return linked;
+
+    const day = dayKeyOf(summary.summaryDate);
+    if (day) {
+      const sameDay = await this.ordersService.findOrdersForDay(summary.patientId, day);
+      if (sameDay.length) return sameDay;
+    }
+
+    return this.prisma.physicianOrder.findMany({
+      where: { admission: { patientId: summary.patientId } },
+      orderBy: { dateCreated: 'asc' },
+      include: { admission: { select: { id: true, admissionDate: true } } },
+    });
   }
 
   // Physician approves the summary they deem accurate
@@ -286,6 +440,8 @@ export class CourseInWardService {
     return this.prisma.courseInWard.findMany({
       where: { patientId },
       orderBy: { summaryDate: 'desc' },
+      // The orders a summary was built from carry the day it covers.
+      include: { orders: { select: { id: true, dateCreated: true } } },
     });
   }
 }

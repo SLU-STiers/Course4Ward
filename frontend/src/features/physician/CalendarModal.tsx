@@ -1,10 +1,8 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useState } from 'react';
 import { formatDateLongFromKey, toDateInputValue } from '../../lib/format';
+import { CalendarPanel } from '../../components/ui';
 import { manage } from './styles';
-
-import { monthCells } from './calendar';
 
 export function CalendarModal({
   onClose,
@@ -20,36 +18,7 @@ export function CalendarModal({
   onSelect: (date: Date) => void;
   onClear: () => void;
 }) {
-  const [cursor, setCursor] = useState(
-    () => new Date(focusDate.getFullYear(), focusDate.getMonth(), 1),
-  );
-
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
-  const cells = monthCells(year, month);
-  const label = cursor.toLocaleString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const orderDaySet = new Set(orderDays);
   const focusKey = toDateInputValue(focusDate);
-
-  // A month may only be navigated to when it actually holds orders.
-  const monthHasOrders = (targetYear: number, targetMonth: number) => {
-    const prefix = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-`;
-    return orderDays.some((day) => day.startsWith(prefix));
-  };
-  const prevMonth = new Date(year, month - 1, 1);
-  const nextMonth = new Date(year, month + 1, 1);
-  const canGoPrev = monthHasOrders(
-    prevMonth.getFullYear(),
-    prevMonth.getMonth(),
-  );
-  const canGoNext = monthHasOrders(
-    nextMonth.getFullYear(),
-    nextMonth.getMonth(),
-  );
 
   return (
     <div style={manage.calOverlay} onClick={onClose}>
@@ -59,83 +28,28 @@ export function CalendarModal({
             <h3 style={manage.calTitle}>Select order date</h3>
             <p style={manage.calSubtitle}>Filter the order list by a day</p>
           </div>
-          <button type="button" style={manage.calClose} onClick={onClose}>
+          <button
+            type="button"
+            className="ui-icon-btn"
+            aria-label="Close calendar"
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>
-        <div style={manage.calNav}>
-          <button
-            type="button"
-            style={canGoPrev ? manage.calNavBtn : manage.calNavBtnDisabled}
-            disabled={!canGoPrev}
-            aria-label="Previous month with orders"
-            onClick={() => setCursor(prevMonth)}
-          >
-            ‹
-          </button>
-          <span style={manage.calMonth}>{label}</span>
-          <button
-            type="button"
-            style={canGoNext ? manage.calNavBtn : manage.calNavBtnDisabled}
-            disabled={!canGoNext}
-            aria-label="Next month with orders"
-            onClick={() => setCursor(nextMonth)}
-          >
-            ›
-          </button>
-        </div>
-        <div style={manage.calHint}>
-          <span style={manage.calHintDot} />
-          <span>Dates with recorded orders</span>
-        </div>
-        <div style={manage.calGrid}>
-          {weekdays.map((d) => (
-            <div key={d} style={manage.calDow}>
-              {d}
-            </div>
-          ))}
-          {cells.map((day, i) => {
-            const date = day ? new Date(year, month, day) : null;
-            const dayValue = date ? toDateInputValue(date) : "";
-            const hasOrders = Boolean(dayValue) && orderDaySet.has(dayValue);
-            const isSelected = hasOrders && dayValue === focusKey;
-            return (
-              <button
-                key={i}
-                type="button"
-                disabled={!hasOrders}
-                aria-label={
-                  date
-                    ? `${date.toLocaleDateString("en-US", {
-                        dateStyle: "long",
-                      })}${hasOrders ? "" : " (no orders)"}`
-                    : undefined
-                }
-                aria-pressed={isSelected}
-                onClick={() => date && hasOrders && onSelect(date)}
-                style={{
-                  ...manage.calDay,
-                  ...(hasOrders ? manage.calDayHasOrders : {}),
-                  ...(hasOrders ? {} : manage.calDayDisabled),
-                  ...(isSelected ? manage.calDaySelected : {}),
-                  visibility: day ? "visible" : "hidden",
-                }}
-              >
-                {day}
-              </button>
-            );
-          })}
-        </div>
-        <div style={manage.calFooter}>
-          <span style={manage.calFooterText}>
-            {focusKey && orderDaySet.has(focusKey)
+
+        <CalendarPanel
+          focusDate={focusDate}
+          availableDays={orderDays}
+          onSelect={onSelect}
+          onClear={onClear}
+          clearLabel="Show all dates"
+          caption={
+            focusKey && orderDays.includes(focusKey)
               ? `Selected: ${formatDateLongFromKey(focusKey)}`
-              : 'Showing all order dates'}
-          </span>
-          <button type="button" style={manage.calClearBtn} onClick={onClear}>
-            Show all
-          </button>
-        </div>
+              : 'Showing all order dates'
+          }
+        />
       </div>
     </div>
   );

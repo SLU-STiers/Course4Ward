@@ -8,11 +8,15 @@ export type NursePatient = {
   patientId: string;
   recordId: string;
   admissionDate: string;
+  /** `YYYY-MM-DD` for sorting / date inputs; `admissionDate` is for display. */
+  admissionDateRaw: string;
   color: string;
   age: number;
   gender: string;
   initials: string;
   status?: 'admitted' | 'discharged';
+  /** Whole days since admission, counted inclusively. */
+  daysInCare: number;
   initialAssessment?: string | null;
   assignedDoctor?: string | null;
 };

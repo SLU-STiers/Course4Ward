@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/domainApi';
 import { DataTableToolbar, PageHeader, StatusBadge } from '../../components/ui';
 import { styles } from './styles';
+import type { PasswordResetApproval, PasswordResetRequestRow } from '../../types';
 
 import { ConfirmationDialog } from './ConfirmationDialog';
 
@@ -33,7 +34,7 @@ export function RequestsView() {
   // Handle approving/resetting password request
   const handleResetPassword = useMutation({
     mutationFn: (requestId: string) => adminApi.approveResetRequest(requestId),
-    onSuccess: (response: any) => {
+    onSuccess: (response: { data: PasswordResetApproval }) => {
       setTemporaryPassword(response.data.temporaryPassword);
       qc.invalidateQueries({ queryKey: ['reset-requests'] });
     },
@@ -46,7 +47,7 @@ export function RequestsView() {
     },
   });
 
-  const list = (requestsData ?? []).map((request: any) => ({
+  const list = (requestsData ?? []).map((request: PasswordResetRequestRow) => ({
     ...request,
     name: `${request.user.firstName} ${request.user.lastName}`,
     role: request.user.role,
@@ -58,14 +59,14 @@ export function RequestsView() {
 
   // Search filter
   const filteredList = list
-    .filter((req: any) =>
+    .filter((req) =>
       req.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       req.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (req.ipAddress ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       req.id.toLowerCase().includes(searchTerm.toLowerCase())
     )
-    .filter((req: any) => statusFilter === 'all' || req.status === statusFilter)
-    .sort((a: any, b: any) => {
+    .filter((req) => statusFilter === 'all' || req.status === statusFilter)
+    .sort((a, b) => {
       const comparison = String(a[sortField]).localeCompare(String(b[sortField]), undefined, { numeric: true });
       return sortDirection === 'ascending' ? comparison : -comparison;
     });
@@ -143,7 +144,7 @@ export function RequestsView() {
             </tr>
           </thead>
           <tbody>
-            {currentData.map((item: any) => (
+            {currentData.map((item) => (
               <tr key={item.id} style={styles.tr}>
                 <td style={{ ...styles.td, fontWeight: 700, color: 'var(--c4w-color-primary)' }}>
                   {item.id}

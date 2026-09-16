@@ -1,12 +1,6 @@
 import type { CSSProperties } from 'react';
 
 export const styles: Record<string, CSSProperties> = {
-  navIconImage: {
-  width: '26px',
-  height: '26px',
-  marginRight: '10px',
-  objectFit: 'contain',
-  },
   tableCard: {
     backgroundColor: '#ffffff',
     borderRadius: '12px',
@@ -57,16 +51,6 @@ export const styles: Record<string, CSSProperties> = {
   timeText: {
     fontSize: '12px',
     color: '#94a3b8',
-  },
-  reviewBtn: {
-    backgroundColor: 'var(--c4w-color-primary)',
-    color: '#ffffff',
-    border: 'none',
-    padding: '6px 16px',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: 600,
-    cursor: 'pointer',
   },
   paginationRow: {
     display: 'flex',
@@ -372,45 +356,6 @@ export const overviewStyles: Record<string, CSSProperties> = {
     borderRadius: '4px',
     color: '#0f172a',
     fontSize: '10px',
-  },
-  aiCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-    overflow: 'hidden',
-  },
-  aiHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '8px 14px',
-    backgroundColor: '#f1eaff',
-  },
-  aiTitle: {
-    color: '#7c00b8',
-    fontSize: '11px',
-    fontWeight: 600,
-  },
-  aiStatus: {
-    padding: '4px 18px',
-    borderRadius: '6px',
-    backgroundColor: '#d3a0f5',
-    color: '#7c00b8',
-    fontSize: '11px',
-    fontWeight: 600,
-  },
-  aiSummary: {
-    margin: 0,
-    padding: '8px 14px',
-    color: '#0f172a',
-    fontSize: '11px',
-    lineHeight: 1.35,
-  },
-  aiActions: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '0 14px 9px',
   },
   evaluatorSelect: {
     width: '118px',

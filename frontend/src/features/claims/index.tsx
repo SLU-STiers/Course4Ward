@@ -6,10 +6,9 @@ import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../../components/ui';
-import overviewIcon from '../../Img/overview.png';
-import requestsIcon from '../../Img/requests.png';
-import exportIcon from '../../Img/export.png';
-import llamaIcon from '../../Img/llama.png';
+import { patientTableStyles } from '../../components/patientList/PatientTable';
+import { DashboardIcon, ExportIcon, RequestsIcon } from '../../components/icons/NavIcons';
+import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
 import { formatDateMedium, formatTimeMedium } from '../../lib/format';
@@ -18,6 +17,14 @@ import { styles, overviewStyles } from './styles';
 import { mapClaimToPatient, mapClaimToRequest } from './mappers';
 import { ReviewRequestModal } from './ReviewRequestModal';
 import type { CF4Patient, ExportSubView, PatientSortField, PatientStatus, RequestSortField, SortDirection, SummarizationRequest, TabType } from './types';
+
+/** Sort key for a patient-list column (numbers compare numerically). */
+function patientSortValue(patient: CF4Patient, field: PatientSortField): string | number {
+  if (field === 'age') return patient.age ?? 0;
+  if (field === 'daysInCare') return patient.daysInCare;
+  if (field === 'admissionDate') return patient.admissionDateRaw;
+  return patient.name;
+}
 
 export function ClaimsProcessorDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -114,13 +121,16 @@ export function ClaimsProcessorDashboard() {
       (p.name.toLowerCase().includes(patientSearch.toLowerCase()) ||
       p.patientId.includes(patientSearch)) &&
       (patientStatus === 'all' || p.status === patientStatus) &&
-      (!admissionFrom || p.admissionDate.split('/').reverse().join('-') >= admissionFrom) &&
-      (!admissionTo || p.admissionDate.split('/').reverse().join('-') <= admissionTo)
+      (!admissionFrom || p.admissionDateRaw >= admissionFrom) &&
+      (!admissionTo || p.admissionDateRaw <= admissionTo)
   );
   const sortedCf4Patients = [...filteredCf4Patients].sort((a, b) => {
-    const valueA = patientSortField === 'admissionDate' ? a.admissionDate.split('/').reverse().join('') : a[patientSortField].toLowerCase();
-    const valueB = patientSortField === 'admissionDate' ? b.admissionDate.split('/').reverse().join('') : b[patientSortField].toLowerCase();
-    const comparison = valueA.localeCompare(valueB, undefined, { numeric: true });
+    const valueA = patientSortValue(a, patientSortField);
+    const valueB = patientSortValue(b, patientSortField);
+    const comparison =
+      typeof valueA === 'number' && typeof valueB === 'number'
+        ? valueA - valueB
+        : String(valueA).localeCompare(String(valueB), undefined, { numeric: true });
     return sortDirection === 'ascending' ? comparison : -comparison;
   });
   const patientPageSize = 8;
@@ -201,9 +211,9 @@ export function ClaimsProcessorDashboard() {
           if (tab === 'export') setExportSubView('selection');
         },
         items: [
-          { id: 'overview', label: 'Dashboard', icon: <img src={overviewIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'export', label: 'Export', icon: <img src={exportIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'overview', label: 'Dashboard', icon: <DashboardIcon /> },
+          { id: 'requests', label: 'Requests', icon: <RequestsIcon /> },
+          { id: 'export', label: 'Export', icon: <ExportIcon /> },
         ],
         profile: <SidebarProfile initials="SJ" name="Steve Joabs" subtitle="Claims Processor" onLogout={handleLogout} />,
       }}
@@ -417,9 +427,10 @@ export function ClaimsProcessorDashboard() {
                     sortProps={{
                       title: 'Sort patients by',
                       options: [
-                        { value: 'name', label: 'Patient name' },
-                        { value: 'patientId', label: 'Patient ID' },
                         { value: 'admissionDate', label: 'Admission date' },
+                        { value: 'daysInCare', label: 'Days in care' },
+                        { value: 'age', label: 'Age' },
+                        { value: 'name', label: 'Patient name' },
                       ],
                       value: patientSortField,
                       onChange: (value) => { setPatientSortField(value as PatientSortField); setPatientPage(1); },
@@ -429,13 +440,16 @@ export function ClaimsProcessorDashboard() {
                   />
 
                   <div style={styles.patientTableWrapper}>
-                    <table style={styles.table}>
+                    <table style={{ ...styles.table, tableLayout: 'auto' }}>
                       <thead>
                         <tr style={styles.thRow}>
-                          <th style={{ ...styles.th, width: '37%' }}>Patient</th>
-                          <th style={{ ...styles.th, width: '20%' }}>Patient ID</th>
-                          <th style={{ ...styles.th, width: '20%' }}>Admission Date</th>
-                          <th style={{ ...styles.th, width: '15%', textAlign: 'right' }} />
+                          <th style={styles.th}>Patient</th>
+                          <th style={styles.th}>Sex</th>
+                          <th style={styles.th}>Age</th>
+                          <th style={styles.th}>Admitted</th>
+                          <th style={styles.th}>Days in care</th>
+                          <th style={styles.th}>Status</th>
+                          <th style={{ ...styles.th, textAlign: 'right' }} />
                         </tr>
                       </thead>
                       <tbody>
@@ -443,29 +457,28 @@ export function ClaimsProcessorDashboard() {
                           <tr key={p.id} style={styles.tr}>
                             <td style={styles.td}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span
-                                  style={{
-                                    width: '12px',
-                                    height: '12px',
-                                    borderRadius: '50%',
-                                    backgroundColor: p.status === 'discharged' ? '#ef4444' : '#22c55e',
-                                    display: 'inline-block',
-                                  }}
-                                />
-                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                                  {p.name}
-                                </span>
+                                <span style={{ ...patientTableStyles.dot, backgroundColor: p.color }} />
+                                <span style={patientTableStyles.name}>{p.name}</span>
                               </div>
                             </td>
-                            <td style={{ ...styles.td, fontSize: '12px', color: '#64748b' }}>
-                              {p.patientId}
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }}>
+                              {p.gender}
                             </td>
-                            <td style={{ ...styles.td, fontSize: '12px', color: '#64748b' }}>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }}>
+                              {p.age ?? '—'}
+                            </td>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }}>
                               {p.admissionDate}
+                            </td>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }}>
+                              {p.daysInCare} {p.daysInCare === 1 ? 'day' : 'days'}
+                            </td>
+                            <td style={styles.td}>
+                              <StatusBadge status={p.status} showDot />
                             </td>
                             <td style={{ ...styles.td, textAlign: 'right' }}>
                               <button
-                                style={styles.reviewBtn}
+                                style={patientTableStyles.viewBtn}
                                 onClick={() => handleSelectOrView(p)}
                               >
                                 {p.selected ? 'View' : 'Select'}
@@ -473,6 +486,13 @@ export function ClaimsProcessorDashboard() {
                             </td>
                           </tr>
                         ))}
+                        {!visibleCf4Patients.length && (
+                          <tr>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }} colSpan={7}>
+                              No patients match the current filters.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -607,9 +627,10 @@ export function ClaimsProcessorDashboard() {
                   sortProps={{
                     title: 'Sort patients by',
                     options: [
-                      { value: 'name', label: 'Patient name' },
-                      { value: 'patientId', label: 'Patient ID' },
                       { value: 'admissionDate', label: 'Admission date' },
+                      { value: 'daysInCare', label: 'Days in care' },
+                      { value: 'age', label: 'Age' },
+                      { value: 'name', label: 'Patient name' },
                     ],
                     value: patientSortField,
                     onChange: (value) => { setPatientSortField(value as PatientSortField); setPatientPage(1); },
@@ -619,13 +640,16 @@ export function ClaimsProcessorDashboard() {
                 />
 
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={styles.table}>
+                  <table style={{ ...styles.table, tableLayout: 'auto' }}>
                     <thead>
                       <tr style={styles.thRow}>
-                        <th style={{ ...styles.th, width: '37%' }}>Patient</th>
-                        <th style={{ ...styles.th, width: '20%' }}>Patient ID</th>
-                        <th style={{ ...styles.th, width: '20%' }}>Admission Date</th>
-                        <th style={{ ...styles.th, width: '15%', textAlign: 'right' }} />
+                        <th style={styles.th}>Patient</th>
+                        <th style={styles.th}>Sex</th>
+                        <th style={styles.th}>Age</th>
+                        <th style={styles.th}>Admitted</th>
+                        <th style={styles.th}>Days in care</th>
+                        <th style={styles.th}>Status</th>
+                        <th style={{ ...styles.th, textAlign: 'right' }} />
                       </tr>
                     </thead>
                     <tbody>
@@ -633,38 +657,22 @@ export function ClaimsProcessorDashboard() {
                         <tr key={p.id} style={styles.tr}>
                           <td style={styles.td}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span
-                                style={{
-                                  width: '12px',
-                                  height: '12px',
-                                  borderRadius: '50%',
-                                    backgroundColor: p.status === 'discharged' ? '#ef4444' : '#22c55e',
-                                  display: 'inline-block',
-                                }}
-                              />
-                              <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                                {p.name}
-                              </span>
+                              <span style={{ ...patientTableStyles.dot, backgroundColor: p.color }} />
+                              <span style={patientTableStyles.name}>{p.name}</span>
                             </div>
                           </td>
-                          <td style={{ ...styles.td, fontSize: '12px', color: '#64748b' }}>
-                            {p.patientId}
+                          <td style={{ ...styles.td, ...patientTableStyles.cell }}>{p.gender}</td>
+                          <td style={{ ...styles.td, ...patientTableStyles.cell }}>{p.age ?? '—'}</td>
+                          <td style={{ ...styles.td, ...patientTableStyles.cell }}>{p.admissionDate}</td>
+                          <td style={{ ...styles.td, ...patientTableStyles.cell }}>
+                            {p.daysInCare} {p.daysInCare === 1 ? 'day' : 'days'}
                           </td>
-                          <td style={{ ...styles.td, fontSize: '12px', color: '#64748b' }}>
-                            {p.admissionDate}
+                          <td style={styles.td}>
+                            <StatusBadge status={p.status} showDot />
                           </td>
                           <td style={{ ...styles.td, textAlign: 'right' }}>
                             <button
-                              style={{
-                                backgroundColor: 'var(--c4w-color-primary-active)',
-                                color: '#ffffff',
-                                border: 'none',
-                                padding: '6px 14px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: 600,
-                              }}
+                              style={patientTableStyles.viewBtn}
                               onClick={() => handleSelectOrView(p)}
                             >
                               View
@@ -672,6 +680,13 @@ export function ClaimsProcessorDashboard() {
                           </td>
                         </tr>
                       ))}
+                      {!visibleCf4Patients.length && (
+                        <tr>
+                          <td style={{ ...styles.td, ...patientTableStyles.cell }} colSpan={7}>
+                            No patients match the current filters.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -778,33 +793,31 @@ export function ClaimsProcessorDashboard() {
                     )}
                   </div>
                 </div>
-                <div style={overviewStyles.aiCard}>
-                  <div style={overviewStyles.aiHeader}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <img src={llamaIcon} alt="" style={{ width: 16, height: 16, display: 'block', objectFit: 'contain' }} />
-                      <h3 style={overviewStyles.aiTitle}>AI Summarized</h3>
-                    </div>
-                    <span style={overviewStyles.aiStatus}>{overviewRequest?.status ?? 'No claims'}</span>
-                  </div>
-                  <div style={overviewStyles.aiBody}>
-                    <p style={overviewStyles.aiSummary}>
-                      {overviewRequest?.summaryText ?? 'Select a persisted claim to review its AI summary.'}
-                    </p>
-                    <div style={overviewStyles.aiActions}>
-                      <select value={evaluator} onChange={(e) => setEvaluator(e.target.value)} style={overviewStyles.evaluatorSelect} aria-label="Evaluator">
+                <AiSummaryCard
+                  badgeLabel={overviewRequest?.status ?? 'No claims'}
+                  text={overviewRequest?.summaryText}
+                  emptyMessage="Select a persisted claim to review its AI summary."
+                  actions={
+                    <>
+                      <select
+                        value={evaluator}
+                        onChange={(e) => setEvaluator(e.target.value)}
+                        style={overviewStyles.evaluatorSelect}
+                        aria-label="Evaluator"
+                      >
                         <option>{overviewRequest?.doctor ?? 'Attending physician'}</option>
                       </select>
-                      <Button
-                        variant="primary"
-                        size="sm"
+                      <AiActionButton
                         disabled={!overviewRequest}
-                        onClick={() => overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)}
+                        onClick={() =>
+                          overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)
+                        }
                       >
                         Submit
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                      </AiActionButton>
+                    </>
+                  }
+                />
               </div>
             </div>
           )}

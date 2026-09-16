@@ -9,14 +9,12 @@ import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { PageHeader } from '../../components/ui';
-import dashboardIcon from '../../Img/dashboard.png';
-import userIcon from '../../Img/user.png';
-import requestsIcon from '../../Img/requests.png';
-import { styles } from './styles';
+import { DashboardIcon, RequestsIcon, UsersIcon } from '../../components/icons/NavIcons';
 
 import { AccountsPanel } from './AccountsPanel';
 import { DashboardView } from './DashboardView';
 import { RequestsView } from './RequestsView';
+import type { ResetRequestRow } from './types';
 
 export function AdminPanel() {
   const [activeNav, setActiveNav] = useState<'dashboard' | 'users' | 'requests'>('dashboard');
@@ -27,17 +25,25 @@ export function AdminPanel() {
 
   const { data: resetRequestsData } = useQuery({
     queryKey: ['reset-requests'],
+<<<<<<< HEAD
     queryFn: () => adminApi.getResetRequests().then((response) => response.data),
     refetchInterval: 5000,
+=======
+    queryFn: () =>
+      adminApi
+        .getResetRequests()
+        .then((response) => response.data as ResetRequestRow[]),
+    refetchInterval: 15000,
+>>>>>>> 8b4456b77cf9b7aca057b11a18f830a0976f5e34
   });
 
   const pendingResetRequests = (resetRequestsData ?? []).filter(
-    (request: any) => request.status === 'PENDING',
+    (request) => request.status === 'PENDING',
   );
 
   useEffect(() => {
     const currentRequestIds = new Set<string>(
-      pendingResetRequests.map((request: any) => String(request.id)),
+      pendingResetRequests.map((request) => String(request.id)),
     );
 
     if (knownRequestIds.current === null) {
@@ -46,7 +52,7 @@ export function AdminPanel() {
     }
 
     const newRequest = pendingResetRequests.find(
-      (request: any) => !knownRequestIds.current?.has(request.id),
+      (request) => !knownRequestIds.current?.has(request.id),
     );
     knownRequestIds.current = currentRequestIds;
 
@@ -73,6 +79,7 @@ export function AdminPanel() {
         activeId: activeNav,
         onNavigate: (id) => setActiveNav(id as 'dashboard' | 'users' | 'requests'),
         items: [
+<<<<<<< HEAD
           { id: 'dashboard', label: 'Dashboard', icon: <img src={dashboardIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
           { id: 'users', label: 'Users', icon: <img src={userIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
           {
@@ -81,6 +88,11 @@ export function AdminPanel() {
             icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} />,
             badge: requestsBadge,
           },
+=======
+          { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
+          { id: 'users', label: 'Users', icon: <UsersIcon /> },
+          { id: 'requests', label: 'Requests', icon: <RequestsIcon /> },
+>>>>>>> 8b4456b77cf9b7aca057b11a18f830a0976f5e34
         ],
         profile: (
           <SidebarProfile
@@ -109,7 +121,3 @@ export function AdminPanel() {
     </Layout>
   );
 }
-
-/* ==========================================================================
-   DASHBOARD VIEW (Matching image metrics & activity log table)
-   ========================================================================== */
