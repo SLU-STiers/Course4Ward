@@ -1,8 +1,8 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
 import type { ClaimRecord } from '../../types';
-import { calculateAge, formatDateMedium, formatTimeMedium } from '../../lib/format';
-import { admissionStatus, fullName, initials } from '../../lib/patient';
+import { calculateAge, computeAge, formatDateMedium, formatTimeMedium, toDateInputValue } from '../../lib/format';
+import { admissionStatus, daysInCare, fullName, initials, statusColor } from '../../lib/patient';
 
 import type { CF4Patient, SummarizationRequest } from './types';
 
@@ -38,17 +38,23 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
 }
 export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
   const patient = claim.summary.patient;
-  const admissionDate = claim.summary.orders[0]?.admission.admissionDate ?? claim.summary.summaryDate;
-  const dischargeDate = claim.summary.orders[0]?.admission.dischargeDate;
+  const admission = claim.summary.orders[0]?.admission;
+  const admissionDate = admission?.admissionDate ?? claim.summary.summaryDate;
+  const dischargeDate = admission?.dischargeDate;
+  const status = admissionStatus(dischargeDate);
 
   return {
     id: claim.id,
     claimId: claim.id,
     name: fullName(patient),
     patientId: patient.id,
+    gender: patient.gender ?? '—',
+    age: computeAge(patient.dateOfBirth),
+    color: statusColor(status),
     admissionDate: formatDateMedium(admissionDate),
-    color: '#22c55e',
-    status: admissionStatus(dischargeDate),
+    admissionDateRaw: toDateInputValue(new Date(admissionDate)),
+    daysInCare: daysInCare(admissionDate, dischargeDate),
+    status,
     selected: false,
   };
 }

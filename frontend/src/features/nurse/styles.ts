@@ -5,9 +5,10 @@ export const TEAL = 'var(--dashboard-primary)';
 
 export const ui: Record<string, CSSProperties> = {
   layout: {
+    // The Claims Processor overview grid: two equal columns, 24px gutter.
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.1fr) minmax(340px, 0.9fr)',
-    gap: 20,
+    gridTemplateColumns: '1fr 1fr',
+    gap: 24,
     alignItems: 'start',
   },
   card: {
@@ -19,42 +20,8 @@ export const ui: Record<string, CSSProperties> = {
   sectionTitle: { margin: '0 0 12px', fontSize: 20, fontWeight: 800, color: '#0f172a' },
   muted: { color: '#64748b', fontSize: 13, marginTop: 0 },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: {
-    textAlign: 'left',
-    fontSize: 12,
-    fontWeight: 700,
-    color: 'var(--c4w-color-primary)',
-    backgroundColor: 'var(--c4w-color-primary-soft)',
-    padding: '12px 14px',
-    borderBottom: '1px solid var(--c4w-color-border)',
-    whiteSpace: 'nowrap',
-  },
   td: { padding: '12px 8px', fontSize: 13, borderBottom: '1px solid #f8fafc', verticalAlign: 'middle' },
-  dot: { width: 10, height: 10, borderRadius: '50%', display: 'inline-block' },
-  viewBtn: {
-    border: 'none',
-    backgroundColor: TEAL,
-    color: '#ffffff',
-    borderRadius: 8,
-    padding: '6px 14px',
-    fontSize: 12,
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
-  detailCol: { display: 'flex', flexDirection: 'column', gap: 16 },
-  patientHeader: { display: 'flex', gap: 14, alignItems: 'center' },
-  patientAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: '50%',
-    color: '#ffffff',
-    fontWeight: 800,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  metaRow: { display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 12, color: '#64748b', marginTop: 6 },
+  detailCol: { display: 'flex', flexDirection: 'column', gap: 24 },
   orderCard: {
     backgroundColor: '#ffffff',
     borderRadius: 12,

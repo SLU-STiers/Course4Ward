@@ -3,7 +3,7 @@
 
 export type TabType = 'overview' | 'requests' | 'export';
 export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4';
-export type PatientSortField = 'name' | 'patientId' | 'admissionDate';
+export type PatientSortField = 'name' | 'admissionDate' | 'daysInCare' | 'age';
 export type SortDirection = 'ascending' | 'descending';
 export type RequestSortField = 'id' | 'date' | 'status';
 export type PatientStatus = 'all' | 'admitted' | 'discharged';
@@ -29,8 +29,16 @@ export interface CF4Patient {
   claimId: string;
   patientId: string;
   name: string;
+  gender: string;
+  /** Years old, or `null` when the date of birth is missing. */
+  age: number | null;
   color: string;
+  /** Short display date, e.g. `Apr 15, 2026`. */
   admissionDate: string;
+  /** `YYYY-MM-DD` — the key used for sorting and date-range filters. */
+  admissionDateRaw: string;
+  /** Whole days since admission, counted inclusively. */
+  daysInCare: number;
   status: Exclude<PatientStatus, 'all'>;
   selected: boolean;
 }
