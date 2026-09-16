@@ -126,6 +126,16 @@ describe("Patients Module", () => {
     dateOfBirth: new Date("1990-01-01"),
     createdAt: new Date(),
     updatedAt: new Date(),
+    admissions: [
+      {
+        id: "admission-1",
+        admissionDate: new Date(),
+        dischargeDate: null,
+        isOutpatient: false,
+        initialAssessment: null,
+        physician: null,
+      },
+    ],
   };
 
   const mockCreatePatientDto = {
