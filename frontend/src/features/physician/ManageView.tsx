@@ -6,12 +6,11 @@ import { useAuthStore } from '../../store/authStore';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, PhysicianOrder } from '../../types';
 import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
+import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { useTableState } from '../../hooks/useTableState';
-import documentImg from '../../Img/document.png';
 import llamaIcon from '../../Img/llama.png';
 import {
   formatDateLongFromKey,
-  formatTimeClock,
   toDateInputValue,
   toDateKey,
   todayValue,
@@ -57,14 +56,6 @@ const SUMMARY_BADGE: Record<CourseInWard["status"], string> = {
   APPROVED: "Approved",
 };
 
-/** `Today` / `Yesterday` — a fast anchor once the list spans several dates. */
-function relativeDayLabel(day: string): string {
-  if (day === todayValue()) return "Today";
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  return day === toDateInputValue(yesterday) ? "Yesterday" : "";
-}
-
 export function ManageView() {
   const user = useAuthStore((s) => s.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
@@ -74,9 +65,6 @@ export function ManageView() {
   const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const orderScrollRef = useRef<HTMLDivElement>(null);
-  /** Raised when an order is added, so the list follows it to the bottom. */
-  const followNewOrder = useRef(false);
   const [ordersByPatient, setOrdersByPatient] = useState<
     Record<string, PhysicianOrder[]>
   >({});
@@ -215,29 +203,9 @@ export function ManageView() {
   // list always has something to show.
   const activeOrderDate =
     orderDateFilter && ordersByDay.has(orderDateFilter) ? orderDateFilter : null;
-  // No filter (the default) lists every day, oldest first — the whole list reads
-  // chronologically, day by day, then time within each day.
-  const dayGroups = useMemo(
-    () =>
-      (activeOrderDate ? [activeOrderDate] : orderDays).map((day) => ({
-        day,
-        orders: ordersByDay.get(day) ?? [],
-      })),
-    [activeOrderDate, orderDays, ordersByDay],
-  );
-  const visibleOrderCount = dayGroups.reduce(
-    (total, group) => total + group.orders.length,
-    0,
-  );
-
-  // The list reads chronologically, so a freshly added order sits at the very
-  // end — follow it there instead of leaving it below the fold.
-  useEffect(() => {
-    if (!followNewOrder.current) return;
-    followNewOrder.current = false;
-    const node = orderScrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [allOrders]);
+  const displayedOrders = activeOrderDate
+    ? allOrders.filter((order) => orderDayValue(order.dateCreated) === activeOrderDate)
+    : allOrders;
   // --- AI summary, filed per order day -------------------------------------
   // A patient accumulates one Course in the Ward per order day. For a day that
   // has several, the live draft wins over the approved record, so editing
@@ -335,9 +303,6 @@ export function ManageView() {
         }));
         setDraft("");
         setSubmitted(false);
-        // While filtering, follow the new order to its day; either way the list
-        // scrolls down to it so it is visible right away.
-        followNewOrder.current = true;
         if (activeOrderDate) {
           setOrderDateFilter(orderDayValue(data.dateCreated) || todayValue());
         }
@@ -773,16 +738,10 @@ export function ManageView() {
               minSize="260px"
               style={manage.panelFill}
             >
-              <section style={manage.orderCard}>
-                <div style={manage.orderHeader}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <img
-                      src={documentImg}
-                      alt="Doctor's order"
-                      style={{ width: 18, height: 18 }}
-                    />
-                    <h2 style={manage.panelTitle}>Doctor’s Order</h2>
-                  </div>
+              <SubmittedOrdersTimeline
+                title="Submitted Physician Orders"
+                fill
+                controls={
                   <div style={manage.dateNavigator}>
                     <button
                       type="button"
@@ -837,132 +796,105 @@ export function ManageView() {
                       </button>
                     )}
                   </div>
-                </div>
-
-                <div style={manage.orderBox}>
-                  <div ref={orderScrollRef} style={manage.orderScroll}>
-                    {dayGroups.map(({ day, orders }) => {
-                      const relative = relativeDayLabel(day);
-                      return (
-                        <section key={day} style={manage.orderDayGroup}>
-                          {/* Each day keeps its own labelled, tinted header so
-                              orders read day by day, then by time within the
-                              day. */}
-                          <div style={manage.orderDayHeader}>
-                            <span style={manage.orderDayLabel}>
-                              <span>{formatDateLongFromKey(day)}</span>
-                              {relative ? (
-                                <span style={manage.orderDayRelative}>
-                                  {relative}
-                                </span>
-                              ) : null}
-                            </span>
-                            <span style={manage.orderDayCount}>
-                              {orders.length}{" "}
-                              {orders.length === 1 ? "order" : "orders"}
-                            </span>
+                }
+                orders={displayedOrders.map((order) => ({
+                  id: order.id,
+                  dateCreated: order.dateCreated,
+                  doctor: order.orderedBy
+                    ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}`
+                    : "Physician",
+                  content: order.orderContent,
+                }))}
+                emptyMessage={
+                  selectedOrders === undefined
+                    ? "Loading doctor’s orders…"
+                    : activeOrderDate
+                      ? `No orders on ${selectedDateLabel}.`
+                      : "No doctor’s orders recorded for this patient yet."
+                }
+                renderContent={
+                  editingOrders
+                    ? (entry) => {
+                        const order = allOrders.find(
+                          (item) => item.id === entry.id,
+                        );
+                        if (!order) return entry.content;
+                        return (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <input
+                              value={order.orderContent}
+                              onChange={(e) =>
+                                updateOrder(order.id, e.target.value)
+                              }
+                              style={manage.orderEditInput}
+                            />
+                            <button
+                              type="button"
+                              style={manage.removeOrderBtn}
+                              onClick={() => removeOrder(order.id)}
+                            >
+                              ✕
+                            </button>
                           </div>
-                          <div style={manage.orderDayBody}>
-                            {orders.map((order, index) => (
-                              <div
-                                key={order.id}
-                                style={{
-                                  ...(editingOrders
-                                    ? manage.orderEditRow
-                                    : manage.orderRow),
-                                  // Only between rows of the same day — the card
-                                  // edge already separates one day from the next.
-                                  ...(index > 0 ? manage.orderRowDivided : {}),
-                                }}
-                              >
-                                <span style={manage.orderTime}>
-                                  {formatTimeClock(order.dateCreated)}
-                                </span>
-                                {editingOrders ? (
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <input
-                                      value={order.orderContent}
-                                      onChange={(e) =>
-                                        updateOrder(order.id, e.target.value)
-                                      }
-                                      style={manage.orderEditInput}
-                                    />
-                                    <button
-                                      type="button"
-                                      style={manage.removeOrderBtn}
-                                      onClick={() => removeOrder(order.id)}
-                                    >
-                                      ✕
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span style={manage.orderText}>
-                                    {order.orderContent}
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-                      );
-                    })}
-                    {!visibleOrderCount && (
-                      <div style={{ ...manage.orderLine, color: "#94a3b8" }}>
-                        {selectedOrders === undefined
-                          ? "Loading doctor’s orders…"
-                          : activeOrderDate
-                            ? `No orders on ${selectedDateLabel}.`
-                            : "No doctor’s orders recorded for this patient yet."}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                        );
+                      }
+                    : undefined
+                }
+                footer={
+                  <>
+                    <textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      placeholder="Add a new order"
+                      rows={2}
+                      style={manage.noteArea}
+                    />
 
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Add a new order"
-                  rows={2}
-                  style={manage.noteArea}
-                />
-
-                <div style={manage.orderActions}>
-                  <button
-                    type="button"
-                    style={manage.addBtn}
-                    onClick={addOrder}
-                  >
-                    Add
-                  </button>
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 10 }}
-                  >
-                    {submitted && !generatingSummary && (
-                      <span style={{ fontSize: 12, color: "#166534" }}>
-                        {summary ? "Summary saved" : "Orders saved"}
-                      </span>
-                    )}
-                    {editingOrders && (
+                    <div style={manage.orderActions}>
                       <button
                         type="button"
-                        style={manage.cancelBtn}
-                        onClick={() => setEditingOrders(false)}
+                        style={manage.addBtn}
+                        onClick={addOrder}
                       >
-                        Cancel
+                        Add
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      style={manage.submitBtn}
-                      disabled={generatingSummary}
-                      aria-busy={generatingSummary}
-                      onClick={submitOrders}
-                    >
-                      {generatingSummary ? "Generating..." : "Submit"}
-                    </button>
-                  </div>
-                </div>
-              </section>
+                      <div
+                        style={{ display: "flex", alignItems: "center", gap: 10 }}
+                      >
+                        {submitted && !generatingSummary && (
+                          <span style={{ fontSize: 12, color: "#166534" }}>
+                            {summary ? "Summary saved" : "Orders saved"}
+                          </span>
+                        )}
+                        {editingOrders && (
+                          <button
+                            type="button"
+                            style={manage.cancelBtn}
+                            onClick={() => setEditingOrders(false)}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          style={manage.submitBtn}
+                          disabled={generatingSummary}
+                          aria-busy={generatingSummary}
+                          onClick={submitOrders}
+                        >
+                          {generatingSummary ? "Generating..." : "Submit"}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                }
+              />
             </Panel>
 
             <Separator className="ui-split-separator ui-split-separator--row" />
