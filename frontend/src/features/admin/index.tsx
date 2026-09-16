@@ -25,16 +25,11 @@ export function AdminPanel() {
 
   const { data: resetRequestsData } = useQuery({
     queryKey: ['reset-requests'],
-<<<<<<< HEAD
-    queryFn: () => adminApi.getResetRequests().then((response) => response.data),
-    refetchInterval: 5000,
-=======
     queryFn: () =>
       adminApi
         .getResetRequests()
         .then((response) => response.data as ResetRequestRow[]),
-    refetchInterval: 15000,
->>>>>>> 8b4456b77cf9b7aca057b11a18f830a0976f5e34
+    refetchInterval: 5000,
   });
 
   const pendingResetRequests = (resetRequestsData ?? []).filter(
@@ -79,20 +74,14 @@ export function AdminPanel() {
         activeId: activeNav,
         onNavigate: (id) => setActiveNav(id as 'dashboard' | 'users' | 'requests'),
         items: [
-<<<<<<< HEAD
-          { id: 'dashboard', label: 'Dashboard', icon: <img src={dashboardIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'users', label: 'Users', icon: <img src={userIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
+          { id: 'users', label: 'Users', icon: <UsersIcon /> },
           {
             id: 'requests',
             label: 'Requests',
-            icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} />,
+            icon: <RequestsIcon />,
             badge: requestsBadge,
           },
-=======
-          { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
-          { id: 'users', label: 'Users', icon: <UsersIcon /> },
-          { id: 'requests', label: 'Requests', icon: <RequestsIcon /> },
->>>>>>> 8b4456b77cf9b7aca057b11a18f830a0976f5e34
         ],
         profile: (
           <SidebarProfile
