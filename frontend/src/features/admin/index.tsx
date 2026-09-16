@@ -14,6 +14,7 @@ import { DashboardIcon, RequestsIcon, UsersIcon } from '../../components/icons/N
 import { AccountsPanel } from './AccountsPanel';
 import { DashboardView } from './DashboardView';
 import { RequestsView } from './RequestsView';
+import type { ResetRequestRow } from './types';
 
 export function AdminPanel() {
   const [activeNav, setActiveNav] = useState<'dashboard' | 'users' | 'requests'>('dashboard');
@@ -24,17 +25,20 @@ export function AdminPanel() {
 
   const { data: resetRequestsData } = useQuery({
     queryKey: ['reset-requests'],
-    queryFn: () => adminApi.getResetRequests().then((response) => response.data),
+    queryFn: () =>
+      adminApi
+        .getResetRequests()
+        .then((response) => response.data as ResetRequestRow[]),
     refetchInterval: 15000,
   });
 
   const pendingResetRequests = (resetRequestsData ?? []).filter(
-    (request: any) => request.status === 'PENDING',
+    (request) => request.status === 'PENDING',
   );
 
   useEffect(() => {
     const currentRequestIds = new Set<string>(
-      pendingResetRequests.map((request: any) => String(request.id)),
+      pendingResetRequests.map((request) => String(request.id)),
     );
 
     if (knownRequestIds.current === null) {
@@ -43,7 +47,7 @@ export function AdminPanel() {
     }
 
     const newRequest = pendingResetRequests.find(
-      (request: any) => !knownRequestIds.current?.has(request.id),
+      (request) => !knownRequestIds.current?.has(request.id),
     );
     knownRequestIds.current = currentRequestIds;
 
@@ -97,7 +101,3 @@ export function AdminPanel() {
     </Layout>
   );
 }
-
-/* ==========================================================================
-   DASHBOARD VIEW (Matching image metrics & activity log table)
-   ========================================================================== */

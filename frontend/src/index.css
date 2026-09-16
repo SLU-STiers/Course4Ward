@@ -901,6 +901,94 @@ td {
   margin: 0;
 }
 
+/* ---------- Admin activity log table ----------
+   Kept in CSS rather than the component's inline style map because rows need a
+   hover state and the outer cells need to line up with the card padding; the
+   wrapper bleeds by the card's 20px padding so a hovered row spans edge to
+   edge. */
+.admin-log-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-log-table thead th {
+  padding: 0 12px 8px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c4w-color-text-muted, #64748b);
+  background: transparent;
+  border-bottom: 1px solid var(--c4w-color-border, #e2e8f0);
+  white-space: nowrap;
+}
+
+.admin-log-table tbody td {
+  padding: 8px 12px;
+  color: var(--c4w-color-text-secondary, #475569);
+  border-bottom: 1px solid var(--c4w-color-divider, #f1f5f9);
+  vertical-align: middle;
+}
+
+.admin-log-table thead th:first-child,
+.admin-log-table tbody td:first-child {
+  padding-left: 20px;
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+.admin-log-table thead th:last-child,
+.admin-log-table tbody td:last-child {
+  padding-right: 20px;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.admin-log-table tbody tr {
+  transition: background-color var(--c4w-motion-fast, 120ms) ease;
+}
+
+.admin-log-table tbody tr:hover td,
+.admin-log-table tbody tr:hover td:first-child,
+.admin-log-table tbody tr:hover td:last-child {
+  background: var(--c4w-color-surface-hover, #f8fafc);
+}
+
+.admin-log-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---------- Admin dashboard shell ----------
+   The dashboard is a headline strip over two columns: the activity log (the
+   work surface) and the reporting panel. Two columns are what keep the screen
+   from becoming one long scroll; below the breakpoint the columns stack. */
+.admin-dashboard-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (min-width: 1180px) {
+  .admin-dashboard-columns {
+    grid-template-columns: minmax(0, 1.6fr) minmax(330px, 1fr);
+  }
+}
+
+/* ---------- Admin reporting KPI strip ----------
+   Six tiles inside the reporting panel; the count steps 2 → 3 so they always
+   fill whole rows instead of leaving an orphan on the last one. */
+.admin-kpi-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 640px) {
+  .admin-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 @media (max-width: 767px) {
   .ui-toolbar { flex-wrap: wrap; }
   .ui-toolbar__search { flex-basis: 100%; max-width: none; min-width: 220px; }
