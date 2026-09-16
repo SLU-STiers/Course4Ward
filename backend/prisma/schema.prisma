@@ -54,6 +54,7 @@ enum ResetStatus {
   EXPIRED
 }
 
+
 enum ActionType {
   LOGIN
   LOGOUT
@@ -68,6 +69,11 @@ enum ActionType {
   EDIT_ACCOUNT
   DELETE_ACCOUNT
   REGISTER_PATIENT
+  PATIENT_UPDATED
+  PASSWORD_RESET
+  CLAIM_CREATED
+  CLAIM_PHYSICIAN_NOTIFIED
+  CF4_GENERATED
 }
 
 enum PhilHealthCF4Status {
