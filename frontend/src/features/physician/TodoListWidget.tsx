@@ -1,6 +1,6 @@
 /** Part of the physician dashboard - see index.tsx for the screen shell. */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { notesApi } from '../../services/domainApi';
 import type { PhysicianNote } from '../../types';
 import type { DashboardPatient } from './types';
@@ -9,27 +9,32 @@ import { overview } from './styles';
 type NoteItem = PhysicianNote & { done: boolean };
 
 export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
+  const admittedPatients = useMemo(
+    () => patients.filter((patient) => patient.status === 'admitted'),
+    [patients],
+  );
   const [patientId, setPatientId] = useState('');
   const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [loadedPatientId, setLoadedPatientId] = useState('');
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingMode, setEditingMode] = useState(false);
 
-  useEffect(() => {
-    const firstPatient = patients.find((patient) => patient.status === 'admitted') ?? patients[0];
-    if (firstPatient && !patientId) setPatientId(firstPatient.id);
-  }, [patients, patientId]);
+  const selectedPatientId = admittedPatients.some((patient) => patient.id === patientId)
+    ? patientId
+    : admittedPatients[0]?.id ?? '';
+  const displayedNotes = loadedPatientId === selectedPatientId ? notes : [];
 
   useEffect(() => {
-    if (!patientId) {
-      setNotes([]);
-      return;
-    }
-    notesApi.forPatient(patientId)
-      .then(({ data }) => setNotes(data.map((note) => ({ ...note, done: false }))))
+    if (!selectedPatientId) return;
+    notesApi.forPatient(selectedPatientId)
+      .then(({ data }) => {
+        setNotes(data.map((note) => ({ ...note, done: false })));
+        setLoadedPatientId(selectedPatientId);
+      })
       .catch(() => setNotes([]));
-  }, [patientId]);
+  }, [selectedPatientId]);
 
   const resetEditor = () => {
     setDraft('');
@@ -39,17 +44,19 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
 
   const saveNote = () => {
     const content = draft.trim();
-    if (!content || !patientId) return;
+    if (!content || !selectedPatientId) return;
     if (editingId) {
       notesApi.update(editingId, { content }).then(({ data }) => {
         setNotes((previous) => previous.map((note) => note.id === data.id ? { ...note, ...data } : note));
         resetEditor();
+        setEditingMode(false);
       }).catch(() => undefined);
       return;
     }
-    notesApi.create({ patientId, content }).then(({ data }) => {
+    notesApi.create({ patientId: selectedPatientId, content }).then(({ data }) => {
       setNotes((previous) => [{ ...data, done: false }, ...previous]);
       resetEditor();
+      setEditingMode(false);
     }).catch(() => undefined);
   };
 
@@ -67,7 +74,7 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
         <div style={{ display: 'flex', gap: 8 }}>
           <select value={patientId} onChange={(event) => setPatientId(event.target.value)} aria-label="Patient for notes">
             <option value="">Select patient</option>
-            {patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}
+            {admittedPatients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}
           </select>
           <button type="button" style={overview.addNotesBtn} onClick={() => { setEditingId(null); setDraft(''); setAdding(true); }}>
             Add Notes +
@@ -85,18 +92,18 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
         </div>
       )}
       <ul style={overview.todoList}>
-        {notes.map((note) => (
+        {displayedNotes.map((note) => (
           <li key={note.id} style={{ ...overview.todoItem, ...(editingMode ? overview.todoItemEditing : {}) }}>
             {editingId === note.id ? (
               <div style={overview.noteInlineEditor}>
                 <input autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} style={overview.noteInlineInput} aria-label="Edit note" onKeyDown={(event) => { if (event.key === 'Enter') saveNote(); if (event.key === 'Escape') resetEditor(); }} />
                 <button type="button" onClick={saveNote} style={overview.doneNotesBtn}>Save</button>
-                <button type="button" onClick={resetEditor} style={overview.cancelNotesBtn}>Cancel</button>
+                <button type="button" onClick={() => { resetEditor(); setEditingMode(false); }} style={overview.cancelNotesBtn}>Cancel</button>
               </div>
             ) : (
               <>
                 <label style={overview.todoLabel}>
-                  <input type="checkbox" checked={note.done} onChange={() => setNotes((previous) => previous.map((item) => item.id === note.id ? { ...item, done: !item.done } : item))} style={overview.checkbox} />
+                  {!editingMode && <input type="checkbox" checked={note.done} onChange={() => setNotes((previous) => previous.map((item) => item.id === note.id ? { ...item, done: !item.done } : item))} style={overview.checkbox} />}
                   <span style={note.done ? { textDecoration: 'line-through', color: '#94a3b8' } : undefined}>{note.notesArray}</span>
                 </label>
                 {editingMode && <div style={overview.todoActions}>
@@ -107,7 +114,7 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
             )}
           </li>
         ))}
-        {!notes.length && <li style={overview.todoItem}>No notes for this patient.</li>}
+        {!displayedNotes.length && <li style={overview.todoItem}>No notes for this patient.</li>}
       </ul>
     </section>
   );

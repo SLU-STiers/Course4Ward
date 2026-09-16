@@ -1,10 +1,12 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
 import { useEffect, useState } from 'react';
-import { DataTableToolbar, PageHeader, Pagination } from '../../components/ui';
+import { DataTableToolbar, StatusBadge } from '../../components/ui';
+import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
+import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { useTableState } from '../../hooks/useTableState';
-import { formatDateLongFromKey } from '../../lib/format';
-import documentImg from '../../Img/document.png';
+import { formatDateLongFromKey, formatDateNumeric, toDateInputValue } from '../../lib/format';
+import { daysInCare, statusColor } from '../../lib/patient';
 import llamaIcon from '../../Img/llama.png';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
@@ -17,17 +19,21 @@ const colors = ['#ef4444', '#22c55e', '#84cc16', '#6366f1', '#eab308', '#06b6d4'
 function mapPatient(patient: Patient, index: number): NursePatient {
   const admission = patient.admissions?.[0];
   const name = `${patient.firstName} ${patient.lastName}`;
+  const status = admission?.dischargeDate ? 'discharged' : 'admitted';
+  const admissionDate = admission?.admissionDate ?? '';
   return {
     id: patient.id,
     name,
     patientId: patient.id,
     recordId: admission?.id ?? patient.id,
-    admissionDate: admission ? new Date(admission.admissionDate).toLocaleDateString('en-GB') : '—',
+    admissionDate: admissionDate ? formatDateNumeric(admissionDate) : '—',
+    admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : '',
     color: colors[index % colors.length],
     age: patient.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()) : 0,
     gender: patient.gender ?? '—',
     initials: `${patient.firstName[0] ?? ''}${patient.lastName[0] ?? ''}`,
-    status: admission?.dischargeDate ? 'discharged' : 'admitted',
+    status,
+    daysInCare: daysInCare(admissionDate, admission?.dischargeDate),
     initialAssessment: admission?.initialAssessment,
     assignedDoctor: admission?.physician
       ? `Dr. ${admission.physician.firstName} ${admission.physician.lastName}`
@@ -49,7 +55,6 @@ function mapOrder(order: PhysicianOrder): OrderSet {
 export function ManagementPortalView() {
   const [patients, setPatients] = useState<NursePatient[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [viewedIds, setViewedIds] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [detailName, setDetailName] = useState<string | null>(null);
@@ -81,8 +86,9 @@ export function ManagementPortalView() {
     initialFilters: { status: 'all' },
     sorters: {
       name: (patient) => patient.name,
-      patientId: (patient) => patient.patientId,
-      admissionDate: (patient) => patient.admissionDate,
+      age: (patient) => patient.age,
+      daysInCare: (patient) => patient.daysInCare,
+      admissionDate: (patient) => patient.admissionDateRaw,
     },
     initialSort: { field: 'admissionDate', direction: 'descending' },
   });
@@ -98,7 +104,6 @@ export function ManagementPortalView() {
     const sets = ordersByPatient[id] ?? [];
     const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '';
     setSelectedDate(latest);
-    setViewedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
 
   const shiftDate = (dir: -1 | 1) => {
@@ -132,8 +137,8 @@ export function ManagementPortalView() {
 
   return (
     <div style={ui.layout}>
-      <section style={ui.card}>
-        <PageHeader title="Patient Overview" />
+      <section style={patientTableStyles.card}>
+        <h2 style={patientTableStyles.cardTitle}>Patient Overview</h2>
         <DataTableToolbar
           searchProps={{
             value: table.query,
@@ -154,9 +159,10 @@ export function ManagementPortalView() {
           sortProps={{
             title: 'Sort patients by',
             options: [
-              { value: 'name', label: 'Patient name' },
-              { value: 'patientId', label: 'Patient ID' },
               { value: 'admissionDate', label: 'Admission date' },
+              { value: 'daysInCare', label: 'Days in care' },
+              { value: 'age', label: 'Age' },
+              { value: 'name', label: 'Patient name' },
             ],
             value: table.sort.field,
             onChange: table.setSortField,
@@ -164,14 +170,17 @@ export function ManagementPortalView() {
             onDirectionChange: (direction) => table.setSort({ field: table.sort.field, direction }),
           }}
         />
-        <div style={ui.tableWrap}>
-          <table style={ui.table}>
+        <div style={patientTableStyles.tableWrapper}>
+          <table style={{ ...patientTableStyles.table, tableLayout: 'auto' }}>
           <thead>
-            <tr>
-              <th style={ui.th}>Patient</th>
-              <th style={ui.th}>Patient ID</th>
-              <th style={ui.th}>Admission Date</th>
-              <th style={{ ...ui.th, textAlign: 'right' }} />
+            <tr style={patientTableStyles.thRow}>
+              <th style={patientTableStyles.th}>Patient</th>
+              <th style={patientTableStyles.th}>Sex</th>
+              <th style={patientTableStyles.th}>Age</th>
+              <th style={patientTableStyles.th}>Admitted</th>
+              <th style={patientTableStyles.th}>Days in care</th>
+              <th style={patientTableStyles.th}>Status</th>
+              <th style={{ ...patientTableStyles.th, textAlign: 'right' }} />
             </tr>
           </thead>
           <tbody>
@@ -182,22 +191,30 @@ export function ManagementPortalView() {
                   key={p.id}
                   onClick={() => openPatient(p.id)}
                   style={{
+                    ...patientTableStyles.tr,
                     backgroundColor: active ? '#f1f5f9' : 'transparent',
                     cursor: 'pointer',
                   }}
                 >
-                  <td style={ui.td}>
+                  <td style={patientTableStyles.td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ ...ui.dot, backgroundColor: p.status === 'discharged' ? '#ef4444' : '#22c55e' }} />
-                      <span style={{ fontWeight: 600, color: '#334155' }}>{p.name}</span>
+                      <span style={{ ...patientTableStyles.dot, backgroundColor: statusColor(p.status ?? 'admitted') }} />
+                      <span style={patientTableStyles.name}>{p.name}</span>
                     </div>
                   </td>
-                  <td style={{ ...ui.td, color: '#64748b' }}>{p.patientId}</td>
-                  <td style={{ ...ui.td, color: '#64748b' }}>{p.admissionDate}</td>
-                  <td style={{ ...ui.td, textAlign: 'right' }}>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.gender}</td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.age}</td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.admissionDate}</td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                    {p.daysInCare} {p.daysInCare === 1 ? 'day' : 'days'}
+                  </td>
+                  <td style={patientTableStyles.td}>
+                    <StatusBadge status={p.status ?? 'admitted'} showDot />
+                  </td>
+                  <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
                     <button
                       type="button"
-                      style={ui.viewBtn}
+                      style={patientTableStyles.viewBtn}
                       onClick={(e) => {
                         e.stopPropagation();
                         openPatient(p.id);
@@ -210,99 +227,49 @@ export function ManagementPortalView() {
                 </tr>
               );
             })}
+            {!table.rows.length && (
+              <tr>
+                <td
+                  style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
+                  colSpan={7}
+                >
+                  {patients.length === 0
+                    ? 'No patients are currently admitted.'
+                    : 'No patients match the current filters.'}
+                </td>
+              </tr>
+            )}
           </tbody>
           </table>
         </div>
-        <div className="ui-table-footer">
-          <span className="ui-table-footer__info">
-            Showing {table.rangeStart} to {table.rangeEnd} of {table.total} patients
-          </span>
-          <Pagination page={table.page} pageCount={table.pageCount} onPageChange={table.setPage} />
-        </div>
+        <PatientTablePagination
+          info={`Showing ${table.rangeStart} to ${table.rangeEnd} of ${table.total} patients`}
+          page={table.page}
+          pageCount={table.pageCount}
+          onPageChange={table.setPage}
+        />
       </section>
 
       <section style={ui.detailCol}>
         {selected ? (
           <>
-            <div style={ui.patientHeader}>
-              <div style={{ ...ui.patientAvatar, backgroundColor: selected.color }}>{selected.initials}</div>
-              <div>
-                <h2 style={{ ...ui.sectionTitle, margin: 0 }}>{selected.name}</h2>
-                <div style={ui.metaRow}>
-                  <span>Patient ID: {selected.recordId}</span>
-                  <span>Age: {selected.age}</span>
-                  <span>Gender: {selected.gender}</span>
-                  <span>Admission Date: {selected.admissionDate}</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={ui.orderCard}>
-              <div style={ui.orderHeader}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <img src={documentImg} alt="Doctor's order" style={{ width: 16, height: 16 }} />
-                  <strong>Doctor’s Order</strong>
-                </div>
-                <div style={ui.dateNav}>
-                  <button
-                    type="button"
-                    style={ui.navChevron}
-                    disabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) >= datesWithOrders.length - 1}
-                    onClick={() => shiftDate(1)}
-                    title="Older date"
-                  >
-                    ‹
-                  </button>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    style={ui.dateInput}
-                  />
-                  <button
-                    type="button"
-                    style={ui.navChevron}
-                    disabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) <= 0}
-                    onClick={() => shiftDate(-1)}
-                    title="Newer date"
-                  >
-                    ›
-                  </button>
-                </div>
-              </div>
-
-              {ordersForDate.length ? (
-                <div style={ui.orderBox}>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>
-                    Showing physician orders for {formatDateLongFromKey(selectedDate)}
-                  </div>
-                  {ordersForDate.map((set) => (
-                    <div key={`${set.doctor}-${set.time}`} style={{ marginBottom: 14 }}>
-                      <div style={ui.orderMeta}>
-                        <div>
-                          <div style={{ fontWeight: 800 }}>{set.doctor}</div>
-                          <div style={{ fontSize: 12, color: '#64748b' }}>{set.time}</div>
-                        </div>
-                        {viewedIds.includes(selected.id) && (
-                          <span style={ui.viewedBadge}>✓ Order Viewed</span>
-                        )}
-                      </div>
-                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Orders:</div>
-                      <ul style={ui.orderList}>
-                        {set.orders.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={ui.muted}>
-                  No physician orders for {formatDateLongFromKey(selectedDate)}. Choose another date to view previous
-                  orders.
-                </p>
-              )}
-            </div>
+            <SubmittedOrdersTimeline
+              dateValue={selectedDate}
+              onDateChange={setSelectedDate}
+              onPrev={() => shiftDate(1)}
+              onNext={() => shiftDate(-1)}
+              prevDisabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) >= datesWithOrders.length - 1}
+              nextDisabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) <= 0}
+              orders={ordersForDate.flatMap((set) => set.orders.map((content, index) => ({
+                id: `${set.dateKey}-${set.time}-${index}`,
+                dateCreated: `${set.dateKey}T00:00:00`,
+                dateLabel: set.dateLabel,
+                timeLabel: set.time,
+                doctor: set.doctor,
+                content,
+              })))}
+              emptyMessage={`No physician orders for ${formatDateLongFromKey(selectedDate)}. Choose another date to view previous orders.`}
+            />
 
             <div style={ui.aiCard}>
               <div style={ui.aiHeader}>
