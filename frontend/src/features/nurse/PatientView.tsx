@@ -1,10 +1,8 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useState } from 'react';
-import { DataTableToolbar, StatusBadge } from '../../components/ui';
-import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { useCallback, useEffect, useState } from 'react';
-import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../../components/ui';
+import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
+import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
 import { statusColor } from '../../lib/patient';
 
@@ -153,17 +151,12 @@ export function PatientView() {
   return (
     <section style={patientTableStyles.card}>
       {/* Same card-title scale as the Claims Processor "Patient Overview" card. */}
-      <h2 style={patientTableStyles.cardTitle}>Patient Management</h2>
-    <section style={ui.card}>
-      <PageHeader
-        title="Patient Management"
-        description="Manage admissions and discharges."
-        actions={
-          <Button variant="primary" onClick={() => setShowAddModal(true)}>
-            Add Patient
-          </Button>
-        }
-      />
+      <div style={patientTableStyles.cardHeader}>
+        <h2 style={{ ...patientTableStyles.cardTitle, margin: 0 }}>Patient Management</h2>
+        <Button variant="primary" onClick={() => setShowAddModal(true)}>
+          Add Patient
+        </Button>
+      </div>
 
       <DataTableToolbar
         searchProps={{
@@ -210,41 +203,47 @@ export function PatientView() {
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((r) => {
-              const admitted = r.status === 'Admitted';
-              return (
-                <tr
-                  key={r.id}
-                  onClick={() => setViewingName(r.name)}
-                  style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
-                >
-                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.id}</td>
-                  <td style={patientTableStyles.td}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ ...patientTableStyles.dot, backgroundColor: statusColor(admitted ? 'admitted' : 'discharged') }} />
-                      <span style={patientTableStyles.name}>{r.name}</span>
-                    </div>
-                  </td>
-                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.admittedOn}</td>
-                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.dischargedOn ?? '—'}</td>
-                  <td style={patientTableStyles.td}>
-                    <StatusBadge status={admitted ? 'admitted' : 'discharged'} showDot />
-                  </td>
-                  <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
-                    <button
-                      type="button"
-                      style={patientTableStyles.viewBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setViewingName(r.name);
+            {table.rows.map((r) => (
+              <tr
+                key={r.id}
+                onClick={() => setViewingName(r.name)}
+                style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
+              >
+                <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.id}</td>
+                <td style={patientTableStyles.td}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span
+                      style={{
+                        ...patientTableStyles.dot,
+                        backgroundColor: statusColor(
+                          r.status === 'Discharged' ? 'discharged' : 'admitted',
+                        ),
                       }}
-                    >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+                    />
+                    <span style={patientTableStyles.name}>{r.name}</span>
+                  </div>
+                </td>
+                <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.admittedOn}</td>
+                <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                  {r.dischargedOn ?? '—'}
+                </td>
+                <td style={patientTableStyles.td}>
+                  <StatusBadge showDot status={statusTone(r.status)} label={r.status} />
+                </td>
+                <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
+                  <button
+                    type="button"
+                    style={patientTableStyles.viewBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setViewingName(r.name);
+                    }}
+                  >
+                    View
+                  </button>
+                </td>
+              </tr>
+            ))}
             {!table.rows.length && (
               <tr>
                 <td
@@ -252,29 +251,6 @@ export function PatientView() {
                   colSpan={6}
                 >
                   No admissions match the current filters.
-            {table.rows.map((r) => (
-              <tr key={r.id}>
-                <td style={ui.td}>
-                  <button type="button" style={ui.idLink} onClick={() => setViewingName(r.name)}>
-                    {r.id}
-                  </button>
-                </td>
-                <td style={ui.td}>
-                  <button type="button" style={ui.nameBtn} onClick={() => setViewingName(r.name)}>
-                    {r.name}
-                  </button>
-                </td>
-                <td style={{ ...ui.td, color: '#334155' }}>{r.admittedOn}</td>
-                <td style={{ ...ui.td, color: '#64748b' }}>{r.dischargedOn ?? '—'}</td>
-                <td style={ui.td}>
-                  <StatusBadge showDot status={statusTone(r.status)} label={r.status} />
-                </td>
-                <td style={{ ...ui.td, textAlign: 'right' }}>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                    <Button variant="secondary" size="sm" onClick={() => setViewingName(r.name)}>
-                      View Record
-                    </Button>
-                  </div>
                 </td>
               </tr>
             )}

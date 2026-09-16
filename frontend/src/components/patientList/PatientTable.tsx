@@ -24,6 +24,15 @@ export const patientTableStyles: Record<string, CSSProperties> = {
     color: '#0f172a',
     margin: '0 0 16px 0',
   },
+  /** Title on the left, the card's primary action on the right. */
+  cardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    flexWrap: 'wrap',
+    marginBottom: '16px',
+  },
   tableWrapper: { overflowX: 'auto' },
   table: {
     width: '100%',
