@@ -1,13 +1,19 @@
 import { Bell } from 'lucide-react';
 
 type NotificationBellProps = {
-  count?: string;
+  /** Pending / unread count. Hidden when 0. */
+  count?: number | string;
   showDot?: boolean;
   onClick?: () => void;
 };
 
-export function NotificationBell({ count = '2', showDot: _showDot = false, onClick }: NotificationBellProps) {
-  const ariaLabel = `${count} unread notifications`;
+export function NotificationBell({ count = 0, showDot: _showDot = false, onClick }: NotificationBellProps) {
+  const numericCount = typeof count === 'string' ? Number(count) || 0 : count;
+  const label = numericCount > 99 ? '99+' : String(numericCount);
+  const ariaLabel =
+    numericCount > 0
+      ? `${label} unread notification${numericCount === 1 ? '' : 's'}`
+      : 'Notifications';
 
   return (
     <button
@@ -17,9 +23,11 @@ export function NotificationBell({ count = '2', showDot: _showDot = false, onCli
       className="ui-notification-bell"
     >
       <Bell size={22} strokeWidth={2} aria-hidden="true" />
-      <span className="ui-notification-bell__badge" role="status">
-        {count}
-      </span>
+      {numericCount > 0 ? (
+        <span className="ui-notification-bell__badge" role="status">
+          {label}
+        </span>
+      ) : null}
     </button>
   );
 }

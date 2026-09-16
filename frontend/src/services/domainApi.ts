@@ -36,8 +36,12 @@ export const patientsApi = {
   list: () => api.get<Patient[]>('/patients'),
   assignedToMe: () => api.get<Patient[]>('/patients/assigned-to-me'),
   nurseAssigned: () => api.get<Patient[]>('/patients/nurse-assigned'),
+  listPhysicians: () =>
+    api.get<{ id: string; userId: string; firstName: string; lastName: string }[]>(
+      '/patients/physicians',
+    ),
   getOne: (id: string) => api.get<Patient>(`/patients/${id}`),
-  create: (data: Partial<Patient>) => api.post<Patient>('/patients', data),
+  create: (data: Record<string, unknown>) => api.post<Patient>('/patients', data),
   update: (id: string, data: Partial<Patient>) => api.patch<Patient>(`/patients/${id}`, data),
   discharge: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/discharge`),
 };

@@ -29,6 +29,12 @@ export class PatientsController {
     return this.patientsService.create(dto, user.id);
   }
 
+  @Get('physicians')
+  @Roles(Role.NURSE)
+  listPhysicians() {
+    return this.patientsService.listPhysicians();
+  }
+
   @Get()
   @Roles(Role.PHYSICIAN, Role.NURSE, Role.CLAIMS_PROCESSOR)
   findAll(@CurrentUser() user: any) {

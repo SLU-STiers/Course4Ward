@@ -28,7 +28,7 @@ export function AdminPanel() {
   const { data: resetRequestsData } = useQuery({
     queryKey: ['reset-requests'],
     queryFn: () => adminApi.getResetRequests().then((response) => response.data),
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
 
   const pendingResetRequests = (resetRequestsData ?? []).filter(
@@ -57,6 +57,10 @@ export function AdminPanel() {
     }
   }, [pendingResetRequests]);
 
+  const pendingCount = pendingResetRequests.length;
+  const requestsBadge =
+    pendingCount > 0 ? (pendingCount > 99 ? '99+' : String(pendingCount)) : undefined;
+
   const handleLogout = () => {
     logout(); // Clears Zustand state and deletes sessionStorage['cims_auth'] automatically
     navigate('/login', { replace: true });
@@ -71,7 +75,12 @@ export function AdminPanel() {
         items: [
           { id: 'dashboard', label: 'Dashboard', icon: <img src={dashboardIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
           { id: 'users', label: 'Users', icon: <img src={userIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          {
+            id: 'requests',
+            label: 'Requests',
+            icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} />,
+            badge: requestsBadge,
+          },
         ],
         profile: (
           <SidebarProfile
@@ -87,7 +96,7 @@ export function AdminPanel() {
           title="Admin"
           actions={
             <NotificationBell
-              count={String(pendingResetRequests.length)}
+              count={pendingCount}
               onClick={() => setActiveNav('requests')}
             />
           }

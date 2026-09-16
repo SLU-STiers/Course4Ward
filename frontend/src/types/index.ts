@@ -25,8 +25,9 @@ export interface PatientAdmission {
   id: string;
   admissionDate: string;
   dischargeDate?: string | null;
+  isOutpatient?: boolean;
   initialAssessment?: string | null;
-  physician?: { firstName: string; lastName: string } | null;
+  physician?: { id?: string; firstName: string; lastName: string } | null;
 }
 
 export type OrderType = 'MEDICATION' | 'ADMISSION' | 'DISCHARGE' | 'DIAGNOSTIC' | 'OTHER';

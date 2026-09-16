@@ -191,6 +191,15 @@ export const ui: Record<string, CSSProperties> = {
     fontSize: 11,
     fontWeight: 700,
   },
+  badgeEr: {
+    display: 'inline-block',
+    backgroundColor: '#ffedd5',
+    color: '#c2410c',
+    padding: '4px 10px',
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 700,
+  },
   overlay: {
     position: 'fixed',
     inset: 0,
