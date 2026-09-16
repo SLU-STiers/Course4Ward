@@ -58,16 +58,6 @@ export const styles: Record<string, CSSProperties> = {
     fontSize: '12px',
     color: '#94a3b8',
   },
-  reviewBtn: {
-    backgroundColor: 'var(--c4w-color-primary)',
-    color: '#ffffff',
-    border: 'none',
-    padding: '6px 16px',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
   paginationRow: {
     display: 'flex',
     justifyContent: 'space-between',

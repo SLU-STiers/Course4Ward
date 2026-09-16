@@ -1,11 +1,12 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { useAuthStore } from '../../store/authStore';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, PhysicianOrder } from '../../types';
-import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
+import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
+import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { useTableState } from '../../hooks/useTableState';
 import llamaIcon from '../../Img/llama.png';
@@ -15,7 +16,7 @@ import {
   toDateKey,
   todayValue,
 } from '../../lib/format';
-import { overview, manage } from './styles';
+import { manage } from './styles';
 
 import { CalendarModal } from './CalendarModal';
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
@@ -61,10 +62,8 @@ export function ManageView() {
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const [ordersByPatient, setOrdersByPatient] = useState<
     Record<string, PhysicianOrder[]>
   >({});
@@ -266,16 +265,6 @@ export function ManageView() {
     return value !== undefined && value !== "" && value !== "all";
   }).length;
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpenId(null);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const openPatient = (id: string, edit = false) => {
     setSelectedId(id);
     setEditingSummary(false);
@@ -283,7 +272,6 @@ export function ManageView() {
     setSubmitted(false);
     setEditingOrders(edit);
     setCalendarOpen(false);
-    setMenuOpenId(null);
   };
 
   const addOrder = () => {
@@ -447,11 +435,12 @@ export function ManageView() {
       id="physician-manage"
       style={manage.layout}
     >
-      {/* Both columns are user-resizable — drag the handle (or focus it and use
-          the arrow keys) to give the patient list or the chart more room. */}
+      {/* Both columns start the same size and stay user-resizable — drag the
+          handle (or focus it and use the arrow keys) to trade width between the
+          patient list and the chart. */}
       <Panel
         id="patients"
-        defaultSize="58"
+        defaultSize="50"
         minSize="360px"
         style={manage.panelFill}
       >
@@ -578,17 +567,16 @@ export function ManageView() {
             ) : null}
           </DataTableToolbar>
           <div style={manage.tableScroll}>
-            <table style={overview.table}>
+            <table style={{ ...patientTableStyles.table, tableLayout: "auto" }}>
               <thead>
-                <tr>
-                  <th style={{ ...overview.th, width: 22 }} />
-                  <th style={overview.th}>Patient</th>
-                  <th style={overview.th}>Sex</th>
-                  <th style={overview.th}>Age</th>
-                  <th style={overview.th}>Admitted</th>
-                  <th style={overview.th}>Days in care</th>
-                  <th style={overview.th}>Status</th>
-                  <th style={{ ...overview.th, width: 44 }} />
+                <tr style={patientTableStyles.thRow}>
+                  <th style={patientTableStyles.th}>Patient</th>
+                  <th style={patientTableStyles.th}>Sex</th>
+                  <th style={patientTableStyles.th}>Age</th>
+                  <th style={patientTableStyles.th}>Admitted</th>
+                  <th style={patientTableStyles.th}>Days in care</th>
+                  <th style={patientTableStyles.th}>Status</th>
+                  <th style={{ ...patientTableStyles.th, textAlign: "right" }} />
                 </tr>
               </thead>
               <tbody>
@@ -599,87 +587,57 @@ export function ManageView() {
                       key={p.id}
                       onClick={() => openPatient(p.id, false)}
                       style={{
-                        backgroundColor: active ? "#eef6f8" : "transparent",
+                        ...patientTableStyles.tr,
+                        backgroundColor: active ? "#f1f5f9" : "transparent",
                         cursor: "pointer",
                       }}
                     >
-                      <td style={{ ...overview.td, width: 22 }}>
-                        <span
-                          style={{ ...overview.dot, backgroundColor: p.color }}
-                        />
-                      </td>
-                      <td
-                        style={{
-                          ...overview.td,
-                          fontWeight: 600,
-                          color: "#334155",
-                        }}
-                      >
-                        {p.name}
-                      </td>
-                      <td style={{ ...overview.td, color: "#64748b" }}>
-                        {p.gender}
-                      </td>
-                      <td style={{ ...overview.td, color: "#64748b" }}>
-                        {p.age ?? "—"}
-                      </td>
-                      <td style={{ ...overview.td, color: "#64748b" }}>
-                        {p.admissionDate}
-                      </td>
-                      <td style={{ ...overview.td, color: "#64748b" }}>
-                        {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
-                      </td>
-                      <td style={overview.td}>
-                        <StatusBadge status={p.status} showDot />
-                      </td>
-                      <td
-                        style={{
-                          ...overview.td,
-                          textAlign: "right",
-                          position: "relative",
-                        }}
-                      >
+                      <td style={patientTableStyles.td}>
                         <div
-                          ref={menuOpenId === p.id ? menuRef : undefined}
                           style={{
-                            position: "relative",
-                            display: "inline-block",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
                           }}
                         >
-                          <button
-                            type="button"
-                            style={manage.dotsBtn}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMenuOpenId((id) =>
-                                id === p.id ? null : p.id,
-                              );
+                          <span
+                            style={{
+                              ...patientTableStyles.dot,
+                              backgroundColor:
+                                p.status === "discharged"
+                                  ? "#ef4444"
+                                  : "#22c55e",
                             }}
-                          >
-                            ⋯
-                          </button>
-                          {menuOpenId === p.id && (
-                            <div
-                              style={manage.rowMenu}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <button
-                                type="button"
-                                style={manage.rowMenuItem}
-                                onClick={() => openPatient(p.id, false)}
-                              >
-                                View doctor’s order
-                              </button>
-                              <button
-                                type="button"
-                                style={manage.rowMenuItem}
-                                onClick={() => openPatient(p.id, true)}
-                              >
-                                Edit doctor’s order
-                              </button>
-                            </div>
-                          )}
+                          />
+                          <span style={patientTableStyles.name}>{p.name}</span>
                         </div>
+                      </td>
+                      <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                        {p.gender}
+                      </td>
+                      <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                        {p.age ?? "—"}
+                      </td>
+                      <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                        {p.admissionDate}
+                      </td>
+                      <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                        {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
+                      </td>
+                      <td style={patientTableStyles.td}>
+                        <StatusBadge status={p.status} showDot />
+                      </td>
+                      <td style={{ ...patientTableStyles.td, textAlign: "right" }}>
+                        <button
+                          type="button"
+                          style={patientTableStyles.viewBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openPatient(p.id, false);
+                          }}
+                        >
+                          View
+                        </button>
                       </td>
                     </tr>
                   );
@@ -687,8 +645,8 @@ export function ManageView() {
                 {!table.rows.length && (
                   <tr>
                     <td
-                      style={{ ...overview.td, color: "#94a3b8" }}
-                      colSpan={9}
+                      style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
+                      colSpan={7}
                     >
                       {admittedPatients.length === 0
                         ? "You have no admitted patients assigned to you."
@@ -700,23 +658,18 @@ export function ManageView() {
             </table>
           </div>
 
-          <div className="ui-table-footer">
-            <span className="ui-table-footer__info">
-              Showing {table.rangeStart} to {table.rangeEnd} of {table.total}{" "}
-              patients
-            </span>
-            <Pagination
-              page={table.page}
-              pageCount={table.pageCount}
-              onPageChange={table.setPage}
-            />
-          </div>
+          <PatientTablePagination
+            info={`Showing ${table.rangeStart} to ${table.rangeEnd} of ${table.total} patients`}
+            page={table.page}
+            pageCount={table.pageCount}
+            onPageChange={table.setPage}
+          />
         </section>
       </Panel>
 
       <Separator className="ui-split-separator ui-split-separator--column" />
 
-      <Panel id="chart" minSize="340px" style={manage.panelFill}>
+      <Panel id="chart" defaultSize="50" minSize="340px" style={manage.panelFill}>
         {!selected ? (
           <section style={manage.orderCard}>
             <p style={manage.listHint}>
@@ -872,7 +825,9 @@ export function ManageView() {
                             {summary ? "Summary saved" : "Orders saved"}
                           </span>
                         )}
-                        {editingOrders && (
+                        {/* The row action column is a single View button, so the
+                            order-edit toggle lives here beside Submit. */}
+                        {editingOrders ? (
                           <button
                             type="button"
                             style={manage.cancelBtn}
@@ -880,6 +835,16 @@ export function ManageView() {
                           >
                             Cancel
                           </button>
+                        ) : (
+                          allOrders.length > 0 && (
+                            <button
+                              type="button"
+                              style={manage.cancelBtn}
+                              onClick={() => setEditingOrders(true)}
+                            >
+                              Edit
+                            </button>
+                          )
                         )}
                         <button
                           type="button"
