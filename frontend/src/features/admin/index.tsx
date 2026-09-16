@@ -29,7 +29,7 @@ export function AdminPanel() {
       adminApi
         .getResetRequests()
         .then((response) => response.data as ResetRequestRow[]),
-    refetchInterval: 15000,
+    refetchInterval: 5000,
   });
 
   const pendingResetRequests = (resetRequestsData ?? []).filter(
@@ -58,6 +58,10 @@ export function AdminPanel() {
     }
   }, [pendingResetRequests]);
 
+  const pendingCount = pendingResetRequests.length;
+  const requestsBadge =
+    pendingCount > 0 ? (pendingCount > 99 ? '99+' : String(pendingCount)) : undefined;
+
   const handleLogout = () => {
     logout(); // Clears Zustand state and deletes sessionStorage['cims_auth'] automatically
     navigate('/login', { replace: true });
@@ -72,7 +76,12 @@ export function AdminPanel() {
         items: [
           { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
           { id: 'users', label: 'Users', icon: <UsersIcon /> },
-          { id: 'requests', label: 'Requests', icon: <RequestsIcon /> },
+          {
+            id: 'requests',
+            label: 'Requests',
+            icon: <RequestsIcon />,
+            badge: requestsBadge,
+          },
         ],
         profile: (
           <SidebarProfile
@@ -88,7 +97,7 @@ export function AdminPanel() {
           title="Admin"
           actions={
             <NotificationBell
-              count={String(pendingResetRequests.length)}
+              count={pendingCount}
               onClick={() => setActiveNav('requests')}
             />
           }

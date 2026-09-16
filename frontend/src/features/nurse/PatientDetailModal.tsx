@@ -10,7 +10,7 @@ export function PatientDetailModal({
   status,
   onDischarge,
 }: {
-  chart: PatientChart;
+  chart: PatientChart & { admissionKind?: 'Ward' | 'ER / Outpatient' };
   onClose: () => void;
   status?: AdmissionStatus;
   onDischarge?: () => void;
@@ -19,10 +19,18 @@ export function PatientDetailModal({
     <div style={ui.overlay} onClick={onClose}>
       <div style={ui.modalWide} onClick={(e) => e.stopPropagation()}>
         <div style={ui.modalHeaderRow}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h3 style={{ ...ui.sectionTitle, margin: 0 }}>Patient Details</h3>
             {status && (
-              <span style={status === 'Admitted' ? ui.badgeAdmitted : ui.badgeDischarged}>
+              <span
+                style={
+                  status === 'Discharged'
+                    ? ui.badgeDischarged
+                    : status === 'ER / Outpatient'
+                      ? ui.badgeEr
+                      : ui.badgeAdmitted
+                }
+              >
                 {status}
               </span>
             )}
@@ -48,6 +56,10 @@ export function PatientDetailModal({
           <div>
             <div style={ui.fieldLabel}>Gender</div>
             <div style={ui.detailValue}>{chart.gender}</div>
+          </div>
+          <div>
+            <div style={ui.fieldLabel}>Admission Status</div>
+            <div style={ui.detailValue}>{chart.admissionKind ?? 'Ward'}</div>
           </div>
         </div>
 
@@ -81,7 +93,7 @@ export function PatientDetailModal({
           <button type="button" style={ui.outlineBtn} onClick={onClose}>
             Close
           </button>
-          {status === 'Admitted' && onDischarge && (
+          {status !== 'Discharged' && onDischarge && (
             <button type="button" style={ui.primaryBtn} onClick={onDischarge}>
               Discharge Patient
             </button>
@@ -91,6 +103,7 @@ export function PatientDetailModal({
     </div>
   );
 }
+
 function TriageCell({ label, value }: { label: string; value: string }) {
   return (
     <div style={ui.triageCell}>

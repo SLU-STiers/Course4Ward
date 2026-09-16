@@ -1,8 +1,36 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
+
+function buildInitialAssessment(dto: CreatePatientDto): string | null {
+  const vitals = [
+    dto.triageTime ? `Time: ${dto.triageTime}` : null,
+    dto.heartRate ? `HR: ${dto.heartRate}` : null,
+    dto.respRate ? `RR: ${dto.respRate}` : null,
+    dto.spo2 ? `SpO2: ${dto.spo2}` : null,
+    dto.bp ? `BP: ${dto.bp}` : null,
+    dto.temp ? `Temp: ${dto.temp}` : null,
+    dto.pain ? `Pain: ${dto.pain}` : null,
+  ].filter(Boolean);
+
+  const notes = (dto.notes ?? dto.initialAssessment ?? '').trim();
+  const parts: string[] = [];
+  if (vitals.length) parts.push(`Triage — ${vitals.join(', ')}`);
+  if (notes) parts.push(notes);
+  return parts.length ? parts.join('\n') : null;
+}
+
+function resolveDateOfBirth(dto: CreatePatientDto): Date | undefined {
+  if (dto.dateOfBirth) return new Date(dto.dateOfBirth);
+  if (dto.age === undefined || dto.age === null) return undefined;
+  const dob = new Date();
+  dob.setFullYear(dob.getFullYear() - dto.age);
+  dob.setMonth(0, 1);
+  dob.setHours(0, 0, 0, 0);
+  return dob;
+}
 
 @Injectable()
 export class PatientsService {
@@ -11,14 +39,64 @@ export class PatientsService {
     private auditLog: AuditLogService,
   ) {}
 
-  // Nurse patient management: name, gender, initial assessment
+  /** Physicians available for nurse assignment when registering a patient. */
+  listPhysicians() {
+    return this.prisma.user.findMany({
+      where: { role: Role.PHYSICIAN, isActive: true },
+      select: { id: true, userId: true, firstName: true, lastName: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+  }
+
+  // Nurse patient management: demographics + admission (ward or ER/outpatient)
   async create(dto: CreatePatientDto, nurseId: string) {
+    if (dto.physicianId) {
+      const physician = await this.prisma.user.findFirst({
+        where: { id: dto.physicianId, role: Role.PHYSICIAN, isActive: true },
+      });
+      if (!physician) {
+        throw new BadRequestException('Assigned physician not found or inactive');
+      }
+    }
+
+    const isOutpatient =
+      dto.admissionStatus === 'ER_OUTPATIENT'
+        ? true
+        : dto.admissionStatus === 'ADMITTED'
+          ? false
+          : Boolean(dto.isOutpatient);
+
+    const admissionDate = dto.admissionDate ? new Date(dto.admissionDate) : new Date();
+    const initialAssessment = buildInitialAssessment(dto);
+
     const patient = await this.prisma.patient.create({
       data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        gender: dto.gender,
-        dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName.trim(),
+        gender: dto.gender?.trim() || undefined,
+        dateOfBirth: resolveDateOfBirth(dto),
+        admissions: {
+          create: {
+            admissionDate,
+            isOutpatient,
+            outpatientSetAt: isOutpatient ? admissionDate : null,
+            initialAssessment,
+            physicianId: dto.physicianId || null,
+          },
+        },
+      },
+      include: {
+        admissions: {
+          orderBy: { admissionDate: 'desc' },
+          select: {
+            id: true,
+            admissionDate: true,
+            dischargeDate: true,
+            isOutpatient: true,
+            initialAssessment: true,
+            physician: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
       },
     });
 
@@ -46,11 +124,19 @@ export class PatientsService {
                   id: true,
                   admissionDate: true,
                   dischargeDate: true,
+                  isOutpatient: true,
                   initialAssessment: true,
                   physician: { select: { firstName: true, lastName: true } },
                 },
               }
-            : { select: { id: true, admissionDate: true, dischargeDate: true } }),
+            : {
+                select: {
+                  id: true,
+                  admissionDate: true,
+                  dischargeDate: true,
+                  isOutpatient: true,
+                },
+              }),
         },
       },
       orderBy: { updatedAt: 'desc' },
@@ -67,6 +153,7 @@ export class PatientsService {
             id: true,
             admissionDate: true,
             dischargeDate: true,
+            isOutpatient: true,
             initialAssessment: true,
             physician: { select: { firstName: true, lastName: true } },
           },
@@ -117,5 +204,4 @@ export class PatientsService {
     await this.auditLog.record({ userId, action: 'REGISTER_PATIENT' });
     return updated;
   }
-
 }

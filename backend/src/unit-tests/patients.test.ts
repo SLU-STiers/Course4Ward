@@ -126,6 +126,16 @@ describe("Patients Module", () => {
     dateOfBirth: new Date("1990-01-01"),
     createdAt: new Date(),
     updatedAt: new Date(),
+    admissions: [
+      {
+        id: "admission-1",
+        admissionDate: new Date(),
+        dischargeDate: null,
+        isOutpatient: false,
+        initialAssessment: null,
+        physician: null,
+      },
+    ],
   };
 
   const mockCreatePatientDto = {
@@ -161,21 +171,30 @@ describe("Patients Module", () => {
   // ============ SERVICE TESTS ============
   describe("PatientsService", () => {
     describe("create", () => {
-      it("should create a new patient", async () => {
+      it("should create a new patient with an admission", async () => {
         (prismaService.patient.create as jest.Mock).mockResolvedValue(
           mockPatientSimple,
         );
 
         const result = await service.create(mockCreatePatientDto, mockUser.id);
 
-        expect(prismaService.patient.create).toHaveBeenCalledWith({
-          data: {
-            firstName: mockCreatePatientDto.firstName,
-            lastName: mockCreatePatientDto.lastName,
-            gender: mockCreatePatientDto.gender,
-            dateOfBirth: new Date(mockCreatePatientDto.dateOfBirth),
-          },
-        });
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              firstName: mockCreatePatientDto.firstName,
+              lastName: mockCreatePatientDto.lastName,
+              gender: mockCreatePatientDto.gender,
+              dateOfBirth: new Date(mockCreatePatientDto.dateOfBirth),
+              admissions: expect.objectContaining({
+                create: expect.objectContaining({
+                  isOutpatient: false,
+                  physicianId: null,
+                }),
+              }),
+            }),
+            include: expect.any(Object),
+          }),
+        );
         expect(auditLogService.record).toHaveBeenCalledWith({
           userId: mockUser.id,
           action: "PATIENT_CREATED",
@@ -195,16 +214,39 @@ describe("Patients Module", () => {
 
         const result = await service.create(dtoWithoutDob, mockUser.id);
 
-        expect(prismaService.patient.create).toHaveBeenCalledWith({
-          data: {
-            firstName: dtoWithoutDob.firstName,
-            lastName: dtoWithoutDob.lastName,
-            gender: dtoWithoutDob.gender,
-            dateOfBirth: undefined,
-          },
-        });
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              firstName: dtoWithoutDob.firstName,
+              lastName: dtoWithoutDob.lastName,
+              gender: dtoWithoutDob.gender,
+              dateOfBirth: undefined,
+            }),
+          }),
+        );
         expect(auditLogService.record).toHaveBeenCalled();
         expect(result.dateOfBirth).toBeNull();
+      });
+
+      it("should mark ER/outpatient admissions correctly", async () => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+
+        await service.create(
+          { ...mockCreatePatientDto, admissionStatus: 'ER_OUTPATIENT' },
+          mockUser.id,
+        );
+
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              admissions: expect.objectContaining({
+                create: expect.objectContaining({
+                  isOutpatient: true,
+                }),
+              }),
+            }),
+          }),
+        );
       });
     });
 

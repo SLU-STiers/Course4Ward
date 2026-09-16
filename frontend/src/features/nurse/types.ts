@@ -46,11 +46,12 @@ export type OrderSet = {
   doctor: string;
   orders: string[];
 };
-export type AdmissionStatus = 'Admitted' | 'Discharged';
+export type AdmissionStatus = 'Admitted' | 'ER / Outpatient' | 'Discharged';
 export type AdmissionRecord = {
   id: string;
   name: string;
   admittedOn: string;
   dischargedOn: string | null;
   status: AdmissionStatus;
+  isOutpatient?: boolean;
 };
