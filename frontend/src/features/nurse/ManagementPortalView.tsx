@@ -55,7 +55,7 @@ export function ManagementPortalView() {
   const [detailName, setDetailName] = useState<string | null>(null);
 
   useEffect(() => {
-    patientsApi.nurseAssigned().then(({ data }) => {
+    patientsApi.list().then(({ data }) => {
       const mapped = data.map(mapPatient);
       setPatients(mapped);
       if (mapped[0]) setSelectedId(mapped[0].id);

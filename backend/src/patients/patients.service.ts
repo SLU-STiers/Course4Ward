@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
@@ -31,16 +32,25 @@ export class PatientsService {
 
   // "Find and view the patient they are currently handling" -- scoped to
   // the requesting physician/nurse's active assignments.
-  async findAssignedTo(userId: string) {
+  async findAssignedTo(userId: string, role: Role) {
+    const nurseScope = role === Role.NURSE;
     return this.prisma.patient.findMany({
-      where: {
-        admissions: { some: { physicianId: userId } },
-      },
+      where: { admissions: { some: nurseScope ? {} : { physicianId: userId } } },
       include: {
         admissions: {
-          where: { physicianId: userId },
+          ...(nurseScope ? {} : { where: { physicianId: userId } }),
           orderBy: { admissionDate: 'desc' },
-          select: { id: true, admissionDate: true, dischargeDate: true },
+          ...(nurseScope
+            ? {
+                select: {
+                  id: true,
+                  admissionDate: true,
+                  dischargeDate: true,
+                  initialAssessment: true,
+                  physician: { select: { firstName: true, lastName: true } },
+                },
+              }
+            : { select: { id: true, admissionDate: true, dischargeDate: true } }),
         },
       },
       orderBy: { updatedAt: 'desc' },
