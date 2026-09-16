@@ -61,6 +61,7 @@ export interface CourseInWard {
   patientId: string;
   summaryDate: string;
   summaryContent: string;
+  orders?: PhysicianOrder[];
   aiGeneratedText?: string | null;
   currentText?: string;
   status: SummaryStatus;

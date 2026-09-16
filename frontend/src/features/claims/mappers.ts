@@ -30,7 +30,9 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
     orders: claim.summary.orders.map((summaryOrder) => ({
       content: summaryOrder.orderContent,
       dateCreated: summaryOrder.dateCreated,
-      doctor: `${summaryOrder.orderedBy.firstName} ${summaryOrder.orderedBy.lastName}`,
+      doctor: summaryOrder.orderedBy
+        ? `${summaryOrder.orderedBy.firstName} ${summaryOrder.orderedBy.lastName}`
+        : 'Attending physician',
     })),
   };
 }

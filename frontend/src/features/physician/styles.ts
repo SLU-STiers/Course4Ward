@@ -707,6 +707,55 @@ export const manage: Record<string, CSSProperties> = {
     padding: "4px 14px",
     borderRadius: 6,
   },
+  /** Badge variant for a day whose Course in the Ward has not been generated yet. */
+  aiBadgeEmpty: {
+    backgroundColor: "#e2e8f0",
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "4px 14px",
+    borderRadius: 6,
+  },
+  aiMeta: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  /**
+   * Day strip under the AI header — the order day the summary belongs to, with
+   * the same ‹ › step controls as the order list.
+   */
+  aiDayBar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 4,
+    padding: "2px 10px",
+    backgroundColor: "#f7f2ff",
+    borderBottom: "1px solid #ede4fb",
+    flexShrink: 0,
+  },
+  /** The order day the summary on screen belongs to. */
+  aiDay: {
+    flex: "1 1 auto",
+    minWidth: 0,
+    textAlign: "center",
+    fontSize: 12,
+    fontWeight: 800,
+    color: "#6b21a8",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  aiEmpty: {
+    margin: "0 0 14px",
+    fontSize: 13,
+    lineHeight: 1.55,
+    color: "#94a3b8",
+    flex: "1 1 auto",
+    minHeight: 0,
+    overflowY: "auto",
+  },
   aiBody: {
     padding: "14px 16px 18px",
     display: "flex",

@@ -33,7 +33,6 @@ export function RequestsView() {
     items,
     pageSize: 5,
     searchFields: (request) => [
-      request.id,
       `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
       `${request.processor.firstName} ${request.processor.lastName}`,
     ],
@@ -44,7 +43,6 @@ export function RequestsView() {
     },
     initialFilters: { status: "all" },
     sorters: {
-      id: (request) => request.id,
       patient: (request) =>
         `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
       requestedAt: (request) => request.requestedAt,
@@ -81,7 +79,6 @@ export function RequestsView() {
           options: [
             { value: "requestedAt", label: "Submitted date" },
             { value: "patient", label: "Patient name" },
-            { value: "id", label: "Request ID" },
           ],
           value: table.sort.field,
           onChange: table.setSortField,
@@ -94,7 +91,6 @@ export function RequestsView() {
       <table style={requests.table}>
         <thead>
           <tr>
-            <th style={requests.th}>Request ID</th>
             <th style={requests.th}>Patient</th>
             <th style={requests.th}>Submitted By</th>
             <th style={requests.th}>Submitted On</th>
@@ -106,19 +102,9 @@ export function RequestsView() {
           {table.rows.map((r) => (
             <tr key={r.id}>
               <td style={requests.td}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelected(r)}
-                >
-                  {r.id}
-                </Button>
-              </td>
-              <td style={requests.td}>
                 <div style={requests.primary}>
                   {r.summary.patient.firstName} {r.summary.patient.lastName}
                 </div>
-                <div style={requests.secondary}>ID: {r.summary.patient.id}</div>
               </td>
               <td style={requests.td}>
                 <div style={requests.primary}>

@@ -68,8 +68,9 @@ export const notesApi = {
 
 // --- Course in the Ward (AI summaries) ---
 export const courseInWardApi = {
-  generate: (patientId: string) =>
-    api.post<CourseInWard>('/course-in-ward/generate', { patientId }),
+  /** Summarize one order day (today when `day` is omitted); returns that day's summary rows. */
+  generate: (patientId: string, day?: string) =>
+    api.post<CourseInWard[]>('/course-in-ward/generate', day ? { patientId, day } : { patientId }),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
   regenerate: (id: string) => api.post<CourseInWard>(`/course-in-ward/${id}/regenerate`),

@@ -84,7 +84,6 @@ export function ReviewSummaryModal({
           <header style={review.header}>
             <div>
               <h2 style={review.headerTitle}>AI Summary Review</h2>
-              <div style={review.headerId}>{request.id}</div>
             </div>
             <button type="button" style={review.headerClose} onClick={onClose}>
               ✕

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { useAuthStore } from '../../store/authStore';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
-import type { PhysicianOrder } from '../../types';
+import type { CourseInWard, PhysicianOrder } from '../../types';
 import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
 import { useTableState } from '../../hooks/useTableState';
 import documentImg from '../../Img/document.png';
@@ -13,6 +13,7 @@ import {
   formatDateLongFromKey,
   formatTimeClock,
   toDateInputValue,
+  toDateKey,
   todayValue,
 } from '../../lib/format';
 import { overview, manage } from './styles';
@@ -27,6 +28,34 @@ function orderMillis(order: PhysicianOrder) {
   const time = new Date(order.dateCreated).getTime();
   return Number.isNaN(time) ? 0 : time;
 }
+
+/**
+ * The order day a Course in the Ward belongs to: the day of the orders it was
+ * built from, falling back to its `summaryDate` when nothing is linked yet.
+ */
+function summaryDayKey(summary: CourseInWard): string {
+  const days = (summary.orders ?? [])
+    .map((order) => toDateKey(order.dateCreated))
+    .filter(Boolean)
+    .sort();
+  return days[0] ?? toDateKey(summary.summaryDate);
+}
+
+/** Merge fresh summary rows into one newest-day-first list, replacing by id. */
+function mergeSummaries(existing: CourseInWard[] | undefined, incoming: CourseInWard[]) {
+  const byId = new Map((existing ?? []).map((summary) => [summary.id, summary]));
+  for (const summary of incoming) byId.set(summary.id, summary);
+  return [...byId.values()].sort(
+    (a, b) => new Date(b.summaryDate).getTime() - new Date(a.summaryDate).getTime(),
+  );
+}
+
+/** Header badge per summary status. */
+const SUMMARY_BADGE: Record<CourseInWard["status"], string> = {
+  DRAFT_AI: "AI Draft ready",
+  DRAFT_EDITED: "Edited draft",
+  APPROVED: "Approved",
+};
 
 /** `Today` / `Yesterday` — a fast anchor once the list spans several dates. */
 function relativeDayLabel(day: string): string {
@@ -52,14 +81,29 @@ export function ManageView() {
     Record<string, PhysicianOrder[]>
   >({});
   const [draft, setDraft] = useState("");
-  const [summaryByPatient, setSummaryByPatient] = useState<
-    Record<string, string>
+  /** Every Course in the Ward loaded for a patient — one summary per order day. */
+  const [summariesByPatient, setSummariesByPatient] = useState<
+    Record<string, CourseInWard[]>
   >({});
-  const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
+  /**
+   * Working copy of the day's summary while it is being edited. Keyed by day so
+   * an unfinished edit can never surface under another day's heading.
+   */
+  const [summaryDraft, setSummaryDraft] = useState<
+    { day: string; text: string } | null
+  >(null);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
+  /** A day with no Course in the Ward yet is generating its first one. */
+  const [generatingSummary, setGeneratingSummary] = useState(false);
   /** Order-date filter (`YYYY-MM-DD`); `null` means unfiltered — every order. */
   const [orderDateFilter, setOrderDateFilter] = useState<string | null>(null);
+  /**
+   * Order day the AI panel is showing (`YYYY-MM-DD`). Kept separate from the
+   * order list's filter so the summaries can be read day by day while the list
+   * stays on "all order dates".
+   */
+  const [summaryDayFilter, setSummaryDayFilter] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   // This tab only manages patients who are currently in the ward.
@@ -134,17 +178,11 @@ export function ManageView() {
         setOrderDateFilter((previous) =>
           previous && !loadedDays.has(previous) ? null : previous,
         );
-        const latest = summariesResponse.data[0];
-        if (latest) {
-          setSummaryByPatient((previous) => ({
-            ...previous,
-            [selected.id]: latest.summaryContent,
-          }));
-          setSummaryIds((previous) => ({
-            ...previous,
-            [selected.id]: latest.id,
-          }));
-        }
+        // One Course in the Ward per order day; the panel picks the day to show.
+        setSummariesByPatient((previous) => ({
+          ...previous,
+          [selected.id]: summariesResponse.data,
+        }));
       })
       .catch(() => undefined);
   }, [selected?.id]);
@@ -200,9 +238,55 @@ export function ManageView() {
     const node = orderScrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [allOrders]);
-  const summary =
-    (selected && summaryByPatient[selected.id]) ??
-    "No AI summary yet. Submit orders to generate a draft.";
+  // --- AI summary, filed per order day -------------------------------------
+  // A patient accumulates one Course in the Ward per order day. For a day that
+  // has several, the live draft wins over the approved record, so editing
+  // continues where the physician left off.
+  const summariesByDay = useMemo(() => {
+    const map = new Map<string, CourseInWard>();
+    for (const entry of (selected && summariesByPatient[selected.id]) || []) {
+      const day = summaryDayKey(entry);
+      if (!day) continue;
+      const current = map.get(day);
+      if (!current) map.set(day, entry);
+      else if (current.status === "APPROVED" && entry.status !== "APPROVED") {
+        map.set(day, entry);
+      }
+    }
+    return map;
+  }, [selected?.id, summariesByPatient]);
+
+  // Which day's summary is on screen. Its own cursor, so "all order dates" can be
+  // read day by day without the list ever leaving that view; picking a day for
+  // the orders (calendar or order arrows) brings the summary along. Falls back to
+  // the most recent day carrying a summary, then the newest day with orders.
+  const daysWithSummary = orderDays.filter((day) => summariesByDay.has(day));
+  const summaryDay =
+    (summaryDayFilter && orderDays.includes(summaryDayFilter)
+      ? summaryDayFilter
+      : null) ??
+    activeOrderDate ??
+    daysWithSummary[daysWithSummary.length - 1] ??
+    orderDays[orderDays.length - 1] ??
+    null;
+  const summary = summaryDay ? summariesByDay.get(summaryDay) : undefined;
+  const summaryText =
+    summaryDraft && summaryDay && summaryDraft.day === summaryDay
+      ? summaryDraft.text
+      : (summary?.summaryContent ?? "");
+
+  // An unfinished edit belongs to the day it was started on; leaving that day
+  // (or the patient) drops it and returns to a plain read.
+  useEffect(() => {
+    setEditingSummary(false);
+    setSummaryDraft(null);
+  }, [selected?.id, summaryDay]);
+
+  // Choosing a day for the orders focuses the summary on it too — the calendar
+  // picker and the order arrows both land here.
+  useEffect(() => {
+    if (activeOrderDate) setSummaryDayFilter(activeOrderDate);
+  }, [activeOrderDate]);
 
   const admissionFilter = table.filters.admitted ?? "all";
   const customRange = parseCustomRange(admissionFilter);
@@ -269,13 +353,11 @@ export function ManageView() {
         order.id === orderId ? { ...order, orderContent: text } : order,
       ),
     }));
-    void ordersApi.update(orderId, text).catch(() => undefined);
     setSubmitted(false);
   };
 
   const removeOrder = (orderId: string) => {
     if (!selected) return;
-    void ordersApi.remove(orderId).catch(() => undefined);
     setOrdersByPatient((prev) => ({
       ...prev,
       [selected.id]: (prev[selected.id] ?? []).filter(
@@ -285,20 +367,48 @@ export function ManageView() {
     setSubmitted(false);
   };
 
-  const submitOrders = () => {
-    if (!selected) return;
-    setSubmitted(false);
-    void courseInWardApi.generate(selected.id)
+  /** Refresh the per-patient summary list with a row the API just returned. */
+  const replaceSummary = (patientId: string, updated: CourseInWard) => {
+    setSummariesByPatient((previous) => ({
+      ...previous,
+      [patientId]: mergeSummaries(previous[patientId], [updated]),
+    }));
+  };
+
+  // Generate (or refresh) ONE order day's Course in the Ward. The AI summarizes
+  // per admission-day, so the AI panel's Generate button and Submit are the same
+  // call from two entry points: Generate acts on the day on screen, Submit on the
+  // day in focus ("all dates": the most recent day written).
+  const generateSummaryForDay = (day: string, onDone?: () => void) => {
+    if (!selected || generatingSummary) return;
+    setGeneratingSummary(true);
+    void courseInWardApi
+      .generate(selected.id, day)
       .then(({ data }) => {
-        setSummaryByPatient((previous) => ({
+        setSummariesByPatient((previous) => ({
           ...previous,
-          [selected.id]: data.summaryContent,
+          [selected.id]: mergeSummaries(previous[selected.id], data),
         }));
-        setSummaryIds((previous) => ({ ...previous, [selected.id]: data.id }));
-        setEditingOrders(false);
-        setSubmitted(true);
+        setEditingSummary(false);
+        setSummaryDraft(null);
+        onDone?.();
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => setGeneratingSummary(false));
+  };
+
+  const submitOrders = () => {
+    if (!selected || !orderDays.length) return;
+    const targetDay =
+      activeOrderDate ?? summaryDay ?? orderDays[orderDays.length - 1];
+    setSubmitted(false);
+    generateSummaryForDay(targetDay, () => {
+      // Show the summary that was just filed, without pulling the order list out
+      // of "all dates".
+      setSummaryDayFilter(targetDay);
+      setEditingOrders(false);
+      setSubmitted(true);
+    });
   };
 
   if (loading)
@@ -309,26 +419,59 @@ export function ManageView() {
     );
 
   const selectedDateLabel = activeOrderDate
-    ? formatDateLongFromKey(activeOrderDate)
-    : "All order dates";
+    ? new Date(`${activeOrderDate}T00:00:00`).toLocaleDateString("en-GB")
+    : "All dates";
   // Open the calendar on whatever the physician is looking at, defaulting to the
   // most recent day that has orders.
   const calendarFocusDate = new Date(
     `${activeOrderDate ?? orderDays[orderDays.length - 1] ?? todayValue()}T00:00:00`,
   );
-  // Order dates are the only navigable stops — order-less days are skipped, and
-  // the arrows only make sense once a single day is in focus.
+  // Order dates are the only navigable stops — order-less days are skipped. With
+  // "all dates" showing, the first step focuses the day at that end of the
+  // timeline (‹ the most recent, › the earliest), so day-by-day reading never
+  // needs a trip to the calendar.
   const hasPrevOrderDay =
-    !!activeOrderDate && orderDays.some((day) => day < activeOrderDate);
+    orderDays.length > 0 &&
+    (!activeOrderDate || orderDays.some((day) => day < activeOrderDate));
   const hasNextOrderDay =
-    !!activeOrderDate && orderDays.some((day) => day > activeOrderDate);
+    orderDays.length > 0 &&
+    (!activeOrderDate || orderDays.some((day) => day > activeOrderDate));
   const goToAdjacentOrderDay = (direction: -1 | 1) => {
-    if (!activeOrderDate) return;
+    if (!orderDays.length) return;
+    if (!activeOrderDate) {
+      setOrderDateFilter(
+        direction < 0 ? orderDays[orderDays.length - 1] : orderDays[0],
+      );
+      return;
+    }
     const candidates = orderDays.filter((day) =>
       direction < 0 ? day < activeOrderDate : day > activeOrderDate,
     );
     if (!candidates.length) return;
     setOrderDateFilter(
+      direction < 0 ? candidates[candidates.length - 1] : candidates[0],
+    );
+  };
+  const prevDayLabel = activeOrderDate
+    ? "Previous day with orders"
+    : "Focus the most recent day";
+  const nextDayLabel = activeOrderDate
+    ? "Next day with orders"
+    : "Focus the earliest day";
+
+  // The AI panel keeps its OWN day cursor, so every day's summary can be read
+  // while the order list stays on "all dates".
+  const hasPrevSummaryDay =
+    !!summaryDay && orderDays.some((day) => day < summaryDay);
+  const hasNextSummaryDay =
+    !!summaryDay && orderDays.some((day) => day > summaryDay);
+  const goToAdjacentSummaryDay = (direction: -1 | 1) => {
+    if (!summaryDay) return;
+    const candidates = orderDays.filter((day) =>
+      direction < 0 ? day < summaryDay : day > summaryDay,
+    );
+    if (!candidates.length) return;
+    setSummaryDayFilter(
       direction < 0 ? candidates[candidates.length - 1] : candidates[0],
     );
   };
@@ -649,8 +792,8 @@ export function ManageView() {
                           : manage.dateNavBtnDisabled
                       }
                       disabled={!hasPrevOrderDay}
-                      title="Previous day with orders"
-                      aria-label="Previous date with orders"
+                      title={prevDayLabel}
+                      aria-label={prevDayLabel}
                       onClick={() => goToAdjacentOrderDay(-1)}
                     >
                       ‹
@@ -677,8 +820,8 @@ export function ManageView() {
                           : manage.dateNavBtnDisabled
                       }
                       disabled={!hasNextOrderDay}
-                      title="Next day with orders"
-                      aria-label="Next date with orders"
+                      title={nextDayLabel}
+                      aria-label={nextDayLabel}
                       onClick={() => goToAdjacentOrderDay(1)}
                     >
                       ›
@@ -736,7 +879,7 @@ export function ManageView() {
                                   {formatTimeClock(order.dateCreated)}
                                 </span>
                                 {editingOrders ? (
-                                  <>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <input
                                       value={order.orderContent}
                                       onChange={(e) =>
@@ -751,7 +894,7 @@ export function ManageView() {
                                     >
                                       ✕
                                     </button>
-                                  </>
+                                  </div>
                                 ) : (
                                   <span style={manage.orderText}>
                                     {order.orderContent}
@@ -794,9 +937,9 @@ export function ManageView() {
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 10 }}
                   >
-                    {submitted && (
+                    {submitted && !generatingSummary && (
                       <span style={{ fontSize: 12, color: "#166534" }}>
-                        Orders saved
+                        {summary ? "Summary saved" : "Orders saved"}
                       </span>
                     )}
                     {editingOrders && (
@@ -811,9 +954,11 @@ export function ManageView() {
                     <button
                       type="button"
                       style={manage.submitBtn}
+                      disabled={generatingSummary}
+                      aria-busy={generatingSummary}
                       onClick={submitOrders}
                     >
-                      Submit
+                      {generatingSummary ? "Generating..." : "Submit"}
                     </button>
                   </div>
                 </div>
@@ -844,75 +989,159 @@ export function ManageView() {
                     />
                     <h3 style={manage.aiTitle}>AI Summarized</h3>
                   </div>
-                  <span style={manage.aiBadge}>AI Draft ready</span>
+                  <span style={summary ? manage.aiBadge : manage.aiBadgeEmpty}>
+                    {summary ? SUMMARY_BADGE[summary.status] : "No summary yet"}
+                  </span>
+                </div>
+
+                {/* One Course in the Ward per order day, so the panel shows the
+                    day it belongs to and steps through the days itself — the
+                    order list can stay on "all dates" while every summary is
+                    read one day at a time. */}
+                <div style={manage.aiDayBar}>
+                  <button
+                    type="button"
+                    style={
+                      hasPrevSummaryDay
+                        ? manage.dateNavBtn
+                        : manage.dateNavBtnDisabled
+                    }
+                    disabled={!hasPrevSummaryDay}
+                    title="Previous day's summary"
+                    aria-label="Previous day's summary"
+                    onClick={() => goToAdjacentSummaryDay(-1)}
+                  >
+                    ‹
+                  </button>
+                  <span style={manage.aiDay}>
+                    {summaryDay
+                      ? formatDateLongFromKey(summaryDay)
+                      : "No order dates"}
+                    {summaryDay && orderDays.length > 1 ? (
+                      <span style={manage.orderDayCount}>
+                        {orderDays.indexOf(summaryDay) + 1} of {orderDays.length}
+                      </span>
+                    ) : null}
+                  </span>
+                  <button
+                    type="button"
+                    style={
+                      hasNextSummaryDay
+                        ? manage.dateNavBtn
+                        : manage.dateNavBtnDisabled
+                    }
+                    disabled={!hasNextSummaryDay}
+                    title="Next day's summary"
+                    aria-label="Next day's summary"
+                    onClick={() => goToAdjacentSummaryDay(1)}
+                  >
+                    ›
+                  </button>
                 </div>
 
                 <div style={manage.aiBody}>
-                  {editingSummary ? (
+                  {editingSummary && summary ? (
                     <textarea
-                      value={summary}
+                      value={summaryText}
                       onChange={(e) =>
-                        setSummaryByPatient((prev) => ({
-                          ...prev,
-                          [selected?.id ?? ""]: e.target.value,
-                        }))
+                        setSummaryDraft(
+                          summaryDay
+                            ? { day: summaryDay, text: e.target.value }
+                            : null,
+                        )
                       }
                       rows={6}
                       style={manage.aiEditor}
                     />
+                  ) : summary ? (
+                    <p style={manage.aiText}>{summaryText}</p>
                   ) : (
-                    <p style={manage.aiText}>{summary}</p>
+                    <p style={manage.aiEmpty}>
+                      {summaryDay
+                        ? `No Course in the Ward for ${formatDateLongFromKey(
+                            summaryDay,
+                          )} yet.`
+                        : "No doctor’s orders recorded for this patient yet."}
+                    </p>
                   )}
 
+                  {/* A day without a summary still offers the AI action — there
+                      it reads "Generate" instead of Edit / Regenerate. */}
                   <div style={manage.aiActions}>
-                    <button
-                      type="button"
-                      style={manage.aiLink}
-                      onClick={() => {
-                        if (!editingSummary) {
-                          setEditingSummary(true);
-                          return;
+                    {!summary ? (
+                      <button
+                        type="button"
+                        style={
+                          !summaryDay || generatingSummary
+                            ? { ...manage.aiLink, opacity: 0.6, cursor: "default" }
+                            : manage.aiLink
                         }
-                        const id = summaryIds[selected.id];
-                        if (!id) return;
-                        courseInWardApi.edit(id, summary).then(({ data }) => {
-                          setSummaryByPatient((prev) => ({
-                            ...prev,
-                            [selected.id]: data.summaryContent,
-                          }));
-                          setEditingSummary(false);
-                        });
-                      }}
-                    >
-                      {editingSummary ? "Save Summary" : "Edit Summary"}
-                    </button>
-                    <button
-                      type="button"
-                      style={manage.aiLink}
-                      disabled={regeneratingSummary}
-                      aria-busy={regeneratingSummary}
-                      onClick={() => {
-                        const id = summaryIds[selected.id];
-                        if (!id || regeneratingSummary) return;
-                        setRegeneratingSummary(true);
-                        void courseInWardApi
-                          .regenerate(id)
-                          .then(({ data }) => {
-                            setSummaryByPatient((prev) => ({
-                              ...prev,
-                              [selected.id]: data.summaryContent,
-                            }));
-                            setEditingSummary(false);
-                          })
-                          .catch(() => undefined)
-                          .finally(() => setRegeneratingSummary(false));
-                      }}
-                    >
-                      {regeneratingSummary ? (
-                        <span className="ui-btn__spinner" aria-hidden="true" />
-                      ) : null}
-                      {regeneratingSummary ? "Regenerating..." : "↻ Regenerate"}
-                    </button>
+                        disabled={!summaryDay || generatingSummary}
+                        aria-busy={generatingSummary}
+                        onClick={() =>
+                          summaryDay && generateSummaryForDay(summaryDay)
+                        }
+                      >
+                        {generatingSummary ? (
+                          <span className="ui-btn__spinner" aria-hidden="true" />
+                        ) : null}
+                        {generatingSummary ? "Generating..." : "Generate"}
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          style={manage.aiLink}
+                          onClick={() => {
+                            if (!editingSummary) {
+                              setSummaryDraft(
+                                summaryDay
+                                  ? { day: summaryDay, text: summary.summaryContent }
+                                  : null,
+                              );
+                              setEditingSummary(true);
+                              return;
+                            }
+                            void courseInWardApi
+                              .edit(summary.id, summaryText)
+                              .then(({ data }) => {
+                                replaceSummary(selected.id, data);
+                                setEditingSummary(false);
+                                setSummaryDraft(null);
+                              })
+                              .catch(() => undefined);
+                          }}
+                        >
+                          {editingSummary ? "Save Summary" : "Edit Summary"}
+                        </button>
+                        <button
+                          type="button"
+                          style={manage.aiLink}
+                          disabled={regeneratingSummary}
+                          aria-busy={regeneratingSummary}
+                          onClick={() => {
+                            if (regeneratingSummary) return;
+                            setRegeneratingSummary(true);
+                            void courseInWardApi
+                              .regenerate(summary.id)
+                              .then(({ data }) => {
+                                replaceSummary(selected.id, data);
+                                setEditingSummary(false);
+                                setSummaryDraft(null);
+                              })
+                              .catch(() => undefined)
+                              .finally(() => setRegeneratingSummary(false));
+                          }}
+                        >
+                          {regeneratingSummary ? (
+                            <span className="ui-btn__spinner" aria-hidden="true" />
+                          ) : null}
+                          {regeneratingSummary
+                            ? "Regenerating..."
+                            : "↻ Regenerate"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </section>
@@ -925,12 +1154,12 @@ export function ManageView() {
             onClose={() => setCalendarOpen(false)}
             focusDate={calendarFocusDate}
             orderDays={orderDays}
-            onClear={() => {
-              setOrderDateFilter(null);
-              setCalendarOpen(false);
-            }}
             onSelect={(date) => {
               setOrderDateFilter(toDateInputValue(date));
+              setCalendarOpen(false);
+            }}
+            onClear={() => {
+              setOrderDateFilter(null);
               setCalendarOpen(false);
             }}
           />

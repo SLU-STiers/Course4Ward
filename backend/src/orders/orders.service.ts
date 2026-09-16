@@ -6,6 +6,22 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { OllamaClient } from '../course-in-ward/ollama-client';
 import { CreateOrderDto } from './dto/create-order.dto';
 
+/**
+ * Half-open local-day window `[start, end)` for a `YYYY-MM-DD` key. A missing
+ * key means "today", which keeps the legacy `findTodaysOrders` semantics.
+ */
+function localDayRange(day?: string | null) {
+  const [year, month, date] = day ? day.split('-').map(Number) : [];
+  const start =
+    day && !Number.isNaN(year)
+      ? new Date(year, (month || 1) - 1, date || 1)
+      : new Date();
+  if (!day) start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -98,14 +114,24 @@ export class OrdersService {
     return this.prisma.physicianOrder.delete({ where: { id } });
   }
 
-  // Orders placed "today" for a patient -- input to the AI summarization step
-  findTodaysOrders(patientId: string) {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+  /**
+   * Orders written on ONE calendar day for a patient, oldest first -- the input
+   * to a per-day AI summarization. `day` is a local `YYYY-MM-DD` key; omitting
+   * it means today. The owning admission rides along so the AI service can
+   * label the group ("Day N of Admission").
+   */
+  findOrdersForDay(patientId: string, day?: string | null) {
+    const { start, end } = localDayRange(day);
 
     return this.prisma.physicianOrder.findMany({
-      where: { admission: { patientId }, dateCreated: { gte: startOfDay } },
+      where: { admission: { patientId }, dateCreated: { gte: start, lt: end } },
       orderBy: { dateCreated: 'asc' },
+      include: { admission: { select: { id: true, admissionDate: true } } },
     });
+  }
+
+  // Orders placed "today" for a patient -- input to the AI summarization step
+  findTodaysOrders(patientId: string) {
+    return this.findOrdersForDay(patientId);
   }
 }
