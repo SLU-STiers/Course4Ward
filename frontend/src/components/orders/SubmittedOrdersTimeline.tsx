@@ -1,5 +1,13 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { formatDateMedium, formatTimeMedium } from '../../lib/format';
+import { formatDateLongFromKey, formatDateMedium, formatTimeMedium, toDateInputValue, toDateKey } from '../../lib/format';
+import { CalendarPanel, Popover } from '../ui';
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons/NavIcons';
+
+/** `YYYY-MM-DD` read as a local calendar date. */
+function dateFromKey(key: string) {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
 
 export type SubmittedOrderTimelineEntry = {
   id: string;
@@ -59,21 +67,6 @@ const styles: Record<string, CSSProperties> = {
   titleGroup: { display: 'flex', alignItems: 'center', gap: '8px' },
   icon: { fontSize: '20px' },
   title: { margin: 0, fontSize: '16px', fontWeight: 700, color: '#0f172a' },
-  dateNav: { display: 'flex', alignItems: 'center', gap: '6px' },
-  arrowNavBtn: {
-    border: 'none',
-    backgroundColor: 'transparent',
-    cursor: 'pointer',
-    color: '#64748b',
-  },
-  dateInput: {
-    width: '112px',
-    padding: '5px 6px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '4px',
-    color: '#0f172a',
-    fontSize: '10px',
-  },
   timelineScroll: {
     flex: '1 1 auto',
     minHeight: 0,
@@ -139,34 +132,59 @@ export function SubmittedOrdersTimeline({
   footer,
   fill,
 }: SubmittedOrdersTimelineProps) {
+  /* Only days that actually carry an order can be picked from the calendar. */
+  const availableDays = orders
+    .map((order) => toDateKey(order.dateCreated))
+    .filter(Boolean);
+  const fieldLabel = dateValue ? formatDateLongFromKey(dateValue) : 'All dates';
+
   const nav =
     controls ??
     (dateValue === undefined ? null : (
-      <div style={styles.dateNav}>
+      <div className="ui-date-nav">
         <button
           type="button"
-          style={styles.arrowNavBtn}
+          className="ui-icon-btn"
           disabled={prevDisabled}
           onClick={onPrev}
-          title="Older date"
+          title="Earlier date"
+          aria-label="Earlier date"
         >
-          ‹
+          <ChevronLeftIcon width={16} height={16} />
         </button>
-        <input
-          type="date"
-          value={dateValue}
-          onChange={(event) => onDateChange?.(event.target.value)}
-          style={styles.dateInput}
-          aria-label="Order date"
-        />
+        <Popover
+          align="end"
+          trigger={
+            <button
+              type="button"
+              className="ui-date-nav__field"
+              aria-label={`${fieldLabel}. Open calendar`}
+            >
+              <CalendarIcon width={15} height={15} />
+              {fieldLabel}
+            </button>
+          }
+        >
+          {({ close }) => (
+            <CalendarPanel
+              focusDate={dateValue ? dateFromKey(dateValue) : new Date()}
+              availableDays={availableDays}
+              onSelect={(date) => {
+                onDateChange?.(toDateInputValue(date));
+                close();
+              }}
+            />
+          )}
+        </Popover>
         <button
           type="button"
-          style={styles.arrowNavBtn}
+          className="ui-icon-btn"
           disabled={nextDisabled}
           onClick={onNext}
-          title="Newer date"
+          title="Later date"
+          aria-label="Later date"
         >
-          ›
+          <ChevronRightIcon width={16} height={16} />
         </button>
       </div>
     ));

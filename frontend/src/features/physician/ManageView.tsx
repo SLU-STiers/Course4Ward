@@ -7,9 +7,10 @@ import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainAp
 import type { CourseInWard, PhysicianOrder } from '../../types';
 import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
+import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
+import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '../../components/icons/NavIcons';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { useTableState } from '../../hooks/useTableState';
-import llamaIcon from '../../Img/llama.png';
 import {
   formatDateLongFromKey,
   toDateInputValue,
@@ -446,12 +447,7 @@ export function ManageView() {
       >
         <section style={manage.listCard}>
           <div style={manage.listHeader}>
-            <div>
-              <h2 style={manage.listTitle}>Patients List</h2>
-              <p style={manage.listHint}>
-                Showing active patients currently admitted only.
-              </p>
-            </div>
+            <h2 style={manage.listTitle}>Patients List</h2>
           </div>
 
           <DataTableToolbar
@@ -695,24 +691,20 @@ export function ManageView() {
                 title="Submitted Physician Orders"
                 fill
                 controls={
-                  <div style={manage.dateNavigator}>
+                  <div className="ui-date-nav">
                     <button
                       type="button"
-                      style={
-                        hasPrevOrderDay
-                          ? manage.dateNavBtn
-                          : manage.dateNavBtnDisabled
-                      }
+                      className="ui-icon-btn"
                       disabled={!hasPrevOrderDay}
                       title={prevDayLabel}
                       aria-label={prevDayLabel}
                       onClick={() => goToAdjacentOrderDay(-1)}
                     >
-                      ‹
+                      <ChevronLeftIcon width={16} height={16} />
                     </button>
                     <button
                       type="button"
-                      style={manage.dateInput}
+                      className="ui-date-nav__field"
                       onClick={() => setCalendarOpen(true)}
                       aria-haspopup="dialog"
                       aria-expanded={calendarOpen}
@@ -722,26 +714,23 @@ export function ManageView() {
                           : "Showing orders from every date. Open calendar to filter by date"
                       }
                     >
+                      <CalendarIcon width={15} height={15} />
                       {selectedDateLabel}
                     </button>
                     <button
                       type="button"
-                      style={
-                        hasNextOrderDay
-                          ? manage.dateNavBtn
-                          : manage.dateNavBtnDisabled
-                      }
+                      className="ui-icon-btn"
                       disabled={!hasNextOrderDay}
                       title={nextDayLabel}
                       aria-label={nextDayLabel}
                       onClick={() => goToAdjacentOrderDay(1)}
                     >
-                      ›
+                      <ChevronRightIcon width={16} height={16} />
                     </button>
                     {activeOrderDate && (
                       <button
                         type="button"
-                        style={manage.dateClearBtn}
+                        className="ui-date-nav__reset"
                         title="Show orders from every date"
                         onClick={() => setOrderDateFilter(null)}
                       >
@@ -871,177 +860,116 @@ export function ManageView() {
               minSize="160px"
               style={manage.panelFill}
             >
-              <section style={manage.aiCard}>
-                <div style={manage.aiHeader}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <img
-                      src={llamaIcon}
-                      alt=""
-                      style={{
-                        width: 16,
-                        height: 16,
-                        display: "block",
-                        objectFit: "contain",
-                      }}
-                    />
-                    <h3 style={manage.aiTitle}>AI Summarized</h3>
-                  </div>
-                  <span style={summary ? manage.aiBadge : manage.aiBadgeEmpty}>
-                    {summary ? SUMMARY_BADGE[summary.status] : "No summary yet"}
-                  </span>
-                </div>
-
-                {/* One Course in the Ward per order day, so the panel shows the
-                    day it belongs to and steps through the days itself — the
-                    order list can stay on "all dates" while every summary is
-                    read one day at a time. */}
-                <div style={manage.aiDayBar}>
-                  <button
-                    type="button"
-                    style={
-                      hasPrevSummaryDay
-                        ? manage.dateNavBtn
-                        : manage.dateNavBtnDisabled
-                    }
-                    disabled={!hasPrevSummaryDay}
-                    title="Previous day's summary"
-                    aria-label="Previous day's summary"
-                    onClick={() => goToAdjacentSummaryDay(-1)}
-                  >
-                    ‹
-                  </button>
-                  <span style={manage.aiDay}>
-                    {summaryDay
-                      ? formatDateLongFromKey(summaryDay)
-                      : "No order dates"}
-                    {summaryDay && orderDays.length > 1 ? (
-                      <span style={manage.orderDayCount}>
-                        {orderDays.indexOf(summaryDay) + 1} of {orderDays.length}
-                      </span>
-                    ) : null}
-                  </span>
-                  <button
-                    type="button"
-                    style={
-                      hasNextSummaryDay
-                        ? manage.dateNavBtn
-                        : manage.dateNavBtnDisabled
-                    }
-                    disabled={!hasNextSummaryDay}
-                    title="Next day's summary"
-                    aria-label="Next day's summary"
-                    onClick={() => goToAdjacentSummaryDay(1)}
-                  >
-                    ›
-                  </button>
-                </div>
-
-                <div style={manage.aiBody}>
-                  {editingSummary && summary ? (
-                    <textarea
-                      value={summaryText}
-                      onChange={(e) =>
-                        setSummaryDraft(
-                          summaryDay
-                            ? { day: summaryDay, text: e.target.value }
-                            : null,
-                        )
+              <AiSummaryCard
+                fill
+                badgeLabel={
+                  summary ? SUMMARY_BADGE[summary.status] : "No summary yet"
+                }
+                badgeMuted={!summary}
+                dayLabel={
+                  summaryDay
+                    ? formatDateLongFromKey(summaryDay)
+                    : "No order dates"
+                }
+                dayPosition={
+                  summaryDay && orderDays.length > 1
+                    ? `${orderDays.indexOf(summaryDay) + 1} of ${orderDays.length}`
+                    : undefined
+                }
+                onPrevDay={() => goToAdjacentSummaryDay(-1)}
+                onNextDay={() => goToAdjacentSummaryDay(1)}
+                prevDayDisabled={!hasPrevSummaryDay}
+                nextDayDisabled={!hasNextSummaryDay}
+                text={summaryText}
+                emptyMessage={
+                  summaryDay
+                    ? `No Course in the Ward for ${formatDateLongFromKey(
+                        summaryDay,
+                      )} yet.`
+                    : "No doctor’s orders recorded for this patient yet."
+                }
+                actions={
+                  !summary ? (
+                    <AiActionButton
+                      disabled={!summaryDay || generatingSummary}
+                      aria-busy={generatingSummary}
+                      onClick={() =>
+                        summaryDay && generateSummaryForDay(summaryDay)
                       }
-                      rows={6}
-                      style={manage.aiEditor}
-                    />
-                  ) : summary ? (
-                    <p style={manage.aiText}>{summaryText}</p>
+                    >
+                      {generatingSummary ? (
+                        <span className="ui-btn__spinner" aria-hidden="true" />
+                      ) : null}
+                      {generatingSummary ? "Generating..." : "Generate"}
+                    </AiActionButton>
                   ) : (
-                    <p style={manage.aiEmpty}>
-                      {summaryDay
-                        ? `No Course in the Ward for ${formatDateLongFromKey(
-                            summaryDay,
-                          )} yet.`
-                        : "No doctor’s orders recorded for this patient yet."}
-                    </p>
-                  )}
-
-                  {/* A day without a summary still offers the AI action — there
-                      it reads "Generate" instead of Edit / Regenerate. */}
-                  <div style={manage.aiActions}>
-                    {!summary ? (
-                      <button
-                        type="button"
-                        style={
-                          !summaryDay || generatingSummary
-                            ? { ...manage.aiLink, opacity: 0.6, cursor: "default" }
-                            : manage.aiLink
-                        }
-                        disabled={!summaryDay || generatingSummary}
-                        aria-busy={generatingSummary}
-                        onClick={() =>
-                          summaryDay && generateSummaryForDay(summaryDay)
-                        }
+                    <>
+                      <AiActionButton
+                        onClick={() => {
+                          if (!editingSummary) {
+                            setSummaryDraft(
+                              summaryDay
+                                ? { day: summaryDay, text: summary.summaryContent }
+                                : null,
+                            );
+                            setEditingSummary(true);
+                            return;
+                          }
+                          void courseInWardApi
+                            .edit(summary.id, summaryText)
+                            .then(({ data }) => {
+                              replaceSummary(selected.id, data);
+                              setEditingSummary(false);
+                              setSummaryDraft(null);
+                            })
+                            .catch(() => undefined);
+                        }}
                       >
-                        {generatingSummary ? (
+                        {editingSummary ? "Save Summary" : "Edit Summary"}
+                      </AiActionButton>
+                      <AiActionButton
+                        disabled={regeneratingSummary}
+                        aria-busy={regeneratingSummary}
+                        onClick={() => {
+                          if (regeneratingSummary) return;
+                          setRegeneratingSummary(true);
+                          void courseInWardApi
+                            .regenerate(summary.id)
+                            .then(({ data }) => {
+                              replaceSummary(selected.id, data);
+                              setEditingSummary(false);
+                              setSummaryDraft(null);
+                            })
+                            .catch(() => undefined)
+                            .finally(() => setRegeneratingSummary(false));
+                        }}
+                      >
+                        {regeneratingSummary ? (
                           <span className="ui-btn__spinner" aria-hidden="true" />
                         ) : null}
-                        {generatingSummary ? "Generating..." : "Generate"}
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          style={manage.aiLink}
-                          onClick={() => {
-                            if (!editingSummary) {
-                              setSummaryDraft(
-                                summaryDay
-                                  ? { day: summaryDay, text: summary.summaryContent }
-                                  : null,
-                              );
-                              setEditingSummary(true);
-                              return;
-                            }
-                            void courseInWardApi
-                              .edit(summary.id, summaryText)
-                              .then(({ data }) => {
-                                replaceSummary(selected.id, data);
-                                setEditingSummary(false);
-                                setSummaryDraft(null);
-                              })
-                              .catch(() => undefined);
-                          }}
-                        >
-                          {editingSummary ? "Save Summary" : "Edit Summary"}
-                        </button>
-                        <button
-                          type="button"
-                          style={manage.aiLink}
-                          disabled={regeneratingSummary}
-                          aria-busy={regeneratingSummary}
-                          onClick={() => {
-                            if (regeneratingSummary) return;
-                            setRegeneratingSummary(true);
-                            void courseInWardApi
-                              .regenerate(summary.id)
-                              .then(({ data }) => {
-                                replaceSummary(selected.id, data);
-                                setEditingSummary(false);
-                                setSummaryDraft(null);
-                              })
-                              .catch(() => undefined)
-                              .finally(() => setRegeneratingSummary(false));
-                          }}
-                        >
-                          {regeneratingSummary ? (
-                            <span className="ui-btn__spinner" aria-hidden="true" />
-                          ) : null}
-                          {regeneratingSummary
-                            ? "Regenerating..."
-                            : "↻ Regenerate"}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </section>
+                        {regeneratingSummary
+                          ? "Regenerating..."
+                          : "↻ Regenerate"}
+                      </AiActionButton>
+                    </>
+                  )
+                }
+              >
+                {editingSummary && summary ? (
+                  <textarea
+                    value={summaryText}
+                    onChange={(e) =>
+                      setSummaryDraft(
+                        summaryDay
+                          ? { day: summaryDay, text: e.target.value }
+                          : null,
+                      )
+                    }
+                    rows={6}
+                    style={manage.aiEditor}
+                  />
+                ) : null}
+              </AiSummaryCard>
             </Panel>
           </Group>
         )}

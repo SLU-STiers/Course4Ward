@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import { DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
+import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useTableState } from '../../hooks/useTableState';
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue } from '../../lib/format';
 import { daysInCare, statusColor } from '../../lib/patient';
-import llamaIcon from '../../Img/llama.png';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import type { NursePatient, OrderSet } from './types';
@@ -271,20 +271,21 @@ export function ManagementPortalView() {
               emptyMessage={`No physician orders for ${formatDateLongFromKey(selectedDate)}. Choose another date to view previous orders.`}
             />
 
-            <div style={ui.aiCard}>
-              <div style={ui.aiHeader}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <img src={llamaIcon} alt="" style={{ width: 16, height: 16, display: 'block', objectFit: 'contain' }} />
-                  <span style={ui.aiTitle}>AI Summarized</span>
-                </div>
-                <span style={ui.aiBadge}>AI Draft ready</span>
-              </div>
-              <div style={ui.aiBody}>
-                <p style={ui.aiText}>
-                  {`No AI summary loaded for ${selected.name}. Physician summaries are available through the physician workflow.`}
-                </p>
-              </div>
-            </div>
+            <AiSummaryCard
+              badgeLabel="No summary yet"
+              badgeMuted
+              dayLabel={selectedDate ? formatDateLongFromKey(selectedDate) : 'No order dates'}
+              dayPosition={
+                datesWithOrders.length > 1 && datesWithOrders.includes(selectedDate)
+                  ? `${datesWithOrders.indexOf(selectedDate) + 1} of ${datesWithOrders.length}`
+                  : undefined
+              }
+              onPrevDay={() => shiftDate(1)}
+              onNextDay={() => shiftDate(-1)}
+              prevDayDisabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) >= datesWithOrders.length - 1}
+              nextDayDisabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) <= 0}
+              emptyMessage={`No Course in the Ward for ${formatDateLongFromKey(selectedDate)} yet. Physician summaries are written in the physician workflow.`}
+            />
           </>
         ) : (
           <p style={ui.muted}>Select a patient to view physician orders.</p>

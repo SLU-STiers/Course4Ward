@@ -7,10 +7,8 @@ import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../../components/ui';
 import { patientTableStyles } from '../../components/patientList/PatientTable';
-import overviewIcon from '../../Img/overview.png';
-import requestsIcon from '../../Img/requests.png';
-import exportIcon from '../../Img/export.png';
-import llamaIcon from '../../Img/llama.png';
+import { DashboardIcon, ExportIcon, RequestsIcon } from '../../components/icons/NavIcons';
+import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
 import { formatDateMedium, formatTimeMedium } from '../../lib/format';
@@ -213,9 +211,9 @@ export function ClaimsProcessorDashboard() {
           if (tab === 'export') setExportSubView('selection');
         },
         items: [
-          { id: 'overview', label: 'Dashboard', icon: <img src={overviewIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'export', label: 'Export', icon: <img src={exportIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'overview', label: 'Dashboard', icon: <DashboardIcon /> },
+          { id: 'requests', label: 'Requests', icon: <RequestsIcon /> },
+          { id: 'export', label: 'Export', icon: <ExportIcon /> },
         ],
         profile: <SidebarProfile initials="SJ" name="Steve Joabs" subtitle="Claims Processor" onLogout={handleLogout} />,
       }}
@@ -795,33 +793,31 @@ export function ClaimsProcessorDashboard() {
                     )}
                   </div>
                 </div>
-                <div style={overviewStyles.aiCard}>
-                  <div style={overviewStyles.aiHeader}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <img src={llamaIcon} alt="" style={{ width: 16, height: 16, display: 'block', objectFit: 'contain' }} />
-                      <h3 style={overviewStyles.aiTitle}>AI Summarized</h3>
-                    </div>
-                    <span style={overviewStyles.aiStatus}>{overviewRequest?.status ?? 'No claims'}</span>
-                  </div>
-                  <div style={overviewStyles.aiBody}>
-                    <p style={overviewStyles.aiSummary}>
-                      {overviewRequest?.summaryText ?? 'Select a persisted claim to review its AI summary.'}
-                    </p>
-                    <div style={overviewStyles.aiActions}>
-                      <select value={evaluator} onChange={(e) => setEvaluator(e.target.value)} style={overviewStyles.evaluatorSelect} aria-label="Evaluator">
+                <AiSummaryCard
+                  badgeLabel={overviewRequest?.status ?? 'No claims'}
+                  text={overviewRequest?.summaryText}
+                  emptyMessage="Select a persisted claim to review its AI summary."
+                  actions={
+                    <>
+                      <select
+                        value={evaluator}
+                        onChange={(e) => setEvaluator(e.target.value)}
+                        style={overviewStyles.evaluatorSelect}
+                        aria-label="Evaluator"
+                      >
                         <option>{overviewRequest?.doctor ?? 'Attending physician'}</option>
                       </select>
-                      <Button
-                        variant="primary"
-                        size="sm"
+                      <AiActionButton
                         disabled={!overviewRequest}
-                        onClick={() => overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)}
+                        onClick={() =>
+                          overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)
+                        }
                       >
                         Submit
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                      </AiActionButton>
+                    </>
+                  }
+                />
               </div>
             </div>
           )}

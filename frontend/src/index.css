@@ -945,6 +945,27 @@ td {
 .ui-menu__divider { height: 1px; margin: 8px 0; background: var(--c4w-color-border, #e2e8f0); }
 .ui-menu__extra { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 
+/* Date fields inside a filter menu (claims + physician admission ranges). */
+.ui-menu__extra input[type='date'] {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--c4w-color-border, #e2e8f0);
+  border-radius: var(--c4w-radius-control, 8px);
+  background: var(--c4w-color-surface, #ffffff);
+  color: var(--c4w-color-text-primary, #0f172a);
+  font: inherit;
+  font-size: 0.75rem;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-menu__extra input[type='date']:hover { border-color: var(--c4w-color-primary-soft-border, #bfdbfe); }
+
+.ui-menu__extra input[type='date']:focus-visible {
+  outline: none;
+  border-color: var(--c4w-color-primary, #2563eb);
+  box-shadow: var(--c4w-shadow-focus, 0 0 0 3px rgba(37, 99, 235, 0.28));
+}
+
 /* Combined filter menu: every filter group inside a single scrollable panel. */
 .ui-popover.ui-popover--filters {
   min-width: 260px;
@@ -982,6 +1003,260 @@ td {
   border-color: var(--c4w-color-primary-soft-border, #bfdbfe);
   color: var(--c4w-color-primary, #2563eb);
   font-weight: 600;
+}
+
+/* ---------- Date navigator + calendar ---------- */
+/* The ‹ [date] › cluster above every order timeline, and the calendar it opens.
+   Shared by the nurse and physician screens so the two can't drift apart. */
+
+.ui-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--c4w-color-border, #e2e8f0);
+  border-radius: var(--c4w-radius-control, 8px);
+  background: var(--c4w-color-surface, #ffffff);
+  color: var(--c4w-color-text-muted, #64748b);
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-icon-btn:hover:not(:disabled) {
+  border-color: var(--c4w-color-primary-soft-border, #bfdbfe);
+  background: var(--c4w-color-primary-soft, #eff6ff);
+  color: var(--c4w-color-primary, #2563eb);
+}
+
+.ui-icon-btn:disabled {
+  color: var(--c4w-color-text-subtle, #94a3b8);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ui-date-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--c4w-space-sm, 8px);
+}
+
+.ui-date-nav__field {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 150px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--c4w-color-border, #e2e8f0);
+  border-radius: var(--c4w-radius-control, 8px);
+  background: var(--c4w-color-surface, #ffffff);
+  color: var(--c4w-color-text-primary, #0f172a);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-date-nav__field svg { color: var(--c4w-color-primary, #2563eb); }
+
+.ui-date-nav__field:hover {
+  border-color: var(--c4w-color-primary-soft-border, #bfdbfe);
+  background: var(--c4w-color-primary-soft, #eff6ff);
+}
+
+.ui-date-nav__reset {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--c4w-radius-control, 8px);
+  background: transparent;
+  color: var(--c4w-color-primary, #2563eb);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-date-nav__reset:hover { background: var(--c4w-color-primary-soft, #eff6ff); }
+
+.ui-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--c4w-space-sm, 8px);
+}
+
+.ui-calendar__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--c4w-space-sm, 8px);
+}
+
+.ui-calendar__month {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--c4w-radius-sm, 6px);
+  background: transparent;
+  color: var(--c4w-color-text-primary, #0f172a);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-calendar__month:hover { background: var(--c4w-color-surface-muted, #f1f5f9); }
+.ui-calendar__month svg { color: var(--c4w-color-text-subtle, #94a3b8); }
+
+.ui-calendar__weekdays,
+.ui-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.ui-calendar__weekday {
+  text-align: center;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c4w-color-text-subtle, #94a3b8);
+}
+
+.ui-calendar__day {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--c4w-radius-sm, 6px);
+  background: transparent;
+  color: var(--c4w-color-text-secondary, #475569);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-calendar__day:hover:not(:disabled) {
+  background: var(--c4w-color-primary-soft, #eff6ff);
+  color: var(--c4w-color-primary, #2563eb);
+}
+
+/* A day that actually holds records: darker, bold, with a marker dot. */
+.ui-calendar__day.has-data {
+  color: var(--c4w-color-text-primary, #0f172a);
+  font-weight: 700;
+}
+
+.ui-calendar__day.has-data::after {
+  content: '';
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--c4w-color-primary, #2563eb);
+}
+
+.ui-calendar__day.is-selected,
+.ui-calendar__day.is-selected:hover {
+  background: var(--c4w-color-primary, #2563eb);
+  border-color: var(--c4w-color-primary, #2563eb);
+  color: var(--c4w-color-on-primary, #ffffff);
+  font-weight: 700;
+  box-shadow: var(--c4w-shadow-button, 0 1px 2px rgba(15, 23, 42, 0.12));
+}
+
+.ui-calendar__day.is-selected::after { background: rgba(255, 255, 255, 0.85); }
+
+.ui-calendar__day:disabled {
+  color: var(--c4w-color-text-subtle, #94a3b8);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ui-calendar__day.is-empty { visibility: hidden; }
+
+.ui-calendar__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--c4w-space-sm, 8px);
+  padding-top: 10px;
+  border-top: 1px solid var(--c4w-color-divider, #f1f5f9);
+}
+
+.ui-calendar__caption {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--c4w-color-text-muted, #64748b);
+}
+
+.ui-calendar__clear {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--c4w-color-border, #e2e8f0);
+  border-radius: var(--c4w-radius-sm, 6px);
+  background: var(--c4w-color-surface, #ffffff);
+  color: var(--c4w-color-primary, #2563eb);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-calendar__clear:hover {
+  border-color: var(--c4w-color-primary-soft-border, #bfdbfe);
+  background: var(--c4w-color-primary-soft, #eff6ff);
+}
+
+/* ---------- AI summary card actions (Generate / Edit / Regenerate) ---------- */
+.ui-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #9cc8ff;
+  border-radius: var(--c4w-radius-sm, 6px);
+  background: var(--c4w-color-surface, #ffffff);
+  color: #0066cc;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-ai-btn:hover:not(:disabled) {
+  border-color: #0066cc;
+  background: #f0f7ff;
+}
+
+.ui-ai-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* ---------- Status badge ---------- */

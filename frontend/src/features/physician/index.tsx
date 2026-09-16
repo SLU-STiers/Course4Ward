@@ -6,10 +6,9 @@ import { useAuthStore } from '../../store/authStore';
 import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { Button, Modal, PageHeader } from '../../components/ui';
-import requestsIcon from '../../Img/requests.png';
 import { shell } from './styles';
 
-import { ManageIcon, OverviewIcon } from './icons';
+import { DashboardIcon, ManageIcon, RequestsIcon } from '../../components/icons/NavIcons';
 import { ManageView } from './ManageView';
 import { OverviewView } from './OverviewView';
 import { RequestsView } from './RequestsView';
@@ -35,20 +34,9 @@ export function PhysicianDashboard() {
         activeId: activeTab,
         onNavigate: (id) => setActiveTab(id as TabType),
         items: [
-          { id: "overview", label: "Overview", icon: <OverviewIcon /> },
+          { id: "overview", label: "Overview", icon: <DashboardIcon /> },
           { id: "manage", label: "Manage", icon: <ManageIcon /> },
-          {
-            id: "requests",
-            label: "Requests",
-            icon: (
-              <img
-                src={requestsIcon}
-                alt=""
-                aria-hidden="true"
-                style={{ width: 26, height: 26, objectFit: "contain" }}
-              />
-            ),
-          },
+          { id: "requests", label: "Requests", icon: <RequestsIcon /> },
         ],
         profile: (
           <div style={shell.sidebarProfile}>

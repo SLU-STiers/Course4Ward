@@ -9,10 +9,7 @@ import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { PageHeader } from '../../components/ui';
-import dashboardIcon from '../../Img/dashboard.png';
-import userIcon from '../../Img/user.png';
-import requestsIcon from '../../Img/requests.png';
-import { styles } from './styles';
+import { DashboardIcon, RequestsIcon, UsersIcon } from '../../components/icons/NavIcons';
 
 import { AccountsPanel } from './AccountsPanel';
 import { DashboardView } from './DashboardView';
@@ -69,9 +66,9 @@ export function AdminPanel() {
         activeId: activeNav,
         onNavigate: (id) => setActiveNav(id as 'dashboard' | 'users' | 'requests'),
         items: [
-          { id: 'dashboard', label: 'Dashboard', icon: <img src={dashboardIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'users', label: 'Users', icon: <img src={userIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
+          { id: 'users', label: 'Users', icon: <UsersIcon /> },
+          { id: 'requests', label: 'Requests', icon: <RequestsIcon /> },
         ],
         profile: (
           <SidebarProfile

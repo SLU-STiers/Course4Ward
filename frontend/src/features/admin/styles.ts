@@ -258,11 +258,4 @@ export const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  navIconImage: {
-  width: '26px',
-  height: '26px',
-  marginRight: '10px',
-  objectFit: 'contain',
-}
 };
