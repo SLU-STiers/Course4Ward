@@ -572,7 +572,6 @@ export function ManageView() {
                   <th style={patientTableStyles.th}>Admitted</th>
                   <th style={patientTableStyles.th}>Days in care</th>
                   <th style={patientTableStyles.th}>Status</th>
-                  <th style={{ ...patientTableStyles.th, textAlign: "right" }} />
                 </tr>
               </thead>
               <tbody>
@@ -623,18 +622,6 @@ export function ManageView() {
                       <td style={patientTableStyles.td}>
                         <StatusBadge status={p.status} showDot />
                       </td>
-                      <td style={{ ...patientTableStyles.td, textAlign: "right" }}>
-                        <button
-                          type="button"
-                          style={patientTableStyles.viewBtn}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openPatient(p.id, false);
-                          }}
-                        >
-                          View
-                        </button>
-                      </td>
                     </tr>
                   );
                 })}
@@ -642,7 +629,7 @@ export function ManageView() {
                   <tr>
                     <td
                       style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                      colSpan={7}
+                      colSpan={6}
                     >
                       {admittedPatients.length === 0
                         ? "You have no admitted patients assigned to you."
