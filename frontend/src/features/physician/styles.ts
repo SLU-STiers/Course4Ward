@@ -4,49 +4,6 @@ import type { CSSProperties } from 'react';
 export const TEAL = "var(--dashboard-primary)";
 export const CARD_SHADOW = "0 8px 28px rgba(10, 92, 131, 0.08)";
 
-export const shell: Record<string, CSSProperties> = {
-  sidebarProfile: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    minHeight: 56,
-    flexShrink: 0,
-    margin: "0 14px",
-    padding: "10px 12px",
-    backgroundColor: "#f3f4f6",
-    borderRadius: 14,
-    boxSizing: "border-box",
-  },
-  profileAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: "50%",
-    backgroundColor: "#cbd5e1",
-    color: TEAL,
-    fontSize: 11,
-    fontWeight: 700,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  profileName: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#0f172a",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  profileEmail: {
-    fontSize: 10,
-    color: "#94a3b8",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-};
-
 export const overview: Record<string, CSSProperties> = {
   page: {
     display: "flex",
@@ -558,18 +515,10 @@ export const manage: Record<string, CSSProperties> = {
   },
   orderActions: {
     display: "flex",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
+    gap: 10,
     flexShrink: 0,
-  },
-  addBtn: {
-    border: `1.5px solid ${TEAL}`,
-    backgroundColor: "#ffffff",
-    color: TEAL,
-    borderRadius: 10,
-    padding: "8px 18px",
-    fontWeight: 700,
-    cursor: "pointer",
   },
   submitBtn: {
     border: "none",
@@ -577,15 +526,6 @@ export const manage: Record<string, CSSProperties> = {
     color: "#ffffff",
     borderRadius: 10,
     padding: "8px 20px",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  cancelBtn: {
-    border: "1px solid #cbd5e1",
-    backgroundColor: "#ffffff",
-    color: "#64748b",
-    borderRadius: 10,
-    padding: "8px 16px",
     fontWeight: 700,
     cursor: "pointer",
   },
@@ -648,42 +588,6 @@ export const manage: Record<string, CSSProperties> = {
     height: 28,
     padding: 0,
     cursor: "pointer",
-  },
-  calOverlay: {
-    position: "fixed",
-    inset: 0,
-    backgroundColor: "rgba(15, 23, 42, 0.2)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 50,
-  },
-  calModal: {
-    width: 360,
-    maxWidth: "calc(100vw - 32px)",
-    backgroundColor: "#ffffff",
-    borderRadius: "var(--c4w-radius-card)",
-    padding: 20,
-    border: "1px solid var(--c4w-color-border)",
-    boxShadow: "var(--c4w-shadow-popover)",
-  },
-  calHeader: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 12,
-  },
-  calTitle: {
-    margin: 0,
-    fontSize: 16,
-    fontWeight: 700,
-    color: "var(--c4w-color-text-primary)",
-  },
-  calSubtitle: {
-    margin: "4px 0 0",
-    fontSize: 12,
-    color: "var(--c4w-color-text-muted)",
   },
 };
 

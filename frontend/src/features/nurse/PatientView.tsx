@@ -1,9 +1,10 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
 import { useEffect, useState } from 'react';
-import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../../components/ui';
+import { DataTableToolbar, StatusBadge } from '../../components/ui';
+import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
-import { ui } from './styles';
+import { statusColor } from '../../lib/patient';
 
 import { PatientDetailModal } from './PatientDetailModal';
 import type { AdmissionRecord } from './types';
@@ -79,8 +80,9 @@ export function PatientView({
   };
 
   return (
-    <section style={ui.card}>
-      <PageHeader title="Patient Management" description="Manage admissions and discharges." />
+    <section style={patientTableStyles.card}>
+      {/* Same card-title scale as the Claims Processor "Patient Overview" card. */}
+      <h2 style={patientTableStyles.cardTitle}>Patient Management</h2>
 
       <DataTableToolbar
         searchProps={{
@@ -113,58 +115,74 @@ export function PatientView({
         }}
       />
 
-      <div style={ui.tableWrap}>
-        <table style={ui.table}>
+      <div style={patientTableStyles.tableWrapper}>
+        <table style={{ ...patientTableStyles.table, tableLayout: 'auto' }}>
           <thead>
-            <tr>
-              <th style={ui.thBlue}>Admission ID</th>
-              <th style={ui.thBlue}>Full Name</th>
-              <th style={ui.thBlue}>Admission Date</th>
-              <th style={ui.thBlue}>Discharge Date</th>
-              <th style={ui.thBlue}>Status</th>
-              <th style={{ ...ui.thBlue, textAlign: 'right' }}>Actions</th>
+            <tr style={patientTableStyles.thRow}>
+              <th style={patientTableStyles.th}>Admission ID</th>
+              <th style={patientTableStyles.th}>Full Name</th>
+              <th style={patientTableStyles.th}>Admission Date</th>
+              <th style={patientTableStyles.th}>Discharge Date</th>
+              <th style={patientTableStyles.th}>Status</th>
+              <th style={{ ...patientTableStyles.th, textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((r) => (
-              <tr key={r.id}>
-                <td style={ui.td}>
-                  <button type="button" style={ui.idLink} onClick={() => setViewingName(r.name)}>
-                    {r.id}
-                  </button>
-                </td>
-                <td style={ui.td}>
-                  <button type="button" style={ui.nameBtn} onClick={() => setViewingName(r.name)}>
-                    {r.name}
-                  </button>
-                </td>
-                <td style={{ ...ui.td, color: '#334155' }}>{r.admittedOn}</td>
-                <td style={{ ...ui.td, color: '#64748b' }}>{r.dischargedOn ?? '—'}</td>
-                <td style={ui.td}>
-                  <StatusBadge
-                    showDot
-                    status={r.status === 'Admitted' ? 'admitted' : 'discharged'}
-                  />
-                </td>
-                <td style={{ ...ui.td, textAlign: 'right' }}>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                    <Button variant="secondary" size="sm" onClick={() => setViewingName(r.name)}>
-                      View Record
-                    </Button>
-                  </div>
+            {table.rows.map((r) => {
+              const admitted = r.status === 'Admitted';
+              return (
+                <tr
+                  key={r.id}
+                  onClick={() => setViewingName(r.name)}
+                  style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
+                >
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.id}</td>
+                  <td style={patientTableStyles.td}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ ...patientTableStyles.dot, backgroundColor: statusColor(admitted ? 'admitted' : 'discharged') }} />
+                      <span style={patientTableStyles.name}>{r.name}</span>
+                    </div>
+                  </td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.admittedOn}</td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.dischargedOn ?? '—'}</td>
+                  <td style={patientTableStyles.td}>
+                    <StatusBadge status={admitted ? 'admitted' : 'discharged'} showDot />
+                  </td>
+                  <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      style={patientTableStyles.viewBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setViewingName(r.name);
+                      }}
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {!table.rows.length && (
+              <tr>
+                <td
+                  style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
+                  colSpan={6}
+                >
+                  No admissions match the current filters.
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
 
-      <div className="ui-table-footer">
-        <span className="ui-table-footer__info">
-          Showing {table.rangeStart} to {table.rangeEnd} of {table.total} patients
-        </span>
-        <Pagination page={table.page} pageCount={table.pageCount} onPageChange={table.setPage} />
-      </div>
+      <PatientTablePagination
+        info={`Showing ${table.rangeStart} to ${table.rangeEnd} of ${table.total} patients`}
+        page={table.page}
+        pageCount={table.pageCount}
+        onPageChange={table.setPage}
+      />
 
       {viewing && (
         <PatientDetailModal

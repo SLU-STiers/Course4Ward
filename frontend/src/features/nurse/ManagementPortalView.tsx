@@ -72,7 +72,8 @@ export function ManagementPortalView() {
     ordersApi.forPatient(selectedId).then(({ data }) => {
       const mapped = data.filter((order) => order.active).map(mapOrder);
       setOrdersByPatient((previous) => ({ ...previous, [selectedId]: mapped }));
-      setSelectedDate((current) => current || mapped[0]?.dateKey || '');
+      const days = [...new Set(mapped.map((order) => order.dateKey))].sort().reverse();
+      setSelectedDate((current) => current || days[0] || '');
     }).catch(() => setOrdersByPatient((previous) => ({ ...previous, [selectedId]: [] })));
   }, [selectedId]);
 
@@ -97,7 +98,17 @@ export function ManagementPortalView() {
 
   const orderSets = selected ? ordersByPatient[selected.id] ?? [] : [];
   const datesWithOrders = [...new Set(orderSets.map((o) => o.dateKey))].sort().reverse();
-  const ordersForDate = orderSets.filter((o) => o.dateKey === selectedDate);
+  /* `''` means every date; a day that this patient has no orders on falls back
+     to it, so the list can never be emptied by a stale selection. */
+  const activeDate = selectedDate && datesWithOrders.includes(selectedDate) ? selectedDate : '';
+  const dateIndex = activeDate ? datesWithOrders.indexOf(activeDate) : -1;
+  const hasPrevDate = datesWithOrders.length > 0 && (dateIndex < 0 || dateIndex < datesWithOrders.length - 1);
+  const hasNextDate = datesWithOrders.length > 0 && (dateIndex < 0 || dateIndex > 0);
+  const ordersForDisplay = activeDate
+    ? orderSets.filter((set) => set.dateKey === activeDate)
+    : [...orderSets].sort((a, b) => (a.dateKey < b.dateKey ? 1 : -1));
+  /* The AI card always names a day — the newest one while showing all dates. */
+  const cardDay = activeDate || datesWithOrders[0] || '';
 
   const openPatient = (id: string) => {
     setSelectedId(id);
@@ -108,8 +119,12 @@ export function ManagementPortalView() {
 
   const shiftDate = (dir: -1 | 1) => {
     if (!datesWithOrders.length) return;
-    const idx = Math.max(0, datesWithOrders.indexOf(selectedDate));
-    const next = datesWithOrders[idx + dir];
+    if (!activeDate) {
+      // From "all dates" the first step focuses the day at that end of the list.
+      setSelectedDate(dir < 0 ? datesWithOrders[datesWithOrders.length - 1] : datesWithOrders[0]);
+      return;
+    }
+    const next = datesWithOrders[datesWithOrders.indexOf(activeDate) + dir];
     if (next) setSelectedDate(next);
   };
 
@@ -254,13 +269,16 @@ export function ManagementPortalView() {
         {selected ? (
           <>
             <SubmittedOrdersTimeline
-              dateValue={selectedDate}
+              dateValue={activeDate}
               onDateChange={setSelectedDate}
               onPrev={() => shiftDate(1)}
               onNext={() => shiftDate(-1)}
-              prevDisabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) >= datesWithOrders.length - 1}
-              nextDisabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) <= 0}
-              orders={ordersForDate.flatMap((set) => set.orders.map((content, index) => ({
+              prevDisabled={!hasPrevDate}
+              nextDisabled={!hasNextDate}
+              availableDays={datesWithOrders}
+              onClear={() => setSelectedDate('')}
+              clearLabel="Show all"
+              orders={ordersForDisplay.flatMap((set) => set.orders.map((content, index) => ({
                 id: `${set.dateKey}-${set.time}-${index}`,
                 dateCreated: `${set.dateKey}T00:00:00`,
                 dateLabel: set.dateLabel,
@@ -268,23 +286,27 @@ export function ManagementPortalView() {
                 doctor: set.doctor,
                 content,
               })))}
-              emptyMessage={`No physician orders for ${formatDateLongFromKey(selectedDate)}. Choose another date to view previous orders.`}
+              emptyMessage={
+                activeDate
+                  ? `No physician orders for ${formatDateLongFromKey(activeDate)}. Choose another date to view previous orders.`
+                  : 'No physician orders recorded for this patient yet.'
+              }
             />
 
             <AiSummaryCard
               badgeLabel="No summary yet"
               badgeMuted
-              dayLabel={selectedDate ? formatDateLongFromKey(selectedDate) : 'No order dates'}
+              dayLabel={cardDay ? formatDateLongFromKey(cardDay) : 'No order dates'}
               dayPosition={
-                datesWithOrders.length > 1 && datesWithOrders.includes(selectedDate)
-                  ? `${datesWithOrders.indexOf(selectedDate) + 1} of ${datesWithOrders.length}`
+                datesWithOrders.length > 1 && cardDay
+                  ? `${datesWithOrders.indexOf(cardDay) + 1} of ${datesWithOrders.length}`
                   : undefined
               }
               onPrevDay={() => shiftDate(1)}
               onNextDay={() => shiftDate(-1)}
-              prevDayDisabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) >= datesWithOrders.length - 1}
-              nextDayDisabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) <= 0}
-              emptyMessage={`No Course in the Ward for ${formatDateLongFromKey(selectedDate)} yet. Physician summaries are written in the physician workflow.`}
+              prevDayDisabled={!hasPrevDate}
+              nextDayDisabled={!hasNextDate}
+              emptyMessage={`No Course in the Ward for ${cardDay ? formatDateLongFromKey(cardDay) : 'this patient'} yet. Physician summaries are written in the physician workflow.`}
             />
           </>
         ) : (

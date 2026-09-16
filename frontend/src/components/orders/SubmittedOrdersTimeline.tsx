@@ -1,7 +1,12 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { formatDateLongFromKey, formatDateMedium, formatTimeMedium, toDateInputValue, toDateKey } from '../../lib/format';
 import { CalendarPanel, Popover } from '../ui';
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons/NavIcons';
+import {
+  CalendarIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  NotesIcon,
+} from '../icons/NavIcons';
 
 /** `YYYY-MM-DD` read as a local calendar date. */
 function dateFromKey(key: string) {
@@ -27,6 +32,17 @@ type SubmittedOrdersTimelineProps = {
   onNext?: () => void;
   prevDisabled?: boolean;
   nextDisabled?: boolean;
+  /** Titles for the ‹ › arrows, e.g. "Previous day with orders". */
+  prevLabel?: string;
+  nextLabel?: string;
+  /**
+   * Days the calendar offers. Defaults to the days found in `orders`; pass the
+   * full list when the timeline only renders a filtered slice of them.
+   */
+  availableDays?: string[];
+  /** Adds a reset action beside the cluster (and in the calendar footer). */
+  onClear?: () => void;
+  clearLabel?: string;
   /** Replaces the standard cluster when a screen needs extra controls. */
   controls?: ReactNode;
   orders: SubmittedOrderTimelineEntry[];
@@ -65,7 +81,12 @@ const styles: Record<string, CSSProperties> = {
     flexShrink: 0,
   },
   titleGroup: { display: 'flex', alignItems: 'center', gap: '8px' },
-  icon: { fontSize: '20px' },
+  /** Monochrome mark of the card title — same line style as the nav icons. */
+  titleIcon: {
+    display: 'block',
+    flexShrink: 0,
+    color: 'var(--c4w-color-text-primary, #0f172a)',
+  },
   title: { margin: 0, fontSize: '16px', fontWeight: 700, color: '#0f172a' },
   timelineScroll: {
     flex: '1 1 auto',
@@ -125,6 +146,11 @@ export function SubmittedOrdersTimeline({
   onNext,
   prevDisabled,
   nextDisabled,
+  prevLabel = 'Earlier date',
+  nextLabel = 'Later date',
+  availableDays,
+  onClear,
+  clearLabel = 'Show all',
   controls,
   orders,
   emptyMessage,
@@ -133,10 +159,12 @@ export function SubmittedOrdersTimeline({
   fill,
 }: SubmittedOrdersTimelineProps) {
   /* Only days that actually carry an order can be picked from the calendar. */
-  const availableDays = orders
-    .map((order) => toDateKey(order.dateCreated))
-    .filter(Boolean);
+  const days =
+    availableDays ?? orders.map((order) => toDateKey(order.dateCreated)).filter(Boolean);
   const fieldLabel = dateValue ? formatDateLongFromKey(dateValue) : 'All dates';
+  /* Opens on the selected day, else the most recent one that has orders. */
+  const latestDay = days.reduce((latest, day) => (day > latest ? day : latest), '');
+  const focusDate = dateFromKey(dateValue || latestDay || toDateInputValue(new Date()));
 
   const nav =
     controls ??
@@ -147,8 +175,8 @@ export function SubmittedOrdersTimeline({
           className="ui-icon-btn"
           disabled={prevDisabled}
           onClick={onPrev}
-          title="Earlier date"
-          aria-label="Earlier date"
+          title={prevLabel}
+          aria-label={prevLabel}
         >
           <ChevronLeftIcon width={16} height={16} />
         </button>
@@ -167,12 +195,28 @@ export function SubmittedOrdersTimeline({
         >
           {({ close }) => (
             <CalendarPanel
-              focusDate={dateValue ? dateFromKey(dateValue) : new Date()}
-              availableDays={availableDays}
+              focusDate={focusDate}
+              availableDays={days}
               onSelect={(date) => {
                 onDateChange?.(toDateInputValue(date));
                 close();
               }}
+              onClear={
+                onClear
+                  ? () => {
+                      onClear();
+                      close();
+                    }
+                  : undefined
+              }
+              clearLabel={clearLabel}
+              caption={
+                onClear
+                  ? dateValue
+                    ? `Selected: ${formatDateLongFromKey(dateValue)}`
+                    : 'Showing all order dates'
+                  : undefined
+              }
             />
           )}
         </Popover>
@@ -181,11 +225,16 @@ export function SubmittedOrdersTimeline({
           className="ui-icon-btn"
           disabled={nextDisabled}
           onClick={onNext}
-          title="Later date"
-          aria-label="Later date"
+          title={nextLabel}
+          aria-label={nextLabel}
         >
           <ChevronRightIcon width={16} height={16} />
         </button>
+        {onClear && dateValue ? (
+          <button type="button" className="ui-date-nav__reset" onClick={onClear}>
+            {clearLabel}
+          </button>
+        ) : null}
       </div>
     ));
 
@@ -193,7 +242,7 @@ export function SubmittedOrdersTimeline({
     <section style={fill ? { ...styles.card, ...styles.cardFill } : styles.card}>
       <div style={styles.header}>
         <div style={styles.titleGroup}>
-          <span style={styles.icon}>📝</span>
+          <NotesIcon width={20} height={20} style={styles.titleIcon} />
           <h3 style={styles.title}>{title}</h3>
         </div>
         {nav}

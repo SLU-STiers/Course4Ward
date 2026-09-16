@@ -97,9 +97,20 @@ export function UsersIcon(props: NavIconProps) {
   );
 }
 
-/** Calendar — the date field of the order navigator. */
-export function CalendarIcon(props: NavIconProps) {
+/** Notes — the record being written: a document with a folded corner. */
+export function NotesIcon(props: NavIconProps) {
   return (
+    <Icon {...props}>
+      <path d="M13.75 3.25H7.5A2.25 2.25 0 0 0 5.25 5.5v13a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25V8z" />
+      <path d="M13.75 3.25V8h5" />
+      <path d="M9 12.5h6" />
+      <path d="M9 16h4" />
+    </Icon>
+  );
+}
+
+/** Calendar — the date field of the order navigator. */
+export function CalendarIcon(props: NavIconProps) {  return (
     <Icon {...props}>
       <rect x="3.5" y="5.25" width="17" height="15.25" rx="3" />
       <path d="M8 3.25v3.5M16 3.25v3.5" />

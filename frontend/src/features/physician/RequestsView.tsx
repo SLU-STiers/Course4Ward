@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { claimsApi } from '../../services/domainApi';
 import type { PhysicianRequest } from '../../types';
-import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../../components/ui';
+import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
+import { patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
 import { requests } from './styles';
 
@@ -52,10 +53,8 @@ export function RequestsView() {
 
   return (
     <section style={requests.card}>
-      <PageHeader
-        title="Requests"
-        description="Review AI summaries submitted by Claims Processors."
-      />
+      {/* Same card-title scale as the Claims Processor "Patient Overview" card. */}
+      <h2 style={patientTableStyles.cardTitle}>Requests</h2>
 
       <DataTableToolbar
         searchProps={{

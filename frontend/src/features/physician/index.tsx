@@ -5,8 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
-import { Button, Modal, PageHeader } from '../../components/ui';
-import { shell } from './styles';
+import { SidebarProfile } from '../../components/layout/SidebarProfile';
+import { PageHeader } from '../../components/ui';
 
 import { DashboardIcon, ManageIcon, RequestsIcon } from '../../components/icons/NavIcons';
 import { ManageView } from './ManageView';
@@ -16,11 +16,9 @@ import type { TabType } from './types';
 
 export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
-  const [logoutOpen, setLogoutOpen] = useState(false);
   const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const displayName = user ? `${user.firstName} ${user.lastName}` : "Physician";
 
   const handleLogout = () => {
     logout();
@@ -39,54 +37,12 @@ export function PhysicianDashboard() {
           { id: "requests", label: "Requests", icon: <RequestsIcon /> },
         ],
         profile: (
-          <div style={shell.sidebarProfile}>
-            <div style={shell.profileAvatar}>JD</div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={shell.profileName}>Dr. {displayName}</div>
-              <div style={shell.profileEmail}>
-                {user?.userId ?? "Physician account"}
-              </div>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              title="Log out"
-              onClick={() => setLogoutOpen(true)}
-            >
-              Log out
-            </Button>
-            {/* Confirm before ending the session — same dialog as the other roles. */}
-            <Modal
-              open={logoutOpen}
-              onClose={() => setLogoutOpen(false)}
-              title="Log out?"
-              description="Are you sure you want to end your session?"
-              size="sm"
-              footer={
-                <>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setLogoutOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => {
-                      setLogoutOpen(false);
-                      handleLogout();
-                    }}
-                  >
-                    Log out
-                  </Button>
-                </>
-              }
-            >
-              {null}
-            </Modal>
-          </div>
+          <SidebarProfile
+            initials={`${user?.firstName?.[0] ?? 'D'}${user?.lastName?.[0] ?? 'R'}`}
+            name={user ? `Dr. ${user.firstName} ${user.lastName}` : 'Physician'}
+            subtitle={user?.userId ?? 'Physician account'}
+            onLogout={handleLogout}
+          />
         ),
       }}
       header={

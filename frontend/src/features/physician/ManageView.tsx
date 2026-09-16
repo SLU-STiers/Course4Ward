@@ -2,24 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { useAuthStore } from '../../store/authStore';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, PhysicianOrder } from '../../types';
 import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from '../../components/icons/NavIcons';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { useTableState } from '../../hooks/useTableState';
 import {
   formatDateLongFromKey,
-  toDateInputValue,
   toDateKey,
-  todayValue,
 } from '../../lib/format';
 import { manage } from './styles';
 
-import { CalendarModal } from './CalendarModal';
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
 import { mapPatient } from './patient';
 import type { DashboardPatient } from './types';
@@ -59,7 +54,6 @@ const SUMMARY_BADGE: Record<CourseInWard["status"], string> = {
 };
 
 export function ManageView() {
-  const user = useAuthStore((s) => s.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
@@ -92,7 +86,6 @@ export function ManageView() {
    * stays on "all order dates".
    */
   const [summaryDayFilter, setSummaryDayFilter] = useState<string | null>(null);
-  const [calendarOpen, setCalendarOpen] = useState(false);
 
   // This tab only manages patients who are currently in the ward.
   const admittedPatients = useMemo(
@@ -272,31 +265,6 @@ export function ManageView() {
     setDraft("");
     setSubmitted(false);
     setEditingOrders(edit);
-    setCalendarOpen(false);
-  };
-
-  const addOrder = () => {
-    const text = draft.trim();
-    if (!text) return;
-    if (!selected || !selected.admissions?.[0] || !user) return;
-    ordersApi
-      .create({
-        admissionId: selected.admissions[0].id,
-        orderedById: user.id,
-        orderContent: text,
-      })
-      .then(({ data }) => {
-        setOrdersByPatient((prev) => ({
-          ...prev,
-          [selected.id]: [...(prev[selected.id] ?? []), data],
-        }));
-        setDraft("");
-        setSubmitted(false);
-        if (activeOrderDate) {
-          setOrderDateFilter(orderDayValue(data.dateCreated) || todayValue());
-        }
-      })
-      .catch(() => undefined);
   };
 
   const updateOrder = (orderId: string, text: string) => {
@@ -375,11 +343,6 @@ export function ManageView() {
   const selectedDateLabel = activeOrderDate
     ? new Date(`${activeOrderDate}T00:00:00`).toLocaleDateString("en-GB")
     : "All dates";
-  // Open the calendar on whatever the physician is looking at, defaulting to the
-  // most recent day that has orders.
-  const calendarFocusDate = new Date(
-    `${activeOrderDate ?? orderDays[orderDays.length - 1] ?? todayValue()}T00:00:00`,
-  );
   // Order dates are the only navigable stops — order-less days are skipped. With
   // "all dates" showing, the first step focuses the day at that end of the
   // timeline (‹ the most recent, › the earliest), so day-by-day reading never
@@ -677,55 +640,17 @@ export function ManageView() {
               <SubmittedOrdersTimeline
                 title="Submitted Physician Orders"
                 fill
-                controls={
-                  <div className="ui-date-nav">
-                    <button
-                      type="button"
-                      className="ui-icon-btn"
-                      disabled={!hasPrevOrderDay}
-                      title={prevDayLabel}
-                      aria-label={prevDayLabel}
-                      onClick={() => goToAdjacentOrderDay(-1)}
-                    >
-                      <ChevronLeftIcon width={16} height={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className="ui-date-nav__field"
-                      onClick={() => setCalendarOpen(true)}
-                      aria-haspopup="dialog"
-                      aria-expanded={calendarOpen}
-                      aria-label={
-                        activeOrderDate
-                          ? `Filtered to orders on ${selectedDateLabel}. Open calendar`
-                          : "Showing orders from every date. Open calendar to filter by date"
-                      }
-                    >
-                      <CalendarIcon width={15} height={15} />
-                      {selectedDateLabel}
-                    </button>
-                    <button
-                      type="button"
-                      className="ui-icon-btn"
-                      disabled={!hasNextOrderDay}
-                      title={nextDayLabel}
-                      aria-label={nextDayLabel}
-                      onClick={() => goToAdjacentOrderDay(1)}
-                    >
-                      <ChevronRightIcon width={16} height={16} />
-                    </button>
-                    {activeOrderDate && (
-                      <button
-                        type="button"
-                        className="ui-date-nav__reset"
-                        title="Show orders from every date"
-                        onClick={() => setOrderDateFilter(null)}
-                      >
-                        Show all
-                      </button>
-                    )}
-                  </div>
-                }
+                dateValue={activeOrderDate ?? ""}
+                onDateChange={setOrderDateFilter}
+                onPrev={() => goToAdjacentOrderDay(-1)}
+                onNext={() => goToAdjacentOrderDay(1)}
+                prevDisabled={!hasPrevOrderDay}
+                nextDisabled={!hasNextOrderDay}
+                prevLabel={prevDayLabel}
+                nextLabel={nextDayLabel}
+                availableDays={orderDays}
+                onClear={() => setOrderDateFilter(null)}
+                clearLabel="Show all"
                 orders={displayedOrders.map((order) => ({
                   id: order.id,
                   dateCreated: order.dateCreated,
@@ -786,52 +711,20 @@ export function ManageView() {
                     />
 
                     <div style={manage.orderActions}>
+                      {submitted && !generatingSummary && (
+                        <span style={{ fontSize: 12, color: "#166534" }}>
+                          {summary ? "Summary saved" : "Orders saved"}
+                        </span>
+                      )}
                       <button
                         type="button"
-                        style={manage.addBtn}
-                        onClick={addOrder}
+                        style={manage.submitBtn}
+                        disabled={generatingSummary}
+                        aria-busy={generatingSummary}
+                        onClick={submitOrders}
                       >
-                        Add
+                        {generatingSummary ? "Generating..." : "Submit"}
                       </button>
-                      <div
-                        style={{ display: "flex", alignItems: "center", gap: 10 }}
-                      >
-                        {submitted && !generatingSummary && (
-                          <span style={{ fontSize: 12, color: "#166534" }}>
-                            {summary ? "Summary saved" : "Orders saved"}
-                          </span>
-                        )}
-                        {/* The row action column is a single View button, so the
-                            order-edit toggle lives here beside Submit. */}
-                        {editingOrders ? (
-                          <button
-                            type="button"
-                            style={manage.cancelBtn}
-                            onClick={() => setEditingOrders(false)}
-                          >
-                            Cancel
-                          </button>
-                        ) : (
-                          allOrders.length > 0 && (
-                            <button
-                              type="button"
-                              style={manage.cancelBtn}
-                              onClick={() => setEditingOrders(true)}
-                            >
-                              Edit
-                            </button>
-                          )
-                        )}
-                        <button
-                          type="button"
-                          style={manage.submitBtn}
-                          disabled={generatingSummary}
-                          aria-busy={generatingSummary}
-                          onClick={submitOrders}
-                        >
-                          {generatingSummary ? "Generating..." : "Submit"}
-                        </button>
-                      </div>
                     </div>
                   </>
                 }
@@ -959,22 +852,6 @@ export function ManageView() {
               </AiSummaryCard>
             </Panel>
           </Group>
-        )}
-
-        {calendarOpen && (
-          <CalendarModal
-            onClose={() => setCalendarOpen(false)}
-            focusDate={calendarFocusDate}
-            orderDays={orderDays}
-            onSelect={(date) => {
-              setOrderDateFilter(toDateInputValue(date));
-              setCalendarOpen(false);
-            }}
-            onClear={() => {
-              setOrderDateFilter(null);
-              setCalendarOpen(false);
-            }}
-          />
         )}
       </Panel>
     </Group>

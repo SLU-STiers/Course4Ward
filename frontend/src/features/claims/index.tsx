@@ -9,9 +9,10 @@ import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../../compone
 import { patientTableStyles } from '../../components/patientList/PatientTable';
 import { DashboardIcon, ExportIcon, RequestsIcon } from '../../components/icons/NavIcons';
 import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
+import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
-import { formatDateMedium, formatTimeMedium } from '../../lib/format';
+import { toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
 
 import { mapClaimToPatient, mapClaimToRequest } from './mappers';
@@ -51,7 +52,7 @@ export function ClaimsProcessorDashboard() {
   const [admissionTo, setAdmissionTo] = useState('');
   const [patientStatus, setPatientStatus] = useState<PatientStatus>('all');
   const [previewPatient, setPreviewPatient] = useState<CF4Patient | null>(null);
-  const [selectedOrderDate, setSelectedOrderDate] = useState('2026-04-15');
+  const [selectedOrderDate, setSelectedOrderDate] = useState('');
   const [evaluator, setEvaluator] = useState('Dr. Mike Mentzer');
   const overviewRequest = requests.find((request) => request.id === previewPatient?.claimId) ?? requests[0];
 
@@ -139,10 +140,27 @@ export function ClaimsProcessorDashboard() {
   const patientStart = (safePatientPage - 1) * patientPageSize;
   const visibleCf4Patients = sortedCf4Patients.slice(patientStart, patientStart + patientPageSize);
   const patientPages = Array.from({ length: patientPageCount }, (_, index) => index + 1);
-  const orderDates = [...new Set(requests.map((request) => {
-    const [day, month, year] = request.date.split(' ');
-    return `${year}-${{ Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' }[month] ?? '01'}-${day.padStart(2, '0')}`;
-  }))].sort().reverse();
+  /* The days of the claim on screen that actually carry orders — the only stops
+     the date arrows and the calendar offer. */
+  const orderDates = [
+    ...new Set(
+      (overviewRequest?.orders ?? [])
+        .map((order) => toDateKey(order.dateCreated))
+        .filter(Boolean),
+    ),
+  ].sort();
+  /* Like the physician's list: a picked day only sticks while the claim on
+     screen actually has orders on it. */
+  const activeOrderDate =
+    selectedOrderDate && orderDates.includes(selectedOrderDate)
+      ? selectedOrderDate
+      : '';
+  const hasPrevOrderDate =
+    orderDates.length > 0 &&
+    (!activeOrderDate || orderDates.some((day) => day < activeOrderDate));
+  const hasNextOrderDate =
+    orderDates.length > 0 &&
+    (!activeOrderDate || orderDates.some((day) => day > activeOrderDate));
 
   const setPatientSearchAndResetPage = (value: string) => {
     setPatientSearch(value);
@@ -155,9 +173,20 @@ export function ClaimsProcessorDashboard() {
   };
 
   const shiftOrderDate = (direction: -1 | 1) => {
-    const currentIndex = Math.max(0, orderDates.indexOf(selectedOrderDate));
-    const nextDate = orderDates[currentIndex + direction];
-    if (nextDate) setSelectedOrderDate(nextDate);
+    if (!orderDates.length) return;
+    if (!activeOrderDate) {
+      setSelectedOrderDate(
+        direction < 0 ? orderDates[orderDates.length - 1] : orderDates[0],
+      );
+      return;
+    }
+    const candidates = orderDates.filter((day) =>
+      direction < 0 ? day < activeOrderDate : day > activeOrderDate,
+    );
+    if (!candidates.length) return;
+    setSelectedOrderDate(
+      direction < 0 ? candidates[candidates.length - 1] : candidates[0],
+    );
   };
 
   const toggleSelectPatient = (id: string) => {
@@ -731,68 +760,30 @@ export function ClaimsProcessorDashboard() {
               </div>
 
               <div style={overviewStyles.rightColumn}>
-                <div style={overviewStyles.ordersCard}>
-                  <div style={overviewStyles.ordersHeader}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '20px' }}>📝</span>
-                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>
-                        Submitted Physician Orders
-                      </h3>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <button
-                        type="button"
-                        style={overviewStyles.arrowNavBtn}
-                        disabled={!orderDates.length || orderDates.indexOf(selectedOrderDate) >= orderDates.length - 1}
-                        onClick={() => shiftOrderDate(1)}
-                        title="Older date"
-                      >
-                        ‹
-                      </button>
-                      <input
-                        type="date"
-                        value={selectedOrderDate}
-                        onChange={(e) => setSelectedOrderDate(e.target.value)}
-                        style={overviewStyles.dateInput}
-                        aria-label="Order date"
-                      />
-                      <button
-                        type="button"
-                        style={overviewStyles.arrowNavBtn}
-                        disabled={!orderDates.length || orderDates.indexOf(selectedOrderDate) <= 0}
-                        onClick={() => shiftOrderDate(-1)}
-                        title="Newer date"
-                      >
-                        ›
-                      </button>
-                    </div>
-                  </div>
-
-                  <div style={overviewStyles.timelineContainer}>
-                    <div style={overviewStyles.timelineLine} />
-                    {overviewRequest?.orders.length ? overviewRequest.orders.map((order) => (
-                      <div style={overviewStyles.timelineItem} key={`${overviewRequest.id}-${order.dateCreated}`}>
-                        <div style={overviewStyles.timelineMeta}>
-                          <div style={{ fontWeight: 700, color: '#0f172a' }}>{formatDateMedium(order.dateCreated)}</div>
-                          <div style={{ color: '#64748b' }}>{formatTimeMedium(order.dateCreated)}</div>
-                        </div>
-                        <div style={overviewStyles.timelineDot} />
-                        <div style={overviewStyles.orderBox}>
-                          <div style={{ fontWeight: 700, fontSize: '14px', color: '#0f172a', marginBottom: '6px' }}>
-                            {order.doctor}
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#334155', lineHeight: '1.4' }}>
-                            {order.content}
-                          </div>
-                        </div>
-                      </div>
-                    )) : (
-                      <div style={{ padding: '24px', color: '#64748b', fontSize: '13px' }}>
-                        No physician orders are available for the selected claim.
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <SubmittedOrdersTimeline
+                  dateValue={activeOrderDate}
+                  onDateChange={setSelectedOrderDate}
+                  onPrev={() => shiftOrderDate(-1)}
+                  onNext={() => shiftOrderDate(1)}
+                  prevDisabled={!hasPrevOrderDate}
+                  nextDisabled={!hasNextOrderDate}
+                  availableDays={orderDates}
+                  onClear={() => setSelectedOrderDate('')}
+                  clearLabel="Show all"
+                  orders={(overviewRequest?.orders ?? [])
+                    .filter(
+                      (order) =>
+                        !activeOrderDate ||
+                        toDateKey(order.dateCreated) === activeOrderDate,
+                    )
+                    .map((order) => ({
+                      id: `${overviewRequest?.id}-${order.dateCreated}`,
+                      dateCreated: order.dateCreated,
+                      doctor: order.doctor,
+                      content: order.content,
+                    }))}
+                  emptyMessage="No physician orders are available for the selected claim."
+                />
                 <AiSummaryCard
                   badgeLabel={overviewRequest?.status ?? 'No claims'}
                   text={overviewRequest?.summaryText}
