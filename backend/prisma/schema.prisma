@@ -113,6 +113,7 @@ model User {
   summariesValidated         CourseInWard[]           @relation("ApprovedBy")
   admissions                 PatientAdmission[]
   additionalAdmissions       AdmissionPhysician[]
+  triagesRecorded            TriageAssessment[]       @relation("TriageRecordedBy")
   auditLogs                  AuditLog[]
   passwordResets             PasswordResetRequest[]
   summaryRequestsAsPhysician SummaryApprovalRequest[] @relation("RequestedPhysician")
@@ -157,8 +158,30 @@ model PatientAdmission {
   physician         User?   @relation(fields: [physicianId], references: [id])
   orders PhysicianOrder[]
   additionalPhysicians AdmissionPhysician[]
+  triage               TriageAssessment?
 
   @@map("patient_admissions")
+}
+
+model TriageAssessment {
+  id           String   @id @default(uuid())
+  admissionId  String   @unique
+  triageTime   String?
+  heartRate    Int?
+  respRate     Int?
+  spo2         Int?
+  bpSystolic   Int?
+  bpDiastolic  Int?
+  temperature  Decimal? @db.Decimal(4, 1)
+  painScore    Int?
+  recordedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  admission  PatientAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  recordedBy User?            @relation("TriageRecordedBy", fields: [recordedById], references: [id])
+
+  @@map("triage_assessments")
 }
 
 model AdmissionPhysician {

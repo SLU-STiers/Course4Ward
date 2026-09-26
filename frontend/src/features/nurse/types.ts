@@ -18,6 +18,7 @@ export type NursePatient = {
   /** Whole days since admission, counted inclusively. */
   daysInCare: number;
   initialAssessment?: string | null;
+  triage?: TriageAssessment;
   isOutpatient?: boolean;
   assignedDoctor?: string | null;
   additionalDoctors?: string[];

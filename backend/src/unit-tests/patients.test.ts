@@ -145,6 +145,7 @@ describe("Patients Module", () => {
         initialAssessment: null,
         physician: null,
         additionalPhysicians: [],
+        triage: null,
       },
     ],
   };
@@ -240,6 +241,58 @@ describe("Patients Module", () => {
             }),
           }),
         );
+      });
+
+      it("should store triage vitals in their own table and notes as initialAssessment", async () => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+
+        await service.create(
+          {
+            ...mockCreatePatientDto,
+            triageTime: "08:30",
+            heartRate: 88,
+            spo2: 97,
+            bp: "120/80",
+            temp: 37.4,
+            pain: 3,
+            notes: "Chest pain since morning",
+          },
+          mockUser.id,
+        );
+
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              admissions: expect.objectContaining({
+                create: expect.objectContaining({
+                  initialAssessment: "Chest pain since morning",
+                  triage: {
+                    create: {
+                      triageTime: "08:30",
+                      heartRate: 88,
+                      respRate: undefined,
+                      spo2: 97,
+                      bpSystolic: 120,
+                      bpDiastolic: 80,
+                      temperature: 37.4,
+                      painScore: 3,
+                      recordedById: mockUser.id,
+                    },
+                  },
+                }),
+              }),
+            }),
+          }),
+        );
+      });
+
+      it("should skip the triage row when no vitals are entered", async () => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+
+        await service.create(mockCreatePatientDto, mockUser.id);
+
+        const call = (prismaService.patient.create as jest.Mock).mock.calls[0][0];
+        expect(call.data.admissions.create.triage).toBeUndefined();
       });
 
       it("should reject inactive or unknown physicians", async () => {
@@ -426,6 +479,9 @@ describe("Patients Module", () => {
                     physician: { select: { id: true, firstName: true, lastName: true } },
                   },
                 },
+                triage: expect.objectContaining({
+                  select: expect.objectContaining({ heartRate: true, bpSystolic: true }),
+                }),
               },
             },
           },

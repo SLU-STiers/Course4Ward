@@ -8,7 +8,7 @@ import { statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
-import { parseTriageNotes } from './PatientModalParts';
+import { triageForDisplay } from './PatientModalParts';
 import type { AdmissionRecord, AdmissionStatus } from './types';
 import { patientsApi } from '../../services/domainApi';
 import type { Patient } from '../../types';
@@ -102,7 +102,7 @@ export function PatientView() {
             ({ physician }) => `Dr. ${physician.firstName} ${physician.lastName}`,
           ),
         ],
-        triage: parseTriageNotes(viewingAdmission?.initialAssessment),
+        triage: triageForDisplay(viewingAdmission),
         admissionKind: viewingAdmission?.isOutpatient ? ('ER / Outpatient' as const) : ('Ward' as const),
       }
     : null;

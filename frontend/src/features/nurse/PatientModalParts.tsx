@@ -6,6 +6,7 @@ import assessmentIcon from '../../Img/assesment.png';
 import careTeamIcon from '../../Img/care-team.png';
 import { addPatient as s } from './styles';
 import type { TriageAssessment } from './types';
+import type { PatientAdmission } from '../../types';
 
 export const SECTION_ICONS = {
   patientInfo: patientInfoIcon,
@@ -85,36 +86,23 @@ export function DoctorCard({
   );
 }
 
-/** Splits an admission's `initialAssessment` ("Triage — HR: 80, ...\nnotes") into vitals and notes. */
-export function parseTriageNotes(raw?: string | null): TriageAssessment {
-  const text = raw?.trim() || '';
-  const empty: TriageAssessment = {
-    time: '—',
-    heartRate: '—',
-    respRate: '—',
-    spo2: '—',
-    bp: '—',
-    temp: '—',
-    pain: '—',
-    notes: text || 'No triage assessment recorded.',
-  };
-  if (!text.startsWith('Triage —')) return empty;
-
-  const [vitalsLine, ...rest] = text.split('\n');
-  const pick = (label: string) => {
-    const match = vitalsLine.match(new RegExp(`${label}:\\s*([^,]+)`));
-    return match?.[1]?.trim() || '—';
-  };
-
+/** Formats an admission's stored triage row and notes for display. */
+export function triageForDisplay(admission?: PatientAdmission | null): TriageAssessment {
+  const triage = admission?.triage;
+  const show = (value: string | number | null | undefined) =>
+    value === null || value === undefined || value === '' ? '—' : String(value);
   return {
-    time: pick('Time'),
-    heartRate: pick('HR'),
-    respRate: pick('RR'),
-    spo2: pick('SpO2'),
-    bp: pick('BP'),
-    temp: pick('Temp'),
-    pain: pick('Pain'),
-    notes: rest.join('\n').trim() || '—',
+    time: show(triage?.triageTime),
+    heartRate: show(triage?.heartRate),
+    respRate: show(triage?.respRate),
+    spo2: show(triage?.spo2),
+    bp:
+      triage?.bpSystolic != null && triage?.bpDiastolic != null
+        ? `${triage.bpSystolic}/${triage.bpDiastolic}`
+        : '—',
+    temp: triage?.temperature != null ? Number(triage.temperature).toFixed(1) : '—',
+    pain: show(triage?.painScore),
+    notes: admission?.initialAssessment?.trim() || 'No notes recorded.',
   };
 }
 

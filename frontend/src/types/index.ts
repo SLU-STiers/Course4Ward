@@ -29,6 +29,20 @@ export interface PatientAdmission {
   initialAssessment?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
   additionalPhysicians?: { physician: { id: string; firstName: string; lastName: string } }[];
+  triage?: AdmissionTriage | null;
+}
+
+export interface AdmissionTriage {
+  triageTime: string | null;
+  heartRate: number | null;
+  respRate: number | null;
+  spo2: number | null;
+  bpSystolic: number | null;
+  bpDiastolic: number | null;
+  /** Prisma Decimal — serialized as a string. */
+  temperature: string | number | null;
+  painScore: number | null;
+  createdAt: string;
 }
 
 export type OrderType = 'MEDICATION' | 'ADMISSION' | 'DISCHARGE' | 'DIAGNOSTIC' | 'OTHER';

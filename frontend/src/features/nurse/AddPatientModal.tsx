@@ -50,6 +50,8 @@ const emptyForm = (): AddPatientFormResult => ({
   notes: '',
 });
 
+const toNumber = (value: string) => (value.trim() === '' ? undefined : Number(value));
+
 const doctorName = (doctor: PhysicianOption) => `Dr. ${doctor.firstName} ${doctor.lastName}`;
 const doctorLabel = (doctor: PhysicianOption) => `${doctorName(doctor)} (${doctor.userId})`;
 
@@ -140,12 +142,12 @@ export function AddPatientModal({
         physicianId: form.physicianId,
         additionalPhysicianIds: form.consultingPhysicianIds,
         triageTime: form.triageTime || undefined,
-        heartRate: form.heartRate || undefined,
-        respRate: form.respRate || undefined,
-        spo2: form.spo2 || undefined,
-        bp: form.bp || undefined,
-        temp: form.temp || undefined,
-        pain: form.pain || undefined,
+        heartRate: toNumber(form.heartRate),
+        respRate: toNumber(form.respRate),
+        spo2: toNumber(form.spo2),
+        bp: form.bp.replace(/\s+/g, '') || undefined,
+        temp: toNumber(form.temp),
+        pain: toNumber(form.pain),
         notes: form.notes || undefined,
       });
       onCreated();
@@ -267,13 +269,13 @@ export function AddPatientModal({
 
           <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Initial vital signs — leave blank if not taken">
             <div style={s.grid4}>
-              <Vital label="Time" value={form.triageTime} onChange={(v) => setField('triageTime', v)} placeholder="08:30" />
-              <Vital label="Heart Rate" unit="bpm" value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" />
-              <Vital label="Resp. Rate" unit="/min" value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="—" />
-              <Vital label="SpO₂" unit="%" value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="—" />
-              <Vital label="Blood Pressure" unit="mmHg" value={form.bp} onChange={(v) => setField('bp', v)} placeholder="120/80" />
-              <Vital label="Temp" unit="°C" value={form.temp} onChange={(v) => setField('temp', v)} placeholder="—" />
-              <Vital label="Pain" unit="/10" value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" />
+              <Vital label="Time" type="time" value={form.triageTime} onChange={(v) => setField('triageTime', v)} />
+              <Vital label="Heart Rate" unit="bpm" type="number" min={20} max={300} value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" />
+              <Vital label="Resp. Rate" unit="/min" type="number" min={1} max={80} value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="—" />
+              <Vital label="SpO₂" unit="%" type="number" min={50} max={100} value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="—" />
+              <Vital label="Blood Pressure" unit="mmHg" value={form.bp} onChange={(v) => setField('bp', v)} placeholder="120/80" pattern="\d{2,3}\s*/\s*\d{2,3}" title="Systolic/diastolic, e.g. 120/80" />
+              <Vital label="Temp" unit="°C" type="number" min={30} max={45} step={0.1} value={form.temp} onChange={(v) => setField('temp', v)} placeholder="—" />
+              <Vital label="Pain" unit="/10" type="number" min={0} max={10} value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" />
             </div>
             <div style={{ marginTop: 14 }}>
               <Field label="Notes">
@@ -419,23 +421,22 @@ function Vital({
   unit,
   value,
   onChange,
-  placeholder,
+  ...inputProps
 }: {
   label: string;
   unit?: string;
   value: string;
   onChange: (value: string) => void;
-  placeholder?: string;
-}) {
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'style'>) {
   return (
     <label style={s.vital}>
       <span style={s.vitalLabel}>{label}</span>
       <span style={s.vitalRow}>
         <input
+          {...inputProps}
           style={s.vitalInput}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
         />
         {unit && <span style={s.vitalUnit}>{unit}</span>}
       </span>

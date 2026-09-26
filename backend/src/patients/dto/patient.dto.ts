@@ -5,7 +5,9 @@ import {
   IsDateString,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
+  Matches,
   IsString,
   IsUUID,
   Max,
@@ -77,45 +79,60 @@ export class CreatePatientDto {
   @IsBoolean()
   isOutpatient?: boolean;
 
-  @ApiPropertyOptional({ description: 'Triage / clinical notes stored as initialAssessment' })
+  @ApiPropertyOptional({ description: 'Clinical notes stored as initialAssessment (legacy alias of notes)' })
   @IsOptional()
   @IsString()
   initialAssessment?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Triage time, 24h HH:mm', example: '08:30' })
   @IsOptional()
-  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Triage time must be in HH:mm format' })
   triageTime?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Heart rate (bpm)' })
   @IsOptional()
-  @IsString()
-  heartRate?: string;
+  @Type(() => Number)
+  @IsInt({ message: 'Heart rate must be a whole number' })
+  @Min(20, { message: 'Heart rate must be at least 20 bpm' })
+  @Max(300, { message: 'Heart rate must be at most 300 bpm' })
+  heartRate?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Respiratory rate (breaths/min)' })
   @IsOptional()
-  @IsString()
-  respRate?: string;
+  @Type(() => Number)
+  @IsInt({ message: 'Respiratory rate must be a whole number' })
+  @Min(1, { message: 'Respiratory rate must be at least 1 /min' })
+  @Max(80, { message: 'Respiratory rate must be at most 80 /min' })
+  respRate?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Oxygen saturation (%)' })
   @IsOptional()
-  @IsString()
-  spo2?: string;
+  @Type(() => Number)
+  @IsInt({ message: 'SpO2 must be a whole number' })
+  @Min(50, { message: 'SpO2 must be at least 50%' })
+  @Max(100, { message: 'SpO2 must be at most 100%' })
+  spo2?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Blood pressure as systolic/diastolic', example: '120/80' })
   @IsOptional()
-  @IsString()
+  @Matches(/^\d{2,3}\/\d{2,3}$/, { message: 'Blood pressure must look like 120/80' })
   bp?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Body temperature (°C)' })
   @IsOptional()
-  @IsString()
-  temp?: string;
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 1 }, { message: 'Temperature must be a number with at most 1 decimal' })
+  @Min(30, { message: 'Temperature must be at least 30 °C' })
+  @Max(45, { message: 'Temperature must be at most 45 °C' })
+  temp?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Pain score 0–10' })
   @IsOptional()
-  @IsString()
-  pain?: string;
+  @Type(() => Number)
+  @IsInt({ message: 'Pain score must be a whole number' })
+  @Min(0, { message: 'Pain score must be between 0 and 10' })
+  @Max(10, { message: 'Pain score must be between 0 and 10' })
+  pain?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

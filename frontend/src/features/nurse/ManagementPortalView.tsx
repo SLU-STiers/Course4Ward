@@ -10,7 +10,7 @@ import { formatDateLongFromKey, formatDateNumeric, toDateInputValue } from '../.
 import { daysInCare, statusColor } from '../../lib/patient';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
-import { parseTriageNotes } from './PatientModalParts';
+import { triageForDisplay } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { Patient, PhysicianOrder } from '../../types';
@@ -36,6 +36,7 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     status,
     daysInCare: daysInCare(admissionDate, admission?.dischargeDate),
     initialAssessment: admission?.initialAssessment,
+    triage: triageForDisplay(admission),
     isOutpatient: Boolean(admission?.isOutpatient),
     assignedDoctor: admission?.physician
       ? `Dr. ${admission.physician.firstName} ${admission.physician.lastName}`
@@ -152,7 +153,7 @@ export function ManagementPortalView() {
       ...(detailPatient.assignedDoctor ? [detailPatient.assignedDoctor] : []),
       ...(detailPatient.additionalDoctors ?? []),
     ],
-    triage: parseTriageNotes(detailPatient.initialAssessment),
+    triage: detailPatient.triage ?? triageForDisplay(null),
     admissionKind: detailPatient.isOutpatient ? ('ER / Outpatient' as const) : ('Ward' as const),
   } : null;
   const detailStatus: AdmissionStatus | undefined = detailPatient

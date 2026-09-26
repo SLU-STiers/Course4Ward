@@ -4,23 +4,35 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
 
-function buildInitialAssessment(dto: CreatePatientDto): string | null {
-  const vitals = [
-    dto.triageTime ? `Time: ${dto.triageTime}` : null,
-    dto.heartRate ? `HR: ${dto.heartRate}` : null,
-    dto.respRate ? `RR: ${dto.respRate}` : null,
-    dto.spo2 ? `SpO2: ${dto.spo2}` : null,
-    dto.bp ? `BP: ${dto.bp}` : null,
-    dto.temp ? `Temp: ${dto.temp}` : null,
-    dto.pain ? `Pain: ${dto.pain}` : null,
-  ].filter(Boolean);
-
-  const notes = (dto.notes ?? dto.initialAssessment ?? '').trim();
-  const parts: string[] = [];
-  if (vitals.length) parts.push(`Triage — ${vitals.join(', ')}`);
-  if (notes) parts.push(notes);
-  return parts.length ? parts.join('\n') : null;
+function buildTriage(dto: CreatePatientDto, nurseId: string) {
+  const [bpSystolic, bpDiastolic] = dto.bp ? dto.bp.split('/').map(Number) : [undefined, undefined];
+  const triage = {
+    triageTime: dto.triageTime,
+    heartRate: dto.heartRate,
+    respRate: dto.respRate,
+    spo2: dto.spo2,
+    bpSystolic,
+    bpDiastolic,
+    temperature: dto.temp,
+    painScore: dto.pain,
+  };
+  const hasAny = Object.values(triage).some((value) => value !== undefined && value !== null);
+  return hasAny ? { ...triage, recordedById: nurseId } : null;
 }
+
+const triageSelect = {
+  select: {
+    triageTime: true,
+    heartRate: true,
+    respRate: true,
+    spo2: true,
+    bpSystolic: true,
+    bpDiastolic: true,
+    temperature: true,
+    painScore: true,
+    createdAt: true,
+  },
+};
 
 const additionalPhysiciansSelect = {
   orderBy: { createdAt: 'asc' as const },
@@ -74,7 +86,8 @@ export class PatientsService {
           : Boolean(dto.isOutpatient);
 
     const admissionDate = dto.admissionDate ? new Date(dto.admissionDate) : new Date();
-    const initialAssessment = buildInitialAssessment(dto);
+    const initialAssessment = (dto.notes ?? dto.initialAssessment ?? '').trim() || null;
+    const triage = buildTriage(dto, nurseId);
 
     const patient = await this.prisma.patient.create({
       data: {
@@ -92,6 +105,7 @@ export class PatientsService {
             additionalPhysicians: additionalPhysicianIds.length
               ? { create: additionalPhysicianIds.map((physicianId) => ({ physicianId })) }
               : undefined,
+            triage: triage ? { create: triage } : undefined,
           },
         },
       },
@@ -106,6 +120,7 @@ export class PatientsService {
             initialAssessment: true,
             physician: { select: { id: true, firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
+            triage: triageSelect,
           },
         },
       },
@@ -145,6 +160,7 @@ export class PatientsService {
                   initialAssessment: true,
                   physician: { select: { firstName: true, lastName: true } },
                   additionalPhysicians: additionalPhysiciansSelect,
+                  triage: triageSelect,
                 },
               }
             : {
@@ -175,6 +191,7 @@ export class PatientsService {
             initialAssessment: true,
             physician: { select: { firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
+            triage: triageSelect,
           },
         },
       },
