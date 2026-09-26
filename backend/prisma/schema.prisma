@@ -112,6 +112,7 @@ model User {
   notes                      PhysicianNote[]
   summariesValidated         CourseInWard[]           @relation("ApprovedBy")
   admissions                 PatientAdmission[]
+  additionalAdmissions       AdmissionPhysician[]
   auditLogs                  AuditLog[]
   passwordResets             PasswordResetRequest[]
   summaryRequestsAsPhysician SummaryApprovalRequest[] @relation("RequestedPhysician")
@@ -155,8 +156,22 @@ model PatientAdmission {
   patient           Patient @relation(fields: [patientId], references: [id])
   physician         User?   @relation(fields: [physicianId], references: [id])
   orders PhysicianOrder[]
+  additionalPhysicians AdmissionPhysician[]
 
   @@map("patient_admissions")
+}
+
+model AdmissionPhysician {
+  admissionId String
+  physicianId String
+  createdAt   DateTime @default(now())
+
+  admission PatientAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  physician User             @relation(fields: [physicianId], references: [id])
+
+  @@id([admissionId, physicianId])
+  @@index([physicianId])
+  @@map("admission_physicians")
 }
 
 model PhysicianOrder {

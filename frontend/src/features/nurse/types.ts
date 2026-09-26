@@ -18,7 +18,9 @@ export type NursePatient = {
   /** Whole days since admission, counted inclusively. */
   daysInCare: number;
   initialAssessment?: string | null;
+  isOutpatient?: boolean;
   assignedDoctor?: string | null;
+  additionalDoctors?: string[];
 };
 export type TriageAssessment = {
   time: string;
@@ -37,6 +39,7 @@ export type PatientChart = {
   admissionDate: string;
   recordId: string;
   triage: TriageAssessment;
+  /** First entry is the attending physician; the rest are consulting physicians. */
   assignedDoctors: string[];
 };
 export type OrderSet = {

@@ -14,7 +14,11 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PatientsService } from './patients.service';
-import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
+import {
+  AddConsultingPhysicianDto,
+  CreatePatientDto,
+  UpdatePatientDto,
+} from './dto/patient.dto';
 
 @ApiTags('patients')
 @ApiBearerAuth()
@@ -69,5 +73,15 @@ export class PatientsController {
   @Roles(Role.NURSE)
   discharge(@Param('id') id: string, @CurrentUser() user: any) {
     return this.patientsService.dischargeAdmission(id, user.id);
+  }
+
+  @Post('admissions/:id/consulting-physicians')
+  @Roles(Role.NURSE)
+  addConsultingPhysician(
+    @Param('id') id: string,
+    @Body() dto: AddConsultingPhysicianDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.patientsService.addConsultingPhysician(id, dto.physicianId, user.id);
   }
 }

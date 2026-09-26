@@ -1,6 +1,6 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
@@ -10,7 +10,8 @@ import { formatDateLongFromKey, formatDateNumeric, toDateInputValue } from '../.
 import { daysInCare, statusColor } from '../../lib/patient';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
-import type { NursePatient, OrderSet } from './types';
+import { parseTriageNotes } from './PatientModalParts';
+import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { Patient, PhysicianOrder } from '../../types';
 
@@ -35,9 +36,13 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     status,
     daysInCare: daysInCare(admissionDate, admission?.dischargeDate),
     initialAssessment: admission?.initialAssessment,
+    isOutpatient: Boolean(admission?.isOutpatient),
     assignedDoctor: admission?.physician
       ? `Dr. ${admission.physician.firstName} ${admission.physician.lastName}`
       : null,
+    additionalDoctors: (admission?.additionalPhysicians ?? []).map(
+      ({ physician }) => `Dr. ${physician.firstName} ${physician.lastName}`,
+    ),
   };
 }
 
@@ -59,13 +64,21 @@ export function ManagementPortalView() {
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [detailName, setDetailName] = useState<string | null>(null);
 
-  useEffect(() => {
-    patientsApi.list().then(({ data }) => {
+  const loadPatients = useCallback(() => {
+    return patientsApi.list().then(({ data }) => {
       const mapped = data.map(mapPatient);
       setPatients(mapped);
-      if (mapped[0]) setSelectedId(mapped[0].id);
-    }).catch(() => setPatients([]));
+      return mapped;
+    });
   }, []);
+
+  useEffect(() => {
+    loadPatients()
+      .then((mapped) => {
+        if (mapped[0]) setSelectedId((current) => current ?? mapped[0].id);
+      })
+      .catch(() => setPatients([]));
+  }, [loadPatients]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -135,20 +148,20 @@ export function ManagementPortalView() {
     gender: detailPatient.gender,
     admissionDate: detailPatient.admissionDate,
     recordId: detailPatient.recordId,
-    assignedDoctors: detailPatient.assignedDoctor
-      ? [detailPatient.assignedDoctor]
-      : [],
-    triage: {
-      time: '—',
-      heartRate: '—',
-      respRate: '—',
-      spo2: '—',
-      bp: '—',
-      temp: '—',
-      pain: '—',
-      notes: detailPatient.initialAssessment ?? 'No triage assessment recorded.',
-    },
+    assignedDoctors: [
+      ...(detailPatient.assignedDoctor ? [detailPatient.assignedDoctor] : []),
+      ...(detailPatient.additionalDoctors ?? []),
+    ],
+    triage: parseTriageNotes(detailPatient.initialAssessment),
+    admissionKind: detailPatient.isOutpatient ? ('ER / Outpatient' as const) : ('Ward' as const),
   } : null;
+  const detailStatus: AdmissionStatus | undefined = detailPatient
+    ? detailPatient.status === 'discharged'
+      ? 'Discharged'
+      : detailPatient.isOutpatient
+        ? 'ER / Outpatient'
+        : 'Admitted'
+    : undefined;
 
   return (
     <div style={ui.layout}>
@@ -317,6 +330,10 @@ export function ManagementPortalView() {
       {detailChart && (
         <PatientDetailModal
           chart={detailChart}
+          status={detailStatus}
+          onCareTeamChanged={() => {
+            loadPatients().catch(() => undefined);
+          }}
           onClose={() => setDetailName(null)}
         />
       )}

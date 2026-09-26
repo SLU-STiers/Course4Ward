@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import { ui } from './styles';
+import { addPatient as s, ui } from './styles';
+import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 
 type PhysicianOption = {
   id: string;
@@ -18,7 +19,8 @@ export type AddPatientFormResult = {
   gender: string;
   admissionDate: string;
   admissionStatus: 'ADMITTED' | 'ER_OUTPATIENT';
-  physicianId?: string;
+  physicianId: string;
+  consultingPhysicianIds: string[];
   triageTime: string;
   heartRate: string;
   respRate: string;
@@ -37,6 +39,7 @@ const emptyForm = (): AddPatientFormResult => ({
   admissionDate: new Date().toISOString().slice(0, 10),
   admissionStatus: 'ADMITTED',
   physicianId: '',
+  consultingPhysicianIds: [],
   triageTime: '',
   heartRate: '',
   respRate: '',
@@ -47,6 +50,9 @@ const emptyForm = (): AddPatientFormResult => ({
   notes: '',
 });
 
+const doctorName = (doctor: PhysicianOption) => `Dr. ${doctor.firstName} ${doctor.lastName}`;
+const doctorLabel = (doctor: PhysicianOption) => `${doctorName(doctor)} (${doctor.userId})`;
+
 export function AddPatientModal({
   onClose,
   onCreated,
@@ -56,6 +62,7 @@ export function AddPatientModal({
 }) {
   const [form, setForm] = useState<AddPatientFormResult>(emptyForm);
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
+  const [pendingDoctorId, setPendingDoctorId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -69,6 +76,36 @@ export function AddPatientModal({
   const setField = <K extends keyof AddPatientFormResult>(key: K, value: AddPatientFormResult[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
+
+  const physicianById = (id: string) => physicians.find((doctor) => doctor.id === id);
+
+  const setAttending = (id: string) => {
+    setForm((prev) => ({
+      ...prev,
+      physicianId: id,
+      consultingPhysicianIds: prev.consultingPhysicianIds.filter((other) => other !== id),
+    }));
+  };
+
+  const addConsulting = () => {
+    if (!pendingDoctorId) return;
+    setForm((prev) => ({
+      ...prev,
+      consultingPhysicianIds: [...prev.consultingPhysicianIds, pendingDoctorId],
+    }));
+    setPendingDoctorId('');
+  };
+
+  const removeConsulting = (id: string) => {
+    setForm((prev) => ({
+      ...prev,
+      consultingPhysicianIds: prev.consultingPhysicianIds.filter((other) => other !== id),
+    }));
+  };
+
+  const availableToAdd = physicians.filter(
+    (doctor) => doctor.id !== form.physicianId && !form.consultingPhysicianIds.includes(doctor.id),
+  );
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -84,6 +121,10 @@ export function AddPatientModal({
       setError('Please enter a valid age.');
       return;
     }
+    if (!form.physicianId) {
+      setError('Please select the attending physician.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -96,7 +137,8 @@ export function AddPatientModal({
           ? new Date(`${form.admissionDate}T09:00:00`).toISOString()
           : undefined,
         admissionStatus: form.admissionStatus,
-        physicianId: form.physicianId || undefined,
+        physicianId: form.physicianId,
+        additionalPhysicianIds: form.consultingPhysicianIds,
         triageTime: form.triageTime || undefined,
         heartRate: form.heartRate || undefined,
         respRate: form.respRate || undefined,
@@ -120,160 +162,283 @@ export function AddPatientModal({
     }
   };
 
+  const isEr = form.admissionStatus === 'ER_OUTPATIENT';
+
   return (
     <div style={ui.overlay} onClick={onClose}>
-      <form style={ui.modalWide} onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
-        <div style={ui.modalHeaderRow}>
-          <h3 style={{ ...ui.sectionTitle, margin: 0 }}>Add Patient</h3>
+      <form style={s.modal} onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+        <header style={s.header}>
+          <div>
+            <div style={s.titleRow}>
+              <h3 style={s.title}>Add Patient</h3>
+              <span style={isEr ? ui.badgeEr : ui.badgeAdmitted}>
+                {isEr ? 'ER / Outpatient' : 'Admitted'}
+              </span>
+            </div>
+            <p style={s.subtitle}>Register a new patient and assign their care team.</p>
+          </div>
           <button type="button" style={ui.closeX} onClick={onClose} aria-label="Close">
             ✕
           </button>
+        </header>
+
+        <div style={s.body}>
+          <Section icon={SECTION_ICONS.patientInfo} title="Patient Information" hint="Basic demographics and admission details">
+            <div style={s.grid2}>
+              <Field label="First Name" required>
+                <input
+                  style={s.input}
+                  value={form.firstName}
+                  onChange={(e) => setField('firstName', e.target.value)}
+                  placeholder="e.g. Juan"
+                  required
+                />
+              </Field>
+              <Field label="Last Name" required>
+                <input
+                  style={s.input}
+                  value={form.lastName}
+                  onChange={(e) => setField('lastName', e.target.value)}
+                  placeholder="e.g. Dela Cruz"
+                  required
+                />
+              </Field>
+              <Field label="Age" required>
+                <input
+                  style={s.input}
+                  type="number"
+                  min={0}
+                  max={130}
+                  value={form.age || ''}
+                  onChange={(e) => setField('age', Number(e.target.value))}
+                  placeholder="Years"
+                  required
+                />
+              </Field>
+              <Field label="Gender" required>
+                <select
+                  style={s.input}
+                  value={form.gender}
+                  onChange={(e) => setField('gender', e.target.value)}
+                >
+                  <option>Male</option>
+                  <option>Female</option>
+                  <option>Other</option>
+                </select>
+              </Field>
+              <Field label="Admission Date" required>
+                <input
+                  style={s.input}
+                  type="date"
+                  value={form.admissionDate}
+                  onChange={(e) => setField('admissionDate', e.target.value)}
+                  required
+                />
+              </Field>
+              <div>
+                <span style={s.label}>
+                  Admission Status<span style={s.required}>*</span>
+                </span>
+                <div style={s.segmented} role="radiogroup" aria-label="Admission status">
+                  {(
+                    [
+                      ['ADMITTED', 'Ward'],
+                      ['ER_OUTPATIENT', 'ER / Outpatient'],
+                    ] as const
+                  ).map(([value, label]) => {
+                    const active = form.admissionStatus === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        style={{ ...s.segment, ...(active ? s.segmentActive : {}) }}
+                        onClick={() => setField('admissionStatus', value)}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </Section>
+
+          <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Initial vital signs — leave blank if not taken">
+            <div style={s.grid4}>
+              <Vital label="Time" value={form.triageTime} onChange={(v) => setField('triageTime', v)} placeholder="08:30" />
+              <Vital label="Heart Rate" unit="bpm" value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" />
+              <Vital label="Resp. Rate" unit="/min" value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="—" />
+              <Vital label="SpO₂" unit="%" value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="—" />
+              <Vital label="Blood Pressure" unit="mmHg" value={form.bp} onChange={(v) => setField('bp', v)} placeholder="120/80" />
+              <Vital label="Temp" unit="°C" value={form.temp} onChange={(v) => setField('temp', v)} placeholder="—" />
+              <Vital label="Pain" unit="/10" value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" />
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <Field label="Notes">
+                <textarea
+                  style={s.textarea}
+                  value={form.notes}
+                  onChange={(e) => setField('notes', e.target.value)}
+                  placeholder="Chief complaint, initial assessment, clinical notes..."
+                />
+              </Field>
+            </div>
+          </Section>
+
+          <Section icon={SECTION_ICONS.careTeam} title="Care Team" hint="Attending physician leads care; consultants advise">
+            <Field label="Attending Physician" required>
+              <select
+                style={s.input}
+                value={form.physicianId}
+                onChange={(e) => setAttending(e.target.value)}
+                required
+              >
+                <option value="" disabled>
+                  Select attending physician
+                </option>
+                {physicians.map((doctor) => (
+                  <option key={doctor.id} value={doctor.id}>
+                    {doctorLabel(doctor)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <div style={{ marginTop: 16 }}>
+              <span style={s.label}>Consulting Physicians</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {form.consultingPhysicianIds.length ? (
+                  form.consultingPhysicianIds.map((id) => {
+                    const doctor = physicianById(id);
+                    if (!doctor) return null;
+                    return (
+                      <DoctorCard
+                        key={id}
+                        name={doctorName(doctor)}
+                        meta={`Consulting · ${doctor.userId}`}
+                        action={
+                          <button
+                            type="button"
+                            style={s.removeIcon}
+                            onClick={() => removeConsulting(id)}
+                            aria-label={`Remove ${doctorName(doctor)}`}
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        }
+                      />
+                    );
+                  })
+                ) : (
+                  <div style={s.emptyDoctors}>No consulting physicians added.</div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <select
+                  style={{ ...s.input, flex: 1 }}
+                  value={pendingDoctorId}
+                  onChange={(e) => setPendingDoctorId(e.target.value)}
+                  disabled={!availableToAdd.length}
+                >
+                  <option value="">
+                    {availableToAdd.length ? 'Select a consulting physician' : 'No other physicians available'}
+                  </option>
+                  {availableToAdd.map((doctor) => (
+                    <option key={doctor.id} value={doctor.id}>
+                      {doctorLabel(doctor)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  style={{
+                    ...ui.outlineBtn,
+                    height: 40,
+                    opacity: pendingDoctorId ? 1 : 0.5,
+                    cursor: pendingDoctorId ? 'pointer' : 'not-allowed',
+                  }}
+                  onClick={addConsulting}
+                  disabled={!pendingDoctorId}
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+          </Section>
+
+          {error && (
+            <div style={s.error} role="alert">
+              <span aria-hidden="true">⚠</span>
+              {error}
+            </div>
+          )}
         </div>
 
-        <div style={ui.detailGrid}>
-          <Field label="First Name">
-            <input
-              style={{ ...ui.input, width: '100%', boxSizing: 'border-box' }}
-              value={form.firstName}
-              onChange={(e) => setField('firstName', e.target.value)}
-              placeholder="First name"
-              required
-            />
-          </Field>
-          <Field label="Last Name">
-            <input
-              style={{ ...ui.input, width: '100%', boxSizing: 'border-box' }}
-              value={form.lastName}
-              onChange={(e) => setField('lastName', e.target.value)}
-              placeholder="Last name"
-              required
-            />
-          </Field>
-          <Field label="Age">
-            <input
-              style={{ ...ui.input, width: '100%', boxSizing: 'border-box' }}
-              type="number"
-              min={0}
-              max={130}
-              value={form.age || ''}
-              onChange={(e) => setField('age', Number(e.target.value))}
-              placeholder="Age"
-              required
-            />
-          </Field>
-          <Field label="Gender">
-            <select
-              style={{ ...ui.input, width: '100%', boxSizing: 'border-box' }}
-              value={form.gender}
-              onChange={(e) => setField('gender', e.target.value)}
-            >
-              <option>Male</option>
-              <option>Female</option>
-              <option>Other</option>
-            </select>
-          </Field>
-          <Field label="Admission Date">
-            <input
-              style={{ ...ui.input, width: '100%', boxSizing: 'border-box' }}
-              type="date"
-              value={form.admissionDate}
-              onChange={(e) => setField('admissionDate', e.target.value)}
-              required
-            />
-          </Field>
-          <Field label="Admission Status">
-            <select
-              style={{ ...ui.input, width: '100%', boxSizing: 'border-box' }}
-              value={form.admissionStatus}
-              onChange={(e) =>
-                setField('admissionStatus', e.target.value as AddPatientFormResult['admissionStatus'])
-              }
-            >
-              <option value="ADMITTED">Fully admitted (ward)</option>
-              <option value="ER_OUTPATIENT">ER / Outpatient (not fully admitted)</option>
-            </select>
-          </Field>
-        </div>
-
-        <h4 style={ui.subhead}>Triage Assessment</h4>
-        <div style={ui.triageGrid}>
-          <TriageInput label="Time" value={form.triageTime} onChange={(v) => setField('triageTime', v)} placeholder="e.g. 08:30" />
-          <TriageInput label="Heart Rate" value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="bpm" />
-          <TriageInput label="Respiratory Rate" value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="/min" />
-          <TriageInput label="SpO₂" value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="%" />
-          <TriageInput label="BP" value={form.bp} onChange={(v) => setField('bp', v)} placeholder="e.g. 120/80" />
-          <TriageInput label="Temp" value={form.temp} onChange={(v) => setField('temp', v)} placeholder="°C" />
-          <TriageInput label="Pain" value={form.pain} onChange={(v) => setField('pain', v)} placeholder="0–10" />
-        </div>
-
-        <div style={{ marginTop: 10 }}>
-          <div style={ui.fieldLabel}>Notes</div>
-          <textarea
-            style={{ ...ui.input, width: '100%', minHeight: 72, resize: 'vertical', boxSizing: 'border-box' }}
-            value={form.notes}
-            onChange={(e) => setField('notes', e.target.value)}
-            placeholder="Initial assessment / clinical notes..."
-          />
-        </div>
-
-        <h4 style={ui.subhead}>Assigned Doctor</h4>
-        <select
-          style={{ ...ui.input, width: '100%', boxSizing: 'border-box' }}
-          value={form.physicianId}
-          onChange={(e) => setField('physicianId', e.target.value)}
-        >
-          <option value="">Select physician (optional)</option>
-          {physicians.map((doctor) => (
-            <option key={doctor.id} value={doctor.id}>
-              Dr. {doctor.firstName} {doctor.lastName} ({doctor.userId})
-            </option>
-          ))}
-        </select>
-
-        {error ? <p style={{ color: '#dc2626', fontSize: 12, margin: '10px 0 0' }}>{error}</p> : null}
-
-        <div style={ui.modalActions}>
-          <button type="button" style={ui.outlineBtn} onClick={onClose} disabled={saving}>
+        <footer style={s.footer}>
+          <button type="button" style={{ ...ui.outlineBtn, height: 40 }} onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button type="submit" style={ui.primaryBtn} disabled={saving}>
-            {saving ? 'Saving...' : 'Register Patient'}
+          <button
+            type="submit"
+            style={{ ...ui.primaryBtn, height: 40, padding: '0 20px', opacity: saving ? 0.7 : 1 }}
+            disabled={saving}
+          >
+            {saving ? 'Registering...' : 'Register Patient'}
           </button>
-        </div>
+        </footer>
       </form>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div>
-      <div style={ui.fieldLabel}>{label}</div>
+    <label style={{ display: 'block' }}>
+      <span style={s.label}>
+        {label}
+        {required && <span style={s.required}>*</span>}
+      </span>
       {children}
-    </div>
+    </label>
   );
 }
 
-function TriageInput({
+function Vital({
   label,
+  unit,
   value,
   onChange,
   placeholder,
 }: {
   label: string;
+  unit?: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
 }) {
   return (
-    <div style={ui.triageCell}>
-      <div style={ui.fieldLabel}>{label}</div>
-      <input
-        style={{ ...ui.input, width: '100%', boxSizing: 'border-box', marginTop: 4 }}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-      />
-    </div>
+    <label style={s.vital}>
+      <span style={s.vitalLabel}>{label}</span>
+      <span style={s.vitalRow}>
+        <input
+          style={s.vitalInput}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
+        {unit && <span style={s.vitalUnit}>{unit}</span>}
+      </span>
+    </label>
   );
 }

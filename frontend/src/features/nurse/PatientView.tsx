@@ -8,6 +8,7 @@ import { statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
+import { parseTriageNotes } from './PatientModalParts';
 import type { AdmissionRecord, AdmissionStatus } from './types';
 import { patientsApi } from '../../services/domainApi';
 import type { Patient } from '../../types';
@@ -30,38 +31,6 @@ function toRecord(patient: Patient): AdmissionRecord {
       : null,
     status: deriveStatus(patient),
     isOutpatient: Boolean(admission?.isOutpatient),
-  };
-}
-
-function parseTriageNotes(raw?: string | null) {
-  const text = raw?.trim() || '';
-  const empty = {
-    time: '—',
-    heartRate: '—',
-    respRate: '—',
-    spo2: '—',
-    bp: '—',
-    temp: '—',
-    pain: '—',
-    notes: text || 'No triage assessment recorded.',
-  };
-  if (!text.startsWith('Triage —')) return empty;
-
-  const [vitalsLine, ...rest] = text.split('\n');
-  const pick = (label: string) => {
-    const match = vitalsLine.match(new RegExp(`${label}:\\s*([^,]+)`));
-    return match?.[1]?.trim() || '—';
-  };
-
-  return {
-    time: pick('Time'),
-    heartRate: pick('HR'),
-    respRate: pick('RR'),
-    spo2: pick('SpO2'),
-    bp: pick('BP'),
-    temp: pick('Temp'),
-    pain: pick('Pain'),
-    notes: rest.join('\n').trim() || '—',
   };
 }
 
@@ -125,9 +94,14 @@ export function PatientView() {
           ? new Date(viewingAdmission.admissionDate).toLocaleDateString('en-GB')
           : '—',
         recordId: viewingAdmission?.id ?? viewingPatient.id,
-        assignedDoctors: viewingAdmission?.physician
-          ? [`Dr. ${viewingAdmission.physician.firstName} ${viewingAdmission.physician.lastName}`]
-          : [],
+        assignedDoctors: [
+          ...(viewingAdmission?.physician
+            ? [`Dr. ${viewingAdmission.physician.firstName} ${viewingAdmission.physician.lastName}`]
+            : []),
+          ...(viewingAdmission?.additionalPhysicians ?? []).map(
+            ({ physician }) => `Dr. ${physician.firstName} ${physician.lastName}`,
+          ),
+        ],
         triage: parseTriageNotes(viewingAdmission?.initialAssessment),
         admissionKind: viewingAdmission?.isOutpatient ? ('ER / Outpatient' as const) : ('Ward' as const),
       }
@@ -270,6 +244,7 @@ export function PatientView() {
           chart={viewing}
           onClose={() => setViewingName(null)}
           status={viewingRecord?.status}
+          onCareTeamChanged={reload}
           onDischarge={
             viewingRecord && viewingRecord.status !== 'Discharged'
               ? () => discharge(viewingRecord.id)

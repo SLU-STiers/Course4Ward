@@ -20,6 +20,16 @@ const mockPrismaService = {
     findUnique: jest.fn(),
     update: jest.fn(),
   },
+  user: {
+    count: jest.fn(),
+    findFirst: jest.fn(),
+  },
+  patientAdmission: {
+    findUnique: jest.fn(),
+  },
+  admissionPhysician: {
+    create: jest.fn(),
+  },
 } as unknown as jest.Mocked<PrismaService>;
 
 const mockAuditLogService = {
@@ -134,6 +144,7 @@ describe("Patients Module", () => {
         isOutpatient: false,
         initialAssessment: null,
         physician: null,
+        additionalPhysicians: [],
       },
     ],
   };
@@ -143,6 +154,7 @@ describe("Patients Module", () => {
     lastName: "Doe",
     gender: "MALE",
     dateOfBirth: "1990-01-01",
+    physicianId: "physician-123",
   };
 
   const mockUpdatePatientDto = {
@@ -166,6 +178,7 @@ describe("Patients Module", () => {
     auditLogService = module.get(AuditLogService);
 
     jest.clearAllMocks();
+    (mockPrismaService.user.count as jest.Mock).mockResolvedValue(1);
   });
 
   // ============ SERVICE TESTS ============
@@ -188,7 +201,7 @@ describe("Patients Module", () => {
               admissions: expect.objectContaining({
                 create: expect.objectContaining({
                   isOutpatient: false,
-                  physicianId: null,
+                  physicianId: "physician-123",
                 }),
               }),
             }),
@@ -200,6 +213,42 @@ describe("Patients Module", () => {
           action: "PATIENT_CREATED",
         });
         expect(result).toEqual(mockPatientSimple);
+      });
+
+      it("should attach additional physicians to the admission", async () => {
+        (prismaService.user.count as jest.Mock).mockResolvedValue(3);
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+
+        await service.create(
+          {
+            ...mockCreatePatientDto,
+            additionalPhysicianIds: ["physician-2", "physician-3", "physician-123"],
+          },
+          mockUser.id,
+        );
+
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              admissions: expect.objectContaining({
+                create: expect.objectContaining({
+                  additionalPhysicians: {
+                    create: [{ physicianId: "physician-2" }, { physicianId: "physician-3" }],
+                  },
+                }),
+              }),
+            }),
+          }),
+        );
+      });
+
+      it("should reject inactive or unknown physicians", async () => {
+        (prismaService.user.count as jest.Mock).mockResolvedValue(0);
+
+        await expect(service.create(mockCreatePatientDto, mockUser.id)).rejects.toThrow(
+          "One or more selected physicians were not found or are inactive",
+        );
+        expect(prismaService.patient.create).not.toHaveBeenCalled();
       });
 
       it("should create a patient without dateOfBirth", async () => {
@@ -250,6 +299,65 @@ describe("Patients Module", () => {
       });
     });
 
+    describe("addConsultingPhysician", () => {
+      const activeAdmission = {
+        dischargeDate: null,
+        physicianId: "physician-123",
+        additionalPhysicians: [{ physicianId: "physician-2" }],
+      };
+
+      it("should add a consulting physician to an active admission", async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(activeAdmission);
+        (prismaService.user.findFirst as jest.Mock).mockResolvedValue({ id: "physician-3" });
+        const created = { physician: { id: "physician-3", firstName: "Ana", lastName: "Reyes" } };
+        (prismaService.admissionPhysician.create as jest.Mock).mockResolvedValue(created);
+
+        const result = await service.addConsultingPhysician(mockAdmissionId, "physician-3", mockUser.id);
+
+        expect(prismaService.admissionPhysician.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: { admissionId: mockAdmissionId, physicianId: "physician-3" },
+          }),
+        );
+        expect(auditLogService.record).toHaveBeenCalledWith({
+          userId: mockUser.id,
+          action: "PATIENT_UPDATED",
+        });
+        expect(result).toEqual(created);
+      });
+
+      it("should reject discharged admissions", async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+          ...activeAdmission,
+          dischargeDate: new Date(),
+        });
+
+        await expect(
+          service.addConsultingPhysician(mockAdmissionId, "physician-3", mockUser.id),
+        ).rejects.toThrow("Cannot add physicians to a discharged patient");
+        expect(prismaService.admissionPhysician.create).not.toHaveBeenCalled();
+      });
+
+      it("should reject physicians already on the care team", async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(activeAdmission);
+
+        await expect(
+          service.addConsultingPhysician(mockAdmissionId, "physician-2", mockUser.id),
+        ).rejects.toThrow("This physician is already on the care team");
+        await expect(
+          service.addConsultingPhysician(mockAdmissionId, "physician-123", mockUser.id),
+        ).rejects.toThrow("This physician is already on the care team");
+      });
+
+      it("should throw when the admission does not exist", async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(null);
+
+        await expect(
+          service.addConsultingPhysician(mockAdmissionId, "physician-3", mockUser.id),
+        ).rejects.toThrow("Admission not found");
+      });
+    });
+
     describe("findAssignedTo", () => {
       it("should return patients assigned to the user", async () => {
         (prismaService.patient.findMany as jest.Mock).mockResolvedValue([
@@ -258,15 +366,26 @@ describe("Patients Module", () => {
 
         const result = await service.findAssignedTo(mockUser.id, Role.PHYSICIAN);
 
+        const physicianScope = {
+          OR: [
+            { physicianId: mockUser.id },
+            { additionalPhysicians: { some: { physicianId: mockUser.id } } },
+          ],
+        };
         expect(prismaService.patient.findMany).toHaveBeenCalledWith({
           where: {
-            admissions: { some: { physicianId: mockUser.id } },
+            admissions: { some: physicianScope },
           },
           include: {
             admissions: {
-              where: { physicianId: mockUser.id },
+              where: physicianScope,
               orderBy: { admissionDate: "desc" },
-              select: { id: true, admissionDate: true, dischargeDate: true },
+              select: {
+                id: true,
+                admissionDate: true,
+                dischargeDate: true,
+                isOutpatient: true,
+              },
             },
           },
           orderBy: { updatedAt: "desc" },
@@ -298,8 +417,15 @@ describe("Patients Module", () => {
                 id: true,
                 admissionDate: true,
                 dischargeDate: true,
+                isOutpatient: true,
                 initialAssessment: true,
                 physician: { select: { firstName: true, lastName: true } },
+                additionalPhysicians: {
+                  orderBy: { createdAt: "asc" },
+                  select: {
+                    physician: { select: { id: true, firstName: true, lastName: true } },
+                  },
+                },
               },
             },
           },

@@ -22,6 +22,11 @@ function buildInitialAssessment(dto: CreatePatientDto): string | null {
   return parts.length ? parts.join('\n') : null;
 }
 
+const additionalPhysiciansSelect = {
+  orderBy: { createdAt: 'asc' as const },
+  select: { physician: { select: { id: true, firstName: true, lastName: true } } },
+};
+
 function resolveDateOfBirth(dto: CreatePatientDto): Date | undefined {
   if (dto.dateOfBirth) return new Date(dto.dateOfBirth);
   if (dto.age === undefined || dto.age === null) return undefined;
@@ -50,13 +55,15 @@ export class PatientsService {
 
   // Nurse patient management: demographics + admission (ward or ER/outpatient)
   async create(dto: CreatePatientDto, nurseId: string) {
-    if (dto.physicianId) {
-      const physician = await this.prisma.user.findFirst({
-        where: { id: dto.physicianId, role: Role.PHYSICIAN, isActive: true },
-      });
-      if (!physician) {
-        throw new BadRequestException('Assigned physician not found or inactive');
-      }
+    const additionalPhysicianIds = [...new Set(dto.additionalPhysicianIds ?? [])].filter(
+      (id) => id !== dto.physicianId,
+    );
+    const requiredIds = [dto.physicianId, ...additionalPhysicianIds];
+    const activePhysicians = await this.prisma.user.count({
+      where: { id: { in: requiredIds }, role: Role.PHYSICIAN, isActive: true },
+    });
+    if (activePhysicians !== requiredIds.length) {
+      throw new BadRequestException('One or more selected physicians were not found or are inactive');
     }
 
     const isOutpatient =
@@ -81,7 +88,10 @@ export class PatientsService {
             isOutpatient,
             outpatientSetAt: isOutpatient ? admissionDate : null,
             initialAssessment,
-            physicianId: dto.physicianId || null,
+            physicianId: dto.physicianId,
+            additionalPhysicians: additionalPhysicianIds.length
+              ? { create: additionalPhysicianIds.map((physicianId) => ({ physicianId })) }
+              : undefined,
           },
         },
       },
@@ -95,6 +105,7 @@ export class PatientsService {
             isOutpatient: true,
             initialAssessment: true,
             physician: { select: { id: true, firstName: true, lastName: true } },
+            additionalPhysicians: additionalPhysiciansSelect,
           },
         },
       },
@@ -112,11 +123,17 @@ export class PatientsService {
   // the requesting physician/nurse's active assignments.
   async findAssignedTo(userId: string, role: Role) {
     const nurseScope = role === Role.NURSE;
+    const physicianScope = {
+      OR: [
+        { physicianId: userId },
+        { additionalPhysicians: { some: { physicianId: userId } } },
+      ],
+    };
     return this.prisma.patient.findMany({
-      where: { admissions: { some: nurseScope ? {} : { physicianId: userId } } },
+      where: { admissions: { some: nurseScope ? {} : physicianScope } },
       include: {
         admissions: {
-          ...(nurseScope ? {} : { where: { physicianId: userId } }),
+          ...(nurseScope ? {} : { where: physicianScope }),
           orderBy: { admissionDate: 'desc' },
           ...(nurseScope
             ? {
@@ -127,6 +144,7 @@ export class PatientsService {
                   isOutpatient: true,
                   initialAssessment: true,
                   physician: { select: { firstName: true, lastName: true } },
+                  additionalPhysicians: additionalPhysiciansSelect,
                 },
               }
             : {
@@ -156,6 +174,7 @@ export class PatientsService {
             isOutpatient: true,
             initialAssessment: true,
             physician: { select: { firstName: true, lastName: true } },
+            additionalPhysicians: additionalPhysiciansSelect,
           },
         },
       },
@@ -203,5 +222,40 @@ export class PatientsService {
     });
     await this.auditLog.record({ userId, action: 'REGISTER_PATIENT' });
     return updated;
+  }
+
+  async addConsultingPhysician(admissionId: string, physicianId: string, nurseId: string) {
+    const admission = await this.prisma.patientAdmission.findUnique({
+      where: { id: admissionId },
+      select: {
+        dischargeDate: true,
+        physicianId: true,
+        additionalPhysicians: { select: { physicianId: true } },
+      },
+    });
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (admission.dischargeDate) {
+      throw new BadRequestException('Cannot add physicians to a discharged patient');
+    }
+    if (
+      admission.physicianId === physicianId ||
+      admission.additionalPhysicians.some((entry) => entry.physicianId === physicianId)
+    ) {
+      throw new BadRequestException('This physician is already on the care team');
+    }
+
+    const physician = await this.prisma.user.findFirst({
+      where: { id: physicianId, role: Role.PHYSICIAN, isActive: true },
+      select: { id: true },
+    });
+    if (!physician) throw new BadRequestException('Physician not found or inactive');
+
+    const entry = await this.prisma.admissionPhysician.create({
+      data: { admissionId, physicianId },
+      select: { physician: { select: { id: true, firstName: true, lastName: true } } },
+    });
+
+    await this.auditLog.record({ userId: nurseId, action: 'PATIENT_UPDATED' });
+    return entry;
   }
 }

@@ -55,6 +55,8 @@ export const patientsApi = {
   create: (data: Record<string, unknown>) => api.post<Patient>('/patients', data),
   update: (id: string, data: Partial<Patient>) => api.patch<Patient>(`/patients/${id}`, data),
   discharge: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/discharge`),
+  addConsultingPhysician: (admissionId: string, physicianId: string) =>
+    api.post(`/patients/admissions/${admissionId}/consulting-physicians`, { physicianId }),
 };
 
 // --- Orders ---

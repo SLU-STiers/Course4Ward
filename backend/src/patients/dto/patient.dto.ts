@@ -1,4 +1,6 @@
 import {
+  ArrayUnique,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -55,10 +57,19 @@ export class CreatePatientDto {
   @IsIn(['ADMITTED', 'ER_OUTPATIENT'])
   admissionStatus?: 'ADMITTED' | 'ER_OUTPATIENT';
 
-  @ApiPropertyOptional({ description: 'Assigned physician user id (UUID)' })
-  @IsOptional()
+  @ApiProperty({ description: 'Attending physician user id (UUID)' })
   @IsUUID()
-  physicianId?: string;
+  physicianId: string;
+
+  @ApiPropertyOptional({
+    description: 'Consulting physicians on the admission (UUIDs)',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('all', { each: true })
+  additionalPhysicianIds?: string[];
 
   @ApiPropertyOptional({ description: 'Legacy flag; preferred: admissionStatus' })
   @IsOptional()
@@ -110,6 +121,12 @@ export class CreatePatientDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+export class AddConsultingPhysicianDto {
+  @ApiProperty({ description: 'Physician user id (UUID) to add as a consultant' })
+  @IsUUID()
+  physicianId: string;
 }
 
 export class UpdatePatientDto {
