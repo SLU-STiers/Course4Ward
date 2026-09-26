@@ -31,6 +31,8 @@ export type AddPatientFormResult = {
   notes: string;
 };
 
+
+
 const emptyForm = (): AddPatientFormResult => ({
   firstName: '',
   lastName: '',
