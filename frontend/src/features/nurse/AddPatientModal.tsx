@@ -30,9 +30,6 @@ export type AddPatientFormResult = {
   pain: string;
   notes: string;
 };
-
-
-
 const emptyForm = (): AddPatientFormResult => ({
   firstName: '',
   lastName: '',
