@@ -12,6 +12,7 @@ export const SECTION_ICONS = {
   patientInfo: patientInfoIcon,
   triage: assessmentIcon,
   careTeam: careTeamIcon,
+  room: patientInfoIcon,
 };
 
 const AVATAR_TONES = [

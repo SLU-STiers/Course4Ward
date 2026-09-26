@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
+import { setRoomDestination } from './roomDestinations';
 
 type PhysicianOption = {
   id: string;
@@ -64,6 +65,8 @@ export function AddPatientModal({
   const [form, setForm] = useState<AddPatientFormResult>(emptyForm);
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
   const [pendingDoctorId, setPendingDoctorId] = useState('');
+  // Not sent to the API; kept in the in-memory room store only.
+  const [roomNumber, setRoomNumber] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -129,7 +132,7 @@ export function AddPatientModal({
 
     setSaving(true);
     try {
-      await patientsApi.create({
+      const { data: created } = await patientsApi.create({
         firstName,
         lastName,
         age: form.age,
@@ -149,6 +152,8 @@ export function AddPatientModal({
         pain: toNumber(form.pain),
         notes: form.notes || undefined,
       });
+      const admissionId = created.admissions?.[0]?.id;
+      if (!isEr && admissionId) setRoomDestination(admissionId, roomNumber);
       onCreated();
       onClose();
     } catch (err: any) {
@@ -265,6 +270,23 @@ export function AddPatientModal({
               </div>
             </div>
           </Section>
+
+          {!isEr && (
+            <Section icon={SECTION_ICONS.room} title="Room Destination" hint="Ward room for the admitted patient">
+              <div style={s.grid2}>
+                <Field label="Room Number" required>
+                  <input
+                    style={s.input}
+                    value={roomNumber}
+                    onChange={(e) => setRoomNumber(e.target.value)}
+                    placeholder="e.g. Room 305"
+                    maxLength={20}
+                    required
+                  />
+                </Field>
+              </div>
+            </Section>
+          )}
 
           <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Initial vital signs — leave blank if not taken">
             <div style={s.grid4}>

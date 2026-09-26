@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section, VITAL_FIELDS } from './PatientModalParts';
+import { getRoomDestination, setRoomDestination } from './roomDestinations';
 
 import type { AdmissionStatus, PatientChart } from './types';
 
@@ -100,6 +101,12 @@ export function PatientDetailModal({
               <ReadField label="Admission Status" value={chart.admissionKind ?? 'Ward'} />
             </div>
           </Section>
+
+          {badge === 'Admitted' && (
+            <Section icon={SECTION_ICONS.room} title="Room Destination" hint="Ward room for the admitted patient">
+              <RoomDestinationField key={chart.recordId} admissionId={chart.recordId} />
+            </Section>
+          )}
 
           <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Vital signs recorded at admission">
             <div style={s.grid4}>
@@ -204,6 +211,81 @@ export function PatientDetailModal({
             </button>
           )}
         </footer>
+      </div>
+    </div>
+  );
+}
+
+function RoomDestinationField({ admissionId }: { admissionId: string }) {
+  const [room, setRoom] = useState(() => getRoomDestination(admissionId));
+  const [draft, setDraft] = useState(room);
+  const [editing, setEditing] = useState(!room);
+
+  const save = () => {
+    const value = draft.trim();
+    if (!value) return;
+    setRoomDestination(admissionId, value);
+    setRoom(value);
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    setDraft(room);
+    setEditing(!room);
+  };
+
+  if (!editing) {
+    return (
+      <div>
+        <span style={s.label}>Room Number</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ ...s.readValue, flex: 1 }}>{room}</div>
+          <button
+            type="button"
+            style={{ ...ui.outlineBtn, height: 40 }}
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <span style={s.label}>Room Number</span>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          style={{ ...s.input, flex: 1 }}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') cancel();
+          }}
+          placeholder="e.g. Room 305"
+          maxLength={20}
+          aria-label="Room number"
+        />
+        <button
+          type="button"
+          style={{
+            ...ui.outlineBtn,
+            height: 40,
+            opacity: draft.trim() ? 1 : 0.5,
+            cursor: draft.trim() ? 'pointer' : 'not-allowed',
+          }}
+          onClick={save}
+          disabled={!draft.trim()}
+        >
+          {room ? 'Save' : '+ Add'}
+        </button>
+        {room && (
+          <button type="button" style={{ ...ui.outlineBtn, height: 40 }} onClick={cancel}>
+            Cancel
+          </button>
+        )}
       </div>
     </div>
   );
