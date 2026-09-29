@@ -1641,6 +1641,47 @@ td {
 }
 .ui-notifications__action:hover { background: var(--c4w-color-primary-soft, #eff6ff); }
 
+/* Inbox / History switch. */
+.ui-notifications__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--c4w-color-border, #e2e8f0);
+}
+.ui-notifications__tab {
+  padding: 7px 12px 9px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--c4w-color-text-muted, #64748b);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+.ui-notifications__tab:hover { color: var(--c4w-color-primary, #2563eb); }
+.ui-notifications__tab.is-active {
+  border-bottom-color: var(--c4w-color-primary, #2563eb);
+  color: var(--c4w-color-primary, #2563eb);
+}
+
+.ui-notifications__bulk {
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 1px solid var(--c4w-color-divider, #f1f5f9);
+  background: none;
+  color: var(--c4w-color-primary, #2563eb);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+.ui-notifications__bulk:hover { background: var(--c4w-color-primary-soft, #eff6ff); }
+
 .ui-notifications__list {
   display: flex;
   flex-direction: column;
@@ -1724,6 +1765,31 @@ td {
   font-size: 0.75rem;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/* The quoted part is what the claims processor actually typed — make it the
+   loudest thing in the row. */
+.ui-notification__quote {
+  color: var(--c4w-color-text-primary, #0f172a);
+  font-size: 0.78125rem;
+  font-weight: 700;
+}
+
+.ui-notification__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.ui-notification__cleared {
+  padding: 1px 6px;
+  border-radius: var(--c4w-radius-badge, 9999px);
+  background: var(--c4w-color-neutral-soft, #f1f5f9);
+  color: var(--c4w-color-text-muted, #64748b);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 .ui-notification__dot {
   position: absolute;

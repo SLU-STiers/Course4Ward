@@ -1,6 +1,7 @@
 import { api } from './api';
 import type {
   AppNotification,
+  NotificationScope,
   Patient,
   PhysicianOrder,
   PhysicianNote,
@@ -112,12 +113,15 @@ export const claimsApi = {
 
 // --- Notifications (header bell) ---
 export const notificationsApi = {
-  list: (take?: number) =>
-    api.get<AppNotification[]>('/notifications', take ? { params: { take } } : undefined),
+  /** `scope: 'history'` returns the full log, cleared items included. */
+  list: (options?: { scope?: NotificationScope; take?: number }) =>
+    api.get<AppNotification[]>('/notifications', { params: options }),
   unreadCount: () => api.get<{ count: number }>('/notifications/unread-count'),
   /** Returns the recalculated unread count for the badge. */
   markRead: (id: string) => api.patch<{ count: number }>(`/notifications/${id}/read`),
   markAllRead: () => api.post<{ count: number }>('/notifications/read-all'),
+  /** Clears the inbox; the items stay in the history. */
+  clear: () => api.post<{ count: number }>('/notifications/clear'),
 };
 
 // --- Admin ---

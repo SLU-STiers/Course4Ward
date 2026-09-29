@@ -15,7 +15,12 @@ export interface AppNotification {
   requestId?: string | null;
   isRead: boolean;
   createdAt: string;
+  /** Set when the bell was cleared — the item then only shows in history. */
+  clearedAt?: string | null;
 }
+
+/** Which slice of the notification list the bell panel is showing. */
+export type NotificationScope = 'inbox' | 'history';
 
 export interface AuthUser {
   id: string;
