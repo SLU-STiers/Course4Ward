@@ -21,6 +21,8 @@ export type SubmittedOrderTimelineEntry = {
   timeLabel?: string;
   doctor: string;
   content: string;
+  /** Provenance line under the order, e.g. "Sent via SMS · entered by Angela Reyes". */
+  note?: string | null;
 };
 
 type SubmittedOrdersTimelineProps = {
@@ -134,6 +136,7 @@ const styles: Record<string, CSSProperties> = {
     marginBottom: '6px',
   },
   orderContent: { fontSize: '12px', color: '#334155', lineHeight: '1.4' },
+  orderNote: { marginTop: '6px', fontSize: '11px', fontWeight: 600, color: '#64748b' },
   empty: { padding: '24px', color: '#64748b', fontSize: '13px' },
   footer: { marginTop: '12px', flexShrink: 0 },
 };
@@ -270,6 +273,7 @@ export function SubmittedOrdersTimeline({
                   ) : (
                     <div style={styles.orderContent}>{order.content}</div>
                   )}
+                  {order.note ? <div style={styles.orderNote}>{order.note}</div> : null}
                 </div>
               </div>
             ))

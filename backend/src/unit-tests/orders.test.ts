@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { OrderEnteredBy, OrderStatus, OrderType, PatientClass, Role } from '@prisma/client';
+import { CommunicationChannel, OrderEnteredBy, OrderStatus, OrderType, PatientClass, Role } from '@prisma/client';
 import { CreateOrderDto } from '../orders/dto/create-order.dto';
 
 const mockPrismaService = {
@@ -99,14 +99,64 @@ describe('OrdersService', () => {
           enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
           orderContent: dto.orderContent,
           type: OrderType.DEFAULT,
+          communicationChannel: null,
         },
         include: orderInclude,
       });
       expect(auditLogService.record).toHaveBeenCalledWith({
         userId: 'nurse-123',
-        action: 'ORDER_CREATED',
+        action: 'ORDER_CREATED_NURSE',
       });
       expect(result).toEqual(mockOrder);
+    });
+
+    it('should persist the communication channel a nurse relayed the order through', async () => {
+      (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.create(
+        { ...dto, communicationChannel: CommunicationChannel.SMS },
+        'nurse-123',
+        Role.NURSE,
+      );
+
+      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
+            communicationChannel: CommunicationChannel.SMS,
+          }),
+        }),
+      );
+    });
+
+    it('should drop the communication channel when a physician writes the order', async () => {
+      (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.create(
+        { ...dto, communicationChannel: CommunicationChannel.EMAIL },
+        'doctor-123',
+        Role.PHYSICIAN,
+      );
+
+      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            enteredByRole: OrderEnteredBy.PHYSICIAN,
+            communicationChannel: null,
+          }),
+        }),
+      );
+    });
+
+    it('should log ORDER_CREATED (not the nurse action) when a physician writes it', async () => {
+      (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.create(dto, 'doctor-123', Role.PHYSICIAN);
+
+      expect(auditLogService.record).toHaveBeenCalledWith({
+        userId: 'doctor-123',
+        action: 'ORDER_CREATED',
+      });
     });
 
     it('should flag order as PHYSICIAN when entered by a physician', async () => {
@@ -376,7 +426,7 @@ describe('OrdersService', () => {
   });
 
   describe('findTodaysOrders', () => {
-    it('should query orders from start of today, oldest first', async () => {
+    it('should query orders inside the local day window, oldest first, with the admission', async () => {
       (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([mockOrder]);
 
       await service.findTodaysOrders('patient-123');

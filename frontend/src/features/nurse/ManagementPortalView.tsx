@@ -12,6 +12,7 @@ import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
 import { triageForDisplay } from './PatientModalParts';
+import { channelLabel } from './orderChannels';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
@@ -60,6 +61,7 @@ function displayStatus(patient: NursePatient): AdmissionStatus {
 
 function mapOrder(order: PhysicianOrder): OrderSet {
   const date = new Date(order.dateCreated);
+  const relayed = order.enteredByRole === 'NURSE_ON_BEHALF';
   return {
     // Local calendar day, the same key the physician files orders and summaries under.
     dateKey: toDateKey(date),
@@ -68,7 +70,20 @@ function mapOrder(order: PhysicianOrder): OrderSet {
     doctor: order.orderedBy ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Physician',
     orders: [order.orderContent],
     order,
+    channel: channelLabel(order.communicationChannel),
+    encodedBy: relayed && order.encodedBy
+      ? `${order.encodedBy.firstName} ${order.encodedBy.lastName}`
+      : null,
   };
+}
+
+/** "Sent via SMS · entered by Angela Reyes", or nothing for a physician's own order. */
+function relayNote(set: OrderSet): string | null {
+  const parts = [
+    set.channel ? `Sent via ${set.channel}` : null,
+    set.encodedBy ? `entered by ${set.encodedBy}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
 }
 
 /**
@@ -358,6 +373,7 @@ export function ManagementPortalView() {
                 timeLabel: set.time,
                 doctor: set.doctor,
                 content,
+                note: relayNote(set),
               })))}
               renderContent={(entry) => {
                 const order = ordersById.get(entry.id);

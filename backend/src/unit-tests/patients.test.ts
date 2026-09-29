@@ -727,7 +727,7 @@ describe("Patients Module", () => {
                 patientClass: true,
                 classSince: true,
                 initialAssessment: true,
-                physician: { select: { firstName: true, lastName: true } },
+                physician: { select: { id: true, firstName: true, lastName: true } },
                 additionalPhysicians: {
                   orderBy: { createdAt: "asc" },
                   select: {
