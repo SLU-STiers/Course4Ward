@@ -92,6 +92,21 @@ export const patientTableStyles: Record<string, CSSProperties> = {
     fontSize: '12px',
     fontWeight: 600,
   },
+  /** Row action that drops the patient back out of the current selection. */
+  deselectBtn: {
+    backgroundColor: '#fef2f2',
+    color: '#dc2626',
+    border: '1px solid #fecaca',
+    padding: '6px 14px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 600,
+  },
+  /** Row tint while a patient is queued for export. */
+  rowSelected: {
+    backgroundColor: '#f5f9ff',
+  },
   pagination: {
     display: 'flex',
     justifyContent: 'space-between',

@@ -2,7 +2,9 @@
 
 
 export type TabType = 'overview' | 'requests' | 'export';
-export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4';
+export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4' | 'summary';
+/** Which export workflow a Course in the Ward Summary is being built from. */
+export type ExportSource = 'new-cf4' | 'existing-cf4';
 export type PatientSortField = 'name' | 'admissionDate' | 'daysInCare' | 'age';
 export type SortDirection = 'ascending' | 'descending';
 export type RequestSortField = 'id' | 'date' | 'status';
@@ -22,7 +24,8 @@ export interface SummarizationRequest {
     admissionDate: string;
   };
   summaryText: string;
-  orders: Array<{ content: string; dateCreated: string; doctor: string }>;
+  /** `id` is the physician order's own id — unique per order, never per claim. */
+  orders: Array<{ id: string; content: string; dateCreated: string; doctor: string }>;
 }
 export interface CF4Patient {
   id: string;
@@ -40,5 +43,13 @@ export interface CF4Patient {
   /** Whole days since admission, counted inclusively. */
   daysInCare: number;
   status: Exclude<PatientStatus, 'all'>;
+  /** Row is queued for CF4 generation; several rows can be queued at once. */
   selected: boolean;
+}
+
+/** One patient queued for the Course in the Ward Summary review step. */
+export interface Cf4SummaryDraft {
+  patient: CF4Patient;
+  /** Persisted claim/summary the JSON is projected from, when one exists. */
+  request?: SummarizationRequest;
 }

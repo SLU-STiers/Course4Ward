@@ -18,7 +18,8 @@ import { styles, overviewStyles } from './styles';
 import { mapClaimToPatient, mapClaimToRequest } from './mappers';
 import { ReviewRequestModal } from './ReviewRequestModal';
 import { EligibleSummariesCard } from './EligibleSummariesCard';
-import type { CF4Patient, ExportSubView, PatientSortField, PatientStatus, RequestSortField, SortDirection, SummarizationRequest, TabType } from './types';
+import { Cf4SummaryPreview } from './Cf4SummaryPreview';
+import type { CF4Patient, Cf4SummaryDraft, ExportSource, ExportSubView, PatientSortField, PatientStatus, RequestSortField, SortDirection, SummarizationRequest, TabType } from './types';
 
 /** Sort key for a patient-list column (numbers compare numerically). */
 function patientSortValue(patient: CF4Patient, field: PatientSortField): string | number {
@@ -55,6 +56,15 @@ export function ClaimsProcessorDashboard() {
   const [previewPatient, setPreviewPatient] = useState<CF4Patient | null>(null);
   const [selectedOrderDate, setSelectedOrderDate] = useState('');
   const [evaluator, setEvaluator] = useState('Dr. Mike Mentzer');
+
+  // Export → Course in the Ward Summary review step
+  const [exportSource, setExportSource] = useState<ExportSource>('new-cf4');
+  /** Every patient queued for CF4 generation, in the order they were shown. */
+  const [summaryDrafts, setSummaryDrafts] = useState<Cf4SummaryDraft[]>([]);
+  const [summaryIndex, setSummaryIndex] = useState(0);
+  const [existingPatientId, setExistingPatientId] = useState('');
+  const [exportError, setExportError] = useState('');
+  const [confirmingSummary, setConfirmingSummary] = useState(false);
   const overviewRequest = requests.find((request) => request.id === previewPatient?.claimId) ?? requests[0];
 
   const logout = useAuthStore((state) => state.logout);
@@ -198,12 +208,15 @@ export function ClaimsProcessorDashboard() {
     );
   };
 
-  const handleSelectOrView = (patient: CF4Patient) => {
-    if (!patient.selected) {
-      toggleSelectPatient(patient.id);
-    }
+  /* The Overview tab's "View" only drives the orders timeline / AI card on the
+     right — it must not touch the export selection, or browsing the dashboard
+     would silently queue patients for CF4 generation. */
+  const handleViewPatient = (patient: CF4Patient) => {
     setPreviewPatient(patient);
   };
+
+  /* Counts every queued row, including the ones on other pages. */
+  const selectedPatientCount = cf4Patients.filter((patient) => patient.selected).length;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -217,19 +230,88 @@ export function ClaimsProcessorDashboard() {
     }
   };
 
-  const handleGenerateCf4 = async () => {
-    const selectedPatient = cf4Patients.find((patient) => patient.selected);
-    if (!selectedPatient) return;
+  const goToExportSubView = (view: ExportSubView) => {
+    setExportError('');
+    setExportSubView(view);
+  };
 
-    const { data } = await claimsApi.generateCf4(selectedPatient.claimId);
+  /* A Course in the Ward Summary is built per patient, so every workflow needs
+     at least one patient queued before the review step opens. New-CF4 takes the
+     whole multi-select queue, in the order the table showed it. */
+  const handleProceedToSummary = (source: ExportSource) => {
+    const queued =
+      source === 'new-cf4'
+        ? sortedCf4Patients.filter((candidate) => candidate.selected)
+        : cf4Patients.filter((candidate) => candidate.claimId === existingPatientId);
+
+    if (!queued.length) {
+      setExportError(
+        'Select at least one patient first — a Course in the Ward Summary JSON is created for each patient.',
+      );
+      return;
+    }
+
+    setExportError('');
+    setSummaryDrafts(
+      queued.map((patient) => ({
+        patient,
+        request: requests.find((request) => request.id === patient.claimId),
+      })),
+    );
+    setSummaryIndex(0);
+    setExportSource(source);
+    setExportSubView('summary');
+  };
+
+  /* Confirms the whole queue: every selected patient gets its own CF4. Ones the
+     backend rejects (summary not physician-approved) stay queued so the
+     processor can see and retry them. */
+  const handleConfirmSummary = async () => {
+    if (!summaryDrafts.length) return;
+    setConfirmingSummary(true);
+    setExportError('');
+
+    const generated: Cf4SummaryDraft[] = [];
+    const failed: string[] = [];
+    for (const draft of summaryDrafts) {
+      try {
+        await claimsApi.generateCf4(draft.patient.claimId);
+        generated.push(draft);
+      } catch {
+        failed.push(draft.patient.name);
+      }
+    }
+
+    const generatedIds = generated.map((draft) => draft.patient.claimId);
     setRequests((prev) => prev.map((request) => (
-      request.id === selectedPatient.claimId ? { ...request, status: 'Approved' } : request
+      generatedIds.includes(request.id) ? { ...request, status: 'Approved' } : request
     )));
     setCf4Patients((prev) => prev.map((patient) => (
-      patient.claimId === selectedPatient.claimId ? { ...patient, selected: false } : patient
+      generatedIds.includes(patient.claimId) ? { ...patient, selected: false } : patient
     )));
+    setConfirmingSummary(false);
+
+    if (failed.length) {
+      setSummaryDrafts(summaryDrafts.filter((draft) => !generatedIds.includes(draft.patient.claimId)));
+      setSummaryIndex(0);
+      setExportError(
+        `Could not generate the CF4 for ${failed.join(', ')} — the Course in the Ward summary must be physician-approved.`,
+      );
+      return;
+    }
+
+    const count = generated.length;
     setPreviewPatient(null);
-    alert(`CF4 generated for ${data.cf4Fields.patientName}`);
+    setSummaryDrafts([]);
+    setSummaryIndex(0);
+    setExistingPatientId('');
+    setUploadedFile(null);
+    setExportSubView('selection');
+    alert(
+      count === 1
+        ? `CF4 generated for ${generated[0].patient.name}`
+        : `CF4 generated for ${count} patients.`,
+    );
   };
 
   return (
@@ -240,7 +322,7 @@ export function ClaimsProcessorDashboard() {
         onNavigate: (id) => {
           const tab = id as TabType;
           setActiveTab(tab);
-          if (tab === 'export') setExportSubView('selection');
+          if (tab === 'export') goToExportSubView('selection');
         },
         items: [
           { id: 'overview', label: 'Dashboard', icon: <DashboardIcon /> },
@@ -385,7 +467,7 @@ export function ClaimsProcessorDashboard() {
                     {/* NEW CF4 CARD */}
                     <div
                       style={styles.exportOptionCard}
-                      onClick={() => setExportSubView('new-cf4')}
+                      onClick={() => goToExportSubView('new-cf4')}
                     >
                       <div style={styles.exportCardHeader}>New CF4 PDF</div>
                       <div style={styles.exportCardIconArea}>
@@ -402,7 +484,7 @@ export function ClaimsProcessorDashboard() {
                     {/* EXISTING CF4 CARD */}
                     <div
                       style={styles.exportOptionCard}
-                      onClick={() => setExportSubView('existing-cf4')}
+                      onClick={() => goToExportSubView('existing-cf4')}
                     >
                       <div style={styles.exportCardHeader}>Existing CF4 PDF</div>
                       <div style={styles.exportCardIconArea}>
@@ -422,7 +504,7 @@ export function ClaimsProcessorDashboard() {
                   <div style={styles.newCf4HeaderRow}>
                     <button
                       style={styles.backButton}
-                      onClick={() => setExportSubView('selection')}
+                      onClick={() => goToExportSubView('selection')}
                     >
                       &lt; Back to Selection
                     </button>
@@ -484,7 +566,10 @@ export function ClaimsProcessorDashboard() {
                       </thead>
                       <tbody>
                         {visibleCf4Patients.map((p) => (
-                          <tr key={p.id} style={styles.tr}>
+                          <tr
+                            key={p.id}
+                            style={p.selected ? { ...styles.tr, ...patientTableStyles.rowSelected } : styles.tr}
+                          >
                             <td style={styles.td}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span style={{ ...patientTableStyles.dot, backgroundColor: p.color }} />
@@ -508,10 +593,11 @@ export function ClaimsProcessorDashboard() {
                             </td>
                             <td style={{ ...styles.td, textAlign: 'right' }}>
                               <button
-                                style={patientTableStyles.viewBtn}
-                                onClick={() => handleSelectOrView(p)}
+                                style={p.selected ? patientTableStyles.deselectBtn : patientTableStyles.viewBtn}
+                                aria-pressed={p.selected}
+                                onClick={() => toggleSelectPatient(p.id)}
                               >
-                                {p.selected ? 'View' : 'Select'}
+                                {p.selected ? 'Deselect' : 'Select'}
                               </button>
                             </td>
                           </tr>
@@ -527,19 +613,32 @@ export function ClaimsProcessorDashboard() {
                     </table>
                   </div>
 
-                  <div style={styles.newCf4FooterRow}>
-                    <button
-                      style={styles.cancelBtn}
-                      onClick={() => setExportSubView('selection')}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      style={styles.proceedBtn}
-                      onClick={handleGenerateCf4}
-                    >
-                      Proceed to Summary
-                    </button>
+                  {exportError && (
+                    <p style={styles.exportErrorBanner} role="alert">
+                      {exportError}
+                    </p>
+                  )}
+
+                  <div style={styles.newCf4FooterRowSpread}>
+                    <span style={styles.selectionCount}>
+                      {selectedPatientCount
+                        ? `${selectedPatientCount} patient${selectedPatientCount === 1 ? '' : 's'} selected`
+                        : 'No patients selected yet'}
+                    </span>
+                    <div style={styles.newCf4FooterActions}>
+                      <button
+                        style={styles.cancelBtn}
+                        onClick={() => goToExportSubView('selection')}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        style={styles.proceedBtn}
+                        onClick={() => handleProceedToSummary('new-cf4')}
+                      >
+                        Proceed to Summary
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -550,12 +649,37 @@ export function ClaimsProcessorDashboard() {
                   <div style={styles.newCf4HeaderRow}>
                     <button
                       style={styles.backButton}
-                      onClick={() => setExportSubView('selection')}
+                      onClick={() => goToExportSubView('selection')}
                     >
                       &lt; Back to Selection
                     </button>
                     <h3 style={styles.newCf4Title}>Modify Existing CF4</h3>
                     <div style={{ width: '120px' }} />
+                  </div>
+
+                  <div style={styles.exportPatientPicker}>
+                    <label style={styles.exportPatientLabel} htmlFor="existing-cf4-patient">
+                      Patient
+                    </label>
+                    <select
+                      id="existing-cf4-patient"
+                      style={styles.exportPatientSelect}
+                      value={existingPatientId}
+                      onChange={(event) => {
+                        setExistingPatientId(event.target.value);
+                        setExportError('');
+                      }}
+                    >
+                      <option value="">Select the patient this CF4 belongs to…</option>
+                      {cf4Patients.map((patient) => (
+                        <option key={patient.id} value={patient.claimId}>
+                          {patient.name} · {patient.patientId}
+                        </option>
+                      ))}
+                    </select>
+                    <span style={styles.exportPatientHint}>
+                      A patient must be selected before a Course in the Ward Summary can be created.
+                    </span>
                   </div>
 
                   <div style={styles.uploadHeaderArea}>
@@ -605,21 +729,45 @@ export function ClaimsProcessorDashboard() {
                     </div>
                   )}
 
+                  {exportError && (
+                    <p style={{ ...styles.exportErrorBanner, marginTop: '20px' }} role="alert">
+                      {exportError}
+                    </p>
+                  )}
+
                   <div style={{ ...styles.newCf4FooterRow, marginTop: 'auto' }}>
                     <button
                       style={styles.cancelBtn}
-                      onClick={() => setExportSubView('selection')}
+                      onClick={() => goToExportSubView('selection')}
                     >
                       Cancel
                     </button>
                     <button
                       style={styles.proceedBtn}
-                      onClick={handleGenerateCf4}
+                      onClick={() => handleProceedToSummary('existing-cf4')}
                     >
                       Proceed to Summary
                     </button>
                   </div>
                 </div>
+              )}
+
+              {/* SUBVIEW 4: COURSE IN THE WARD SUMMARY REVIEW */}
+              {exportSubView === 'summary' && summaryDrafts.length > 0 && (
+                <Cf4SummaryPreview
+                  drafts={summaryDrafts}
+                  index={summaryIndex}
+                  onIndexChange={setSummaryIndex}
+                  source={exportSource}
+                  evaluator={evaluator}
+                  sourceFileName={
+                    exportSource === 'existing-cf4' ? uploadedFile?.name : undefined
+                  }
+                  error={exportError}
+                  onBack={() => goToExportSubView(exportSource)}
+                  onConfirm={() => void handleConfirmSummary()}
+                  confirming={confirmingSummary}
+                />
               )}
             </div>
           )}
@@ -703,7 +851,7 @@ export function ClaimsProcessorDashboard() {
                           <td style={{ ...styles.td, textAlign: 'right' }}>
                             <button
                               style={patientTableStyles.viewBtn}
-                              onClick={() => handleSelectOrView(p)}
+                                onClick={() => handleViewPatient(p)}
                             >
                               View
                             </button>
@@ -771,6 +919,13 @@ export function ClaimsProcessorDashboard() {
                   availableDays={orderDates}
                   onClear={() => setSelectedOrderDate('')}
                   clearLabel="Show all"
+                  /*
+                   * Key on the order's own id. Building the key from the claim
+                   * id + `dateCreated` collides whenever two orders of the same
+                   * claim share a timestamp (orders written together do), and
+                   * duplicate keys leave the previous patient's orders rendered
+                   * in the timeline.
+                   */
                   orders={(overviewRequest?.orders ?? [])
                     .filter(
                       (order) =>
@@ -778,7 +933,7 @@ export function ClaimsProcessorDashboard() {
                         toDateKey(order.dateCreated) === activeOrderDate,
                     )
                     .map((order) => ({
-                      id: `${overviewRequest?.id}-${order.dateCreated}`,
+                      id: order.id,
                       dateCreated: order.dateCreated,
                       doctor: order.doctor,
                       content: order.content,

@@ -28,6 +28,7 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
     },
     summaryText: claim.summary.summaryContent,
     orders: claim.summary.orders.map((summaryOrder) => ({
+      id: summaryOrder.id,
       content: summaryOrder.orderContent,
       dateCreated: summaryOrder.dateCreated,
       doctor: summaryOrder.orderedBy
