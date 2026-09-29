@@ -56,6 +56,28 @@ export class AuthService {
     };
   }
 
+  // Exchanges a still-valid refresh token for a fresh token pair, so an
+  // active session outlives the short access-token lifetime. Idle logout is
+  // enforced client-side; revocation (password reset, deactivation) still
+  // applies because the refresh token carries the sessionVersion.
+  async refresh(refreshToken: string) {
+    let payload: { sub: string; sessionVersion?: number };
+    try {
+      payload = await this.jwt.verifyAsync(refreshToken, {
+        secret: this.config.get('JWT_REFRESH_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedException('Session expired');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user || !user.isActive || user.sessionVersion !== (payload.sessionVersion ?? 0)) {
+      throw new UnauthorizedException('Session expired');
+    }
+
+    return this.issueTokens(user.id, user.userId, user.role, user.sessionVersion);
+  }
+
   async issueTokens(sub: string, userId: string, role: string, sessionVersion?: number) {
     const payload = {
       sub,
