@@ -285,10 +285,9 @@ export function ManageView() {
     }));
   };
 
-  // Generate (or refresh) ONE order day's Course in the Ward. The AI summarizes
-  // per admission-day, so the AI panel's Generate button and Submit are the same
-  // call from two entry points: Generate acts on the day on screen, Submit on the
-  // day in focus ("all dates": the most recent day written).
+  // Generate (or refresh) ONE order day's Course in the Ward from every order of
+  // that day. Only the AI panel's Generate button calls this -- submitting an
+  // order never summarizes on its own.
   const generateSummaryForDay = (day: string, onDone?: () => void) => {
     if (!selected || generatingSummary) return;
     setGeneratingSummary(true);
@@ -310,16 +309,17 @@ export function ManageView() {
       .finally(() => setGeneratingSummary(false));
   };
 
-  // Submit = file the new order in the composer (orders are never edited or
-  // deleted once written), then (re)generate the Course in the Ward for its day.
+  // Submit = file the order in the composer. Orders are never edited or deleted
+  // once written, and saving one does NOT summarize: the physician generates or
+  // regenerates the day's Course in the Ward from the AI panel when ready.
   const submitOrders = async () => {
-    if (!selected || savingOrders || generatingSummary) return;
+    if (!selected || savingOrders) return;
     const patientId = selected.id;
     const content = draft.trim();
-    if (!content && !orderDays.length) return;
+    if (!content) return;
 
     const admissionId = selected.admissions?.find((admission) => !admission.dischargeDate)?.id;
-    if (content && !admissionId) {
+    if (!admissionId) {
       setOrderError("This patient has no open admission to add orders to.");
       return;
     }
@@ -327,15 +327,19 @@ export function ManageView() {
     setSavingOrders(true);
     setOrderError(null);
     setSubmitted(false);
-    let createdDay: string | null = null;
     try {
-      if (content && admissionId) {
-        // The backend attributes the order to the signed-in physician.
-        const { data } = await ordersApi.create({ admissionId, orderContent: content });
-        createdDay = orderDayValue(data.dateCreated);
-        setDraft("");
-      }
+      // The backend attributes the order to the signed-in physician.
+      const { data } = await ordersApi.create({ admissionId, orderContent: content });
+      setDraft("");
       await reloadOrders(patientId);
+      const createdDay = orderDayValue(data.dateCreated);
+      // Keep the new order visible when the list is filtered to another day.
+      if (createdDay && activeOrderDate && activeOrderDate !== createdDay) {
+        setOrderDateFilter(createdDay);
+      }
+      // Point the AI panel at the order's day, ready for Generate / Regenerate.
+      setSummaryDayFilter(createdDay);
+      setSubmitted(true);
     } catch (err: any) {
       // The composer keeps its text so nothing typed is lost.
       const message = err?.response?.data?.message;
@@ -344,28 +348,9 @@ export function ManageView() {
           ? message.join(", ")
           : message || "The order could not be saved. Please try again.",
       );
-      return;
     } finally {
       setSavingOrders(false);
     }
-
-    // Keep the new order visible when the list is filtered to another day.
-    if (createdDay && activeOrderDate && activeOrderDate !== createdDay) {
-      setOrderDateFilter(createdDay);
-    }
-
-    const targetDay =
-      createdDay ?? activeOrderDate ?? summaryDay ?? orderDays[orderDays.length - 1];
-    if (!targetDay) {
-      setSubmitted(true);
-      return;
-    }
-    generateSummaryForDay(targetDay, () => {
-      // Show the summary that was just filed, without pulling the order list out
-      // of "all dates".
-      setSummaryDayFilter(targetDay);
-      setSubmitted(true);
-    });
   };
 
   const approveSummary = (summaryId: string) => {
@@ -747,23 +732,19 @@ export function ManageView() {
                       {orderError && (
                         <span role="alert" style={manage.orderError}>{orderError}</span>
                       )}
-                      {submitted && !generatingSummary && !orderError && (
+                      {submitted && !orderError && (
                         <span style={{ fontSize: 12, color: "#166534" }}>
-                          {summary ? "Orders and summary saved" : "Orders saved"}
+                          Order saved
                         </span>
                       )}
                       <button
                         type="button"
                         style={manage.submitBtn}
-                        disabled={savingOrders || generatingSummary}
-                        aria-busy={savingOrders || generatingSummary}
+                        disabled={savingOrders || !draft.trim()}
+                        aria-busy={savingOrders}
                         onClick={() => void submitOrders()}
                       >
-                        {savingOrders
-                          ? "Saving..."
-                          : generatingSummary
-                            ? "Generating..."
-                            : "Submit"}
+                        {savingOrders ? "Saving..." : "Submit"}
                       </button>
                     </div>
                   </>
