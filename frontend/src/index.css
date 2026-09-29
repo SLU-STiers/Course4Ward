@@ -474,6 +474,19 @@ td {
   outline: none;
 }
 
+.auth-back-button {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; margin-bottom: 12px;
+  border: 1px solid var(--dashboard-border);
+  border-radius: var(--dashboard-radius);
+  background: var(--dashboard-surface);
+  color: var(--dashboard-muted);
+  cursor: pointer;
+  transition: color var(--dashboard-motion), border-color var(--dashboard-motion);
+}
+.auth-back-button:hover { color: var(--dashboard-primary-dark); border-color: var(--dashboard-primary); }
+
 .auth-password-wrap { position: relative; display: flex; align-items: center; }
 .auth-input-password { width: 100%; padding: 12px 42px 12px 14px; box-sizing: border-box; }
 .auth-toggle-button {
