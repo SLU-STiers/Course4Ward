@@ -3,13 +3,17 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { OrderEnteredBy, Role } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { NotFoundException } from '@nestjs/common';
+import { OrderEnteredBy, OrderStatus, Role } from '@prisma/client';
 import { CreateOrderDto } from '../orders/dto/create-order.dto';
 
 const mockPrismaService = {
   physicianOrder: {
     create: jest.fn(),
     findMany: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
   },
 } as unknown as jest.Mocked<PrismaService>;
 
@@ -38,6 +42,7 @@ describe('OrdersService', () => {
         OrdersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: ConfigService, useValue: { get: jest.fn() } },
       ],
     }).compile();
 
@@ -122,6 +127,7 @@ describe('OrdersService', () => {
         include: {
           orderedBy: { select: { firstName: true, lastName: true } },
           encodedBy: { select: { firstName: true, lastName: true, role: true } },
+          executedBy: { select: { firstName: true, lastName: true } },
         },
       });
       expect(result).toEqual([mockOrder]);
@@ -155,6 +161,68 @@ describe('OrdersService', () => {
       expect(gte.getMinutes()).toBe(0);
       expect(gte.getSeconds()).toBe(0);
       expect(gte.getMilliseconds()).toBe(0);
+    });
+  });
+
+  describe('updateStatus', () => {
+    it('should stamp the nurse and time when an order is carried out', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateStatus(
+        'order-123',
+        { status: OrderStatus.FINISHED, nurseComment: '  Given at 08:00  ' },
+        'nurse-123',
+      );
+
+      expect(prismaService.physicianOrder.findFirst).toHaveBeenCalledWith({
+        where: { id: 'order-123', active: true },
+      });
+      const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
+      expect(data).toEqual({
+        status: OrderStatus.FINISHED,
+        nurseComment: 'Given at 08:00',
+        executedById: 'nurse-123',
+        executedAt: expect.any(Date),
+      });
+      expect(auditLogService.record).toHaveBeenCalledWith({
+        userId: 'nurse-123',
+        action: 'ORDER_STATUS_UPDATED',
+      });
+    });
+
+    it('should clear the executor when an order is reset to TO_ACCOMPLISH', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateStatus('order-123', { status: OrderStatus.TO_ACCOMPLISH }, 'nurse-123');
+
+      const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
+      expect(data).toEqual({
+        status: OrderStatus.TO_ACCOMPLISH,
+        executedById: null,
+        executedAt: null,
+      });
+    });
+
+    it('should store an empty comment as null', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateStatus('order-123', { status: OrderStatus.ONGOING, nurseComment: '   ' }, 'nurse-123');
+
+      const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
+      expect(data.nurseComment).toBeNull();
+    });
+
+    it('should throw NotFoundException for a missing or inactive order', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.updateStatus('missing', { status: OrderStatus.FINISHED }, 'nurse-123'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
+      expect(auditLogService.record).not.toHaveBeenCalled();
     });
   });
 });
