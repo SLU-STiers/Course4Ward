@@ -55,6 +55,10 @@ export type OrderSet = {
   orders: string[];
   /** Present for orders loaded from the API; the static demo sets have none. */
   order?: PhysicianOrder;
+  /** Display label for the channel a nurse relayed the order through, if any. */
+  channel?: string | null;
+  /** Who typed it in, when that was not the ordering physician. */
+  encodedBy?: string | null;
 };
 /** A patient class label (see PATIENT_CLASS_LABEL), or Discharged. */
 export type AdmissionStatus = 'Emergency' | 'Outpatient' | 'Observation' | 'Admitted' | 'Discharged';
@@ -64,4 +68,10 @@ export type AdmissionRecord = {
   admittedOn: string;
   dischargedOn: string | null;
   status: AdmissionStatus;
+  /**
+   * Attending plus additional physicians on this admission: the only doctors
+   * a relayed order may be attributed to (the backend rejects anyone else).
+   * Present for admissions loaded from the API; the static demo sets have none.
+   */
+  careTeam?: { id: string; name: string; attending: boolean }[];
 };

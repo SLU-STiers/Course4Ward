@@ -4,6 +4,7 @@ import type {
   NotificationScope,
   OrderStatus,
   OrderType,
+  CommunicationChannel,
   Patient,
   PhysicianOrder,
   PhysicianNote,
@@ -79,6 +80,8 @@ export const ordersApi = {
     orderContent: string;
     /** Defaults to `DEFAULT` (a general order). */
     type?: OrderType;
+    /** Set when a nurse relays the order; physicians leave it out. */
+    communicationChannel?: CommunicationChannel;
   }) => api.post<PhysicianOrder>('/orders', data),
   // Orders cannot be edited or deleted once written (no API for it).
   /** Nurse-only: mark progress on an order. Omit `nurseComment` to keep the current one. */

@@ -82,6 +82,9 @@ export type OrderStatus = 'TO_ACCOMPLISH' | 'ONGOING' | 'FINISHED';
 /** Backend `OrderType`: `DEFAULT` is a general order. */
 export type OrderType = 'DEFAULT' | 'OBSERVATION' | 'ADMISSION' | 'DISCHARGE';
 
+/** Mirrors the backend `CommunicationChannel` enum: how a relayed order arrived. */
+export type CommunicationChannel = 'SMS' | 'EMAIL' | 'CALL' | 'VERBAL' | 'OTHER';
+
 export interface PhysicianOrder {
   id: string;
   admissionId: string;
@@ -98,6 +101,7 @@ export interface PhysicianOrder {
   nurseComment?: string | null;
   executedAt?: string | null;
   executedBy?: { firstName: string; lastName: string } | null;
+  communicationChannel?: CommunicationChannel | null;
   orderedBy?: { firstName: string; lastName: string };
   encodedBy?: { firstName: string; lastName: string; role: Role };
 }

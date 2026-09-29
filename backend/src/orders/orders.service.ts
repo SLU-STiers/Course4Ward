@@ -108,13 +108,19 @@ export class OrdersService {
         enteredByRole: enteredByFlag,
         orderContent: dto.orderContent,
         type,
+        // Only a relayed order has a channel; a physician's own order never
+        // shows "Sent via" even if a client sends the field.
+        communicationChannel:
+          enteredByFlag === OrderEnteredBy.NURSE_ON_BEHALF ? (dto.communicationChannel ?? null) : null,
       },
       include: orderInclude,
     });
 
+    // A relayed order is its own audit action so the Activity Logs can tell
+    // "nurse entered on behalf" apart from "physician wrote it".
     await this.auditLog.record({
       userId: enteredById,
-      action: 'ORDER_CREATED',
+      action: enteredByFlag === OrderEnteredBy.NURSE_ON_BEHALF ? 'ORDER_CREATED_NURSE' : 'ORDER_CREATED',
     });
 
     // Best-effort: persist the pgvector embedding so this order can serve as a

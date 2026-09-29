@@ -6,8 +6,11 @@ import { PatientTablePagination, patientTableStyles } from '../../components/pat
 import { useTableState } from '../../hooks/useTableState';
 import { statusColor } from '../../lib/patient';
 
+import { ui } from './styles';
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
+import { SendOrdersModal } from './SendOrdersModal';
+import { channelLabel } from './orderChannels';
 import { triageForDisplay } from './PatientModalParts';
 import type { AdmissionRecord } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
@@ -24,6 +27,20 @@ function toRecord(patient: Patient): AdmissionRecord {
       ? new Date(admission.dischargeDate).toLocaleDateString('en-GB')
       : null,
     status: admissionStatusOf(admission),
+    careTeam: [
+      ...(admission?.physician?.id
+        ? [{
+            id: admission.physician.id,
+            name: `Dr. ${admission.physician.firstName} ${admission.physician.lastName}`,
+            attending: true,
+          }]
+        : []),
+      ...(admission?.additionalPhysicians ?? []).map(({ physician }) => ({
+        id: physician.id,
+        name: `Dr. ${physician.firstName} ${physician.lastName}`,
+        attending: false,
+      })),
+    ],
   };
 }
 
@@ -39,6 +56,16 @@ export function PatientView() {
   } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [sendingFor, setSendingFor] = useState<AdmissionRecord | null>(null);
+  const [sentNotice, setSentNotice] = useState<string | null>(null);
+  const closeSendOrders = useCallback(() => setSendingFor(null), []);
+
+  // The "order sent" line clears itself; it is confirmation, not state.
+  useEffect(() => {
+    if (!sentNotice) return;
+    const timer = window.setTimeout(() => setSentNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [sentNotice]);
 
   const reload = useCallback(() => {
     patientsApi
@@ -166,6 +193,13 @@ export function PatientView() {
       .finally(() => setActionBusy(false));
   };
 
+  const handleSent = (record: AdmissionRecord, order: PhysicianOrder) => {
+    const via = channelLabel(order.communicationChannel);
+    setSentNotice(
+      `Order sent for ${record.name}${via ? ` via ${via}` : ''}. It now shows under Management.`,
+    );
+  };
+
   return (
     <section style={patientTableStyles.card}>
       {/* Same card-title scale as the Claims Processor "Patient Overview" card. */}
@@ -175,6 +209,15 @@ export function PatientView() {
           Add Patient
         </Button>
       </div>
+
+      {sentNotice && (
+        <div style={ui.sentNotice} role="status">
+          <span>{sentNotice}</span>
+          <button type="button" style={ui.closeX} onClick={() => setSentNotice(null)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
 
       <DataTableToolbar
         searchProps={{
@@ -213,6 +256,7 @@ export function PatientView() {
               <th style={patientTableStyles.th}>Admission Date</th>
               <th style={patientTableStyles.th}>Discharge Date</th>
               <th style={patientTableStyles.th}>Status</th>
+              <th style={patientTableStyles.th}>Orders</th>
               <th style={{ ...patientTableStyles.th, textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
@@ -243,6 +287,23 @@ export function PatientView() {
                 <td style={patientTableStyles.td}>
                   <StatusBadge showDot status={STATUS_TONE[r.status]} label={r.status} />
                 </td>
+                <td style={patientTableStyles.td}>
+                  {/* Orders on a discharged admission are refused by the backend. */}
+                  {r.status === 'Discharged' ? (
+                    <span style={patientTableStyles.cell}>—</span>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSendingFor(r);
+                      }}
+                    >
+                      Send Orders
+                    </Button>
+                  )}
+                </td>
                 <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
                   <button
                     type="button"
@@ -261,7 +322,7 @@ export function PatientView() {
               <tr>
                 <td
                   style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                  colSpan={5}
+                  colSpan={6}
                 >
                   No admissions match the current filters.
                 </td>
@@ -307,6 +368,14 @@ export function PatientView() {
           admitBlockedReason={admitBlockedReason}
           actionBusy={actionBusy}
           actionError={actionError}
+        />
+      )}
+
+      {sendingFor && (
+        <SendOrdersModal
+          record={sendingFor}
+          onClose={closeSendOrders}
+          onSent={(order) => handleSent(sendingFor, order)}
         />
       )}
 

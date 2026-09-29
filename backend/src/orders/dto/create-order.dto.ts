@@ -1,7 +1,7 @@
 import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { OrderStatus, OrderType } from '@prisma/client';
+import { CommunicationChannel, OrderStatus, OrderType } from '@prisma/client';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -32,6 +32,13 @@ export class CreateOrderDto {
   @IsOptional()
   @IsEnum(OrderType)
   type?: OrderType;
+
+  // How the order reached the ward when a nurse relays it (SMS, email, verbal,
+  // ...). Physicians writing their own orders leave it unset.
+  @ApiPropertyOptional({ enum: CommunicationChannel })
+  @IsOptional()
+  @IsEnum(CommunicationChannel)
+  communicationChannel?: CommunicationChannel;
 }
 
 export class UpdateOrderStatusDto {
