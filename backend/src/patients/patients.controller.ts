@@ -75,6 +75,18 @@ export class PatientsController {
     return this.patientsService.dischargeAdmission(id, user.id);
   }
 
+  @Patch('admissions/:id/admit')
+  @Roles(Role.NURSE)
+  admit(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.patientsService.admitAdmission(id, user.id);
+  }
+
+  @Patch('admissions/:id/observe')
+  @Roles(Role.NURSE)
+  observe(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.patientsService.observeAdmission(id, user.id);
+  }
+
   @Post('admissions/:id/consulting-physicians')
   @Roles(Role.NURSE)
   addConsultingPhysician(

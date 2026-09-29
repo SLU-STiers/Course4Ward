@@ -1,4 +1,5 @@
 import {
+  PatientClass,
   ActionType,
   CommunicationChannel,
   OrderEnteredBy,
@@ -146,8 +147,9 @@ export interface SeedAdmission {
   physicianUserId: string;
   admissionDate: Date;
   dischargeDate?: Date;
-  isOutpatient?: boolean;
-  outpatientSetAt?: Date;
+  /** Defaults to INPATIENT (the seeded stays are ward admissions). */
+  patientClass?: PatientClass;
+  classSince?: Date;
   initialAssessment?: string;
 }
 
@@ -163,7 +165,7 @@ export const admissions: SeedAdmission[] = [
   { id: uid(208), key: 'adm14', patientKey: 'pt13', physicianUserId: 'DOC006', admissionDate: daysAgo(1), initialAssessment: 'Acute coronary syndrome, NSTEMI. Chest pain, troponin elevated.' },
   { id: uid(209), key: 'adm15', patientKey: 'pt14', physicianUserId: 'DOC006', admissionDate: daysAgo(6), initialAssessment: 'Hyperthyroidism, thyroid storm in evolution.' },
   { id: uid(210), key: 'adm17', patientKey: 'pt16', physicianUserId: 'DOC002', admissionDate: daysAgo(3), initialAssessment: 'Acute gastritis with dehydration secondary to NSAID use.' },
-  { id: uid(211), key: 'adm19', patientKey: 'pt18', physicianUserId: 'DOC004', admissionDate: daysAgo(2), isOutpatient: true, outpatientSetAt: daysAgo(2, 11), initialAssessment: 'Outpatient chemotherapy infusion, cycle 2 of 6.' },
+  { id: uid(211), key: 'adm19', patientKey: 'pt18', physicianUserId: 'DOC004', admissionDate: daysAgo(2), patientClass: PatientClass.OUTPATIENT, classSince: daysAgo(2, 11), initialAssessment: 'Outpatient chemotherapy infusion, cycle 2 of 6.' },
   { id: uid(212), key: 'adm20', patientKey: 'pt19', physicianUserId: 'DOC005', admissionDate: daysAgo(5), initialAssessment: 'Acute pancreatitis, mild. Alcohol-related.' },
   { id: uid(213), key: 'adm23', patientKey: 'pt22', physicianUserId: 'DOC002', admissionDate: daysAgo(1), initialAssessment: 'Dengue fever with warning signs. Platelet 88 x10^9/L.' },
   { id: uid(214), key: 'adm24', patientKey: 'pt23', physicianUserId: 'DOC003', admissionDate: daysAgo(11), initialAssessment: 'Chronic kidney disease stage 5, uremic symptoms. For dialysis initiation.' },
@@ -171,7 +173,7 @@ export const admissions: SeedAdmission[] = [
   { id: uid(216), key: 'adm28', patientKey: 'pt27', physicianUserId: 'DOC001', admissionDate: daysAgo(2), initialAssessment: 'Acute bronchitis, viral versus bacterial.' },
   { id: uid(217), key: 'adm30', patientKey: 'pt29', physicianUserId: 'DOC003', admissionDate: daysAgo(3), initialAssessment: 'Transient ischemic attack, carotid bruit on exam.' },
   { id: uid(218), key: 'adm31', patientKey: 'pt30', physicianUserId: 'DOC004', admissionDate: daysAgo(8), initialAssessment: 'Asthma exacerbation, moderate.' },
-  { id: uid(219), key: 'adm36', patientKey: 'pt19', physicianUserId: 'DOC005', admissionDate: daysAgo(4), isOutpatient: true, outpatientSetAt: daysAgo(4, 10), initialAssessment: 'Outpatient follow-up endoscopy for pancreatitis.' },
+  { id: uid(219), key: 'adm36', patientKey: 'pt19', physicianUserId: 'DOC005', admissionDate: daysAgo(4), patientClass: PatientClass.OUTPATIENT, classSince: daysAgo(4, 10), initialAssessment: 'Outpatient follow-up endoscopy for pancreatitis.' },
 
   // Discharged
   { id: uid(220), key: 'adm3', patientKey: 'pt3', physicianUserId: 'DOC001', admissionDate: daysAgo(21), dischargeDate: daysAgo(6), initialAssessment: 'Infected diabetic foot ulcer, right lower extremity.' },

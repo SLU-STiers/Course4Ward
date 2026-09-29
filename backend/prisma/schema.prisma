@@ -23,8 +23,22 @@ enum OrderType {
   ADMISSION
   DISCHARGE
   DEFAULT
+  OBSERVATION
 
   @@map("order_type")
+}
+
+/// Kind of hospital encounter an admission record currently is.
+/// EMERGENCY / OUTPATIENT -> OBSERVATION needs an OBSERVATION order,
+/// any non-inpatient -> INPATIENT needs an ADMISSION order; the nurse
+/// carries both out. See PatientsService.
+enum PatientClass {
+  EMERGENCY
+  OUTPATIENT
+  OBSERVATION
+  INPATIENT
+
+  @@map("patient_class")
 }
 
 enum OrderStatus {
@@ -159,8 +173,9 @@ model PatientAdmission {
   id                String    @id @default(uuid())
   admissionDate     DateTime
   dischargeDate     DateTime?
-  isOutpatient      Boolean   @default(false)
-  outpatientSetAt DateTime?
+  patientClass      PatientClass @default(EMERGENCY)
+  /// When the admission entered its current class (e.g. start of observation).
+  classSince        DateTime     @default(now())
   initialAssessment String?
   patientId         String
   physicianId       String?      

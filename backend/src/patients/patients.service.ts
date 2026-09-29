@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { OrderEnteredBy, OrderType, PatientClass, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
@@ -49,6 +49,35 @@ function resolveDateOfBirth(dto: CreatePatientDto): Date | undefined {
   return dob;
 }
 
+/** Human wording of each class, for error messages. */
+const CLASS_LABEL: Record<PatientClass, string> = {
+  EMERGENCY: 'an emergency patient',
+  OUTPATIENT: 'an outpatient',
+  OBSERVATION: 'under observation',
+  INPATIENT: 'admitted',
+};
+
+const ORDER_LABEL: Partial<Record<OrderType, string>> = {
+  ADMISSION: 'admission order',
+  OBSERVATION: 'observation order',
+};
+
+/** The physician order a class needs: at registration or to move into it. */
+const CLASS_ORDER: Record<PatientClass, OrderType | null> = {
+  EMERGENCY: null,
+  OUTPATIENT: null,
+  OBSERVATION: OrderType.OBSERVATION,
+  INPATIENT: OrderType.ADMISSION,
+};
+
+/** Which classes a patient may be moved into a class from. */
+const CLASS_TRANSITIONS: Record<PatientClass, PatientClass[]> = {
+  EMERGENCY: [],
+  OUTPATIENT: [],
+  OBSERVATION: [PatientClass.EMERGENCY, PatientClass.OUTPATIENT],
+  INPATIENT: [PatientClass.EMERGENCY, PatientClass.OUTPATIENT, PatientClass.OBSERVATION],
+};
+
 @Injectable()
 export class PatientsService {
   constructor(
@@ -65,8 +94,25 @@ export class PatientsService {
     });
   }
 
-  // Nurse patient management: demographics + admission (ward or ER/outpatient)
+  // Nurse patient management: demographics + admission. EMERGENCY and
+  // OUTPATIENT registrations need no order. OBSERVATION and INPATIENT (direct
+  // admission, trauma, scheduled surgery) are physician decisions, so the
+  // nurse enters the physician's order on their behalf in the same request.
   async create(dto: CreatePatientDto, nurseId: string) {
+    const patientClass = dto.patientClass ?? PatientClass.EMERGENCY;
+    const orderType = CLASS_ORDER[patientClass];
+    const registrationOrder = dto.registrationOrder?.trim();
+    if (orderType && !registrationOrder) {
+      throw new BadRequestException(
+        `Registering a patient as ${CLASS_LABEL[patientClass]} needs the physician's ${ORDER_LABEL[orderType]}`,
+      );
+    }
+    if (!orderType && (registrationOrder || dto.registrationOrderChannel)) {
+      throw new BadRequestException(
+        `No order is entered when registering a patient as ${CLASS_LABEL[patientClass]}`,
+      );
+    }
+
     const additionalPhysicianIds = [...new Set(dto.additionalPhysicianIds ?? [])].filter(
       (id) => id !== dto.physicianId,
     );
@@ -77,13 +123,6 @@ export class PatientsService {
     if (activePhysicians !== requiredIds.length) {
       throw new BadRequestException('One or more selected physicians were not found or are inactive');
     }
-
-    const isOutpatient =
-      dto.admissionStatus === 'ER_OUTPATIENT'
-        ? true
-        : dto.admissionStatus === 'ADMITTED'
-          ? false
-          : Boolean(dto.isOutpatient);
 
     const admissionDate = dto.admissionDate ? new Date(dto.admissionDate) : new Date();
     const initialAssessment = (dto.notes ?? dto.initialAssessment ?? '').trim() || null;
@@ -98,14 +137,28 @@ export class PatientsService {
         admissions: {
           create: {
             admissionDate,
-            isOutpatient,
-            outpatientSetAt: isOutpatient ? admissionDate : null,
+            patientClass,
+            classSince: admissionDate,
             initialAssessment,
             physicianId: dto.physicianId,
             additionalPhysicians: additionalPhysicianIds.length
               ? { create: additionalPhysicianIds.map((physicianId) => ({ physicianId })) }
               : undefined,
             triage: triage ? { create: triage } : undefined,
+            // Created in the same write, so an observation / inpatient stay
+            // never exists without the order behind it.
+            orders: orderType
+              ? {
+                  create: {
+                    orderContent: registrationOrder!,
+                    type: orderType,
+                    orderedById: dto.physicianId,
+                    encodedById: nurseId,
+                    enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
+                    communicationChannel: dto.registrationOrderChannel ?? null,
+                  },
+                }
+              : undefined,
           },
         },
       },
@@ -116,7 +169,8 @@ export class PatientsService {
             id: true,
             admissionDate: true,
             dischargeDate: true,
-            isOutpatient: true,
+            patientClass: true,
+            classSince: true,
             initialAssessment: true,
             physician: { select: { id: true, firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
@@ -130,6 +184,9 @@ export class PatientsService {
       userId: nurseId,
       action: 'PATIENT_CREATED',
     });
+    if (orderType) {
+      await this.auditLog.record({ userId: nurseId, action: 'ORDER_CREATED' });
+    }
 
     return patient;
   }
@@ -156,7 +213,8 @@ export class PatientsService {
                   id: true,
                   admissionDate: true,
                   dischargeDate: true,
-                  isOutpatient: true,
+                  patientClass: true,
+                  classSince: true,
                   initialAssessment: true,
                   physician: { select: { firstName: true, lastName: true } },
                   additionalPhysicians: additionalPhysiciansSelect,
@@ -168,7 +226,8 @@ export class PatientsService {
                   id: true,
                   admissionDate: true,
                   dischargeDate: true,
-                  isOutpatient: true,
+                  patientClass: true,
+                  classSince: true,
                 },
               }),
         },
@@ -187,7 +246,8 @@ export class PatientsService {
             id: true,
             admissionDate: true,
             dischargeDate: true,
-            isOutpatient: true,
+            patientClass: true,
+            classSince: true,
             initialAssessment: true,
             physician: { select: { firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
@@ -230,15 +290,96 @@ export class PatientsService {
     return patient;
   }
 
+  /** Whether a physician has written an active order of `type` for this admission. */
+  private async hasActiveOrder(admissionId: string, type: OrderType) {
+    const count = await this.prisma.physicianOrder.count({
+      where: { admissionId, type, active: true },
+    });
+    return count > 0;
+  }
+
+  // The nurse formally discharges the patient once a physician has written the
+  // discharge order. An outpatient visit is simply ended: clinic visits have
+  // no discharge order.
   async dischargeAdmission(id: string, userId: string) {
     const admission = await this.prisma.patientAdmission.findUnique({ where: { id } });
     if (!admission) throw new NotFoundException('Admission not found');
-    const updated = await this.prisma.patientAdmission.update({
-      where: { id },
-      data: { dischargeDate: new Date() },
+    if (admission.dischargeDate) {
+      throw new ConflictException('This patient is already discharged');
+    }
+    if (
+      admission.patientClass !== PatientClass.OUTPATIENT &&
+      !(await this.hasActiveOrder(id, OrderType.DISCHARGE))
+    ) {
+      throw new BadRequestException(
+        'A physician must write a discharge order before the patient can be discharged',
+      );
+    }
+
+    // Guarded so two nurses discharging at once cannot move the date.
+    const dischargeDate = new Date();
+    const { count } = await this.prisma.patientAdmission.updateMany({
+      where: { id, dischargeDate: null },
+      data: { dischargeDate },
     });
+    if (count === 0) throw new ConflictException('This patient is already discharged');
+
     await this.auditLog.record({ userId, action: 'REGISTER_PATIENT' });
-    return updated;
+    return { ...admission, dischargeDate };
+  }
+
+  // Emergency / outpatient / observation -> inpatient, once a physician has
+  // written the admission order.
+  admitAdmission(id: string, userId: string) {
+    return this.changeClass(id, userId, PatientClass.INPATIENT);
+  }
+
+  // Emergency / outpatient -> observation, once a physician has written the
+  // observation order.
+  observeAdmission(id: string, userId: string) {
+    return this.changeClass(id, userId, PatientClass.OBSERVATION);
+  }
+
+  /**
+   * The nurse carries out a physician's admission / observation order. Only
+   * the transitions in CLASS_TRANSITIONS exist, each needs an active order of
+   * the matching type, and the update is guarded on the current class so two
+   * nurses acting at once cannot both apply it.
+   */
+  private async changeClass(id: string, userId: string, target: PatientClass) {
+    const admission = await this.prisma.patientAdmission.findUnique({ where: { id } });
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (admission.dischargeDate) {
+      throw new BadRequestException('This patient is already discharged');
+    }
+    if (admission.patientClass === target) {
+      throw new ConflictException(`This patient is already ${CLASS_LABEL[target]}`);
+    }
+    if (!CLASS_TRANSITIONS[target].includes(admission.patientClass)) {
+      throw new BadRequestException(
+        `A patient who is ${CLASS_LABEL[admission.patientClass]} cannot be ${
+          target === PatientClass.OBSERVATION ? 'placed under observation' : 'admitted'
+        }`,
+      );
+    }
+    const orderType = CLASS_ORDER[target]!;
+    if (!(await this.hasActiveOrder(id, orderType))) {
+      throw new BadRequestException(
+        `A physician must write an ${ORDER_LABEL[orderType]} first`,
+      );
+    }
+
+    const classSince = new Date();
+    const { count } = await this.prisma.patientAdmission.updateMany({
+      where: { id, patientClass: admission.patientClass, dischargeDate: null },
+      data: { patientClass: target, classSince },
+    });
+    if (count === 0) {
+      throw new ConflictException('This patient was updated by someone else; reload and try again');
+    }
+
+    await this.auditLog.record({ userId, action: 'PATIENT_UPDATED' });
+    return { ...admission, patientClass: target, classSince };
   }
 
   async addConsultingPhysician(admissionId: string, physicianId: string, nurseId: string) {

@@ -3,7 +3,10 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsIn,
+  IsNotEmpty,
+  MaxLength,
   IsInt,
   IsNumber,
   IsOptional,
@@ -15,7 +18,10 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { CommunicationChannel, PatientClass } from '@prisma/client';
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class CreatePatientDto {
   @ApiProperty()
@@ -51,13 +57,32 @@ export class CreatePatientDto {
   @IsDateString()
   admissionDate?: string;
 
+  // Kind of encounter the patient is registered as. EMERGENCY and OUTPATIENT
+  // need no order. OBSERVATION and INPATIENT (direct admission, trauma,
+  // scheduled surgery) are physician decisions, so they need
+  // `registrationOrder`: the observation / admission order the nurse enters
+  // on the attending physician's behalf.
+  @ApiPropertyOptional({ enum: PatientClass, default: PatientClass.EMERGENCY })
+  @IsOptional()
+  @IsEnum(PatientClass)
+  patientClass?: PatientClass;
+
   @ApiPropertyOptional({
-    description: 'ADMITTED = inpatient ward; ER_OUTPATIENT = ER / not fully admitted',
-    enum: ['ADMITTED', 'ER_OUTPATIENT'],
+    description: 'Observation / admission order text; required for OBSERVATION and INPATIENT',
+    example: 'Admit to Medical Ward under Dr. Santos. CBC, CXR PA.',
   })
   @IsOptional()
-  @IsIn(['ADMITTED', 'ER_OUTPATIENT'])
-  admissionStatus?: 'ADMITTED' | 'ER_OUTPATIENT';
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty({ message: 'The order must not be empty' })
+  @MaxLength(2000)
+  registrationOrder?: string;
+
+  // How the physician gave the order; omit for a written/signed order.
+  @ApiPropertyOptional({ enum: CommunicationChannel })
+  @IsOptional()
+  @IsEnum(CommunicationChannel)
+  registrationOrderChannel?: CommunicationChannel;
 
   @ApiProperty({ description: 'Attending physician user id (UUID)' })
   @IsUUID()
@@ -72,12 +97,6 @@ export class CreatePatientDto {
   @ArrayUnique()
   @IsUUID('all', { each: true })
   additionalPhysicianIds?: string[];
-
-  @ApiPropertyOptional({ description: 'Legacy flag; preferred: admissionStatus' })
-  @IsOptional()
-  @Type(() => Boolean)
-  @IsBoolean()
-  isOutpatient?: boolean;
 
   @ApiPropertyOptional({ description: 'Clinical notes stored as initialAssessment (legacy alias of notes)' })
   @IsOptional()
