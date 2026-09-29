@@ -118,6 +118,17 @@ export interface Claim {
   cf4Generated: boolean;
 }
 
+/** A Course in the Ward no claim has been opened for (`GET /claims/eligible-summaries`). */
+export interface EligibleSummary {
+  id: string;
+  summaryDate: string;
+  status: SummaryStatus;
+  summaryContent: string;
+  patient: { id: string; firstName: string; lastName: string };
+  approvedBy?: { firstName: string; lastName: string } | null;
+  orders: Array<{ dateCreated: string; orderedBy: { firstName: string; lastName: string } }>;
+}
+
 export interface ClaimRecord {
   id: string;
   requestedAt: string;
