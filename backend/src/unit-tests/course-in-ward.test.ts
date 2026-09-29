@@ -37,6 +37,9 @@ const mockPrismaService = {
     update: jest.fn(),
     findMany: jest.fn(),
   },
+  summaryApprovalRequest: {
+    updateMany: jest.fn(),
+  },
 };
 
 const mockAuditLogService = {
@@ -658,6 +661,13 @@ describe('CourseInWardService', () => {
           validatorId: mockPhysicianId,
           validatedAt: expect.any(Date),
         },
+      });
+      expect(mockPrismaService.summaryApprovalRequest.updateMany).toHaveBeenCalledWith({
+        where: {
+          summaryId: mockSummaryId,
+          status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] },
+        },
+        data: { status: 'VALIDATED' },
       });
       expect(mockAuditLogService.record).toHaveBeenCalledWith({
         userId: mockPhysicianId,
