@@ -48,6 +48,12 @@ function mapPatient(patient: Patient, index: number): NursePatient {
   };
 }
 
+/** Status shown in the table and matched by the status filter; open ER / outpatient visits are their own status. */
+function displayStatus(patient: NursePatient): 'admitted' | 'er' | 'discharged' {
+  if (patient.status === 'discharged') return 'discharged';
+  return patient.isOutpatient ? 'er' : 'admitted';
+}
+
 function mapOrder(order: PhysicianOrder): OrderSet {
   const date = new Date(order.dateCreated);
   return {
@@ -98,7 +104,7 @@ export function ManagementPortalView() {
     pageSize: 8,
     searchFields: (patient) => [patient.name, patient.patientId, patient.recordId],
     filterPredicates: {
-      status: (patient, value) => value === 'all' || (patient.status ?? 'admitted') === value,
+      status: (patient, value) => value === 'all' || displayStatus(patient) === value,
     },
     initialFilters: { status: 'all' },
     sorters: {
@@ -198,6 +204,7 @@ export function ManagementPortalView() {
             options: [
               { value: 'all', label: 'All patients' },
               { value: 'admitted', label: 'Admitted' },
+              { value: 'er', label: 'ER / Outpatient' },
               { value: 'discharged', label: 'Discharged' },
             ],
             value: table.filters.status ?? 'all',
@@ -256,7 +263,11 @@ export function ManagementPortalView() {
                     {p.daysInCare} {p.daysInCare === 1 ? 'day' : 'days'}
                   </td>
                   <td style={patientTableStyles.td}>
-                    <StatusBadge status={p.status ?? 'admitted'} showDot />
+                    {displayStatus(p) === 'er' ? (
+                      <StatusBadge status="info" label="ER / Outpatient" showDot />
+                    ) : (
+                      <StatusBadge status={p.status ?? 'admitted'} showDot />
+                    )}
                   </td>
                   <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
                     <button

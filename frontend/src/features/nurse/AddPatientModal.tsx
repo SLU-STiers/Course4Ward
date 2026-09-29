@@ -5,6 +5,7 @@ import { patientsApi } from '../../services/domainApi';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { setRoomDestination } from './roomDestinations';
+import { TimePickerField } from './TimePickerField';
 
 type PhysicianOption = {
   id: string;
@@ -290,7 +291,7 @@ export function AddPatientModal({
 
           <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Initial vital signs — leave blank if not taken">
             <div style={s.grid4}>
-              <Vital label="Time" type="time" value={form.triageTime} onChange={(v) => setField('triageTime', v)} />
+              <TimePickerField value={form.triageTime} onChange={(v) => setField('triageTime', v)} />
               <Vital label="Heart Rate" unit="bpm" type="number" min={20} max={300} value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" />
               <Vital label="Resp. Rate" unit="/min" type="number" min={1} max={80} value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="—" />
               <Vital label="SpO₂" unit="%" type="number" min={50} max={100} value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="—" />

@@ -997,6 +997,8 @@ td {
 
 /* ---------- Popover + menus ---------- */
 .ui-popover__anchor { display: inline-flex; }
+.ui-popover__anchor--block { display: flex; min-width: 0; }
+.ui-popover__anchor--block > * { flex: 1; min-width: 0; }
 
 .ui-popover {
   position: fixed;
