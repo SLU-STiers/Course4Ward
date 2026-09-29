@@ -97,9 +97,11 @@ describe("Claims Module", () => {
   describe("ClaimsService", () => {
     describe("createFromSummary", () => {
       it("should create a claim from a valid summary", async () => {
-        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue(
-          mockSummary,
-        );
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          requests: [],
+          orders: [],
+        });
         (
           prismaService.summaryApprovalRequest.create as jest.Mock
         ).mockResolvedValue(mockClaim);
@@ -109,9 +111,9 @@ describe("Claims Module", () => {
           mockUser.id,
         );
 
-        expect(prismaService.courseInWard.findUnique).toHaveBeenCalledWith({
-          where: { id: mockCourseInWardId },
-        });
+        expect(prismaService.courseInWard.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: mockCourseInWardId } }),
+        );
         expect(
           prismaService.summaryApprovalRequest.create,
         ).toHaveBeenCalledWith({
@@ -119,6 +121,7 @@ describe("Claims Module", () => {
             summaryId: mockCourseInWardId,
             physicianId: mockSummary.validatorId,
             processorId: mockUser.id,
+            status: "VALIDATED",
           },
         });
         expect(auditLogService.record).toHaveBeenCalledWith({
@@ -143,20 +146,67 @@ describe("Claims Module", () => {
         expect(auditLogService.record).not.toHaveBeenCalled();
       });
 
-      it("should throw BadRequestException when summary has no validator", async () => {
+      it("should address an unapproved summary to the attending physician as PENDING", async () => {
         (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
           ...mockSummary,
           validatorId: null,
+          status: SummaryStatus.DRAFT_AI,
+          approvedStatus: null,
+          requests: [],
+          orders: [
+            { orderedById: "physician-ordering", admission: { physicianId: "physician-attending" } },
+          ],
+        });
+        (
+          prismaService.summaryApprovalRequest.create as jest.Mock
+        ).mockResolvedValue(mockClaim);
+
+        await service.createFromSummary(mockCourseInWardId, mockUser.id);
+
+        expect(
+          prismaService.summaryApprovalRequest.create,
+        ).toHaveBeenCalledWith({
+          data: {
+            summaryId: mockCourseInWardId,
+            physicianId: "physician-attending",
+            processorId: mockUser.id,
+            status: "PENDING",
+          },
+        });
+      });
+
+      it("should throw BadRequestException when no physician can validate the summary", async () => {
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          validatorId: null,
+          requests: [],
+          orders: [],
         });
 
         await expect(
           service.createFromSummary(mockCourseInWardId, mockUser.id),
-        ).rejects.toThrow("Summary has no validating physician");
+        ).rejects.toThrow("Summary has no attending physician to validate it");
 
         expect(
           prismaService.summaryApprovalRequest.create,
         ).not.toHaveBeenCalled();
         expect(auditLogService.record).not.toHaveBeenCalled();
+      });
+
+      it("should throw ConflictException when the summary already has a claim", async () => {
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          requests: [{ id: "claim-existing" }],
+          orders: [],
+        });
+
+        await expect(
+          service.createFromSummary(mockCourseInWardId, mockUser.id),
+        ).rejects.toThrow("A claim already exists for this summary");
+
+        expect(
+          prismaService.summaryApprovalRequest.create,
+        ).not.toHaveBeenCalled();
       });
     });
 

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import {
   BadRequestException,
   ForbiddenException,
@@ -5,12 +6,15 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+=======
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+>>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
 import { ConfigService } from '@nestjs/config';
-import { OrderEnteredBy, Prisma, Role } from '@prisma/client';
+import { OrderEnteredBy, OrderStatus, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OllamaClient } from '../course-in-ward/ollama-client';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, UpdateOrderStatusDto } from './dto/create-order.dto';
 
 /**
  * Half-open local-day window `[start, end)` for a `YYYY-MM-DD` key. A missing
@@ -49,6 +53,15 @@ export class OrdersService {
   }
 
   async create(dto: CreateOrderDto, enteredById: string, enteredByRole: Role) {
+    const admission = await this.prisma.patientAdmission.findUnique({
+      where: { id: dto.admissionId },
+      select: { dischargeDate: true },
+    });
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (admission.dischargeDate) {
+      throw new BadRequestException('Cannot add orders to a discharged admission');
+    }
+
     const enteredByFlag =
       enteredByRole === Role.NURSE ? OrderEnteredBy.NURSE_ON_BEHALF : OrderEnteredBy.PHYSICIAN;
 
@@ -136,22 +149,49 @@ export class OrdersService {
     return this.prisma.physicianOrder.findMany({
       where: { admission: { patientId } },
       orderBy: { dateCreated: 'desc' },
+<<<<<<< HEAD
       include: orderInclude,
+=======
+      include: {
+        orderedBy: { select: { firstName: true, lastName: true } },
+        encodedBy: { select: { firstName: true, lastName: true, role: true } },
+        executedBy: { select: { firstName: true, lastName: true } },
+      },
+>>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
     });
   }
 
-  async update(id: string, orderContent: string, physicianId: string) {
-    const order = await this.prisma.physicianOrder.findFirst({ where: { id, orderedById: physicianId } });
+  /**
+   * Nurse execution tracking. Moving an order off `TO_ACCOMPLISH` stamps the
+   * acting nurse and time; moving it back clears them, so `executedBy` always
+   * describes the current status rather than a stale earlier one.
+   */
+  async updateStatus(id: string, dto: UpdateOrderStatusDto, nurseId: string) {
+    const order = await this.prisma.physicianOrder.findFirst({ where: { id, active: true } });
     if (!order) throw new NotFoundException('Order not found');
-    const updated = await this.prisma.physicianOrder.update({ where: { id }, data: { orderContent } });
-    void this.persistOrderEmbedding(updated.id, updated.orderContent);
-    return updated;
-  }
 
-  async remove(id: string, physicianId: string) {
-    const order = await this.prisma.physicianOrder.findFirst({ where: { id, orderedById: physicianId } });
-    if (!order) throw new NotFoundException('Order not found');
-    return this.prisma.physicianOrder.delete({ where: { id } });
+    const pending = dto.status === OrderStatus.TO_ACCOMPLISH;
+    const updated = await this.prisma.physicianOrder.update({
+      where: { id },
+      data: {
+        status: dto.status,
+        ...(dto.nurseComment !== undefined && { nurseComment: dto.nurseComment.trim() || null }),
+        executedById: pending ? null : nurseId,
+        executedAt: pending ? null : new Date(),
+      },
+      include: {
+        orderedBy: { select: { firstName: true, lastName: true } },
+        encodedBy: { select: { firstName: true, lastName: true, role: true } },
+        executedBy: { select: { firstName: true, lastName: true } },
+      },
+    });
+
+    await this.auditLog.record({
+      userId: nurseId,
+      action: 'ORDER_STATUS_UPDATED',
+    });
+
+    return updated;
   }
 
   /**

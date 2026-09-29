@@ -422,6 +422,13 @@ export class CourseInWardService {
       },
     });
 
+    // Approving from the workspace also answers any claim that was waiting on
+    // this summary, so the claims processor can move on to CF4.
+    await this.prisma.summaryApprovalRequest.updateMany({
+      where: { summaryId: id, status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] } },
+      data: { status: 'VALIDATED' },
+    });
+
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_APPROVED',

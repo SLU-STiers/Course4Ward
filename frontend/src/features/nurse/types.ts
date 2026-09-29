@@ -1,5 +1,7 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
+import type { PhysicianOrder } from '../../types';
+
 
 export type TabType = 'management' | 'patient';
 export type NursePatient = {
@@ -49,6 +51,8 @@ export type OrderSet = {
   time: string;
   doctor: string;
   orders: string[];
+  /** Present for orders loaded from the API; the static demo sets have none. */
+  order?: PhysicianOrder;
 };
 export type AdmissionStatus = 'Admitted' | 'ER / Outpatient' | 'Discharged';
 export type AdmissionRecord = {

@@ -1,6 +1,6 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
@@ -17,6 +17,7 @@ import { styles, overviewStyles } from './styles';
 
 import { mapClaimToPatient, mapClaimToRequest } from './mappers';
 import { ReviewRequestModal } from './ReviewRequestModal';
+import { EligibleSummariesCard } from './EligibleSummariesCard';
 import type { CF4Patient, ExportSubView, PatientSortField, PatientStatus, RequestSortField, SortDirection, SummarizationRequest, TabType } from './types';
 
 /** Sort key for a patient-list column (numbers compare numerically). */
@@ -72,7 +73,7 @@ export function ClaimsProcessorDashboard() {
     isUploading: true,
   });
 
-  useEffect(() => {
+  const loadClaims = useCallback(() => {
     claimsApi.findAll().then(({ data }) => {
       setRequests(data.map(mapClaimToRequest));
       setCf4Patients(data.map(mapClaimToPatient));
@@ -81,6 +82,8 @@ export function ClaimsProcessorDashboard() {
       setCf4Patients([]);
     });
   }, []);
+
+  useEffect(loadClaims, [loadClaims]);
 
   const handleLogout = () => {
     logout();
@@ -256,6 +259,7 @@ export function ClaimsProcessorDashboard() {
           {/* REQUESTS TAB */}
           {activeTab === 'requests' && (
             <div>
+              <EligibleSummariesCard onClaimCreated={loadClaims} />
               <DataTableToolbar
                 searchProps={{
                   value: searchQuery,
