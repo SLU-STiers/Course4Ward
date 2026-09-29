@@ -161,7 +161,9 @@ export function ManageView() {
           ordersResponse.data.map((order) => orderDayValue(order.dateCreated)),
         );
         setOrderDateFilter((previous) =>
-          previous && !loadedDays.has(previous) ? null : previous,
+          previous && !loadedDays.has(previous) && previous !== toDateKey(new Date())
+            ? null
+            : previous,
         );
         // One Course in the Ward per order day; the panel picks the day to show.
         setSummariesByPatient((previous) => ({
@@ -196,10 +198,27 @@ export function ManageView() {
     [ordersByDay],
   );
 
-  // A filter only sticks to a date this patient actually has orders on, so the
-  // list always has something to show.
+  // Today stays pickable while the admission is open, even before its first
+  // order, so the physician can open the day and write into it. Past order-less
+  // days are still skipped: a new order is always stamped with the current time.
+  const todayKey = toDateKey(new Date());
+  const hasOpenAdmission = Boolean(
+    selected?.admissions?.some((admission) => !admission.dischargeDate),
+  );
+  const selectableOrderDays = useMemo(
+    () =>
+      hasOpenAdmission && !ordersByDay.has(todayKey)
+        ? [...orderDays, todayKey].sort()
+        : orderDays,
+    [hasOpenAdmission, ordersByDay, orderDays, todayKey],
+  );
+
+  // A filter only sticks to a selectable date, so the list never disagrees
+  // with the calendar.
   const activeOrderDate =
-    orderDateFilter && ordersByDay.has(orderDateFilter) ? orderDateFilter : null;
+    orderDateFilter && selectableOrderDays.includes(orderDateFilter)
+      ? orderDateFilter
+      : null;
   const displayedOrders = activeOrderDate
     ? allOrders.filter((order) => orderDayValue(order.dateCreated) === activeOrderDate)
     : allOrders;
@@ -230,7 +249,7 @@ export function ManageView() {
     (summaryDayFilter && orderDays.includes(summaryDayFilter)
       ? summaryDayFilter
       : null) ??
-    activeOrderDate ??
+    (activeOrderDate && ordersByDay.has(activeOrderDate) ? activeOrderDate : null) ??
     daysWithSummary[daysWithSummary.length - 1] ??
     orderDays[orderDays.length - 1] ??
     null;
@@ -374,25 +393,27 @@ export function ManageView() {
   const selectedDateLabel = activeOrderDate
     ? new Date(`${activeOrderDate}T00:00:00`).toLocaleDateString("en-GB")
     : "All dates";
-  // Order dates are the only navigable stops — order-less days are skipped. With
-  // "all dates" showing, the first step focuses the day at that end of the
-  // timeline (‹ the most recent, › the earliest), so day-by-day reading never
-  // needs a trip to the calendar.
+  // Order dates (plus today, see `selectableOrderDays`) are the only navigable
+  // stops — order-less past days are skipped. With "all dates" showing, the
+  // first step focuses the day at that end of the timeline (‹ the most recent,
+  // › the earliest), so day-by-day reading never needs a trip to the calendar.
   const hasPrevOrderDay =
-    orderDays.length > 0 &&
-    (!activeOrderDate || orderDays.some((day) => day < activeOrderDate));
+    selectableOrderDays.length > 0 &&
+    (!activeOrderDate || selectableOrderDays.some((day) => day < activeOrderDate));
   const hasNextOrderDay =
-    orderDays.length > 0 &&
-    (!activeOrderDate || orderDays.some((day) => day > activeOrderDate));
+    selectableOrderDays.length > 0 &&
+    (!activeOrderDate || selectableOrderDays.some((day) => day > activeOrderDate));
   const goToAdjacentOrderDay = (direction: -1 | 1) => {
-    if (!orderDays.length) return;
+    if (!selectableOrderDays.length) return;
     if (!activeOrderDate) {
       setOrderDateFilter(
-        direction < 0 ? orderDays[orderDays.length - 1] : orderDays[0],
+        direction < 0
+          ? selectableOrderDays[selectableOrderDays.length - 1]
+          : selectableOrderDays[0],
       );
       return;
     }
-    const candidates = orderDays.filter((day) =>
+    const candidates = selectableOrderDays.filter((day) =>
       direction < 0 ? day < activeOrderDate : day > activeOrderDate,
     );
     if (!candidates.length) return;
@@ -679,7 +700,7 @@ export function ManageView() {
                 nextDisabled={!hasNextOrderDay}
                 prevLabel={prevDayLabel}
                 nextLabel={nextDayLabel}
-                availableDays={orderDays}
+                availableDays={selectableOrderDays}
                 onClear={() => setOrderDateFilter(null)}
                 clearLabel="Show all"
                 orders={displayedOrders.map((order) => ({
@@ -693,8 +714,10 @@ export function ManageView() {
                 emptyMessage={
                   selectedOrders === undefined
                     ? "Loading doctor’s orders…"
-                    : activeOrderDate
-                      ? `No orders on ${selectedDateLabel}.`
+                    : activeOrderDate === todayKey
+                      ? "No orders yet today. Add one below."
+                      : activeOrderDate
+                        ? `No orders on ${selectedDateLabel}.`
                       : "No doctor’s orders recorded for this patient yet."
                 }
                 renderContent={(entry) => {
