@@ -102,16 +102,21 @@ export function ActivityLogTable() {
   const hasFilters =
     action !== 'all' || role !== 'all' || Boolean(search.trim()) || rangePreset !== 'any';
 
-  const clearFilters = () => {
-    window.clearTimeout(searchTimer.current);
-    setSearchInput('');
-    setSearch('');
+  /** Resets what the Filter menu controls; the search box is left alone. */
+  const clearMenuFilters = () => {
     setAction('all');
     setRole('all');
     setRangePreset('any');
     setCustomFrom('');
     setCustomTo('');
     setPage(1);
+  };
+
+  const clearFilters = () => {
+    window.clearTimeout(searchTimer.current);
+    setSearchInput('');
+    setSearch('');
+    clearMenuFilters();
   };
 
   return (
@@ -189,33 +194,33 @@ export function ActivityLogTable() {
                 setPage(1);
               },
               extra: (
-                <div style={styles.filterExtra}>
-                  <span style={styles.filterExtraLabel}>Custom</span>
-                  <input
-                    type="date"
-                    aria-label="From date"
-                    style={styles.dateInput}
-                    value={customFrom}
-                    max={customTo || undefined}
-                    onChange={(event) => {
-                      setCustomFrom(event.target.value);
-                      setRangePreset('custom');
-                      setPage(1);
-                    }}
-                  />
-                  <span style={styles.filterExtraLabel}>to</span>
-                  <input
-                    type="date"
-                    aria-label="To date"
-                    style={styles.dateInput}
-                    value={customTo}
-                    min={customFrom || undefined}
-                    onChange={(event) => {
-                      setCustomTo(event.target.value);
-                      setRangePreset('custom');
-                      setPage(1);
-                    }}
-                  />
+                <div className="ui-menu__range">
+                  <label className="ui-menu__range-field">
+                    <span className="ui-menu__range-label">From</span>
+                    <input
+                      type="date"
+                      value={customFrom}
+                      max={customTo || undefined}
+                      onChange={(event) => {
+                        setCustomFrom(event.target.value);
+                        setRangePreset('custom');
+                        setPage(1);
+                      }}
+                    />
+                  </label>
+                  <label className="ui-menu__range-field">
+                    <span className="ui-menu__range-label">To</span>
+                    <input
+                      type="date"
+                      value={customTo}
+                      min={customFrom || undefined}
+                      onChange={(event) => {
+                        setCustomTo(event.target.value);
+                        setRangePreset('custom');
+                        setPage(1);
+                      }}
+                    />
+                  </label>
                 </div>
               ),
             },
@@ -223,6 +228,7 @@ export function ActivityLogTable() {
           activeFilterCount={
             (action === 'all' ? 0 : 1) + (role === 'all' ? 0 : 1) + (rangePreset === 'any' ? 0 : 1)
           }
+          onClearFilters={clearMenuFilters}
         >
           {hasFilters ? (
             <button type="button" style={styles.clearFiltersButton} onClick={clearFilters}>

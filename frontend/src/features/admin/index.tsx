@@ -1,6 +1,6 @@
 /** Part of the admin dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from '../../services/domainApi';
@@ -23,17 +23,20 @@ export function AdminPanel() {
   const navigate = useNavigate();
   const knownRequestIds = useRef<Set<string> | null>(null);
 
-  const { data: resetRequestsData } = useQuery({
-    queryKey: ['reset-requests'],
+  // Newest pending requests only: enough to spot new ones for notifications,
+  // while `total` gives the real pending count however many there are.
+  const { data: pendingResetPage } = useQuery({
+    queryKey: ['reset-requests', 'pending-poll'],
     queryFn: () =>
       adminApi
-        .getResetRequests()
-        .then((response) => response.data as ResetRequestRow[]),
+        .getResetRequests({ status: 'PENDING', take: 100 })
+        .then((response) => response.data),
     refetchInterval: 5000,
   });
 
-  const pendingResetRequests = (resetRequestsData ?? []).filter(
-    (request) => request.status === 'PENDING',
+  const pendingResetRequests: ResetRequestRow[] = useMemo(
+    () => pendingResetPage?.items ?? [],
+    [pendingResetPage],
   );
 
   useEffect(() => {
@@ -58,7 +61,7 @@ export function AdminPanel() {
     }
   }, [pendingResetRequests]);
 
-  const pendingCount = pendingResetRequests.length;
+  const pendingCount = pendingResetPage?.total ?? 0;
   const requestsBadge =
     pendingCount > 0 ? (pendingCount > 99 ? '99+' : String(pendingCount)) : undefined;
 

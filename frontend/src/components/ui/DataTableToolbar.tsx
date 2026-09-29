@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowDownAZ, ArrowUpAZ, ChevronDown, Filter } from 'lucide-react';
+import { ArrowDownAZ, ArrowUpAZ, Check, ChevronDown, Filter } from 'lucide-react';
 import { Button } from './Button';
 import { Popover } from './Popover';
 import { SearchField, type SearchFieldProps } from './SearchField';
@@ -46,6 +46,8 @@ export interface DataTableToolbarProps {
   filters?: FilterProps[];
   /** Active-filter count shown on the combined filter button. */
   activeFilterCount?: number;
+  /** Resets every filter; shows "Clear all" in the combined menu's footer. */
+  onClearFilters?: () => void;
   sortProps?: SortProps;
   /** Additional right-aligned controls (buttons, export, etc.). */
   children?: ReactNode;
@@ -62,6 +64,7 @@ export function DataTableToolbar({
   filterProps,
   filters,
   activeFilterCount,
+  onClearFilters,
   sortProps,
   children,
   className,
@@ -79,7 +82,11 @@ export function DataTableToolbar({
       <div className="ui-toolbar__controls">
         {filterProps ? <FilterMenu {...filterProps} /> : null}
         {filters?.length ? (
-          <FilterGroupMenu filters={filters} activeCount={activeFilterCount ?? 0} />
+          <FilterGroupMenu
+            filters={filters}
+            activeCount={activeFilterCount ?? 0}
+            onClearAll={onClearFilters}
+          />
         ) : null}
         {sortProps ? <SortMenu {...sortProps} /> : null}
         {children}
@@ -128,16 +135,19 @@ function FilterMenu({ label = 'Filter', title, options, value, onChange, extra }
 /**
  * One `Filter` button holding every filter group.
  *
- * Picking an option keeps the menu open so criteria from different groups can
- * be combined in a single visit; the page's own "Clear filters" control (passed
- * as `children`) resets them all.
+ * Options render as wrapping chips in a wide panel so several groups fit
+ * without a long scroll. Picking an option keeps the menu open so criteria
+ * from different groups can be combined in a single visit; the pinned footer
+ * holds "Clear all" (when `onClearAll` is given) and "Done".
  */
 function FilterGroupMenu({
   filters,
   activeCount = 0,
+  onClearAll,
 }: {
   filters: FilterProps[];
   activeCount?: number;
+  onClearAll?: () => void;
 }) {
   return (
     <Popover
@@ -145,7 +155,12 @@ function FilterGroupMenu({
       contentClassName="ui-popover--filters"
       trigger={
         <Button variant="secondary" leadingIcon={<Filter size={15} aria-hidden="true" />} trailingIcon={<ChevronDown size={14} aria-hidden="true" />}>
-          {activeCount > 0 ? `Filter (${activeCount})` : 'Filter'}
+          Filter
+          {activeCount > 0 ? (
+            <span className="ui-filter-badge" aria-label={`${activeCount} active`}>
+              {activeCount}
+            </span>
+          ) : null}
         </Button>
       }
     >
@@ -158,34 +173,44 @@ function FilterGroupMenu({
                 {index > 0 ? <div className="ui-menu__divider" /> : null}
                 <div className="ui-menu__heading">{heading}</div>
                 <div
-                  className="ui-menu__options"
+                  className="ui-menu__chips"
                   role="group"
                   aria-label={typeof heading === 'string' ? heading : undefined}
                 >
-                  {filter.options.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={option.value === filter.value}
-                      className={`ui-menu__option${option.value === filter.value ? ' is-active' : ''}`}
-                      // Deliberately does not close: filters from other groups
-                      // stay reachable so several criteria apply at once.
-                      onClick={() => filter.onChange(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                  {filter.options.map((option) => {
+                    const active = option.value === filter.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={active}
+                        className={`ui-menu__chip${active ? ' is-active' : ''}`}
+                        // Deliberately does not close: filters from other groups
+                        // stay reachable so several criteria apply at once.
+                        onClick={() => filter.onChange(option.value)}
+                      >
+                        {active ? <Check size={13} aria-hidden="true" /> : null}
+                        {option.label}
+                      </button>
+                    );
+                  })}
                 </div>
                 {filter.extra ? <div className="ui-menu__extra">{filter.extra}</div> : null}
               </div>
             );
           })}
-          <div className="ui-menu__divider" />
-          <div className="ui-menu__options">
-            <button type="button" className="ui-menu__option" onClick={close}>
+          <div className="ui-menu__footer">
+            {onClearAll ? (
+              <Button variant="ghost" size="sm" disabled={activeCount === 0} onClick={onClearAll}>
+                Clear all
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button variant="primary" size="sm" onClick={close}>
               Done
-            </button>
+            </Button>
           </div>
         </>
       )}

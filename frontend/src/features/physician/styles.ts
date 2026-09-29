@@ -353,31 +353,6 @@ export const manage: Record<string, CSSProperties> = {
     overflowX: "auto",
     overflowY: "auto",
   },
-  filterRange: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  },
-  filterRangeField: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 4,
-  },
-  filterRangeLabel: {
-    fontSize: 11,
-    fontWeight: 700,
-    color: "#64748b",
-  },
-  filterRangeInput: {
-    height: 32,
-    border: "1px solid var(--c4w-color-border)",
-    borderRadius: "var(--c4w-radius-control)",
-    padding: "0 10px",
-    fontSize: 12,
-    fontFamily: "inherit",
-    color: "var(--c4w-color-text-primary)",
-    backgroundColor: "#ffffff",
-  },
   orderTime: {
     flexShrink: 0,
     minWidth: 58,

@@ -361,12 +361,29 @@ export interface PasswordResetRequestRow {
   id: string;
   userId: string;
   ipAddress: string | null;
-  temporaryPassword: string | null;
   requestedAt: string;
   expiresAt: string;
   resolvedAt: string | null;
   status: ResetStatus;
   user: { userId: string; firstName: string; lastName: string; role: Role };
+}
+
+/** Filters and paging for the admin password reset requests table. */
+export interface PasswordResetQuery {
+  skip?: number;
+  take?: number;
+  status?: ResetStatus;
+  search?: string;
+  sort?: 'date' | 'name';
+  direction?: 'asc' | 'desc';
+}
+
+/** One page of password reset requests; `total` is the full filtered count. */
+export interface PasswordResetRequestPage {
+  items: PasswordResetRequestRow[];
+  total: number;
+  skip: number;
+  take: number;
 }
 
 /** Response body of the admin approve-reset endpoint. */

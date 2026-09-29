@@ -529,9 +529,9 @@ export function ManageView() {
                       : value,
                   ),
                 extra: (
-                  <div style={manage.filterRange}>
-                    <label style={manage.filterRangeField}>
-                      <span style={manage.filterRangeLabel}>From</span>
+                  <div className="ui-menu__range">
+                    <label className="ui-menu__range-field">
+                      <span className="ui-menu__range-label">From</span>
                       <input
                         type="date"
                         value={customRange.from}
@@ -541,11 +541,10 @@ export function ManageView() {
                             customRangeValue(event.target.value, customRange.to),
                           )
                         }
-                        style={manage.filterRangeInput}
                       />
                     </label>
-                    <label style={manage.filterRangeField}>
-                      <span style={manage.filterRangeLabel}>To</span>
+                    <label className="ui-menu__range-field">
+                      <span className="ui-menu__range-label">To</span>
                       <input
                         type="date"
                         value={customRange.to}
@@ -558,7 +557,6 @@ export function ManageView() {
                             ),
                           )
                         }
-                        style={manage.filterRangeInput}
                       />
                     </label>
                   </div>
@@ -566,6 +564,7 @@ export function ManageView() {
               },
             ]}
             activeFilterCount={activeFilterCount}
+            onClearFilters={table.resetFilters}
             sortProps={{
               title: "Sort patients by",
               options: [

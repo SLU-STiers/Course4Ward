@@ -1069,12 +1069,92 @@ td {
   box-shadow: var(--c4w-shadow-focus, 0 0 0 3px rgba(37, 99, 235, 0.28));
 }
 
-/* Combined filter menu: every filter group inside a single scrollable panel. */
+/* Combined filter menu: every filter group inside a single scrollable panel.
+   Wide enough that options wrap as chips instead of one long column; the
+   footer stays pinned so Clear all / Done never scroll out of reach. */
 .ui-popover.ui-popover--filters {
-  min-width: 260px;
-  max-height: min(70vh, 560px);
+  width: min(560px, calc(100vw - 16px));
+  max-width: none;
+  max-height: min(75vh, 620px);
+  padding-bottom: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.ui-menu__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ui-menu__chips .ui-menu__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  padding: 5px 12px;
+  border: 1px solid var(--c4w-color-border, #e2e8f0);
+  border-radius: 999px;
+  background: var(--c4w-color-surface, #ffffff);
+  color: var(--c4w-color-text-secondary, #475569);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+.ui-menu__chips .ui-menu__chip:hover {
+  border-color: var(--c4w-color-primary-soft-border, #bfdbfe);
+  color: var(--c4w-color-text-primary, #0f172a);
+}
+.ui-menu__chips .ui-menu__chip.is-active {
+  background: var(--c4w-color-primary-soft, #eff6ff);
+  border-color: var(--c4w-color-primary, #2563eb);
+  color: var(--c4w-color-primary, #2563eb);
+  font-weight: 600;
+}
+.ui-menu__chips .ui-menu__chip:focus-visible {
+  outline: none;
+  box-shadow: var(--c4w-shadow-focus, 0 0 0 3px rgba(37, 99, 235, 0.28));
+}
+
+/* From / To date pair inside a filter group. */
+.ui-menu__range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ui-menu__range-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ui-menu__range-label {
+  font-size: var(--c4w-font-caption-size, 0.75rem);
+  font-weight: 600;
+  color: var(--c4w-color-text-muted, #64748b);
+}
+.ui-menu__range input[type='date'] { width: 100%; min-width: 0; }
+@media (max-width: 480px) {
+  .ui-menu__range { grid-template-columns: minmax(0, 1fr); }
+}
+
+.ui-menu__footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 14px calc(-1 * var(--c4w-space-md, 1rem)) 0;
+  padding: 10px var(--c4w-space-md, 1rem);
+  border-top: 1px solid var(--c4w-color-border, #e2e8f0);
+  background: var(--c4w-color-surface, #ffffff);
+}
+
+/* Active-filter count on the Filter button. */
+.ui-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--c4w-color-primary, #2563eb);
+  color: var(--c4w-color-on-primary, #ffffff);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .ui-menu__option,

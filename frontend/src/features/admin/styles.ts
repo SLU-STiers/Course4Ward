@@ -689,24 +689,6 @@ export const styles: Record<string, CSSProperties> = {
     fontSize: '13px',
     color: 'var(--c4w-color-text-muted, #64748b)',
   },
-  filterExtra: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '8px 10px',
-  },
-  filterExtraLabel: {
-    fontSize: '12px',
-    color: 'var(--c4w-color-text-muted, #64748b)',
-  },
-  dateInput: {
-    padding: '6px 8px',
-    borderRadius: '6px',
-    border: '1px solid var(--c4w-color-border-strong, #cbd5e1)',
-    fontSize: '12px',
-    fontFamily: 'inherit',
-    color: 'var(--c4w-color-text-primary, #0f172a)',
-  },
   clearFiltersButton: {
     padding: '8px 12px',
     borderRadius: 'var(--c4w-radius-control, 8px)',

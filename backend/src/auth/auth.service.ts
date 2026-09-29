@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { Prisma, ResetStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { LoginDto } from './dto/login.dto';
@@ -16,6 +17,19 @@ import {
   RequestPasswordResetDto,
   ConfirmPasswordResetDto,
 } from './dto/reset-password.dto';
+
+/** Filters and paging for the admin Password Reset Requests table. */
+export interface PasswordResetQuery {
+  skip?: number;
+  take?: number;
+  status?: ResetStatus;
+  /** Every word must match the user's name or login id, the IP or the request id. */
+  search?: string;
+  sort?: 'date' | 'name';
+  direction?: 'asc' | 'desc';
+}
+
+const DEFAULT_RESET_REQUEST_PAGE_SIZE = 10;
 
 @Injectable()
 export class AuthService {
@@ -166,15 +180,70 @@ export class AuthService {
     };
   }
 
-  async findPasswordResetRequests() {
-    return this.prisma.passwordResetRequest.findMany({
-      orderBy: { requestedAt: 'desc' },
-      include: {
-        user: {
-          select: { userId: true, firstName: true, lastName: true, role: true },
+  /**
+   * Admin > Password Reset Requests. Paged server-side so the table stays fast
+   * however many requests pile up; `total` is the full filtered count.
+   */
+  async findPasswordResetRequests(query: PasswordResetQuery = {}) {
+    const skip = query.skip ?? 0;
+    const take = query.take ?? DEFAULT_RESET_REQUEST_PAGE_SIZE;
+    const direction = query.direction ?? 'desc';
+    const where = this.buildResetRequestWhere(query);
+    const orderBy: Prisma.PasswordResetRequestOrderByWithRelationInput[] =
+      query.sort === 'name'
+        ? [{ user: { firstName: direction } }, { user: { lastName: direction } }]
+        : [{ requestedAt: direction }];
+    // Stable tie-break so rows never repeat or vanish between pages.
+    orderBy.push({ id: direction });
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.passwordResetRequest.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        // `temporaryPassword` is left out on purpose: it is shown once, on approval.
+        select: {
+          id: true,
+          userId: true,
+          ipAddress: true,
+          requestedAt: true,
+          expiresAt: true,
+          resolvedAt: true,
+          status: true,
+          user: {
+            select: { userId: true, firstName: true, lastName: true, role: true },
+          },
         },
-      },
-    });
+      }),
+      this.prisma.passwordResetRequest.count({ where }),
+    ]);
+
+    return { items, total, skip, take };
+  }
+
+  private buildResetRequestWhere(query: PasswordResetQuery): Prisma.PasswordResetRequestWhereInput {
+    const conditions: Prisma.PasswordResetRequestWhereInput[] = [];
+    if (query.status) conditions.push({ status: query.status });
+
+    // "john doe" matches John Doe: each word has to hit at least one field.
+    const words = query.search?.trim().split(/\s+/).filter(Boolean) ?? [];
+    for (const word of words) {
+      const contains = { contains: word, mode: 'insensitive' as const };
+      conditions.push({
+        OR: [
+          { id: contains },
+          { ipAddress: contains },
+          {
+            user: {
+              OR: [{ firstName: contains }, { lastName: contains }, { userId: contains }],
+            },
+          },
+        ],
+      });
+    }
+
+    return conditions.length ? { AND: conditions } : {};
   }
 
   async approvePasswordReset(requestId: string, actingAdminId: string) {

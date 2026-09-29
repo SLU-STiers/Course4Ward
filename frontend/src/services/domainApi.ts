@@ -21,7 +21,8 @@ import type {
   AuditLogQuery,
   ReportSummary,
   PasswordResetApproval,
-  PasswordResetRequestRow,
+  PasswordResetQuery,
+  PasswordResetRequestPage,
   StaffAccount,
   TrendBucket,
 } from '../types';
@@ -157,8 +158,9 @@ export const adminApi = {
     api.get<ReportSummary>('/admin/reports/summary', { params }),
   activityTrend: (params?: ReportRangeParams & { bucket?: TrendBucket }) =>
     api.get<ActivityTrend>('/admin/reports/activity-trend', { params }),
-  getResetRequests: () =>
-    api.get<PasswordResetRequestRow[]>('/admin/password-reset-requests'),
+  /** One page of reset requests, filtered and sorted server-side. */
+  getResetRequests: (params?: PasswordResetQuery) =>
+    api.get<PasswordResetRequestPage>('/admin/password-reset-requests', { params }),
   approveResetRequest: (requestId: string) =>
     api.post<PasswordResetApproval>(`/admin/password-reset-requests/${requestId}/approve`),
   rejectResetRequest: (requestId: string) =>

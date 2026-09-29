@@ -18,6 +18,8 @@ const mockPrismaService = {
     updateMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
   },
   $transaction: jest.fn(),
 } as unknown as jest.Mocked<PrismaService>;
@@ -255,6 +257,56 @@ describe('AuthService', () => {
       expect(bcrypt.compare).toHaveBeenCalledWith('wrong-password'.length ? dto.password : dto.password, mockUser.passwordHash);
       expect(jwtService.signAsync).not.toHaveBeenCalled();
       expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+  });
+  describe('findPasswordResetRequests', () => {
+    const findManyArgs = () =>
+      (prismaService.passwordResetRequest.findMany as jest.Mock).mock.calls[0][0];
+
+    beforeEach(() => {
+      (prismaService.$transaction as jest.Mock).mockResolvedValue([[{ id: 'req-1' }], 1234]);
+    });
+
+    it('returns one page plus the full total, newest first by default', async () => {
+      const result = await service.findPasswordResetRequests();
+
+      expect(result).toEqual({ items: [{ id: 'req-1' }], total: 1234, skip: 0, take: 10 });
+      const args = findManyArgs();
+      expect(args.skip).toBe(0);
+      expect(args.take).toBe(10);
+      expect(args.where).toEqual({});
+      expect(args.orderBy).toEqual([{ requestedAt: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('applies skip/take and sorts by user name', async () => {
+      await service.findPasswordResetRequests({ skip: 100, take: 50, sort: 'name', direction: 'asc' });
+
+      const args = findManyArgs();
+      expect(args.skip).toBe(100);
+      expect(args.take).toBe(50);
+      expect(args.orderBy).toEqual([
+        { user: { firstName: 'asc' } },
+        { user: { lastName: 'asc' } },
+        { id: 'asc' },
+      ]);
+    });
+
+    it('filters by status and requires every search word to match, in the page and the count', async () => {
+      await service.findPasswordResetRequests({ status: 'PENDING', search: ' john  doe ' });
+
+      const where = findManyArgs().where;
+      expect(where.AND).toHaveLength(3);
+      expect(where.AND[0]).toEqual({ status: 'PENDING' });
+      expect(JSON.stringify(where.AND[1])).toContain('"contains":"john"');
+      expect(JSON.stringify(where.AND[2])).toContain('"contains":"doe"');
+      expect(prismaService.passwordResetRequest.count).toHaveBeenCalledWith({ where });
+    });
+
+    it('never returns the temporary password in the list', async () => {
+      await service.findPasswordResetRequests();
+
+      expect(findManyArgs().select.temporaryPassword).toBeUndefined();
+      expect(findManyArgs().select.status).toBe(true);
     });
   });
 });
