@@ -8,11 +8,13 @@ import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
+import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { useTableState } from '../../hooks/useTableState';
 import {
   formatDateLongFromKey,
   toDateKey,
 } from '../../lib/format';
+import { useAuthStore } from '../../store/authStore';
 import { manage } from './styles';
 
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
@@ -54,15 +56,18 @@ const SUMMARY_BADGE: Record<CourseInWard["status"], string> = {
 };
 
 export function ManageView() {
+  const user = useAuthStore((state) => state.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
-  const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [ordersByPatient, setOrdersByPatient] = useState<
     Record<string, PhysicianOrder[]>
   >({});
   const [draft, setDraft] = useState("");
+  const [savingOrders, setSavingOrders] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [approvingSummary, setApprovingSummary] = useState(false);
   /** Every Course in the Ward loaded for a patient — one summary per order day. */
   const [summariesByPatient, setSummariesByPatient] = useState<
     Record<string, CourseInWard[]>
@@ -151,6 +156,7 @@ export function ManageView() {
           ...previous,
           [selected.id]: ordersResponse.data,
         }));
+        setOrderError(null);
         // Drop a date filter this patient has no orders on, so the filter state
         // never disagrees with what the list is showing.
         const loadedDays = new Set(
@@ -259,34 +265,17 @@ export function ManageView() {
     return value !== undefined && value !== "" && value !== "all";
   }).length;
 
-  const openPatient = (id: string, edit = false) => {
+  const openPatient = (id: string) => {
     setSelectedId(id);
     setEditingSummary(false);
     setDraft("");
     setSubmitted(false);
-    setEditingOrders(edit);
   };
 
-  const updateOrder = (orderId: string, text: string) => {
-    if (!selected) return;
-    setOrdersByPatient((prev) => ({
-      ...prev,
-      [selected.id]: (prev[selected.id] ?? []).map((order) =>
-        order.id === orderId ? { ...order, orderContent: text } : order,
-      ),
-    }));
-    setSubmitted(false);
-  };
-
-  const removeOrder = (orderId: string) => {
-    if (!selected) return;
-    setOrdersByPatient((prev) => ({
-      ...prev,
-      [selected.id]: (prev[selected.id] ?? []).filter(
-        (order) => order.id !== orderId,
-      ),
-    }));
-    setSubmitted(false);
+  /** Replace the patient's order list with the server's copy. */
+  const reloadOrders = async (patientId: string) => {
+    const { data } = await ordersApi.forPatient(patientId);
+    setOrdersByPatient((previous) => ({ ...previous, [patientId]: data }));
   };
 
   /** Refresh the per-patient summary list with a row the API just returned. */
@@ -304,6 +293,7 @@ export function ManageView() {
   const generateSummaryForDay = (day: string, onDone?: () => void) => {
     if (!selected || generatingSummary) return;
     setGeneratingSummary(true);
+    setOrderError(null);
     void courseInWardApi
       .generate(selected.id, day)
       .then(({ data }) => {
@@ -315,22 +305,72 @@ export function ManageView() {
         setSummaryDraft(null);
         onDone?.();
       })
-      .catch(() => undefined)
+      .catch(() =>
+        setOrderError("The AI summary could not be generated. Try Generate again or write it manually."),
+      )
       .finally(() => setGeneratingSummary(false));
   };
 
-  const submitOrders = () => {
-    if (!selected || !orderDays.length) return;
-    const targetDay =
-      activeOrderDate ?? summaryDay ?? orderDays[orderDays.length - 1];
+  // Submit = file the new order in the composer (orders are never edited or
+  // deleted once written), then (re)generate the Course in the Ward for its day.
+  const submitOrders = async () => {
+    if (!selected || savingOrders || generatingSummary) return;
+    const patientId = selected.id;
+    const content = draft.trim();
+    if (!content && !orderDays.length) return;
+
+    const admissionId = selected.admissions?.find((admission) => !admission.dischargeDate)?.id;
+    if (content && (!admissionId || !user)) {
+      setOrderError("This patient has no open admission to add orders to.");
+      return;
+    }
+
+    setSavingOrders(true);
+    setOrderError(null);
     setSubmitted(false);
+    let createdDay: string | null = null;
+    try {
+      if (content && admissionId && user) {
+        const { data } = await ordersApi.create({
+          admissionId,
+          orderedById: user.id,
+          orderContent: content,
+        });
+        createdDay = orderDayValue(data.dateCreated);
+        setDraft("");
+      }
+      await reloadOrders(patientId);
+    } catch {
+      // The composer keeps its text so nothing typed is lost.
+      setOrderError("The order could not be saved. Please try again.");
+      return;
+    } finally {
+      setSavingOrders(false);
+    }
+
+    const targetDay =
+      createdDay ?? activeOrderDate ?? summaryDay ?? orderDays[orderDays.length - 1];
+    if (!targetDay) {
+      setSubmitted(true);
+      return;
+    }
     generateSummaryForDay(targetDay, () => {
       // Show the summary that was just filed, without pulling the order list out
       // of "all dates".
       setSummaryDayFilter(targetDay);
-      setEditingOrders(false);
       setSubmitted(true);
     });
+  };
+
+  const approveSummary = (summaryId: string) => {
+    if (!selected || approvingSummary) return;
+    setApprovingSummary(true);
+    setOrderError(null);
+    void courseInWardApi
+      .approve(summaryId)
+      .then(({ data }) => replaceSummary(selected.id, data))
+      .catch(() => setOrderError("The summary could not be approved. Please try again."))
+      .finally(() => setApprovingSummary(false));
   };
 
   if (loading)
@@ -543,7 +583,7 @@ export function ManageView() {
                   return (
                     <tr
                       key={p.id}
-                      onClick={() => openPatient(p.id, false)}
+                      onClick={() => openPatient(p.id)}
                       style={{
                         ...patientTableStyles.tr,
                         backgroundColor: active ? "#f1f5f9" : "transparent",
@@ -666,40 +706,16 @@ export function ManageView() {
                       ? `No orders on ${selectedDateLabel}.`
                       : "No doctor’s orders recorded for this patient yet."
                 }
-                renderContent={
-                  editingOrders
-                    ? (entry) => {
-                        const order = allOrders.find(
-                          (item) => item.id === entry.id,
-                        );
-                        if (!order) return entry.content;
-                        return (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                            }}
-                          >
-                            <input
-                              value={order.orderContent}
-                              onChange={(e) =>
-                                updateOrder(order.id, e.target.value)
-                              }
-                              style={manage.orderEditInput}
-                            />
-                            <button
-                              type="button"
-                              style={manage.removeOrderBtn}
-                              onClick={() => removeOrder(order.id)}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        );
-                      }
-                    : undefined
-                }
+                renderContent={(entry) => {
+                  const order = allOrders.find((item) => item.id === entry.id);
+                  // Read-only: the nurse's execution status and note on this order.
+                  return (
+                    <>
+                      <div style={manage.timelineOrderText}>{entry.content}</div>
+                      {order && <OrderStatusSummary order={order} />}
+                    </>
+                  );
+                }}
                 footer={
                   <>
                     <textarea
@@ -711,19 +727,26 @@ export function ManageView() {
                     />
 
                     <div style={manage.orderActions}>
-                      {submitted && !generatingSummary && (
+                      {orderError && (
+                        <span style={manage.orderError}>{orderError}</span>
+                      )}
+                      {submitted && !generatingSummary && !orderError && (
                         <span style={{ fontSize: 12, color: "#166534" }}>
-                          {summary ? "Summary saved" : "Orders saved"}
+                          {summary ? "Orders and summary saved" : "Orders saved"}
                         </span>
                       )}
                       <button
                         type="button"
                         style={manage.submitBtn}
-                        disabled={generatingSummary}
-                        aria-busy={generatingSummary}
-                        onClick={submitOrders}
+                        disabled={savingOrders || generatingSummary}
+                        aria-busy={savingOrders || generatingSummary}
+                        onClick={() => void submitOrders()}
                       >
-                        {generatingSummary ? "Generating..." : "Submit"}
+                        {savingOrders
+                          ? "Saving..."
+                          : generatingSummary
+                            ? "Generating..."
+                            : "Submit"}
                       </button>
                     </div>
                   </>
@@ -784,6 +807,15 @@ export function ManageView() {
                     </AiActionButton>
                   ) : (
                     <>
+                      {summary.status !== "APPROVED" && !editingSummary && (
+                        <AiActionButton
+                          disabled={approvingSummary}
+                          aria-busy={approvingSummary}
+                          onClick={() => approveSummary(summary.id)}
+                        >
+                          {approvingSummary ? "Approving..." : "✓ Approve"}
+                        </AiActionButton>
+                      )}
                       <AiActionButton
                         onClick={() => {
                           if (!editingSummary) {
