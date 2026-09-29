@@ -63,6 +63,8 @@ export function ManageView() {
     Record<string, PhysicianOrder[]>
   >({});
   const [draft, setDraft] = useState("");
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
   /** Every Course in the Ward loaded for a patient — one summary per order day. */
   const [summariesByPatient, setSummariesByPatient] = useState<
     Record<string, CourseInWard[]>
@@ -264,6 +266,7 @@ export function ManageView() {
     setEditingSummary(false);
     setDraft("");
     setSubmitted(false);
+    setOrderError(null);
     setEditingOrders(edit);
   };
 
@@ -319,11 +322,7 @@ export function ManageView() {
       .finally(() => setGeneratingSummary(false));
   };
 
-  const submitOrders = () => {
-    if (!selected || !orderDays.length) return;
-    const targetDay =
-      activeOrderDate ?? summaryDay ?? orderDays[orderDays.length - 1];
-    setSubmitted(false);
+  const refreshSummaryForDay = (targetDay: string) => {
     generateSummaryForDay(targetDay, () => {
       // Show the summary that was just filed, without pulling the order list out
       // of "all dates".
@@ -331,6 +330,62 @@ export function ManageView() {
       setEditingOrders(false);
       setSubmitted(true);
     });
+  };
+
+  const submitOrders = async () => {
+    if (!selected || savingOrder || generatingSummary) return;
+    setSubmitted(false);
+    setOrderError(null);
+
+    const content = draft.trim();
+    if (!content) {
+      if (!orderDays.length) {
+        setOrderError("Write an order before submitting.");
+        return;
+      }
+      refreshSummaryForDay(
+        activeOrderDate ?? summaryDay ?? orderDays[orderDays.length - 1],
+      );
+      return;
+    }
+
+    const admission =
+      selected.admissions?.find((entry) => !entry.dischargeDate) ??
+      selected.admissions?.[0];
+    if (!admission) {
+      setOrderError("This patient has no active admission to attach the order to.");
+      return;
+    }
+
+    setSavingOrder(true);
+    try {
+      const { data: created } = await ordersApi.create({
+        admissionId: admission.id,
+        orderContent: content,
+      });
+      const patientId = selected.id;
+      setOrdersByPatient((previous) => ({
+        ...previous,
+        [patientId]: [created, ...(previous[patientId] ?? [])],
+      }));
+      setDraft("");
+      setSubmitted(true);
+
+      const newDay = orderDayValue(created.dateCreated);
+      if (newDay) {
+        if (activeOrderDate && activeOrderDate !== newDay) setOrderDateFilter(newDay);
+        refreshSummaryForDay(newDay);
+      }
+    } catch (err: any) {
+      const message = err?.response?.data?.message;
+      setOrderError(
+        Array.isArray(message)
+          ? message.join(", ")
+          : message || "Could not submit the order. Please try again.",
+      );
+    } finally {
+      setSavingOrder(false);
+    }
   };
 
   if (loading)
@@ -704,26 +759,46 @@ export function ManageView() {
                   <>
                     <textarea
                       value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
+                      onChange={(e) => {
+                        setDraft(e.target.value);
+                        setOrderError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          void submitOrders();
+                        }
+                      }}
                       placeholder="Add a new order"
                       rows={2}
+                      maxLength={2000}
+                      disabled={savingOrder}
                       style={manage.noteArea}
                     />
 
                     <div style={manage.orderActions}>
-                      {submitted && !generatingSummary && (
+                      {orderError && (
+                        <span role="alert" style={{ fontSize: 12, color: "#b91c1c" }}>
+                          {orderError}
+                        </span>
+                      )}
+                      {!orderError && submitted && !generatingSummary && (
                         <span style={{ fontSize: 12, color: "#166534" }}>
-                          {summary ? "Summary saved" : "Orders saved"}
+                          {summary ? "Order and summary saved" : "Order saved"}
                         </span>
                       )}
                       <button
                         type="button"
                         style={manage.submitBtn}
-                        disabled={generatingSummary}
-                        aria-busy={generatingSummary}
-                        onClick={submitOrders}
+                        disabled={savingOrder || generatingSummary}
+                        aria-busy={savingOrder || generatingSummary}
+                        onClick={() => void submitOrders()}
                       >
-                        {generatingSummary ? "Generating..." : "Submit"}
+                        {savingOrder
+                          ? "Submitting..."
+                          : generatingSummary
+                            ? "Generating..."
+                            : "Submit"}
                       </button>
                     </div>
                   </>

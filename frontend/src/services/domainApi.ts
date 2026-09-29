@@ -63,7 +63,8 @@ export const patientsApi = {
 export const ordersApi = {
   create: (data: {
     admissionId: string;
-    orderedById: string;
+    /** Omit when a physician submits their own order. */
+    orderedById?: string;
     orderContent: string;
   }) => api.post<PhysicianOrder>('/orders', data),
   update: (id: string, orderContent: string) =>

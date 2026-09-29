@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OrderEnteredBy, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,6 +28,11 @@ function localDayRange(day?: string | null) {
   return { start, end };
 }
 
+const orderInclude = {
+  orderedBy: { select: { firstName: true, lastName: true } },
+  encodedBy: { select: { firstName: true, lastName: true, role: true } },
+};
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -41,14 +52,46 @@ export class OrdersService {
     const enteredByFlag =
       enteredByRole === Role.NURSE ? OrderEnteredBy.NURSE_ON_BEHALF : OrderEnteredBy.PHYSICIAN;
 
+    const admission = await this.prisma.patientAdmission.findUnique({
+      where: { id: dto.admissionId },
+      select: {
+        dischargeDate: true,
+        physicianId: true,
+        additionalPhysicians: { select: { physicianId: true } },
+      },
+    });
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (admission.dischargeDate) {
+      throw new BadRequestException('Cannot add orders to a discharged admission');
+    }
+
+    const careTeam = new Set(
+      [admission.physicianId, ...admission.additionalPhysicians.map((entry) => entry.physicianId)].filter(
+        (id): id is string => Boolean(id),
+      ),
+    );
+
+    if (enteredByRole === Role.PHYSICIAN && !careTeam.has(enteredById)) {
+      throw new ForbiddenException('You are not on the care team for this admission');
+    }
+
+    const orderedById = dto.orderedById ?? (enteredByRole === Role.PHYSICIAN ? enteredById : undefined);
+    if (!orderedById) {
+      throw new BadRequestException('orderedById is required when entering an order on a physician’s behalf');
+    }
+    if (!careTeam.has(orderedById)) {
+      throw new BadRequestException('The ordering physician is not on the care team for this admission');
+    }
+
     const order = await this.prisma.physicianOrder.create({
       data: {
         admissionId: dto.admissionId,
-        orderedById: dto.orderedById,
+        orderedById,
         encodedById: enteredById,
         enteredByRole: enteredByFlag,
         orderContent: dto.orderContent,
       },
+      include: orderInclude,
     });
 
     await this.auditLog.record({
@@ -93,10 +136,7 @@ export class OrdersService {
     return this.prisma.physicianOrder.findMany({
       where: { admission: { patientId } },
       orderBy: { dateCreated: 'desc' },
-      include: {
-        orderedBy: { select: { firstName: true, lastName: true } },
-        encodedBy: { select: { firstName: true, lastName: true, role: true } },
-      },
+      include: orderInclude,
     });
   }
 
