@@ -1,17 +1,12 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
 import { useState } from 'react';
-import { Button, StatusBadge, type StatusValue } from '../../components/ui';
-import { formatDateMedium, formatTimeMedium } from '../../lib/format';
+import { Button } from '../../components/ui';
+import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
+import { ORDER_STATUS_OPTIONS } from '../../components/orders/orderStatus';
 import { ordersApi } from '../../services/domainApi';
 import type { OrderStatus, PhysicianOrder } from '../../types';
 import { orderExec as s } from './styles';
-
-const STATUS_OPTIONS: { value: OrderStatus; label: string; badge: StatusValue }[] = [
-  { value: 'TO_ACCOMPLISH', label: 'To accomplish', badge: 'pending' },
-  { value: 'ONGOING', label: 'Ongoing', badge: 'in-progress' },
-  { value: 'FINISHED', label: 'Finished', badge: 'completed' },
-];
 
 type OrderExecutionPanelProps = {
   order: PhysicianOrder;
@@ -29,8 +24,6 @@ export function OrderExecutionPanel({ order, onSaved }: OrderExecutionPanelProps
   const [comment, setComment] = useState(order.nurseComment ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const current = STATUS_OPTIONS.find((option) => option.value === order.status) ?? STATUS_OPTIONS[0];
 
   const startEditing = () => {
     setStatus(order.status);
@@ -55,32 +48,22 @@ export function OrderExecutionPanel({ order, onSaved }: OrderExecutionPanelProps
 
   return (
     <div>
-      <div style={s.row}>
-        <StatusBadge status={current.badge} label={current.label} showDot />
-        {order.executedBy && order.executedAt && (
-          <span style={s.meta}>
-            by {order.executedBy.firstName} {order.executedBy.lastName} ·{' '}
-            {formatDateMedium(order.executedAt)} {formatTimeMedium(order.executedAt)}
-          </span>
-        )}
-        {!editing && (
-          <button type="button" style={s.updateBtn} onClick={startEditing}>
-            Update status
-          </button>
-        )}
-      </div>
-
-      {!editing && order.nurseComment && (
-        <div style={s.comment}>
-          <span style={s.commentLabel}>Nurse note: </span>
-          {order.nurseComment}
-        </div>
-      )}
+      <OrderStatusSummary
+        order={order}
+        hideComment={editing}
+        action={
+          editing ? undefined : (
+            <button type="button" style={s.updateBtn} onClick={startEditing}>
+              Update status
+            </button>
+          )
+        }
+      />
 
       {editing && (
         <div style={s.editor}>
           <div style={s.segmented} role="radiogroup" aria-label="Order status">
-            {STATUS_OPTIONS.map((option) => {
+            {ORDER_STATUS_OPTIONS.map((option) => {
               const active = status === option.value;
               return (
                 <button

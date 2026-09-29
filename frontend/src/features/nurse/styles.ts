@@ -432,27 +432,7 @@ export const addPatient: Record<string, CSSProperties> = {
 
 /* Per-order execution status + nurse comment, inside the orders timeline. */
 export const orderExec: Record<string, CSSProperties> = {
-  row: {
-    display: 'flex',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 10,
-  },
-  meta: { fontSize: 11, color: '#64748b' },
-  comment: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#334155',
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2e8f0',
-    borderRadius: 6,
-    padding: '6px 8px',
-    whiteSpace: 'pre-wrap',
-  },
-  commentLabel: { fontWeight: 700, color: '#0f172a' },
   updateBtn: {
-    marginLeft: 'auto',
     border: 'none',
     background: 'none',
     color: '#0284c7',
