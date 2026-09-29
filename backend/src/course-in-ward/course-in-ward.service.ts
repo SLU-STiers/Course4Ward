@@ -41,10 +41,23 @@ function dayStart(day: string): Date {
   return new Date(year, (month || 1) - 1, date || 1);
 }
 
-/** ISO string for either a `Date` or an already-serialized timestamp. */
+/**
+ * ISO 8601 timestamp in the server's LOCAL time with its UTC offset, e.g.
+ * `2026-09-29T07:30:00.000+08:00`. The AI service groups orders by the first
+ * ten characters, so this keeps its day boundaries identical to `dayKeyOf`;
+ * a UTC string would move early-morning orders onto the previous day.
+ */
 function toIso(value: Date | string | null | undefined): string | null {
   if (!value) return null;
-  return value instanceof Date ? value.toISOString() : value;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return typeof value === 'string' ? value : null;
+  const pad = (n: number, width = 2) => String(Math.abs(n)).padStart(width, '0');
+  const offset = -date.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  return (
+    `${dayKeyOf(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
+    `.${pad(date.getMilliseconds(), 3)}${sign}${pad(Math.trunc(offset / 60))}:${pad(offset % 60)}`
+  );
 }
 
 @Injectable()
@@ -383,24 +396,25 @@ export class CourseInWardService {
   }
 
   /**
-   * The orders a summary should be rebuilt from, most specific first: the
-   * orders it is linked to, then the orders of the day it covers, and finally
-   * anything the patient has -- so regenerating an older summary still has
-   * content instead of sending an empty batch to the AI service.
+   * The orders a summary should be rebuilt from. Every order written on the day
+   * it covers comes first, so orders added after the last generation are
+   * included. Older summaries whose day holds no orders fall back to the orders
+   * they are linked to, and finally to anything the patient has -- so there is
+   * always content instead of an empty batch for the AI service.
    */
   private async findSummarySourceOrders(summary: { id: string; patientId: string; summaryDate: Date }) {
+    const day = dayKeyOf(summary.summaryDate);
+    if (day) {
+      const sameDay = await this.ordersService.findOrdersForDay(summary.patientId, day);
+      if (sameDay.length) return sameDay;
+    }
+
     const linked = await this.prisma.physicianOrder.findMany({
       where: { summarizationId: summary.id },
       orderBy: { dateCreated: 'asc' },
       include: { admission: { select: { id: true, admissionDate: true } } },
     });
     if (linked.length) return linked;
-
-    const day = dayKeyOf(summary.summaryDate);
-    if (day) {
-      const sameDay = await this.ordersService.findOrdersForDay(summary.patientId, day);
-      if (sameDay.length) return sameDay;
-    }
 
     return this.prisma.physicianOrder.findMany({
       where: { admission: { patientId: summary.patientId } },
