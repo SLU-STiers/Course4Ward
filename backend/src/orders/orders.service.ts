@@ -1,12 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OrderEnteredBy, OrderStatus, Prisma, Role } from '@prisma/client';
+import { OrderEnteredBy, OrderStatus, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OllamaClient } from '../course-in-ward/ollama-client';
@@ -64,6 +65,7 @@ export class OrdersService {
       where: { id: dto.admissionId },
       select: {
         dischargeDate: true,
+        patientClass: true,
         physicianId: true,
         additionalPhysicians: { select: { physicianId: true } },
       },
@@ -91,6 +93,13 @@ export class OrdersService {
       throw new BadRequestException('The ordering physician is not on the care team for this admission');
     }
 
+    const type = dto.type ?? OrderType.DEFAULT;
+    if (type !== OrderType.DEFAULT) {
+      await this.assertOrderTypeAllowed(dto.admissionId, type, admission.patientClass);
+    }
+
+    // Writing an admission/discharge order does not change the admission: the
+    // nurse carries it out with PATCH /patients/admissions/:id/admit|discharge.
     const order = await this.prisma.physicianOrder.create({
       data: {
         admissionId: dto.admissionId,
@@ -98,6 +107,7 @@ export class OrdersService {
         encodedById: enteredById,
         enteredByRole: enteredByFlag,
         orderContent: dto.orderContent,
+        type,
       },
       include: orderInclude,
     });
@@ -113,6 +123,61 @@ export class OrdersService {
     void this.persistOrderEmbedding(order.id, order.orderContent);
 
     return order;
+  }
+
+  /**
+   * Observation, admission and discharge orders are one-off decisions, each
+   * carried out by the nurse (observe / admit / discharge):
+   * - OBSERVATION only for an emergency patient or outpatient.
+   * - ADMISSION for anyone not yet an inpatient.
+   * - Neither while another of these decisions is still pending or once a
+   *   discharge has been ordered, and none of the three twice.
+   * Only active orders count, so a discontinued one can be written again.
+   */
+  private async assertOrderTypeAllowed(
+    admissionId: string,
+    type: OrderType,
+    patientClass: PatientClass,
+  ) {
+    const existing = await this.prisma.physicianOrder.findMany({
+      where: {
+        admissionId,
+        active: true,
+        type: { in: [OrderType.OBSERVATION, OrderType.ADMISSION, OrderType.DISCHARGE] },
+      },
+      select: { type: true },
+    });
+    const has = (candidate: OrderType) => existing.some((order) => order.type === candidate);
+
+    if (type === OrderType.DISCHARGE) {
+      if (has(OrderType.DISCHARGE)) {
+        throw new ConflictException('This patient already has a discharge order');
+      }
+      return;
+    }
+
+    if (type === OrderType.ADMISSION && patientClass === PatientClass.INPATIENT) {
+      throw new ConflictException('This patient is already admitted');
+    }
+    if (type === OrderType.OBSERVATION) {
+      if (patientClass === PatientClass.OBSERVATION) {
+        throw new ConflictException('This patient is already under observation');
+      }
+      if (patientClass === PatientClass.INPATIENT) {
+        throw new ConflictException('An admitted patient cannot be placed under observation');
+      }
+    }
+    if (has(OrderType.DISCHARGE)) {
+      throw new ConflictException('This patient already has a discharge order');
+    }
+    if (has(OrderType.ADMISSION)) {
+      throw new ConflictException('This patient already has an admission order');
+    }
+    // A carried-out observation order is history once the patient is under
+    // observation; only one still waiting for the nurse blocks.
+    if (has(OrderType.OBSERVATION) && patientClass !== PatientClass.OBSERVATION) {
+      throw new ConflictException('This patient already has an observation order');
+    }
   }
 
   /**

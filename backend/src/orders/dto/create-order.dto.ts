@@ -1,7 +1,7 @@
 import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, OrderType } from '@prisma/client';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -24,6 +24,14 @@ export class CreateOrderDto {
   @IsNotEmpty({ message: 'Order content must not be empty' })
   @MaxLength(2000)
   orderContent: string;
+
+  // OBSERVATION / ADMISSION / DISCHARGE: one-off decisions the nurse carries
+  // out (observe, admit, discharge); which are allowed depends on the
+  // admission's patient class. DEFAULT: every other (general / progress) order.
+  @ApiPropertyOptional({ enum: OrderType, default: OrderType.DEFAULT })
+  @IsOptional()
+  @IsEnum(OrderType)
+  type?: OrderType;
 }
 
 export class UpdateOrderStatusDto {
