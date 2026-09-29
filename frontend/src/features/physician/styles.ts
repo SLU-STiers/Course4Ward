@@ -529,6 +529,9 @@ export const manage: Record<string, CSSProperties> = {
     fontWeight: 700,
     cursor: "pointer",
   },
+  /* Matches the timeline's default order text when a custom renderer is used. */
+  timelineOrderText: { fontSize: 12, color: "#334155", lineHeight: "1.4" },
+  orderError: { fontSize: 12, color: "#dc2626", marginRight: "auto" },
   aiEditor: {
     width: "100%",
     border: "1px solid #e2e8f0",
@@ -571,23 +574,6 @@ export const manage: Record<string, CSSProperties> = {
     lineHeight: 1.6,
     color: "#1e293b",
     overflowWrap: "break-word",
-  },
-  orderEditInput: {
-    flex: 1,
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    padding: "9px 10px",
-    fontSize: 14,
-  },
-  removeOrderBtn: {
-    border: "1px solid #fecaca",
-    background: "#fef2f2",
-    color: "#dc2626",
-    borderRadius: 6,
-    width: 28,
-    height: 28,
-    padding: 0,
-    cursor: "pointer",
   },
 };
 

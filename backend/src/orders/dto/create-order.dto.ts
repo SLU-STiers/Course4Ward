@@ -1,5 +1,9 @@
-import { IsString, IsUUID } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { OrderStatus } from '@prisma/client';
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class CreateOrderDto {
   @ApiProperty()
@@ -8,17 +12,29 @@ export class CreateOrderDto {
 
   // Required when a nurse enters an order on the physician's behalf --
   // the physician of record must still be attributed for the order.
-  @ApiProperty({ description: 'The physician this order is attributed to' })
+  // Physicians may omit it; the order is then attributed to themselves.
+  @ApiPropertyOptional({ description: 'The physician this order is attributed to' })
+  @IsOptional()
   @IsUUID()
-  orderedById: string;
+  orderedById?: string;
 
   @ApiProperty({ example: 'Paracetamol 500mg' })
+  @Transform(trim)
   @IsString()
+  @IsNotEmpty({ message: 'Order content must not be empty' })
+  @MaxLength(2000)
   orderContent: string;
 }
 
-export class UpdateOrderDto {
-  @ApiProperty({ example: 'Paracetamol 500mg' })
+export class UpdateOrderStatusDto {
+  @ApiProperty({ enum: OrderStatus, example: OrderStatus.FINISHED })
+  @IsEnum(OrderStatus)
+  status: OrderStatus;
+
+  // Omit to keep the current comment; send '' to clear it.
+  @ApiPropertyOptional({ example: 'Given at 08:00, patient tolerated well' })
+  @IsOptional()
   @IsString()
-  orderContent: string;
+  @MaxLength(1000)
+  nurseComment?: string;
 }

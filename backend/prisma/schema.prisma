@@ -74,6 +74,7 @@ enum ActionType {
   CLAIM_CREATED
   CLAIM_PHYSICIAN_NOTIFIED
   CF4_GENERATED
+  UPDATE_ORDER_STATUS
 }
 
 enum PhilHealthCF4Status {

@@ -8,13 +8,18 @@ import { OrdersService } from '../orders/orders.service';
 import { ConfigService } from '@nestjs/config';
 import { SummaryStatus } from '@prisma/client';
 
-// Mock the OllamaClient BEFORE importing the service
+// Mock the OllamaClient BEFORE importing the service. Every `new OllamaClient()`
+// returns this ONE object, so the instance the service builds in its
+// constructor is the same one the tests configure.
+const mockOllamaInstance = {
+  summarizeBatch: jest.fn(),
+  health: jest.fn(),
+  // No embeddings in unit tests: RAG retrieval falls back to no references.
+  embed: jest.fn().mockRejectedValue(new Error('embeddings disabled in tests')),
+};
 jest.mock('../course-in-ward/ollama-client', () => {
   return {
-    OllamaClient: jest.fn().mockImplementation(() => ({
-      summarizeBatch: jest.fn(),
-      health: jest.fn(),
-    })),
+    OllamaClient: jest.fn().mockImplementation(() => mockOllamaInstance),
   };
 });
 
@@ -36,6 +41,9 @@ const mockPrismaService = {
     findUnique: jest.fn(),
     update: jest.fn(),
     findMany: jest.fn(),
+  },
+  summaryApprovalRequest: {
+    updateMany: jest.fn(),
   },
 };
 
@@ -536,7 +544,7 @@ describe('CourseInWardService', () => {
     it('should regenerate a summary successfully', async () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
-      mockPrismaService.physicianOrder.findMany.mockResolvedValue(mockOrders);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
       mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
       mockAuditLogService.record.mockResolvedValue({});
@@ -549,11 +557,14 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.findUnique).toHaveBeenCalledWith({
         where: { id: mockSummaryId },
       });
-      // Rebuild from the orders this summary is linked to, not from today's.
-      expect(mockPrismaService.physicianOrder.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { summarizationId: mockSummaryId },
-        }),
+      // Rebuild from EVERY order of the day the summary covers, so orders
+      // written after the last generation are included.
+      expect(mockOrdersService.findOrdersForDay).toHaveBeenCalledWith(
+        mockExistingSummary.patientId,
+        '2026-03-04',
+      );
+      expect(mockPrismaService.physicianOrder.findMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: { summarizationId: mockSummaryId } }),
       );
       expect(mockOllamaClient.summarizeBatch).toHaveBeenCalled();
       expect(mockPrismaService.courseInWard.update).toHaveBeenCalledWith({
@@ -570,11 +581,11 @@ describe('CourseInWardService', () => {
       expect(result).toEqual(mockUpdatedSummary);
     });
 
-    it('should fall back to the orders of the day the summary covers', async () => {
+    it('should fall back to the linked orders when the summary day has none', async () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
-      mockPrismaService.physicianOrder.findMany.mockResolvedValue([]);
-      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOrdersService.findOrdersForDay.mockResolvedValue([]);
+      mockPrismaService.physicianOrder.findMany.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
       mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
       mockAuditLogService.record.mockResolvedValue({});
@@ -584,10 +595,10 @@ describe('CourseInWardService', () => {
       await service.regenerateSummary(mockSummaryId, mockPhysicianId);
 
       // Assert
-      expect(mockOrdersService.findOrdersForDay).toHaveBeenCalledWith(
-        mockExistingSummary.patientId,
-        '2026-03-04',
+      expect(mockPrismaService.physicianOrder.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { summarizationId: mockSummaryId } }),
       );
+      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if summary does not exist', async () => {
@@ -606,7 +617,7 @@ describe('CourseInWardService', () => {
     it('should throw BadRequestException if AI service fails during regeneration', async () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
-      mockPrismaService.physicianOrder.findMany.mockResolvedValue(mockOrders);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockRejectedValue(new Error('AI service unavailable'));
 
       // Act & Assert
@@ -658,6 +669,13 @@ describe('CourseInWardService', () => {
           validatorId: mockPhysicianId,
           validatedAt: expect.any(Date),
         },
+      });
+      expect(mockPrismaService.summaryApprovalRequest.updateMany).toHaveBeenCalledWith({
+        where: {
+          summaryId: mockSummaryId,
+          status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] },
+        },
+        data: { status: 'VALIDATED' },
       });
       expect(mockAuditLogService.record).toHaveBeenCalledWith({
         userId: mockPhysicianId,
@@ -877,11 +895,14 @@ describe('CourseInWardService', () => {
         expect.objectContaining({
           admissionId: 'admission-1',
           // Carried through so the AI can label the group "Day N of Admission".
-          admissionDate: new Date(2026, 2, 2).toISOString(),
+          // Local time with its offset: the AI service groups by the first ten
+          // characters, which must be the LOCAL calendar day.
+          admissionDate: expect.stringMatching(/^2026-03-02T00:00:00\.000[+-]\d{2}:\d{2}$/),
           orders: [
             expect.objectContaining({
               id: 'order-1',
               text: 'Amoxicillin 500mg twice daily',
+              dateCreated: expect.stringMatching(/^2026-03-04T08:00:00\.000[+-]\d{2}:\d{2}$/),
             }),
           ],
         }),

@@ -2,12 +2,14 @@ import { api } from './api';
 import type {
   AppNotification,
   NotificationScope,
+  OrderStatus,
   Patient,
   PhysicianOrder,
   PhysicianNote,
   CourseInWard,
   Claim,
   ClaimRecord,
+  EligibleSummary,
   AuthUser,
   PhysicianRequest,
   ActivityTrend,
@@ -65,12 +67,14 @@ export const patientsApi = {
 export const ordersApi = {
   create: (data: {
     admissionId: string;
-    orderedById: string;
+    /** Omit when a physician submits their own order. */
+    orderedById?: string;
     orderContent: string;
   }) => api.post<PhysicianOrder>('/orders', data),
-  update: (id: string, orderContent: string) =>
-    api.patch<PhysicianOrder>(`/orders/${id}`, { orderContent }),
-  remove: (id: string) => api.delete(`/orders/${id}`),
+  // Orders cannot be edited or deleted once written (no API for it).
+  /** Nurse-only: mark progress on an order. Omit `nurseComment` to keep the current one. */
+  updateStatus: (id: string, data: { status: OrderStatus; nurseComment?: string }) =>
+    api.patch<PhysicianOrder>(`/orders/${id}/status`, data),
   forPatient: (patientId: string) => api.get<PhysicianOrder[]>(`/orders/patient/${patientId}`),
 };
 
@@ -102,6 +106,8 @@ export const courseInWardApi = {
 export const claimsApi = {
   create: (courseInWardId: string) => api.post<Claim>('/claims', { courseInWardId }),
   findAll: () => api.get<ClaimRecord[]>('/claims'),
+  /** Summaries that do not have a claim yet. */
+  eligibleSummaries: () => api.get<EligibleSummary[]>('/claims/eligible-summaries'),
   physicianRequests: () => api.get<PhysicianRequest[]>('/claims/physician-requests'),
   approvePhysicianRequest: (id: string) => api.patch(`/claims/${id}/approve`),
   /** `message` is the note typed in the review modal; it lands on the

@@ -17,6 +17,11 @@ class ChangePasswordDto {
   newPassword: string;
 }
 
+class RefreshTokenDto {
+  @IsString()
+  refreshToken: string;
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -25,6 +30,11 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto, @Req() req: Request) {
     return this.authService.login(dto, req.ip);
+  }
+
+  @Post('refresh')
+  refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refresh(dto.refreshToken);
   }
 
   @Get('session')

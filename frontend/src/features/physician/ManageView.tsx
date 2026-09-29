@@ -8,6 +8,7 @@ import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
+import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { useTableState } from '../../hooks/useTableState';
 import {
   formatDateLongFromKey,
@@ -57,12 +58,14 @@ export function ManageView() {
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
-  const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [ordersByPatient, setOrdersByPatient] = useState<
     Record<string, PhysicianOrder[]>
   >({});
   const [draft, setDraft] = useState("");
+  const [savingOrders, setSavingOrders] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [approvingSummary, setApprovingSummary] = useState(false);
   /** Every Course in the Ward loaded for a patient — one summary per order day. */
   const [summariesByPatient, setSummariesByPatient] = useState<
     Record<string, CourseInWard[]>
@@ -151,13 +154,16 @@ export function ManageView() {
           ...previous,
           [selected.id]: ordersResponse.data,
         }));
+        setOrderError(null);
         // Drop a date filter this patient has no orders on, so the filter state
         // never disagrees with what the list is showing.
         const loadedDays = new Set(
           ordersResponse.data.map((order) => orderDayValue(order.dateCreated)),
         );
         setOrderDateFilter((previous) =>
-          previous && !loadedDays.has(previous) ? null : previous,
+          previous && !loadedDays.has(previous) && previous !== toDateKey(new Date())
+            ? null
+            : previous,
         );
         // One Course in the Ward per order day; the panel picks the day to show.
         setSummariesByPatient((previous) => ({
@@ -192,10 +198,27 @@ export function ManageView() {
     [ordersByDay],
   );
 
-  // A filter only sticks to a date this patient actually has orders on, so the
-  // list always has something to show.
+  // Today stays pickable while the admission is open, even before its first
+  // order, so the physician can open the day and write into it. Past order-less
+  // days are still skipped: a new order is always stamped with the current time.
+  const todayKey = toDateKey(new Date());
+  const hasOpenAdmission = Boolean(
+    selected?.admissions?.some((admission) => !admission.dischargeDate),
+  );
+  const selectableOrderDays = useMemo(
+    () =>
+      hasOpenAdmission && !ordersByDay.has(todayKey)
+        ? [...orderDays, todayKey].sort()
+        : orderDays,
+    [hasOpenAdmission, ordersByDay, orderDays, todayKey],
+  );
+
+  // A filter only sticks to a selectable date, so the list never disagrees
+  // with the calendar.
   const activeOrderDate =
-    orderDateFilter && ordersByDay.has(orderDateFilter) ? orderDateFilter : null;
+    orderDateFilter && selectableOrderDays.includes(orderDateFilter)
+      ? orderDateFilter
+      : null;
   const displayedOrders = activeOrderDate
     ? allOrders.filter((order) => orderDayValue(order.dateCreated) === activeOrderDate)
     : allOrders;
@@ -226,7 +249,7 @@ export function ManageView() {
     (summaryDayFilter && orderDays.includes(summaryDayFilter)
       ? summaryDayFilter
       : null) ??
-    activeOrderDate ??
+    (activeOrderDate && ordersByDay.has(activeOrderDate) ? activeOrderDate : null) ??
     daysWithSummary[daysWithSummary.length - 1] ??
     orderDays[orderDays.length - 1] ??
     null;
@@ -259,34 +282,18 @@ export function ManageView() {
     return value !== undefined && value !== "" && value !== "all";
   }).length;
 
-  const openPatient = (id: string, edit = false) => {
+  const openPatient = (id: string) => {
     setSelectedId(id);
     setEditingSummary(false);
     setDraft("");
     setSubmitted(false);
-    setEditingOrders(edit);
+    setOrderError(null);
   };
 
-  const updateOrder = (orderId: string, text: string) => {
-    if (!selected) return;
-    setOrdersByPatient((prev) => ({
-      ...prev,
-      [selected.id]: (prev[selected.id] ?? []).map((order) =>
-        order.id === orderId ? { ...order, orderContent: text } : order,
-      ),
-    }));
-    setSubmitted(false);
-  };
-
-  const removeOrder = (orderId: string) => {
-    if (!selected) return;
-    setOrdersByPatient((prev) => ({
-      ...prev,
-      [selected.id]: (prev[selected.id] ?? []).filter(
-        (order) => order.id !== orderId,
-      ),
-    }));
-    setSubmitted(false);
+  /** Replace the patient's order list with the server's copy. */
+  const reloadOrders = async (patientId: string) => {
+    const { data } = await ordersApi.forPatient(patientId);
+    setOrdersByPatient((previous) => ({ ...previous, [patientId]: data }));
   };
 
   /** Refresh the per-patient summary list with a row the API just returned. */
@@ -297,13 +304,13 @@ export function ManageView() {
     }));
   };
 
-  // Generate (or refresh) ONE order day's Course in the Ward. The AI summarizes
-  // per admission-day, so the AI panel's Generate button and Submit are the same
-  // call from two entry points: Generate acts on the day on screen, Submit on the
-  // day in focus ("all dates": the most recent day written).
+  // Generate (or refresh) ONE order day's Course in the Ward from every order of
+  // that day. Only the AI panel's Generate button calls this -- submitting an
+  // order never summarizes on its own.
   const generateSummaryForDay = (day: string, onDone?: () => void) => {
     if (!selected || generatingSummary) return;
     setGeneratingSummary(true);
+    setOrderError(null);
     void courseInWardApi
       .generate(selected.id, day)
       .then(({ data }) => {
@@ -315,22 +322,65 @@ export function ManageView() {
         setSummaryDraft(null);
         onDone?.();
       })
-      .catch(() => undefined)
+      .catch(() =>
+        setOrderError("The AI summary could not be generated. Try Generate again or write it manually."),
+      )
       .finally(() => setGeneratingSummary(false));
   };
 
-  const submitOrders = () => {
-    if (!selected || !orderDays.length) return;
-    const targetDay =
-      activeOrderDate ?? summaryDay ?? orderDays[orderDays.length - 1];
+  // Submit = file the order in the composer. Orders are never edited or deleted
+  // once written, and saving one does NOT summarize: the physician generates or
+  // regenerates the day's Course in the Ward from the AI panel when ready.
+  const submitOrders = async () => {
+    if (!selected || savingOrders) return;
+    const patientId = selected.id;
+    const content = draft.trim();
+    if (!content) return;
+
+    const admissionId = selected.admissions?.find((admission) => !admission.dischargeDate)?.id;
+    if (!admissionId) {
+      setOrderError("This patient has no open admission to add orders to.");
+      return;
+    }
+
+    setSavingOrders(true);
+    setOrderError(null);
     setSubmitted(false);
-    generateSummaryForDay(targetDay, () => {
-      // Show the summary that was just filed, without pulling the order list out
-      // of "all dates".
-      setSummaryDayFilter(targetDay);
-      setEditingOrders(false);
+    try {
+      // The backend attributes the order to the signed-in physician.
+      const { data } = await ordersApi.create({ admissionId, orderContent: content });
+      setDraft("");
+      await reloadOrders(patientId);
+      const createdDay = orderDayValue(data.dateCreated);
+      // Keep the new order visible when the list is filtered to another day.
+      if (createdDay && activeOrderDate && activeOrderDate !== createdDay) {
+        setOrderDateFilter(createdDay);
+      }
+      // Point the AI panel at the order's day, ready for Generate / Regenerate.
+      setSummaryDayFilter(createdDay);
       setSubmitted(true);
-    });
+    } catch (err: any) {
+      // The composer keeps its text so nothing typed is lost.
+      const message = err?.response?.data?.message;
+      setOrderError(
+        Array.isArray(message)
+          ? message.join(", ")
+          : message || "The order could not be saved. Please try again.",
+      );
+    } finally {
+      setSavingOrders(false);
+    }
+  };
+
+  const approveSummary = (summaryId: string) => {
+    if (!selected || approvingSummary) return;
+    setApprovingSummary(true);
+    setOrderError(null);
+    void courseInWardApi
+      .approve(summaryId)
+      .then(({ data }) => replaceSummary(selected.id, data))
+      .catch(() => setOrderError("The summary could not be approved. Please try again."))
+      .finally(() => setApprovingSummary(false));
   };
 
   if (loading)
@@ -343,25 +393,27 @@ export function ManageView() {
   const selectedDateLabel = activeOrderDate
     ? new Date(`${activeOrderDate}T00:00:00`).toLocaleDateString("en-GB")
     : "All dates";
-  // Order dates are the only navigable stops — order-less days are skipped. With
-  // "all dates" showing, the first step focuses the day at that end of the
-  // timeline (‹ the most recent, › the earliest), so day-by-day reading never
-  // needs a trip to the calendar.
+  // Order dates (plus today, see `selectableOrderDays`) are the only navigable
+  // stops — order-less past days are skipped. With "all dates" showing, the
+  // first step focuses the day at that end of the timeline (‹ the most recent,
+  // › the earliest), so day-by-day reading never needs a trip to the calendar.
   const hasPrevOrderDay =
-    orderDays.length > 0 &&
-    (!activeOrderDate || orderDays.some((day) => day < activeOrderDate));
+    selectableOrderDays.length > 0 &&
+    (!activeOrderDate || selectableOrderDays.some((day) => day < activeOrderDate));
   const hasNextOrderDay =
-    orderDays.length > 0 &&
-    (!activeOrderDate || orderDays.some((day) => day > activeOrderDate));
+    selectableOrderDays.length > 0 &&
+    (!activeOrderDate || selectableOrderDays.some((day) => day > activeOrderDate));
   const goToAdjacentOrderDay = (direction: -1 | 1) => {
-    if (!orderDays.length) return;
+    if (!selectableOrderDays.length) return;
     if (!activeOrderDate) {
       setOrderDateFilter(
-        direction < 0 ? orderDays[orderDays.length - 1] : orderDays[0],
+        direction < 0
+          ? selectableOrderDays[selectableOrderDays.length - 1]
+          : selectableOrderDays[0],
       );
       return;
     }
-    const candidates = orderDays.filter((day) =>
+    const candidates = selectableOrderDays.filter((day) =>
       direction < 0 ? day < activeOrderDate : day > activeOrderDate,
     );
     if (!candidates.length) return;
@@ -543,7 +595,7 @@ export function ManageView() {
                   return (
                     <tr
                       key={p.id}
-                      onClick={() => openPatient(p.id, false)}
+                      onClick={() => openPatient(p.id)}
                       style={{
                         ...patientTableStyles.tr,
                         backgroundColor: active ? "#f1f5f9" : "transparent",
@@ -648,7 +700,7 @@ export function ManageView() {
                 nextDisabled={!hasNextOrderDay}
                 prevLabel={prevDayLabel}
                 nextLabel={nextDayLabel}
-                availableDays={orderDays}
+                availableDays={selectableOrderDays}
                 onClear={() => setOrderDateFilter(null)}
                 clearLabel="Show all"
                 orders={displayedOrders.map((order) => ({
@@ -662,68 +714,60 @@ export function ManageView() {
                 emptyMessage={
                   selectedOrders === undefined
                     ? "Loading doctor’s orders…"
-                    : activeOrderDate
-                      ? `No orders on ${selectedDateLabel}.`
+                    : activeOrderDate === todayKey
+                      ? "No orders yet today. Add one below."
+                      : activeOrderDate
+                        ? `No orders on ${selectedDateLabel}.`
                       : "No doctor’s orders recorded for this patient yet."
                 }
-                renderContent={
-                  editingOrders
-                    ? (entry) => {
-                        const order = allOrders.find(
-                          (item) => item.id === entry.id,
-                        );
-                        if (!order) return entry.content;
-                        return (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                            }}
-                          >
-                            <input
-                              value={order.orderContent}
-                              onChange={(e) =>
-                                updateOrder(order.id, e.target.value)
-                              }
-                              style={manage.orderEditInput}
-                            />
-                            <button
-                              type="button"
-                              style={manage.removeOrderBtn}
-                              onClick={() => removeOrder(order.id)}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        );
-                      }
-                    : undefined
-                }
+                renderContent={(entry) => {
+                  const order = allOrders.find((item) => item.id === entry.id);
+                  // Read-only: the nurse's execution status and note on this order.
+                  return (
+                    <>
+                      <div style={manage.timelineOrderText}>{entry.content}</div>
+                      {order && <OrderStatusSummary order={order} />}
+                    </>
+                  );
+                }}
                 footer={
                   <>
                     <textarea
                       value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
+                      onChange={(e) => {
+                        setDraft(e.target.value);
+                        setOrderError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          void submitOrders();
+                        }
+                      }}
                       placeholder="Add a new order"
                       rows={2}
+                      maxLength={2000}
+                      disabled={savingOrders}
                       style={manage.noteArea}
                     />
 
                     <div style={manage.orderActions}>
-                      {submitted && !generatingSummary && (
+                      {orderError && (
+                        <span role="alert" style={manage.orderError}>{orderError}</span>
+                      )}
+                      {submitted && !orderError && (
                         <span style={{ fontSize: 12, color: "#166534" }}>
-                          {summary ? "Summary saved" : "Orders saved"}
+                          Order saved
                         </span>
                       )}
                       <button
                         type="button"
                         style={manage.submitBtn}
-                        disabled={generatingSummary}
-                        aria-busy={generatingSummary}
-                        onClick={submitOrders}
+                        disabled={savingOrders || !draft.trim()}
+                        aria-busy={savingOrders}
+                        onClick={() => void submitOrders()}
                       >
-                        {generatingSummary ? "Generating..." : "Submit"}
+                        {savingOrders ? "Saving..." : "Submit"}
                       </button>
                     </div>
                   </>
@@ -784,6 +828,15 @@ export function ManageView() {
                     </AiActionButton>
                   ) : (
                     <>
+                      {summary.status !== "APPROVED" && !editingSummary && (
+                        <AiActionButton
+                          disabled={approvingSummary}
+                          aria-busy={approvingSummary}
+                          onClick={() => approveSummary(summary.id)}
+                        >
+                          {approvingSummary ? "Approving..." : "✓ Approve"}
+                        </AiActionButton>
+                      )}
                       <AiActionButton
                         onClick={() => {
                           if (!editingSummary) {

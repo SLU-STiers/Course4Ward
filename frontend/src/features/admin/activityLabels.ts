@@ -37,6 +37,11 @@ export const ACTION_META: Record<AuditLogAction, ActionMeta> = {
     description: 'Wrote a physician order',
     badge: 'info',
   },
+  UPDATE_ORDER_STATUS: {
+    label: 'Order status updated',
+    description: 'Updated whether a physician order has been carried out',
+    badge: 'in-progress',
+  },
   REQUEST_SUMMARY: {
     label: 'Summary generated (AI)',
     description: 'Generated a Course in the Ward summary from the day’s orders',

@@ -40,6 +40,12 @@ export class ClaimsController {
     return this.claimsService.findAll();
   }
 
+  @Get('eligible-summaries')
+  @Roles(Role.CLAIMS_PROCESSOR)
+  findEligibleSummaries() {
+    return this.claimsService.findEligibleSummaries();
+  }
+
   @Get('physician-requests')
   @Roles(Role.PHYSICIAN)
   findForPhysician(@CurrentUser() user: any) {
