@@ -18,33 +18,13 @@ import { manage } from './styles';
 
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
 import { mapPatient } from './patient';
+import { mergeSummaries, summariesPerDay } from './summaries';
 import type { DashboardPatient } from './types';
 
 /** Epoch millis of an order timestamp; an unparseable timestamp sorts first. */
 function orderMillis(order: PhysicianOrder) {
   const time = new Date(order.dateCreated).getTime();
   return Number.isNaN(time) ? 0 : time;
-}
-
-/**
- * The order day a Course in the Ward belongs to: the day of the orders it was
- * built from, falling back to its `summaryDate` when nothing is linked yet.
- */
-function summaryDayKey(summary: CourseInWard): string {
-  const days = (summary.orders ?? [])
-    .map((order) => toDateKey(order.dateCreated))
-    .filter(Boolean)
-    .sort();
-  return days[0] ?? toDateKey(summary.summaryDate);
-}
-
-/** Merge fresh summary rows into one newest-day-first list, replacing by id. */
-function mergeSummaries(existing: CourseInWard[] | undefined, incoming: CourseInWard[]) {
-  const byId = new Map((existing ?? []).map((summary) => [summary.id, summary]));
-  for (const summary of incoming) byId.set(summary.id, summary);
-  return [...byId.values()].sort(
-    (a, b) => new Date(b.summaryDate).getTime() - new Date(a.summaryDate).getTime(),
-  );
 }
 
 /** Header badge per summary status. */
@@ -223,22 +203,11 @@ export function ManageView() {
     ? allOrders.filter((order) => orderDayValue(order.dateCreated) === activeOrderDate)
     : allOrders;
   // --- AI summary, filed per order day -------------------------------------
-  // A patient accumulates one Course in the Ward per order day. For a day that
-  // has several, the live draft wins over the approved record, so editing
-  // continues where the physician left off.
-  const summariesByDay = useMemo(() => {
-    const map = new Map<string, CourseInWard>();
-    for (const entry of (selected && summariesByPatient[selected.id]) || []) {
-      const day = summaryDayKey(entry);
-      if (!day) continue;
-      const current = map.get(day);
-      if (!current) map.set(day, entry);
-      else if (current.status === "APPROVED" && entry.status !== "APPROVED") {
-        map.set(day, entry);
-      }
-    }
-    return map;
-  }, [selected?.id, summariesByPatient]);
+  // A patient accumulates one Course in the Ward per order day.
+  const summariesByDay = useMemo(
+    () => summariesPerDay((selected && summariesByPatient[selected.id]) || []),
+    [selected?.id, summariesByPatient],
+  );
 
   // Which day's summary is on screen. Its own cursor, so "all order dates" can be
   // read day by day without the list ever leaving that view; picking a day for

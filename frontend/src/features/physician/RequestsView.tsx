@@ -157,6 +157,7 @@ export function RequestsView() {
 
       {selected && (
         <ReviewSummaryModal
+          key={selected.id}
           request={selected}
           onClose={() => setSelected(null)}
           onApprove={async () => {
