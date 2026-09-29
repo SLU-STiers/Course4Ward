@@ -4,7 +4,8 @@ import { ClaimsController } from "../claims/claims.controller";
 import { ClaimsService } from "../claims/claims.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
-import { PhilHealthCF4Status, SummaryStatus } from "@prisma/client";
+import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationType, PhilHealthCF4Status, SummaryStatus } from "@prisma/client";
 
 const mockPrismaService = {
   courseInWard: {
@@ -22,11 +23,16 @@ const mockAuditLogService = {
   record: jest.fn(),
 } as unknown as jest.Mocked<AuditLogService>;
 
+const mockNotificationsService = {
+  create: jest.fn(),
+} as unknown as jest.Mocked<NotificationsService>;
+
 describe("Claims Module", () => {
   let controller: ClaimsController;
   let service: ClaimsService;
   let prismaService: typeof mockPrismaService;
   let auditLogService: typeof mockAuditLogService;
+  let notificationsService: typeof mockNotificationsService;
 
   const mockUser = {
     id: "user-123",
@@ -82,6 +88,7 @@ describe("Claims Module", () => {
         ClaimsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
@@ -89,6 +96,7 @@ describe("Claims Module", () => {
     service = module.get<ClaimsService>(ClaimsService);
     prismaService = module.get(PrismaService);
     auditLogService = module.get(AuditLogService);
+    notificationsService = module.get(NotificationsService);
 
     jest.clearAllMocks();
   });
@@ -204,7 +212,20 @@ describe("Claims Module", () => {
     });
 
     describe("notifyPhysician", () => {
-      it("should update claim status and log audit", async () => {
+      // The service loads the claim with its patient + processor before it
+      // updates the status and raises the notification.
+      const claimWithRelations = {
+        ...mockClaim,
+        processor: { firstName: "Kristine", lastName: "Bautista" },
+      };
+
+      beforeEach(() => {
+        (
+          prismaService.summaryApprovalRequest.findUnique as jest.Mock
+        ).mockResolvedValue(claimWithRelations);
+      });
+
+      it("should update status, notify the physician and log audit", async () => {
         const updatedClaim = {
           ...mockClaim,
           status: "PHYSICIAN_VALIDATION_REQUESTED",
@@ -213,13 +234,24 @@ describe("Claims Module", () => {
           prismaService.summaryApprovalRequest.update as jest.Mock
         ).mockResolvedValue(updatedClaim);
 
-        const result = await service.notifyPhysician(mockClaimId, mockUser.id);
+        const result = await service.notifyPhysician(
+          mockClaimId,
+          mockUser.id,
+          "Please re-check the dosage.",
+        );
 
         expect(
           prismaService.summaryApprovalRequest.update,
         ).toHaveBeenCalledWith({
           where: { id: mockClaimId },
           data: { status: "PHYSICIAN_VALIDATION_REQUESTED" },
+        });
+        expect(notificationsService.create).toHaveBeenCalledWith({
+          userId: mockClaim.physicianId,
+          type: NotificationType.REVIEW_REQUESTED,
+          title: "Review requested again",
+          message: expect.stringContaining("Please re-check the dosage."),
+          requestId: mockClaimId,
         });
         expect(auditLogService.record).toHaveBeenCalledWith({
           userId: mockUser.id,
@@ -228,15 +260,34 @@ describe("Claims Module", () => {
         expect(result).toEqual(updatedClaim);
       });
 
-      it("should throw NotFoundException when claim id is unknown", async () => {
+      it("should notify without a message when the processor sends none", async () => {
         (
           prismaService.summaryApprovalRequest.update as jest.Mock
-        ).mockRejectedValue({ code: "P2025" });
+        ).mockResolvedValue(mockClaim);
+
+        await service.notifyPhysician(mockClaimId, mockUser.id);
+
+        expect(notificationsService.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: mockClaim.physicianId,
+            requestId: mockClaimId,
+          }),
+        );
+      });
+
+      it("should throw NotFoundException when claim id is unknown", async () => {
+        (
+          prismaService.summaryApprovalRequest.findUnique as jest.Mock
+        ).mockResolvedValue(null);
 
         await expect(
           service.notifyPhysician("unknown-claim-id", mockUser.id),
         ).rejects.toThrow("Claim not found");
 
+        expect(
+          prismaService.summaryApprovalRequest.update,
+        ).not.toHaveBeenCalled();
+        expect(notificationsService.create).not.toHaveBeenCalled();
         expect(auditLogService.record).not.toHaveBeenCalled();
       });
     });
