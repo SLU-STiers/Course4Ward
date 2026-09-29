@@ -16,13 +16,18 @@ import { NotificationsService } from './notifications.service';
 export class NotificationsController {
   constructor(private notificationsService: NotificationsService) {}
 
+  /** `?scope=history` returns the full log; the default is the inbox. */
   @Get()
-  findMine(@CurrentUser() user: any, @Query('take') take?: string) {
+  findMine(
+    @CurrentUser() user: any,
+    @Query('scope') scope?: string,
+    @Query('take') take?: string,
+  ) {
     const parsed = Number(take);
-    return this.notificationsService.listForUser(
-      user.id,
-      Number.isFinite(parsed) ? parsed : undefined,
-    );
+    return this.notificationsService.listForUser(user.id, {
+      scope: scope === 'history' ? 'history' : 'inbox',
+      take: Number.isFinite(parsed) ? parsed : undefined,
+    });
   }
 
   @Get('unread-count')
@@ -38,5 +43,11 @@ export class NotificationsController {
   @Post('read-all')
   markAllRead(@CurrentUser() user: any) {
     return this.notificationsService.markAllRead(user.id);
+  }
+
+  /** Clears the inbox into the history. */
+  @Post('clear')
+  clear(@CurrentUser() user: any) {
+    return this.notificationsService.clear(user.id);
   }
 }

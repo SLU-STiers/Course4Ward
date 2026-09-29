@@ -12,9 +12,16 @@ export interface CreateNotificationInput {
   requestId?: string | null;
 }
 
+/**
+ * `inbox` is what the bell shows — everything the user has not cleared yet.
+ * `history` is the full log, cleared items included.
+ */
+export type NotificationScope = 'inbox' | 'history';
+
 /** The bell panel shows a short list; older items stay in the database. */
 const DEFAULT_TAKE = 20;
-const MAX_TAKE = 50;
+const DEFAULT_HISTORY_TAKE = 50;
+const MAX_TAKE = 200;
 
 @Injectable()
 export class NotificationsService {
@@ -33,18 +40,25 @@ export class NotificationsService {
   }
 
   /** Newest first. */
-  listForUser(userId: string, take?: number) {
+  listForUser(
+    userId: string,
+    options: { scope?: NotificationScope; take?: number } = {},
+  ) {
+    const isHistory = options.scope === 'history';
+    const fallback = isHistory ? DEFAULT_HISTORY_TAKE : DEFAULT_TAKE;
+    const take = Math.min(Math.max(options.take ?? fallback, 1), MAX_TAKE);
+
     return this.prisma.notification.findMany({
-      where: { userId },
+      where: isHistory ? { userId } : { userId, clearedAt: null },
       orderBy: { createdAt: 'desc' },
-      take: Math.min(Math.max(take ?? DEFAULT_TAKE, 1), MAX_TAKE),
+      take,
     });
   }
 
   /** Number that drives the badge next to the bell. */
   async unreadCount(userId: string) {
     const count = await this.prisma.notification.count({
-      where: { userId, isRead: false },
+      where: { userId, isRead: false, clearedAt: null },
     });
     return { count };
   }
@@ -69,8 +83,21 @@ export class NotificationsService {
 
   async markAllRead(userId: string) {
     await this.prisma.notification.updateMany({
-      where: { userId, isRead: false },
+      where: { userId, isRead: false, clearedAt: null },
       data: { isRead: true },
+    });
+    return { count: 0 };
+  }
+
+  /**
+   * Empties the bell without losing anything: every inbox row is stamped with
+   * `clearedAt` (and marked read), so it leaves the badge and the inbox but
+   * stays in the notification history.
+   */
+  async clear(userId: string) {
+    await this.prisma.notification.updateMany({
+      where: { userId, clearedAt: null },
+      data: { clearedAt: new Date(), isRead: true },
     });
     return { count: 0 };
   }

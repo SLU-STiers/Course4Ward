@@ -329,10 +329,14 @@ model Notification {
   requestId String?
   isRead    Boolean          @default(false)
   createdAt DateTime         @default(now())
+  /// Set when the user clears the bell. The row leaves the inbox (and the
+  /// badge) but stays visible in the notification history.
+  clearedAt DateTime?
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId, isRead])
+  @@index([userId, clearedAt])
   @@index([userId, createdAt])
   @@map("notifications")
 }
