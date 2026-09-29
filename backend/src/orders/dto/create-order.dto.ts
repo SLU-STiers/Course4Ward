@@ -18,12 +18,6 @@ export class CreateOrderDto {
   orderContent: string;
 }
 
-export class UpdateOrderDto {
-  @ApiProperty({ example: 'Paracetamol 500mg' })
-  @IsString()
-  orderContent: string;
-}
-
 export class UpdateOrderStatusDto {
   @ApiProperty({ enum: OrderStatus, example: OrderStatus.FINISHED })
   @IsEnum(OrderStatus)

@@ -15,6 +15,9 @@ const mockPrismaService = {
     findFirst: jest.fn(),
     update: jest.fn(),
   },
+  patientAdmission: {
+    findUnique: jest.fn(),
+  },
 } as unknown as jest.Mocked<PrismaService>;
 
 const mockAuditLogService = {
@@ -59,6 +62,23 @@ describe('OrdersService', () => {
       orderedById: 'doctor-123',
       orderContent: 'Administer 500mg paracetamol',
     } as CreateOrderDto;
+
+    beforeEach(() => {
+      (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+        dischargeDate: null,
+      });
+    });
+
+    it('should reject orders for a discharged admission', async () => {
+      (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+        dischargeDate: new Date(),
+      });
+
+      await expect(service.create(dto, 'doctor-123', Role.PHYSICIAN)).rejects.toThrow(
+        'Cannot add orders to a discharged admission',
+      );
+      expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
+    });
 
     it('should flag order as NURSE_ON_BEHALF when entered by a nurse', async () => {
       (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);

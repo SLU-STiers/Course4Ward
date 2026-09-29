@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OrderEnteredBy, OrderStatus, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -38,6 +38,15 @@ export class OrdersService {
   }
 
   async create(dto: CreateOrderDto, enteredById: string, enteredByRole: Role) {
+    const admission = await this.prisma.patientAdmission.findUnique({
+      where: { id: dto.admissionId },
+      select: { dischargeDate: true },
+    });
+    if (!admission) throw new NotFoundException('Admission not found');
+    if (admission.dischargeDate) {
+      throw new BadRequestException('Cannot add orders to a discharged admission');
+    }
+
     const enteredByFlag =
       enteredByRole === Role.NURSE ? OrderEnteredBy.NURSE_ON_BEHALF : OrderEnteredBy.PHYSICIAN;
 
@@ -132,20 +141,6 @@ export class OrdersService {
     });
 
     return updated;
-  }
-
-  async update(id: string, orderContent: string, physicianId: string) {
-    const order = await this.prisma.physicianOrder.findFirst({ where: { id, orderedById: physicianId } });
-    if (!order) throw new NotFoundException('Order not found');
-    const updated = await this.prisma.physicianOrder.update({ where: { id }, data: { orderContent } });
-    void this.persistOrderEmbedding(updated.id, updated.orderContent);
-    return updated;
-  }
-
-  async remove(id: string, physicianId: string) {
-    const order = await this.prisma.physicianOrder.findFirst({ where: { id, orderedById: physicianId } });
-    if (!order) throw new NotFoundException('Order not found');
-    return this.prisma.physicianOrder.delete({ where: { id } });
   }
 
   /**
