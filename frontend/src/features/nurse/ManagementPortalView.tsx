@@ -6,15 +6,15 @@ import { PatientTablePagination, patientTableStyles } from '../../components/pat
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useTableState } from '../../hooks/useTableState';
-import { formatDateLongFromKey, formatDateNumeric, toDateInputValue } from '../../lib/format';
+import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
 import { daysInCare, statusColor } from '../../lib/patient';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
 import { triageForDisplay } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
-import { ordersApi, patientsApi } from '../../services/domainApi';
-import type { Patient, PhysicianOrder } from '../../types';
+import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
+import type { CourseInWard, Patient, PhysicianOrder } from '../../types';
 
 const colors = ['#ef4444', '#22c55e', '#84cc16', '#6366f1', '#eab308', '#06b6d4'];
 
@@ -57,7 +57,8 @@ function displayStatus(patient: NursePatient): 'admitted' | 'er' | 'discharged' 
 function mapOrder(order: PhysicianOrder): OrderSet {
   const date = new Date(order.dateCreated);
   return {
-    dateKey: date.toISOString().slice(0, 10),
+    // Local calendar day, the same key the physician files orders and summaries under.
+    dateKey: toDateKey(date),
     dateLabel: date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
     time: date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
     doctor: order.orderedBy ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Physician',
@@ -66,12 +67,33 @@ function mapOrder(order: PhysicianOrder): OrderSet {
   };
 }
 
+/**
+ * The order day a Course in the Ward belongs to: the day of the orders it was
+ * built from, falling back to its `summaryDate` (same rule as the physician view).
+ */
+function summaryDayKey(summary: CourseInWard): string {
+  const days = (summary.orders ?? [])
+    .map((order) => toDateKey(order.dateCreated))
+    .filter(Boolean)
+    .sort();
+  return days[0] ?? toDateKey(summary.summaryDate);
+}
+
 export function ManagementPortalView() {
   const [patients, setPatients] = useState<NursePatient[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [detailName, setDetailName] = useState<string | null>(null);
+  const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
+
+  /* Refetched every time a patient is opened, so a summary the physician
+     approved since the last look shows up without reloading the page. */
+  const loadSummaries = useCallback((patientId: string) => {
+    courseInWardApi.forPatient(patientId)
+      .then(({ data }) => setSummariesByPatient((previous) => ({ ...previous, [patientId]: data })))
+      .catch(() => undefined);
+  }, []);
 
   const loadPatients = useCallback(() => {
     return patientsApi.list().then(({ data }) => {
@@ -97,7 +119,8 @@ export function ManagementPortalView() {
       const days = [...new Set(mapped.map((order) => order.dateKey))].sort().reverse();
       setSelectedDate((current) => current || days[0] || '');
     }).catch(() => setOrdersByPatient((previous) => ({ ...previous, [selectedId]: [] })));
-  }, [selectedId]);
+    loadSummaries(selectedId);
+  }, [selectedId, loadSummaries]);
 
   const table = useTableState<NursePatient>({
     items: patients,
@@ -132,8 +155,17 @@ export function ManagementPortalView() {
   /* The AI card always names a day — the newest one while showing all dates. */
   const cardDay = activeDate || datesWithOrders[0] || '';
 
+  /* Nurses read only what the physician approved; a draft just says it is pending.
+     The list comes newest first, so the first match per day is the latest one. */
+  const summariesForCardDay = (selected ? summariesByPatient[selected.id] ?? [] : [])
+    .filter((summary) => cardDay && summaryDayKey(summary) === cardDay);
+  const approvedSummary = summariesForCardDay.find((summary) => summary.status === 'APPROVED');
+  const pendingSummary = !approvedSummary && summariesForCardDay.length > 0;
+  const cardDayLabel = cardDay ? formatDateLongFromKey(cardDay) : 'this patient';
+
   const openPatient = (id: string) => {
     setSelectedId(id);
+    if (id === selectedId) loadSummaries(id);
     const sets = ordersByPatient[id] ?? [];
     const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '';
     setSelectedDate(latest);
@@ -346,8 +378,8 @@ export function ManagementPortalView() {
             />
 
             <AiSummaryCard
-              badgeLabel="No summary yet"
-              badgeMuted
+              badgeLabel={approvedSummary ? 'Approved' : pendingSummary ? 'Awaiting approval' : 'No summary yet'}
+              badgeMuted={!approvedSummary}
               dayLabel={cardDay ? formatDateLongFromKey(cardDay) : 'No order dates'}
               dayPosition={
                 datesWithOrders.length > 1 && cardDay
@@ -358,7 +390,12 @@ export function ManagementPortalView() {
               onNextDay={() => shiftDate(-1)}
               prevDayDisabled={!hasPrevDate}
               nextDayDisabled={!hasNextDate}
-              emptyMessage={`No Course in the Ward for ${cardDay ? formatDateLongFromKey(cardDay) : 'this patient'} yet. Physician summaries are written in the physician workflow.`}
+              text={approvedSummary?.summaryContent}
+              emptyMessage={
+                pendingSummary
+                  ? `The Course in the Ward for ${cardDayLabel} is waiting for the physician's approval.`
+                  : `No Course in the Ward for ${cardDayLabel} yet. Physician summaries are written in the physician workflow.`
+              }
             />
           </>
         ) : (

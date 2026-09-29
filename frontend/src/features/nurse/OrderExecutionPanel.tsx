@@ -16,7 +16,8 @@ type OrderExecutionPanelProps = {
 
 /**
  * Lets the nurse mark whether a physician order has been carried out and
- * leave a note on it. Who moved it and when is stamped by the backend.
+ * leave a note on it. Who moved it and when is stamped by the backend. Status
+ * only moves forward, so options before the saved status are disabled.
  */
 export function OrderExecutionPanel({ order, onSaved }: OrderExecutionPanelProps) {
   const [editing, setEditing] = useState(false);
@@ -24,6 +25,7 @@ export function OrderExecutionPanel({ order, onSaved }: OrderExecutionPanelProps
   const [comment, setComment] = useState(order.nurseComment ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savedIndex = ORDER_STATUS_OPTIONS.findIndex((option) => option.value === order.status);
 
   const startEditing = () => {
     setStatus(order.status);
@@ -54,7 +56,7 @@ export function OrderExecutionPanel({ order, onSaved }: OrderExecutionPanelProps
         action={
           editing ? undefined : (
             <button type="button" style={s.updateBtn} onClick={startEditing}>
-              Update status
+              {order.status === 'FINISHED' ? 'Edit note' : 'Update status'}
             </button>
           )
         }
@@ -63,15 +65,22 @@ export function OrderExecutionPanel({ order, onSaved }: OrderExecutionPanelProps
       {editing && (
         <div style={s.editor}>
           <div style={s.segmented} role="radiogroup" aria-label="Order status">
-            {ORDER_STATUS_OPTIONS.map((option) => {
+            {ORDER_STATUS_OPTIONS.map((option, index) => {
               const active = status === option.value;
+              const locked = index < savedIndex;
               return (
                 <button
                   key={option.value}
                   type="button"
                   role="radio"
                   aria-checked={active}
-                  style={active ? { ...s.segment, ...s.segmentActive } : s.segment}
+                  disabled={locked}
+                  title={locked ? 'An order cannot be moved back to an earlier status' : undefined}
+                  style={{
+                    ...s.segment,
+                    ...(active && s.segmentActive),
+                    ...(locked && s.segmentLocked),
+                  }}
                   onClick={() => setStatus(option.value)}
                 >
                   {option.label}

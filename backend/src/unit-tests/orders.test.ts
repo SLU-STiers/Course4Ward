@@ -53,6 +53,7 @@ describe('OrdersService', () => {
     encodedById: 'nurse-123',
     enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
     orderContent: 'Administer 500mg paracetamol',
+    status: OrderStatus.TO_ACCOMPLISH,
     dateCreated: new Date(),
   };
 
@@ -275,18 +276,35 @@ describe('OrdersService', () => {
       });
     });
 
-    it('should clear the executor when an order is reset to TO_ACCOMPLISH', async () => {
-      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+    it.each([
+      [OrderStatus.ONGOING, OrderStatus.TO_ACCOMPLISH],
+      [OrderStatus.FINISHED, OrderStatus.TO_ACCOMPLISH],
+      [OrderStatus.FINISHED, OrderStatus.ONGOING],
+    ])('should refuse to move an order from %s back to %s', async (current, next) => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({ ...mockOrder, status: current });
+
+      await expect(service.updateStatus('order-123', { status: next }, 'nurse-123')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
+      expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('should keep the executor stamp when only the note changes', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: OrderStatus.FINISHED,
+      });
       (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);
 
-      await service.updateStatus('order-123', { status: OrderStatus.TO_ACCOMPLISH }, 'nurse-123');
+      await service.updateStatus(
+        'order-123',
+        { status: OrderStatus.FINISHED, nurseComment: 'Patient tolerated well' },
+        'nurse-456',
+      );
 
       const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
-      expect(data).toEqual({
-        status: OrderStatus.TO_ACCOMPLISH,
-        executedById: null,
-        executedAt: null,
-      });
+      expect(data).toEqual({ status: OrderStatus.FINISHED, nurseComment: 'Patient tolerated well' });
     });
 
     it('should store an empty comment as null', async () => {
