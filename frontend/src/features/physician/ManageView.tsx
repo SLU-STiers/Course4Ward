@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
-import type { CourseInWard, PhysicianOrder } from '../../types';
+import type { CourseInWard, OrderType, PhysicianOrder } from '../../types';
 import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
+import { ORDER_TYPE_OPTIONS, orderTypeLabel } from '../../components/orders/orderType';
 import { useTableState } from '../../hooks/useTableState';
 import {
   formatDateLongFromKey,
@@ -43,6 +44,8 @@ export function ManageView() {
     Record<string, PhysicianOrder[]>
   >({});
   const [draft, setDraft] = useState("");
+  /** Kind of order the composer files; back to General after each submit. */
+  const [orderType, setOrderType] = useState<OrderType>("DEFAULT");
   const [savingOrders, setSavingOrders] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [approvingSummary, setApprovingSummary] = useState(false);
@@ -185,6 +188,39 @@ export function ManageView() {
   const hasOpenAdmission = Boolean(
     selected?.admissions?.some((admission) => !admission.dischargeDate),
   );
+
+  // Observation, admission and discharge orders happen once per admission; the
+  // nurse then carries them out (observe / admit / discharge). Mirrors the
+  // server's rules per patient class so an unavailable kind can't be picked;
+  // the server has the final say.
+  const openAdmission = selected?.admissions?.find((admission) => !admission.dischargeDate);
+  const patientClass = openAdmission?.patientClass ?? "INPATIENT";
+  const openAdmissionOrders = allOrders.filter(
+    (order) => order.admissionId === openAdmission?.id && order.active !== false,
+  );
+  const hasOrder = (type: OrderType) => openAdmissionOrders.some((order) => order.type === type);
+  // A decision already ordered but not yet carried out by the nurse.
+  const pendingDecision = hasOrder("DISCHARGE")
+    ? "Patient already has a discharge order"
+    : hasOrder("ADMISSION")
+      ? "Admission already ordered; waiting for the nurse to admit"
+      : hasOrder("OBSERVATION") && patientClass !== "OBSERVATION"
+        ? "Observation already ordered; waiting for the nurse"
+        : undefined;
+  const orderTypeBlockedReason: Partial<Record<OrderType, string>> = {
+    OBSERVATION:
+      patientClass === "OBSERVATION"
+        ? "Patient is already under observation"
+        : patientClass === "INPATIENT"
+          ? "An admitted patient cannot be placed under observation"
+          : pendingDecision,
+    ADMISSION: patientClass === "INPATIENT" ? "Patient is already admitted" : pendingDecision,
+    DISCHARGE: hasOrder("DISCHARGE") ? "Patient already has a discharge order" : undefined,
+  };
+  const effectiveOrderType: OrderType = orderTypeBlockedReason[orderType]
+    ? "DEFAULT"
+    : orderType;
+
   const selectableOrderDays = useMemo(
     () =>
       hasOpenAdmission && !ordersByDay.has(todayKey)
@@ -306,7 +342,7 @@ export function ManageView() {
     const content = draft.trim();
     if (!content) return;
 
-    const admissionId = selected.admissions?.find((admission) => !admission.dischargeDate)?.id;
+    const admissionId = openAdmission?.id;
     if (!admissionId) {
       setOrderError("This patient has no open admission to add orders to.");
       return;
@@ -317,8 +353,13 @@ export function ManageView() {
     setSubmitted(false);
     try {
       // The backend attributes the order to the signed-in physician.
-      const { data } = await ordersApi.create({ admissionId, orderContent: content });
+      const { data } = await ordersApi.create({
+        admissionId,
+        orderContent: content,
+        type: effectiveOrderType,
+      });
       setDraft("");
+      setOrderType("DEFAULT");
       await reloadOrders(patientId);
       const createdDay = orderDayValue(data.dateCreated);
       // Keep the new order visible when the list is filtered to another day.
@@ -721,6 +762,37 @@ export function ManageView() {
                     />
 
                     <div style={manage.orderActions}>
+                      <div
+                        role="radiogroup"
+                        aria-label="Order type"
+                        style={manage.orderTypeGroup}
+                      >
+                        {ORDER_TYPE_OPTIONS.map((option) => {
+                          const blocked = orderTypeBlockedReason[option.value];
+                          const active = effectiveOrderType === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              disabled={savingOrders || Boolean(blocked)}
+                              title={blocked ?? `${option.label} order`}
+                              style={{
+                                ...manage.orderTypeOption,
+                                ...(active ? manage.orderTypeOptionActive : {}),
+                                ...(blocked ? manage.orderTypeOptionDisabled : {}),
+                              }}
+                              onClick={() => {
+                                setOrderType(option.value);
+                                setOrderError(null);
+                              }}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                       {orderError && (
                         <span role="alert" style={manage.orderError}>{orderError}</span>
                       )}
@@ -736,7 +808,11 @@ export function ManageView() {
                         aria-busy={savingOrders}
                         onClick={() => void submitOrders()}
                       >
-                        {savingOrders ? "Saving..." : "Submit"}
+                        {savingOrders
+                          ? "Saving..."
+                          : effectiveOrderType === "DEFAULT"
+                            ? "Submit"
+                            : `Submit ${orderTypeLabel(effectiveOrderType)} Order`}
                       </button>
                     </div>
                   </>

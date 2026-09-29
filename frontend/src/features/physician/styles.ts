@@ -532,6 +532,33 @@ export const manage: Record<string, CSSProperties> = {
   /* Matches the timeline's default order text when a custom renderer is used. */
   timelineOrderText: { fontSize: 12, color: "#334155", lineHeight: "1.4" },
   orderError: { fontSize: 12, color: "#dc2626", marginRight: "auto" },
+  orderTypeGroup: {
+    display: "inline-flex",
+    border: "1px solid #cbd5e1",
+    borderRadius: 10,
+    overflow: "hidden",
+    marginRight: "auto",
+    flexShrink: 0,
+  },
+  orderTypeOption: {
+    border: "none",
+    borderRight: "1px solid #e2e8f0",
+    backgroundColor: "#ffffff",
+    color: "#334155",
+    padding: "6px 12px",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
+  orderTypeOptionActive: {
+    backgroundColor: TEAL,
+    color: "#ffffff",
+  },
+  orderTypeOptionDisabled: {
+    color: "#94a3b8",
+    backgroundColor: "#f8fafc",
+    cursor: "not-allowed",
+  },
   aiEditor: {
     width: "100%",
     border: "1px solid #e2e8f0",

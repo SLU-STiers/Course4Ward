@@ -63,6 +63,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
 };
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
+  OBSERVATION: 'Observation order',
   ADMISSION: 'Admission order',
   DISCHARGE: 'Discharge order',
   DEFAULT: 'Standard order',

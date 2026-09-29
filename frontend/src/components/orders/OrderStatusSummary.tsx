@@ -3,6 +3,7 @@ import { StatusBadge } from '../ui';
 import { formatDateMedium, formatTimeMedium } from '../../lib/format';
 import type { PhysicianOrder } from '../../types';
 import { ORDER_STATUS_OPTIONS } from './orderStatus';
+import { orderTypeLabel } from './orderType';
 
 const styles: Record<string, CSSProperties> = {
   row: {
@@ -25,6 +26,17 @@ const styles: Record<string, CSSProperties> = {
     whiteSpace: 'pre-wrap',
   },
   commentLabel: { fontWeight: 700, color: '#0f172a' },
+  typeTag: {
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.03em',
+    borderRadius: 999,
+    padding: '2px 8px',
+  },
+  admissionTag: { color: '#1d4ed8', backgroundColor: '#dbeafe' },
+  dischargeTag: { color: '#9a3412', backgroundColor: '#ffedd5' },
+  observationTag: { color: '#6d28d9', backgroundColor: '#ede9fe' },
 };
 
 type OrderStatusSummaryProps = {
@@ -47,6 +59,20 @@ export function OrderStatusSummary({ order, action, hideComment }: OrderStatusSu
   return (
     <div>
       <div style={styles.row}>
+        {order.type && order.type !== 'DEFAULT' && (
+          <span
+            style={{
+              ...styles.typeTag,
+              ...(order.type === 'ADMISSION'
+                ? styles.admissionTag
+                : order.type === 'OBSERVATION'
+                  ? styles.observationTag
+                  : styles.dischargeTag),
+            }}
+          >
+            {orderTypeLabel(order.type)} order
+          </span>
+        )}
         <StatusBadge status={current.badge} label={current.label} showDot />
         {order.executedBy && order.executedAt && (
           <span style={styles.meta}>

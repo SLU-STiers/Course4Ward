@@ -3,6 +3,7 @@ import type {
   AppNotification,
   NotificationScope,
   OrderStatus,
+  OrderType,
   Patient,
   PhysicianOrder,
   PhysicianNote,
@@ -75,6 +76,8 @@ export const ordersApi = {
     /** Omit when a physician submits their own order. */
     orderedById?: string;
     orderContent: string;
+    /** Defaults to `DEFAULT` (a general order). */
+    type?: OrderType;
   }) => api.post<PhysicianOrder>('/orders', data),
   // Orders cannot be edited or deleted once written (no API for it).
   /** Nurse-only: mark progress on an order. Omit `nurseComment` to keep the current one. */
