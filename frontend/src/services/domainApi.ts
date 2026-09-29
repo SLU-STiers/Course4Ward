@@ -1,5 +1,6 @@
 import { api } from './api';
 import type {
+  OrderStatus,
   Patient,
   PhysicianOrder,
   PhysicianNote,
@@ -69,6 +70,9 @@ export const ordersApi = {
   update: (id: string, orderContent: string) =>
     api.patch<PhysicianOrder>(`/orders/${id}`, { orderContent }),
   remove: (id: string) => api.delete(`/orders/${id}`),
+  /** Nurse-only: mark progress on an order. Omit `nurseComment` to keep the current one. */
+  updateStatus: (id: string, data: { status: OrderStatus; nurseComment?: string }) =>
+    api.patch<PhysicianOrder>(`/orders/${id}/status`, data),
   forPatient: (patientId: string) => api.get<PhysicianOrder[]>(`/orders/patient/${patientId}`),
 };
 

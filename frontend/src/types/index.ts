@@ -47,6 +47,9 @@ export interface AdmissionTriage {
 
 export type OrderType = 'MEDICATION' | 'ADMISSION' | 'DISCHARGE' | 'DIAGNOSTIC' | 'OTHER';
 
+/** Nurse execution state of an order (backend `OrderStatus`). */
+export type OrderStatus = 'TO_ACCOMPLISH' | 'ONGOING' | 'FINISHED';
+
 export interface PhysicianOrder {
   id: string;
   admissionId: string;
@@ -57,6 +60,10 @@ export interface PhysicianOrder {
   dateCreated: string;
   dateUpdated?: string | null;
   active: boolean;
+  status: OrderStatus;
+  nurseComment?: string | null;
+  executedAt?: string | null;
+  executedBy?: { firstName: string; lastName: string } | null;
   orderedBy?: { firstName: string; lastName: string };
   encodedBy?: { firstName: string; lastName: string; role: Role };
 }
@@ -150,7 +157,8 @@ export type AuditLogAction =
   | 'PASSWORD_RESET'
   | 'CLAIM_CREATED'
   | 'CLAIM_PHYSICIAN_NOTIFIED'
-  | 'CF4_GENERATED';
+  | 'CF4_GENERATED'
+  | 'UPDATE_ORDER_STATUS';
 
 /** One row of `GET /admin/audit-logs`. */
 export interface AuditLogEntry {
