@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -11,6 +11,14 @@ import { ClaimsService } from './claims.service';
 class CreateClaimDto {
   @IsUUID()
   courseInWardId: string;
+}
+
+class NotifyPhysicianDto {
+  /** Optional note from the claims processor; shown on the physician's bell. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  message?: string;
 }
 
 @ApiTags('claims')
@@ -46,8 +54,12 @@ export class ClaimsController {
 
   @Post(':id/notify-physician')
   @Roles(Role.CLAIMS_PROCESSOR)
-  notifyPhysician(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.claimsService.notifyPhysician(id, user.id);
+  notifyPhysician(
+    @Param('id') id: string,
+    @Body() dto: NotifyPhysicianDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.claimsService.notifyPhysician(id, user.id, dto.message);
   }
 
   @Post(':id/generate-cf4')

@@ -1,13 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { SummaryStatus } from '@prisma/client';
+import { NotificationType, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ClaimsService {
   constructor(
     private prisma: PrismaService,
     private auditLog: AuditLogService,
+    private notifications: NotificationsService,
   ) {}
 
   // A claim wraps one approved (or pending) Course in the Ward entry for
@@ -101,25 +103,42 @@ export class ClaimsService {
     return { ...updatedRequest, summary };
   }
 
-  // Claims processor notifies the attending physician to validate the entry
-  async notifyPhysician(claimId: string, claimsProcessorId: string) {
-    let claim;
-    try {
-      claim = await this.prisma.summaryApprovalRequest.update({
-        where: { id: claimId },
-        data: {
-          status: 'PHYSICIAN_VALIDATION_REQUESTED',
-        },
-      });
-    } catch (error: unknown) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2025') {
-        throw new NotFoundException('Claim not found');
-      }
-      throw error;
-    }
+  // Claims processor notifies the attending physician to validate the entry.
+  // The reminder lands on the physician's notification bell, carrying the
+  // message typed in the review modal.
+  async notifyPhysician(claimId: string, claimsProcessorId: string, message?: string) {
+    const existing = await this.prisma.summaryApprovalRequest.findUnique({
+      where: { id: claimId },
+      include: {
+        summary: { include: { patient: { select: { firstName: true, lastName: true } } } },
+        processor: { select: { firstName: true, lastName: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException('Claim not found');
 
-    // TODO: wire to an actual notification channel (in-app alert / pager
-    // integration) -- out of scope for this scaffold.
+    const claim = await this.prisma.summaryApprovalRequest.update({
+      where: { id: claimId },
+      data: {
+        status: 'PHYSICIAN_VALIDATION_REQUESTED',
+      },
+    });
+
+    const patientName =
+      `${existing.summary.patient.firstName} ${existing.summary.patient.lastName}`.trim();
+    const processorName =
+      `${existing.processor.firstName} ${existing.processor.lastName}`.trim();
+    const note = message?.trim();
+
+    await this.notifications.create({
+      userId: existing.physicianId,
+      type: NotificationType.REVIEW_REQUESTED,
+      title: 'Review requested again',
+      message: note
+        ? `${processorName} (Claims Processor) asked you to review ${patientName}'s summary again: "${note}"`
+        : `${processorName} (Claims Processor) asked you to review ${patientName}'s summary again.`,
+      requestId: claimId,
+    });
+
     await this.auditLog.record({
       userId: claimsProcessorId,
       action: 'CLAIM_PHYSICIAN_NOTIFIED',

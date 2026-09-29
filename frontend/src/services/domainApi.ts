@@ -1,5 +1,6 @@
 import { api } from './api';
 import type {
+  AppNotification,
   Patient,
   PhysicianOrder,
   PhysicianNote,
@@ -102,8 +103,21 @@ export const claimsApi = {
   findAll: () => api.get<ClaimRecord[]>('/claims'),
   physicianRequests: () => api.get<PhysicianRequest[]>('/claims/physician-requests'),
   approvePhysicianRequest: (id: string) => api.patch(`/claims/${id}/approve`),
-  notifyPhysician: (id: string) => api.post(`/claims/${id}/notify-physician`),
+  /** `message` is the note typed in the review modal; it lands on the
+   *  physician's notification bell. */
+  notifyPhysician: (id: string, message?: string) =>
+    api.post(`/claims/${id}/notify-physician`, { message }),
   generateCf4: (id: string) => api.post(`/claims/${id}/generate-cf4`),
+};
+
+// --- Notifications (header bell) ---
+export const notificationsApi = {
+  list: (take?: number) =>
+    api.get<AppNotification[]>('/notifications', take ? { params: { take } } : undefined),
+  unreadCount: () => api.get<{ count: number }>('/notifications/unread-count'),
+  /** Returns the recalculated unread count for the badge. */
+  markRead: (id: string) => api.patch<{ count: number }>(`/notifications/${id}/read`),
+  markAllRead: () => api.post<{ count: number }>('/notifications/read-all'),
 };
 
 // --- Admin ---

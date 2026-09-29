@@ -155,7 +155,6 @@ export function PatientView() {
           options: [
             { value: 'admittedOn', label: 'Admission date' },
             { value: 'name', label: 'Patient name' },
-            { value: 'id', label: 'Admission ID' },
           ],
           value: table.sort.field,
           onChange: table.setSortField,
@@ -168,7 +167,6 @@ export function PatientView() {
         <table style={{ ...patientTableStyles.table, tableLayout: 'auto' }}>
           <thead>
             <tr style={patientTableStyles.thRow}>
-              <th style={patientTableStyles.th}>Admission ID</th>
               <th style={patientTableStyles.th}>Full Name</th>
               <th style={patientTableStyles.th}>Admission Date</th>
               <th style={patientTableStyles.th}>Discharge Date</th>
@@ -183,7 +181,6 @@ export function PatientView() {
                 onClick={() => setViewingName(r.name)}
                 style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
               >
-                <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.id}</td>
                 <td style={patientTableStyles.td}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span
@@ -222,7 +219,7 @@ export function PatientView() {
               <tr>
                 <td
                   style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                  colSpan={6}
+                  colSpan={5}
                 >
                   No admissions match the current filters.
                 </td>

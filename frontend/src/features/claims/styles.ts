@@ -17,7 +17,7 @@ export const styles: Record<string, CSSProperties> = {
     borderBottom: '1px solid var(--c4w-color-border)',
   },
   th: {
-    padding: '12px 16px',
+    padding: '10px 16px',
     fontSize: '12px',
     fontWeight: 700,
     color: 'var(--c4w-color-primary)',
@@ -28,25 +28,31 @@ export const styles: Record<string, CSSProperties> = {
     borderBottom: '1px solid #f1f5f9',
   },
   td: {
-    padding: '14px 16px',
+    padding: '12px 16px',
   },
   requestActionCell: {
     width: '20%',
     textAlign: 'right',
     whiteSpace: 'nowrap',
   },
-  reqId: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#0f172a',
-  },
-  docName: {
-    fontSize: '13px',
-    color: '#64748b',
+  /** Date + time on one line keep request rows compact. */
+  dateCell: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    whiteSpace: 'nowrap',
   },
   dateText: {
-    fontSize: '14px',
+    fontSize: '13px',
+    fontWeight: 600,
     color: '#334155',
+  },
+  /** Dot between the date and the time. */
+  dateSeparator: {
+    width: '3px',
+    height: '3px',
+    borderRadius: '50%',
+    backgroundColor: '#cbd5e1',
   },
   timeText: {
     fontSize: '12px',

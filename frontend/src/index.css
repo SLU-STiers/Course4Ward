@@ -1489,6 +1489,11 @@ td {
 .ui-table tbody tr:last-child td { border-bottom: 0; }
 .ui-table tbody tr:hover { background: var(--c4w-color-surface-hover, #f8fafc); }
 
+/* Row hover for tables whose cells come from a style map (inline styles), e.g.
+   the claims Requests tab — inline styles cannot express :hover. */
+.ui-table-hover tbody tr:hover { background: var(--c4w-color-surface-hover, #f8fafc); }
+.ui-table-hover tbody tr:last-child td { border-bottom: 0; }
+
 /* ---------- Shared sidebar profile + notifications ---------- */
 .ui-sidebar-profile {
   display: flex;
@@ -1577,6 +1582,157 @@ td {
   color: var(--c4w-color-on-primary, #ffffff);
   font-size: 0.625rem;
   font-weight: 700;
+  animation: ui-notification-pop var(--c4w-motion-base, 150ms) var(--c4w-motion-easing, ease);
+}
+
+@keyframes ui-notification-pop {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Notification panel — the bell popover. Padding moves onto the inner
+   sections so the header divider can span the full width. */
+.ui-popover.ui-popover--notifications {
+  width: min(380px, calc(100vw - 16px));
+  min-width: min(380px, calc(100vw - 16px));
+  max-width: min(380px, calc(100vw - 16px));
+  padding: 0;
+  overflow: hidden;
+}
+
+.ui-notifications { display: flex; flex-direction: column; min-width: 0; }
+
+.ui-notifications__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--c4w-color-border, #e2e8f0);
+}
+
+.ui-notifications__heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ui-notifications__title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--c4w-color-text-primary, #0f172a);
+}
+.ui-notifications__count {
+  padding: 2px 8px;
+  border-radius: var(--c4w-radius-badge, 9999px);
+  background: var(--c4w-color-primary-soft, #eff6ff);
+  color: var(--c4w-color-primary, #2563eb);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ui-notifications__action {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--c4w-radius-control, 8px);
+  background: none;
+  color: var(--c4w-color-primary, #2563eb);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+.ui-notifications__action:hover { background: var(--c4w-color-primary-soft, #eff6ff); }
+
+.ui-notifications__list {
+  display: flex;
+  flex-direction: column;
+  max-height: min(62vh, 420px);
+  overflow-y: auto;
+}
+
+.ui-notifications__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 30px 20px;
+  text-align: center;
+  color: var(--c4w-color-text-muted, #64748b);
+  font-size: 0.75rem;
+}
+.ui-notifications__state--empty svg { color: var(--c4w-color-text-subtle, #94a3b8); }
+.ui-notifications__hint {
+  max-width: 26ch;
+  color: var(--c4w-color-text-subtle, #94a3b8);
+  font-size: 0.6875rem;
+}
+
+.ui-notification {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--c4w-color-divider, #f1f5f9);
+  background: var(--c4w-color-surface, #ffffff);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+.ui-notification:last-child { border-bottom: 0; }
+.ui-notification:hover { background: var(--c4w-color-surface-hover, #f8fafc); }
+.ui-notification.is-unread { background: var(--c4w-color-primary-soft, #eff6ff); }
+.ui-notification.is-unread:hover { background: var(--c4w-color-info-soft, #dbeafe); }
+
+.ui-notification__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--c4w-color-primary-soft, #eff6ff);
+  color: var(--c4w-color-primary, #2563eb);
+}
+.ui-notification.is-unread .ui-notification__icon {
+  background: var(--c4w-color-primary, #2563eb);
+  color: var(--c4w-color-on-primary, #ffffff);
+}
+
+.ui-notification__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ui-notification__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ui-notification__title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--c4w-color-text-primary, #0f172a);
+}
+.ui-notification__time {
+  flex-shrink: 0;
+  color: var(--c4w-color-text-subtle, #94a3b8);
+  font-size: 0.6875rem;
+}
+.ui-notification__message {
+  color: var(--c4w-color-text-muted, #64748b);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ui-notification__dot {
+  position: absolute;
+  top: 14px;
+  right: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c4w-color-primary, #2563eb);
 }
 
 .ui-table-footer {

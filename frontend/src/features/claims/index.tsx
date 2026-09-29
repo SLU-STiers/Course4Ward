@@ -284,7 +284,6 @@ export function ClaimsProcessorDashboard() {
                 sortProps={{
                   title: 'Sort requests by',
                   options: [
-                    { value: 'id', label: 'Request ID' },
                     { value: 'date', label: 'Submitted on' },
                     { value: 'status', label: 'Status' },
                   ],
@@ -296,25 +295,23 @@ export function ClaimsProcessorDashboard() {
               />
 
               <div style={styles.tableCard}>
-                <table style={styles.table}>
+                <table style={styles.table} className="ui-table-hover">
                   <thead>
                     <tr style={styles.thRow}>
-                      <th style={{ ...styles.th, width: '30%' }}>Request ID</th>
-                      <th style={{ ...styles.th, width: '28%' }}>Submitted On</th>
-                      <th style={{ ...styles.th, width: '22%' }}>Status</th>
-                      <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>Action</th>
+                      <th style={{ ...styles.th, width: '26%' }}>Submitted On</th>
+                      <th style={{ ...styles.th, width: '24%' }}>Status</th>
+                      <th style={{ ...styles.th, width: '50%', textAlign: 'right' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {visibleRequests.map((req) => (
                       <tr key={req.id} style={styles.tr}>
                         <td style={styles.td}>
-                          <div style={styles.reqId}>{req.id}</div>
-                          <div style={styles.docName}>{req.doctor}</div>
-                        </td>
-                        <td style={styles.td}>
-                          <div style={styles.dateText}>{req.date}</div>
-                          <div style={styles.timeText}>{req.time}</div>
+                          <div style={styles.dateCell}>
+                            <span style={styles.dateText}>{req.date}</span>
+                            <span style={styles.dateSeparator} />
+                            <span style={styles.timeText}>{req.time}</span>
+                          </div>
                         </td>
                         <td style={styles.td}>
                           <StatusBadge
@@ -363,8 +360,8 @@ export function ClaimsProcessorDashboard() {
             <ReviewRequestModal
               request={selectedRequest}
               onClose={() => setSelectedRequest(null)}
-              onRequestRevisions={() => {
-                claimsApi.notifyPhysician(selectedRequest.id).then(() => {
+              onRequestRevisions={(message) => {
+                claimsApi.notifyPhysician(selectedRequest.id, message).then(() => {
                   setSelectedRequest(null);
                 });
               }}

@@ -116,3 +116,27 @@ export function formatTimeClock(value: string | Date): string {
 export function formatTimeLocale(value: string | Date): string {
   return new Date(value).toLocaleTimeString();
 }
+
+/**
+ * `just now` / `5 min ago` / `3 h ago` / `2 d ago`, falling back to
+ * `Apr 15, 2026` for anything older than a week. Used by the notification
+ * bell, where the age of an alert matters more than its exact timestamp.
+ */
+export function formatRelativeTime(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+  if (seconds < 45) return 'just now';
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days} d ago`;
+
+  return formatDateMedium(date);
+}

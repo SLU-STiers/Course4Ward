@@ -92,6 +92,14 @@ enum CommunicationChannel {
   OTHER
 }
 
+enum NotificationType {
+  /// Claims processor asked the physician to review a summary again.
+  REVIEW_REQUESTED
+  GENERAL
+
+  @@map("notification_type")
+}
+
 // ---------- Models ----------
 model User {
   id                String   @id @default(uuid())
@@ -116,6 +124,7 @@ model User {
   triagesRecorded            TriageAssessment[]       @relation("TriageRecordedBy")
   auditLogs                  AuditLog[]
   passwordResets             PasswordResetRequest[]
+  notifications              Notification[]
   summaryRequestsAsPhysician SummaryApprovalRequest[] @relation("RequestedPhysician")
   summaryRequestsAsProcessor SummaryApprovalRequest[] @relation("RequestedProcessor")
 
@@ -306,4 +315,24 @@ model AuditLog {
   user User @relation(fields: [userId], references: [id])
 
   @@map("audit_logs")
+}
+
+/// In-app notification for one user, rendered by the header bell
+/// (`components/layout/NotificationBell.tsx`) and its panel.
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType @default(GENERAL)
+  title     String
+  message   String
+  /// The summary approval request this notification points at, when any.
+  requestId String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

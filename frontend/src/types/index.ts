@@ -1,5 +1,22 @@
 export type Role = 'PHYSICIAN' | 'NURSE' | 'CLAIMS_PROCESSOR' | 'ADMIN';
 
+export type NotificationType = 'REVIEW_REQUESTED' | 'GENERAL';
+
+/**
+ * In-app notification for the header bell. `REVIEW_REQUESTED` is raised when a
+ * claims processor sends a reminder from the review modal.
+ */
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  /** Claim / summary approval request this notification points at, if any. */
+  requestId?: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export interface AuthUser {
   id: string;
   userId: string;

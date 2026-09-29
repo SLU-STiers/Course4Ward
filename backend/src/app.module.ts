@@ -12,6 +12,7 @@ import { CourseInWardModule } from './course-in-ward/course-in-ward.module';
 import { ClaimsModule } from './claims/claims.module';
 import { AdminModule } from './admin/admin.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AuditLogModule } from './audit-log/audit-log.module';
     ClaimsModule,
     AdminModule,
     AuditLogModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

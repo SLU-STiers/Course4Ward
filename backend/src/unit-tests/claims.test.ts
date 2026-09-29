@@ -354,13 +354,30 @@ describe("Claims Module", () => {
         };
         jest.spyOn(service, "notifyPhysician").mockResolvedValue(updatedClaim);
 
-        const result = await controller.notifyPhysician(mockClaimId, mockUser);
+        const result = await controller.notifyPhysician(
+          mockClaimId,
+          { message: "Please double-check the dosage." },
+          mockUser,
+        );
 
         expect(service.notifyPhysician).toHaveBeenCalledWith(
           mockClaimId,
           mockUser.id,
+          "Please double-check the dosage.",
         );
         expect(result).toEqual(updatedClaim);
+      });
+
+      it("should forward an undefined message when the processor sends none", async () => {
+        jest.spyOn(service, "notifyPhysician").mockResolvedValue(mockClaim);
+
+        await controller.notifyPhysician(mockClaimId, {}, mockUser);
+
+        expect(service.notifyPhysician).toHaveBeenCalledWith(
+          mockClaimId,
+          mockUser.id,
+          undefined,
+        );
       });
     });
 
