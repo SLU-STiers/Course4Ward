@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
+import type { PatientClass } from '../../types';
+import { useAuthStore } from '../../store/authStore';
+import { formatDateMedium } from '../../lib/format';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { setRoomDestination } from './roomDestinations';
@@ -14,13 +17,57 @@ type PhysicianOption = {
   lastName: string;
 };
 
+/** How the physician gave the order; '' = written / signed order. */
+type OrderChannel = '' | 'VERBAL' | 'CALL' | 'SMS' | 'OTHER';
+
+/** Registration choices; the order a class needs is entered with it. */
+const CLASS_OPTIONS: { value: PatientClass; label: string; hint: string; order?: string }[] = [
+  {
+    value: 'EMERGENCY',
+    label: 'Emergency',
+    hint: 'Seen in the ER. The physician then orders observation, admission or discharge.',
+  },
+  {
+    value: 'OUTPATIENT',
+    label: 'Outpatient',
+    hint: 'Clinic visit or day procedure. End the visit from the patient details when done.',
+  },
+  {
+    value: 'OBSERVATION',
+    label: 'Observation',
+    hint: "Short stay (usually under 24 hours) to decide on admission. Needs the physician's observation order.",
+    order: 'Observation',
+  },
+  {
+    value: 'INPATIENT',
+    label: 'Inpatient',
+    hint: "Straight to the ward (direct admission, trauma, scheduled surgery). Needs the physician's admission order.",
+    order: 'Admission',
+  },
+];
+
+const ORDER_CHANNELS: [OrderChannel, string][] = [
+  ['', 'Written / signed order'],
+  ['VERBAL', 'Verbal'],
+  ['CALL', 'Phone call'],
+  ['SMS', 'SMS'],
+  ['OTHER', 'Other'],
+];
+
 export type AddPatientFormResult = {
   firstName: string;
   lastName: string;
-  age: number;
+  /** Kept as typed text so an empty field is distinguishable from age 0 (newborn). */
+  age: string;
   gender: string;
-  admissionDate: string;
-  admissionStatus: 'ADMITTED' | 'ER_OUTPATIENT';
+  /**
+   * EMERGENCY / OUTPATIENT need no order. OBSERVATION and INPATIENT (direct
+   * admission, trauma, scheduled surgery) need the physician's observation /
+   * admission order, entered below on their behalf.
+   */
+  patientClass: PatientClass;
+  registrationOrder: string;
+  registrationOrderChannel: OrderChannel;
   physicianId: string;
   consultingPhysicianIds: string[];
   triageTime: string;
@@ -35,10 +82,11 @@ export type AddPatientFormResult = {
 const emptyForm = (): AddPatientFormResult => ({
   firstName: '',
   lastName: '',
-  age: 0,
+  age: '',
   gender: 'Male',
-  admissionDate: new Date().toISOString().slice(0, 10),
-  admissionStatus: 'ADMITTED',
+  patientClass: 'EMERGENCY',
+  registrationOrder: '',
+  registrationOrderChannel: '',
   physicianId: '',
   consultingPhysicianIds: [],
   triageTime: '',
@@ -50,6 +98,57 @@ const emptyForm = (): AddPatientFormResult => ({
   pain: '',
   notes: '',
 });
+
+const MAX_AGE = 130;
+
+/** Returns the message to show under the Age field, or null when the value is valid. */
+function ageError(value: string): string | null {
+  if (value.trim() === '') return 'Age is required.';
+  if (!/^\d+$/.test(value)) return 'Age must be a whole number of years.';
+  if (Number(value) > MAX_AGE) return `Age must be between 0 and ${MAX_AGE}.`;
+  return null;
+}
+
+// Unsaved entries survive the modal being closed (Cancel, backdrop click, browser
+// back) until the patient is registered or the nurse discards them. sessionStorage
+// clears when the tab closes; the owner id keeps one nurse's draft from another.
+const DRAFT_KEY = 'nurse.addPatientDraft';
+
+type AddPatientDraft = { ownerId: string; form: AddPatientFormResult; roomNumber: string };
+
+function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
+  if (!ownerId) return null;
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as AddPatientDraft;
+    if (draft.ownerId !== ownerId) return null;
+    const form = { ...emptyForm(), ...draft.form, age: String(draft.form?.age ?? '') };
+    // Fields of older versions of this form.
+    for (const legacy of ['admissionStatus', 'admissionOrder', 'admissionOrderChannel']) {
+      delete (form as Partial<Record<string, unknown>>)[legacy];
+    }
+    return {
+      ownerId,
+      form,
+      roomNumber: draft.roomNumber ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(draft: AddPatientDraft | null) {
+  try {
+    if (draft) sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    else sessionStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // Storage unavailable (private mode / quota) — the form still works without a draft.
+  }
+}
+
+const isPristine = (form: AddPatientFormResult, roomNumber: string) =>
+  roomNumber === '' && JSON.stringify(form) === JSON.stringify(emptyForm());
 
 const toNumber = (value: string) => (value.trim() === '' ? undefined : Number(value));
 
@@ -63,13 +162,39 @@ export function AddPatientModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [form, setForm] = useState<AddPatientFormResult>(emptyForm);
+  const ownerId = useAuthStore((state) => state.user?.id);
+  const [initialDraft] = useState(() => loadDraft(ownerId));
+  const [form, setForm] = useState<AddPatientFormResult>(() => initialDraft?.form ?? emptyForm());
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
   const [pendingDoctorId, setPendingDoctorId] = useState('');
   // Not sent to the API; kept in the in-memory room store only.
-  const [roomNumber, setRoomNumber] = useState('');
+  const [roomNumber, setRoomNumber] = useState(() => initialDraft?.roomNumber ?? '');
+  const [draftRestored, setDraftRestored] = useState(initialDraft !== null);
+  const [ageTouched, setAgeTouched] = useState(initialDraft !== null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const ageMessage = ageError(form.age);
+  const classOption =
+    CLASS_OPTIONS.find((option) => option.value === form.patientClass) ?? CLASS_OPTIONS[0];
+  const toWard = form.patientClass === 'INPATIENT';
+  /** 'Admission' / 'Observation' when the class needs a physician order. */
+  const orderName = classOption.order;
+  const showAgeError = ageTouched && ageMessage !== null;
+
+  useEffect(() => {
+    if (!ownerId) return;
+    saveDraft(isPristine(form, roomNumber) ? null : { ownerId, form, roomNumber });
+  }, [ownerId, form, roomNumber]);
+
+  const discardDraft = () => {
+    setForm(emptyForm());
+    setRoomNumber('');
+    setPendingDoctorId('');
+    setAgeTouched(false);
+    setError(null);
+    setDraftRestored(false);
+  };
 
   useEffect(() => {
     patientsApi
@@ -122,12 +247,18 @@ export function AddPatientModal({
       setError('Please enter the patient’s first and last name.');
       return;
     }
-    if (!form.age || form.age < 0) {
-      setError('Please enter a valid age.');
+    if (ageMessage) {
+      setAgeTouched(true);
+      setError(ageMessage);
       return;
     }
     if (!form.physicianId) {
       setError('Please select the attending physician.');
+      return;
+    }
+    const registrationOrder = form.registrationOrder.trim();
+    if (orderName && !registrationOrder) {
+      setError(`Enter the physician's ${orderName.toLowerCase()} order, or register the patient as Emergency.`);
       return;
     }
 
@@ -136,12 +267,16 @@ export function AddPatientModal({
       const { data: created } = await patientsApi.create({
         firstName,
         lastName,
-        age: form.age,
+        age: Number(form.age),
         gender: form.gender,
-        admissionDate: form.admissionDate
-          ? new Date(`${form.admissionDate}T09:00:00`).toISOString()
-          : undefined,
-        admissionStatus: form.admissionStatus,
+        // No admissionDate: admission is always today, stamped by the server with the current time.
+        patientClass: form.patientClass,
+        // Observation / inpatient only with the physician's order, which is
+        // filed on their behalf in the same request.
+        ...(orderName && {
+          registrationOrder,
+          registrationOrderChannel: form.registrationOrderChannel || undefined,
+        }),
         physicianId: form.physicianId,
         additionalPhysicianIds: form.consultingPhysicianIds,
         triageTime: form.triageTime || undefined,
@@ -154,7 +289,8 @@ export function AddPatientModal({
         notes: form.notes || undefined,
       });
       const admissionId = created.admissions?.[0]?.id;
-      if (!isEr && admissionId) setRoomDestination(admissionId, roomNumber);
+      if (toWard && admissionId) setRoomDestination(admissionId, roomNumber);
+      saveDraft(null);
       onCreated();
       onClose();
     } catch (err: any) {
@@ -169,7 +305,7 @@ export function AddPatientModal({
     }
   };
 
-  const isEr = form.admissionStatus === 'ER_OUTPATIENT';
+  const attending = physicianById(form.physicianId);
 
   return (
     <div style={ui.overlay} onClick={onClose}>
@@ -178,8 +314,17 @@ export function AddPatientModal({
           <div>
             <div style={s.titleRow}>
               <h3 style={s.title}>Add Patient</h3>
-              <span style={isEr ? ui.badgeEr : ui.badgeAdmitted}>
-                {isEr ? 'ER / Outpatient' : 'Admitted'}
+              <span
+                style={
+                  {
+                    EMERGENCY: ui.badgeEr,
+                    OUTPATIENT: ui.badgeOutpatient,
+                    OBSERVATION: ui.badgeObservation,
+                    INPATIENT: ui.badgeAdmitted,
+                  }[form.patientClass]
+                }
+              >
+                {classOption.label}
               </span>
             </div>
             <p style={s.subtitle}>Register a new patient and assign their care team.</p>
@@ -190,6 +335,15 @@ export function AddPatientModal({
         </header>
 
         <div style={s.body}>
+          {draftRestored && (
+            <div style={s.draftNotice} role="status">
+              <span>Restored the details you entered before closing this form.</span>
+              <button type="button" style={s.draftDiscard} onClick={discardDraft}>
+                Start over
+              </button>
+            </div>
+          )}
+
           <Section icon={SECTION_ICONS.patientInfo} title="Patient Information" hint="Basic demographics and admission details">
             <div style={s.grid2}>
               <Field label="First Name" required>
@@ -212,17 +366,25 @@ export function AddPatientModal({
               </Field>
               <Field label="Age" required>
                 <input
-                  style={s.input}
-                  type="number"
-                  min={0}
-                  max={130}
-                  value={form.age || ''}
-                  onChange={(e) => setField('age', Number(e.target.value))}
-                  placeholder="Years"
+                  style={{ ...s.input, ...(showAgeError ? s.inputInvalid : {}) }}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={3}
+                  value={form.age}
+                  onChange={(e) => setField('age', e.target.value.replace(/\D/g, ''))}
+                  onBlur={() => setAgeTouched(true)}
+                  placeholder="Years (0 for newborns)"
+                  aria-invalid={showAgeError}
+                  aria-describedby={showAgeError ? 'add-patient-age-error' : undefined}
                   required
                 />
+                {showAgeError && (
+                  <span id="add-patient-age-error" style={s.fieldError}>
+                    {ageMessage}
+                  </span>
+                )}
               </Field>
-              <Field label="Gender" required>
+              <Field label="Sex" required>
                 <select
                   style={s.input}
                   value={form.gender}
@@ -235,25 +397,25 @@ export function AddPatientModal({
               </Field>
               <Field label="Admission Date" required>
                 <input
-                  style={s.input}
-                  type="date"
-                  value={form.admissionDate}
-                  onChange={(e) => setField('admissionDate', e.target.value)}
-                  required
+                  style={{ ...s.input, ...s.inputReadOnly }}
+                  value={formatDateMedium(new Date())}
+                  readOnly
+                  aria-readonly="true"
+                  title="Patients are admitted with today's date"
                 />
               </Field>
-              <div>
+              {/* Full row: four classes don't fit in one grid column. */}
+              <div style={{ gridColumn: '1 / -1' }}>
                 <span style={s.label}>
                   Admission Status<span style={s.required}>*</span>
                 </span>
-                <div style={s.segmented} role="radiogroup" aria-label="Admission status">
-                  {(
-                    [
-                      ['ADMITTED', 'Ward'],
-                      ['ER_OUTPATIENT', 'ER / Outpatient'],
-                    ] as const
-                  ).map(([value, label]) => {
-                    const active = form.admissionStatus === value;
+                <div
+                  style={{ ...s.segmented, gridTemplateColumns: `repeat(${CLASS_OPTIONS.length}, 1fr)` }}
+                  role="radiogroup"
+                  aria-label="Admission status"
+                >
+                  {CLASS_OPTIONS.map(({ value, label }) => {
+                    const active = form.patientClass === value;
                     return (
                       <button
                         key={value}
@@ -261,7 +423,7 @@ export function AddPatientModal({
                         role="radio"
                         aria-checked={active}
                         style={{ ...s.segment, ...(active ? s.segmentActive : {}) }}
-                        onClick={() => setField('admissionStatus', value)}
+                        onClick={() => setField('patientClass', value)}
                       >
                         {label}
                       </button>
@@ -270,9 +432,12 @@ export function AddPatientModal({
                 </div>
               </div>
             </div>
+            <p style={{ margin: '10px 0 0', fontSize: 12, color: '#64748b' }}>
+              {classOption.hint}
+            </p>
           </Section>
 
-          {!isEr && (
+          {toWard && (
             <Section icon={SECTION_ICONS.room} title="Room Destination" hint="Ward room for the admitted patient">
               <div style={s.grid2}>
                 <Field label="Room Number" required>
@@ -392,6 +557,53 @@ export function AddPatientModal({
               </div>
             </div>
           </Section>
+
+          {orderName && (
+            <Section
+              icon={SECTION_ICONS.triage}
+              title={`${orderName} Order`}
+              hint={`The physician's ${orderName.toLowerCase()} order, entered on their behalf`}
+            >
+              <Field label="Order" required>
+                <textarea
+                  style={s.textarea}
+                  value={form.registrationOrder}
+                  onChange={(e) => setField('registrationOrder', e.target.value)}
+                  placeholder={
+                    toWard
+                      ? 'e.g. Admit to Medical Ward. CBC, chest x-ray PA view.'
+                      : 'e.g. For observation. Monitor vital signs every hour.'
+                  }
+                  maxLength={2000}
+                  required
+                />
+              </Field>
+              <div style={{ ...s.grid2, marginTop: 12 }}>
+                <Field label="Ordered By">
+                  <input
+                    style={{ ...s.input, ...s.inputReadOnly }}
+                    value={attending ? doctorName(attending) : 'Select the attending physician'}
+                    readOnly
+                    aria-readonly="true"
+                    title="The order is attributed to the attending physician"
+                  />
+                </Field>
+                <Field label="Order Given As" required>
+                  <select
+                    style={s.input}
+                    value={form.registrationOrderChannel}
+                    onChange={(e) => setField('registrationOrderChannel', e.target.value as OrderChannel)}
+                  >
+                    {ORDER_CHANNELS.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </Section>
+          )}
 
           {error && (
             <div style={s.error} role="alert">

@@ -1,6 +1,6 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import type { PhysicianOrder } from '../../types';
+import type { PatientClass, PhysicianOrder } from '../../types';
 
 
 export type TabType = 'management' | 'patient';
@@ -21,7 +21,9 @@ export type NursePatient = {
   daysInCare: number;
   initialAssessment?: string | null;
   triage?: TriageAssessment;
-  isOutpatient?: boolean;
+  patientClass?: PatientClass;
+  /** When the admission entered its current class. */
+  classSince?: string;
   assignedDoctor?: string | null;
   additionalDoctors?: string[];
 };
@@ -54,12 +56,12 @@ export type OrderSet = {
   /** Present for orders loaded from the API; the static demo sets have none. */
   order?: PhysicianOrder;
 };
-export type AdmissionStatus = 'Admitted' | 'ER / Outpatient' | 'Discharged';
+/** A patient class label (see PATIENT_CLASS_LABEL), or Discharged. */
+export type AdmissionStatus = 'Emergency' | 'Outpatient' | 'Observation' | 'Admitted' | 'Discharged';
 export type AdmissionRecord = {
   id: string;
   name: string;
   admittedOn: string;
   dischargedOn: string | null;
   status: AdmissionStatus;
-  isOutpatient?: boolean;
 };

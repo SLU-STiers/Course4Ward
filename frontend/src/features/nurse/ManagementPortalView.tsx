@@ -13,6 +13,7 @@ import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
 import { triageForDisplay } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
+import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, Patient, PhysicianOrder } from '../../types';
 
@@ -38,7 +39,8 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     daysInCare: daysInCare(admissionDate, admission?.dischargeDate),
     initialAssessment: admission?.initialAssessment,
     triage: triageForDisplay(admission),
-    isOutpatient: Boolean(admission?.isOutpatient),
+    patientClass: admission?.patientClass,
+    classSince: admission?.classSince,
     assignedDoctor: admission?.physician
       ? `Dr. ${admission.physician.firstName} ${admission.physician.lastName}`
       : null,
@@ -48,10 +50,12 @@ function mapPatient(patient: Patient, index: number): NursePatient {
   };
 }
 
-/** Status shown in the table and matched by the status filter; open ER / outpatient visits are their own status. */
-function displayStatus(patient: NursePatient): 'admitted' | 'er' | 'discharged' {
-  if (patient.status === 'discharged') return 'discharged';
-  return patient.isOutpatient ? 'er' : 'admitted';
+/** Status shown in the table and matched by the status filter: discharged, else the patient class. */
+function displayStatus(patient: NursePatient): AdmissionStatus {
+  return admissionStatusOf({
+    dischargeDate: patient.status === 'discharged' ? 'discharged' : null,
+    patientClass: patient.patientClass,
+  });
 }
 
 function mapOrder(order: PhysicianOrder): OrderSet {
@@ -210,14 +214,10 @@ export function ManagementPortalView() {
       ...(detailPatient.additionalDoctors ?? []),
     ],
     triage: detailPatient.triage ?? triageForDisplay(null),
-    admissionKind: detailPatient.isOutpatient ? ('ER / Outpatient' as const) : ('Ward' as const),
+    classSince: detailPatient.classSince,
   } : null;
   const detailStatus: AdmissionStatus | undefined = detailPatient
-    ? detailPatient.status === 'discharged'
-      ? 'Discharged'
-      : detailPatient.isOutpatient
-        ? 'ER / Outpatient'
-        : 'Admitted'
+    ? displayStatus(detailPatient)
     : undefined;
 
   return (
@@ -235,9 +235,7 @@ export function ManagementPortalView() {
             title: 'Patient status',
             options: [
               { value: 'all', label: 'All patients' },
-              { value: 'admitted', label: 'Admitted' },
-              { value: 'er', label: 'ER / Outpatient' },
-              { value: 'discharged', label: 'Discharged' },
+              ...ADMISSION_STATUSES.map((status) => ({ value: status, label: status })),
             ],
             value: table.filters.status ?? 'all',
             onChange: (value) => table.setFilter('status', value),
@@ -295,11 +293,11 @@ export function ManagementPortalView() {
                     {p.daysInCare} {p.daysInCare === 1 ? 'day' : 'days'}
                   </td>
                   <td style={patientTableStyles.td}>
-                    {displayStatus(p) === 'er' ? (
-                      <StatusBadge status="info" label="ER / Outpatient" showDot />
-                    ) : (
-                      <StatusBadge status={p.status ?? 'admitted'} showDot />
-                    )}
+                    <StatusBadge
+                      status={STATUS_TONE[displayStatus(p)]}
+                      label={displayStatus(p)}
+                      showDot
+                    />
                   </td>
                   <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
                     <button

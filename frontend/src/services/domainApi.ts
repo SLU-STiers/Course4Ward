@@ -58,7 +58,12 @@ export const patientsApi = {
   getOne: (id: string) => api.get<Patient>(`/patients/${id}`),
   create: (data: Record<string, unknown>) => api.post<Patient>('/patients', data),
   update: (id: string, data: Partial<Patient>) => api.patch<Patient>(`/patients/${id}`, data),
+  /** Nurse-only; needs an active DISCHARGE order, except to end an outpatient visit. */
   discharge: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/discharge`),
+  /** Nurse-only: emergency / outpatient / observation → inpatient; needs an active ADMISSION order. */
+  admit: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/admit`),
+  /** Nurse-only: emergency / outpatient → observation; needs an active OBSERVATION order. */
+  observe: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/observe`),
   addConsultingPhysician: (admissionId: string, physicianId: string) =>
     api.post(`/patients/admissions/${admissionId}/consulting-physicians`, { physicianId }),
 };

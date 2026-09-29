@@ -5,6 +5,7 @@ import { patientsApi } from '../../services/domainApi';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section, VITAL_FIELDS } from './PatientModalParts';
 import { getRoomDestination, setRoomDestination } from './roomDestinations';
+import { OBSERVATION_LIMIT_HOURS, hoursSince } from '../../lib/patient';
 
 import type { AdmissionStatus, PatientChart } from './types';
 
@@ -15,18 +16,57 @@ export function PatientDetailModal({
   onClose,
   status,
   onDischarge,
+  dischargeBlockedReason,
+  onObserve,
+  observeBlockedReason,
+  onAdmit,
+  admitBlockedReason,
+  actionBusy = false,
+  actionError,
   onCareTeamChanged,
 }: {
-  chart: PatientChart & { admissionKind?: 'Ward' | 'ER / Outpatient' };
+  /** `classSince`: when the patient entered their current class (observation timer). */
+  chart: PatientChart & { classSince?: string };
   onClose: () => void;
   status?: AdmissionStatus;
+  /** Discharges the patient, or ends an outpatient visit. */
   onDischarge?: () => void;
+  /** Set while discharge is not allowed yet, e.g. no physician discharge order. */
+  dischargeBlockedReason?: string;
+  /** Places an emergency patient / outpatient under observation. */
+  onObserve?: () => void;
+  /** Set while observation is not allowed yet, e.g. no physician observation order. */
+  observeBlockedReason?: string;
+  /** Formally admits an emergency / outpatient / observation patient to the ward. */
+  onAdmit?: () => void;
+  /** Set while admission is not allowed yet, e.g. no physician admission order. */
+  admitBlockedReason?: string;
+  actionBusy?: boolean;
+  actionError?: string | null;
   /** When provided (and the patient is not discharged), nurses can add consulting physicians. */
   onCareTeamChanged?: () => void;
 }) {
   const [attending, ...consulting] = chart.assignedDoctors;
-  const badge: AdmissionStatus =
-    status ?? (chart.admissionKind === 'ER / Outpatient' ? 'ER / Outpatient' : 'Admitted');
+  const badge: AdmissionStatus = status ?? 'Admitted';
+  const discharged = badge === 'Discharged';
+  const canObserve = !discharged && Boolean(onObserve);
+  const canAdmit = !discharged && Boolean(onAdmit);
+  const canDischarge = !discharged && Boolean(onDischarge);
+  // Every offered action is waiting on a physician order: say so once. Each
+  // button's tooltip still names its own order.
+  const offered = [
+    canObserve ? observeBlockedReason : null,
+    canAdmit ? admitBlockedReason : null,
+    canDischarge ? dischargeBlockedReason : null,
+  ].filter((reason) => reason !== null);
+  const footerNote =
+    actionError ||
+    (offered.length && offered.every(Boolean)
+      ? offered.length === 1
+        ? offered[0]
+        : "Waiting for a physician's order"
+      : undefined);
+  const observationHours = badge === 'Observation' ? hoursSince(chart.classSince) : 0;
   const canAddConsulting = Boolean(onCareTeamChanged) && badge !== 'Discharged';
 
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
@@ -74,11 +114,13 @@ export function PatientDetailModal({
               <h3 style={s.title}>Patient Details</h3>
               <span
                 style={
-                  badge === 'Discharged'
-                    ? ui.badgeDischarged
-                    : badge === 'ER / Outpatient'
-                      ? ui.badgeEr
-                      : ui.badgeAdmitted
+                  {
+                    Discharged: ui.badgeDischarged,
+                    Emergency: ui.badgeEr,
+                    Observation: ui.badgeObservation,
+                    Outpatient: ui.badgeOutpatient,
+                    Admitted: ui.badgeAdmitted,
+                  }[badge]
                 }
               >
                 {badge}
@@ -92,13 +134,32 @@ export function PatientDetailModal({
         </header>
 
         <div style={s.body}>
+          {badge === 'Observation' && (
+            <div
+              role="status"
+              style={{
+                ...s.draftNotice,
+                ...(observationHours >= OBSERVATION_LIMIT_HOURS
+                  ? { backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b' }
+                  : {}),
+              }}
+            >
+              <span>
+                Under observation for {observationHours} hour{observationHours === 1 ? '' : 's'}
+                {observationHours >= OBSERVATION_LIMIT_HOURS
+                  ? ` — past ${OBSERVATION_LIMIT_HOURS} hours. The physician should decide to admit or discharge.`
+                  : '. The physician decides to admit or discharge.'}
+              </span>
+            </div>
+          )}
+
           <Section icon={SECTION_ICONS.patientInfo} title="Patient Information" hint="Basic demographics and admission details">
             <div style={s.grid2}>
               <ReadField label="Full Name" value={chart.name} />
               <ReadField label="Age" value={chart.age ? `${chart.age} years` : '—'} />
               <ReadField label="Gender" value={chart.gender} />
               <ReadField label="Admission Date" value={chart.admissionDate} />
-              <ReadField label="Admission Status" value={chart.admissionKind ?? 'Ward'} />
+              <ReadField label="Admission Status" value={badge} />
             </div>
           </Section>
 
@@ -197,18 +258,48 @@ export function PatientDetailModal({
           </Section>
         </div>
 
-        <footer style={s.footer}>
+        {/* Wraps so the note gets its own line above up to four buttons. */}
+        <footer style={{ ...s.footer, flexWrap: 'wrap' }}>
+          {footerNote && (
+            <span
+              role={actionError ? 'alert' : undefined}
+              style={{
+                flexBasis: '100%',
+                fontSize: 12,
+                color: actionError ? '#dc2626' : '#64748b',
+              }}
+            >
+              {footerNote}
+            </span>
+          )}
           <button type="button" style={{ ...ui.outlineBtn, height: 40 }} onClick={onClose}>
             Close
           </button>
-          {status !== 'Discharged' && onDischarge && (
-            <button
-              type="button"
-              style={{ ...ui.primaryBtn, height: 40, padding: '0 20px' }}
+          {canObserve && onObserve && (
+            <ActionButton
+              label={actionBusy ? 'Working...' : 'Place Under Observation'}
+              blockedReason={observeBlockedReason}
+              busy={actionBusy}
+              onClick={onObserve}
+            />
+          )}
+          {canAdmit && onAdmit && (
+            <ActionButton
+              label={actionBusy ? 'Working...' : 'Admit Patient'}
+              blockedReason={admitBlockedReason}
+              busy={actionBusy}
+              onClick={onAdmit}
+            />
+          )}
+          {canDischarge && onDischarge && (
+            <ActionButton
+              label={
+                actionBusy ? 'Working...' : badge === 'Outpatient' ? 'End Visit' : 'Discharge Patient'
+              }
+              blockedReason={dischargeBlockedReason}
+              busy={actionBusy}
               onClick={onDischarge}
-            >
-              Discharge Patient
-            </button>
+            />
           )}
         </footer>
       </div>
@@ -288,6 +379,38 @@ function RoomDestinationField({ admissionId }: { admissionId: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Footer action that stays visible but disabled until the physician's order exists. */
+function ActionButton({
+  label,
+  blockedReason,
+  busy,
+  onClick,
+}: {
+  label: string;
+  blockedReason?: string;
+  busy: boolean;
+  onClick: () => void;
+}) {
+  const disabled = busy || Boolean(blockedReason);
+  return (
+    <button
+      type="button"
+      style={{
+        ...ui.primaryBtn,
+        height: 40,
+        padding: '0 20px',
+        opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+      disabled={disabled}
+      title={blockedReason}
+      onClick={onClick}
+    >
+      {label}
+    </button>
   );
 }
 

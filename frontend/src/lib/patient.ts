@@ -8,7 +8,30 @@
  * about each view.
  */
 
+import type { PatientClass } from '../types';
+
 export type AdmissionStatus = 'admitted' | 'discharged';
+
+/** Display name of each patient class. */
+export const PATIENT_CLASS_LABEL: Record<PatientClass, string> = {
+  EMERGENCY: 'Emergency',
+  OUTPATIENT: 'Outpatient',
+  OBSERVATION: 'Observation',
+  INPATIENT: 'Admitted',
+};
+
+/**
+ * Observation is a short stay to decide between admitting and sending home;
+ * past this many hours the physician should make that call.
+ */
+export const OBSERVATION_LIMIT_HOURS = 24;
+
+/** Whole hours since `since` (0 when missing or in the future). */
+export function hoursSince(since?: string | null): number {
+  if (!since) return 0;
+  const ms = Date.now() - new Date(since).getTime();
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 3_600_000) : 0;
+}
 
 interface NameParts {
   firstName: string;

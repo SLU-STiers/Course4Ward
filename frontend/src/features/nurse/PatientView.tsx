@@ -9,16 +9,10 @@ import { statusColor } from '../../lib/patient';
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
 import { triageForDisplay } from './PatientModalParts';
-import type { AdmissionRecord, AdmissionStatus } from './types';
-import { patientsApi } from '../../services/domainApi';
-import type { Patient } from '../../types';
-
-function deriveStatus(patient: Patient): AdmissionStatus {
-  const admission = patient.admissions?.[0];
-  if (admission?.dischargeDate) return 'Discharged';
-  if (admission?.isOutpatient) return 'ER / Outpatient';
-  return 'Admitted';
-}
+import type { AdmissionRecord } from './types';
+import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
+import { ordersApi, patientsApi } from '../../services/domainApi';
+import type { Patient, PhysicianOrder } from '../../types';
 
 function toRecord(patient: Patient): AdmissionRecord {
   const admission = patient.admissions?.[0];
@@ -29,15 +23,8 @@ function toRecord(patient: Patient): AdmissionRecord {
     dischargedOn: admission?.dischargeDate
       ? new Date(admission.dischargeDate).toLocaleDateString('en-GB')
       : null,
-    status: deriveStatus(patient),
-    isOutpatient: Boolean(admission?.isOutpatient),
+    status: admissionStatusOf(admission),
   };
-}
-
-function statusTone(status: AdmissionStatus): 'admitted' | 'discharged' | 'pending' {
-  if (status === 'Admitted') return 'admitted';
-  if (status === 'Discharged') return 'discharged';
-  return 'pending';
 }
 
 export function PatientView() {
@@ -45,6 +32,13 @@ export function PatientView() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [viewingName, setViewingName] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  /** Orders of the patient in the detail modal; tagged with its id so stale ones are ignored. */
+  const [viewingOrders, setViewingOrders] = useState<{
+    patientId: string;
+    orders: PhysicianOrder[];
+  } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
 
   const reload = useCallback(() => {
     patientsApi
@@ -103,23 +97,73 @@ export function PatientView() {
           ),
         ],
         triage: triageForDisplay(viewingAdmission),
-        admissionKind: viewingAdmission?.isOutpatient ? ('ER / Outpatient' as const) : ('Ward' as const),
+        classSince: viewingAdmission?.classSince,
       }
     : null;
   const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;
 
-  const discharge = (id: string) => {
-    patientsApi.discharge(id).then(() => {
-      setRecords((prev) =>
-        prev.map((r) =>
-          r.id === id
-            ? { ...r, status: 'Discharged', dischargedOn: new Date().toLocaleDateString('en-GB') }
-            : r,
-        ),
-      );
-      setViewingName(null);
-      reload();
-    });
+  // The nurse only carries out observation / admission / discharge once a
+  // physician has ordered it, so the modal needs the admission's orders.
+  const viewingPatientId = viewingPatient?.id;
+  useEffect(() => {
+    if (!viewingPatientId) return;
+    let cancelled = false;
+    ordersApi
+      .forPatient(viewingPatientId)
+      .then(({ data }) => {
+        if (!cancelled) setViewingOrders({ patientId: viewingPatientId, orders: data });
+      })
+      .catch(() => {
+        if (!cancelled) setViewingOrders({ patientId: viewingPatientId, orders: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingPatientId]);
+
+  const loadedOrders =
+    viewingOrders && viewingOrders.patientId === viewingPatientId ? viewingOrders.orders : null;
+  const hasActiveOrder = (type: PhysicianOrder['type']) =>
+    Boolean(
+      loadedOrders?.some(
+        (order) =>
+          order.admissionId === viewingAdmission?.id && order.active !== false && order.type === type,
+      ),
+    );
+  const waitingFor = (type: PhysicianOrder['type'], name: string) =>
+    !loadedOrders
+      ? 'Checking physician orders...'
+      : hasActiveOrder(type)
+        ? undefined
+        : `Waiting for the physician's ${name} order`;
+  const observeBlockedReason = waitingFor('OBSERVATION', 'observation');
+  const admitBlockedReason = waitingFor('ADMISSION', 'admission');
+  // An outpatient visit is simply ended; everyone else needs a discharge order.
+  const dischargeBlockedReason =
+    viewingRecord?.status === 'Outpatient' ? undefined : waitingFor('DISCHARGE', 'discharge');
+
+  const openViewing = (name: string) => {
+    setActionError(null);
+    setViewingName(name);
+  };
+
+  // Observe / admit / discharge, then refresh the list. A refusal (e.g. the order was
+  // discontinued meanwhile) stays in the modal.
+  const runAdmissionAction = (action: () => Promise<unknown>) => {
+    setActionBusy(true);
+    setActionError(null);
+    action()
+      .then(() => {
+        setViewingName(null);
+        reload();
+      })
+      .catch((err) => {
+        const message = err?.response?.data?.message;
+        setActionError(
+          Array.isArray(message) ? message.join(', ') : message || 'The action could not be completed.',
+        );
+      })
+      .finally(() => setActionBusy(false));
   };
 
   return (
@@ -143,9 +187,7 @@ export function PatientView() {
           title: 'Admission status',
           options: [
             { value: 'all', label: 'All statuses' },
-            { value: 'Admitted', label: 'Admitted' },
-            { value: 'ER / Outpatient', label: 'ER / Outpatient' },
-            { value: 'Discharged', label: 'Discharged' },
+            ...ADMISSION_STATUSES.map((status) => ({ value: status, label: status })),
           ],
           value: table.filters.status ?? 'all',
           onChange: (value) => table.setFilter('status', value),
@@ -178,7 +220,7 @@ export function PatientView() {
             {table.rows.map((r) => (
               <tr
                 key={r.id}
-                onClick={() => setViewingName(r.name)}
+                onClick={() => openViewing(r.name)}
                 style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
               >
                 <td style={patientTableStyles.td}>
@@ -199,7 +241,7 @@ export function PatientView() {
                   {r.dischargedOn ?? '—'}
                 </td>
                 <td style={patientTableStyles.td}>
-                  <StatusBadge showDot status={statusTone(r.status)} label={r.status} />
+                  <StatusBadge showDot status={STATUS_TONE[r.status]} label={r.status} />
                 </td>
                 <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
                   <button
@@ -207,7 +249,7 @@ export function PatientView() {
                     style={patientTableStyles.viewBtn}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setViewingName(r.name);
+                      openViewing(r.name);
                     }}
                   >
                     View
@@ -244,9 +286,27 @@ export function PatientView() {
           onCareTeamChanged={reload}
           onDischarge={
             viewingRecord && viewingRecord.status !== 'Discharged'
-              ? () => discharge(viewingRecord.id)
+              ? () => runAdmissionAction(() => patientsApi.discharge(viewingRecord.id))
               : undefined
           }
+          dischargeBlockedReason={dischargeBlockedReason}
+          onObserve={
+            viewingRecord && (viewingRecord.status === 'Emergency' || viewingRecord.status === 'Outpatient')
+              ? () => runAdmissionAction(() => patientsApi.observe(viewingRecord.id))
+              : undefined
+          }
+          observeBlockedReason={observeBlockedReason}
+          onAdmit={
+            viewingRecord &&
+            (viewingRecord.status === 'Emergency' ||
+              viewingRecord.status === 'Outpatient' ||
+              viewingRecord.status === 'Observation')
+              ? () => runAdmissionAction(() => patientsApi.admit(viewingRecord.id))
+              : undefined
+          }
+          admitBlockedReason={admitBlockedReason}
+          actionBusy={actionBusy}
+          actionError={actionError}
         />
       )}
 

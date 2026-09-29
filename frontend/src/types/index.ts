@@ -43,11 +43,20 @@ export interface Patient {
   admissions?: PatientAdmission[];
 }
 
+/**
+ * Backend `PatientClass`. EMERGENCY / OUTPATIENT need no order; OBSERVATION
+ * and INPATIENT need a physician's observation / admission order.
+ */
+export type PatientClass = 'EMERGENCY' | 'OUTPATIENT' | 'OBSERVATION' | 'INPATIENT';
+
 export interface PatientAdmission {
   id: string;
   admissionDate: string;
   dischargeDate?: string | null;
-  isOutpatient?: boolean;
+  /** Kind of encounter; see `PatientClass`. */
+  patientClass?: PatientClass;
+  /** When the admission entered its current class (e.g. start of observation). */
+  classSince?: string;
   initialAssessment?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
   additionalPhysicians?: { physician: { id: string; firstName: string; lastName: string } }[];
@@ -67,10 +76,11 @@ export interface AdmissionTriage {
   createdAt: string;
 }
 
-export type OrderType = 'MEDICATION' | 'ADMISSION' | 'DISCHARGE' | 'DIAGNOSTIC' | 'OTHER';
-
 /** Nurse execution state of an order (backend `OrderStatus`). */
 export type OrderStatus = 'TO_ACCOMPLISH' | 'ONGOING' | 'FINISHED';
+
+/** Backend `OrderType`: `DEFAULT` is a general order. */
+export type OrderType = 'DEFAULT' | 'OBSERVATION' | 'ADMISSION' | 'DISCHARGE';
 
 export interface PhysicianOrder {
   id: string;
@@ -79,6 +89,8 @@ export interface PhysicianOrder {
   encodedById: string;
   enteredByRole: 'PHYSICIAN' | 'NURSE_ON_BEHALF';
   orderContent: string;
+  /** Omitted by older payloads; treat as `DEFAULT`. */
+  type?: OrderType;
   dateCreated: string;
   dateUpdated?: string | null;
   active: boolean;
