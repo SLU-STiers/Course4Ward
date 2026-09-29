@@ -5,8 +5,6 @@ import { ConfigService } from '@nestjs/config';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { ConfigService } from '@nestjs/config';
-import { NotFoundException } from '@nestjs/common';
 import { OrderEnteredBy, OrderStatus, Role } from '@prisma/client';
 import { CreateOrderDto } from '../orders/dto/create-order.dto';
 
@@ -16,9 +14,6 @@ const mockPrismaService = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
-  },
-  patientAdmission: {
-    findUnique: jest.fn(),
   },
   patientAdmission: {
     findUnique: jest.fn(),
@@ -33,6 +28,7 @@ const mockConfigService = {
 const orderInclude = {
   orderedBy: { select: { firstName: true, lastName: true } },
   encodedBy: { select: { firstName: true, lastName: true, role: true } },
+  executedBy: { select: { firstName: true, lastName: true } },
 };
 
 const openAdmission = {
@@ -66,11 +62,7 @@ describe('OrdersService', () => {
         OrdersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
-<<<<<<< HEAD
         { provide: ConfigService, useValue: mockConfigService },
-=======
-        { provide: ConfigService, useValue: { get: jest.fn() } },
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
       ],
     }).compile();
 
@@ -90,23 +82,6 @@ describe('OrdersService', () => {
       orderedById: 'doctor-123',
       orderContent: 'Administer 500mg paracetamol',
     } as CreateOrderDto;
-
-    beforeEach(() => {
-      (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
-        dischargeDate: null,
-      });
-    });
-
-    it('should reject orders for a discharged admission', async () => {
-      (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
-        dischargeDate: new Date(),
-      });
-
-      await expect(service.create(dto, 'doctor-123', Role.PHYSICIAN)).rejects.toThrow(
-        'Cannot add orders to a discharged admission',
-      );
-      expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
-    });
 
     it('should flag order as NURSE_ON_BEHALF when entered by a nurse', async () => {
       (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);
@@ -213,7 +188,7 @@ describe('OrdersService', () => {
       });
 
       await expect(service.create(dto, 'doctor-123', Role.PHYSICIAN)).rejects.toThrow(
-        BadRequestException,
+        'Cannot add orders to a discharged admission',
       );
       expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
     });
@@ -236,11 +211,7 @@ describe('OrdersService', () => {
       expect(prismaService.physicianOrder.findMany).toHaveBeenCalledWith({
         where: { admission: { patientId: 'patient-123' } },
         orderBy: { dateCreated: 'desc' },
-        include: {
-          orderedBy: { select: { firstName: true, lastName: true } },
-          encodedBy: { select: { firstName: true, lastName: true, role: true } },
-          executedBy: { select: { firstName: true, lastName: true } },
-        },
+        include: orderInclude,
       });
       expect(result).toEqual([mockOrder]);
     });

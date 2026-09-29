@@ -14,7 +14,6 @@ import {
   formatDateLongFromKey,
   toDateKey,
 } from '../../lib/format';
-import { useAuthStore } from '../../store/authStore';
 import { manage } from './styles';
 
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
@@ -56,7 +55,6 @@ const SUMMARY_BADGE: Record<CourseInWard["status"], string> = {
 };
 
 export function ManageView() {
-  const user = useAuthStore((state) => state.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
@@ -65,14 +63,9 @@ export function ManageView() {
     Record<string, PhysicianOrder[]>
   >({});
   const [draft, setDraft] = useState("");
-<<<<<<< HEAD
-  const [savingOrder, setSavingOrder] = useState(false);
-  const [orderError, setOrderError] = useState<string | null>(null);
-=======
   const [savingOrders, setSavingOrders] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [approvingSummary, setApprovingSummary] = useState(false);
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
   /** Every Course in the Ward loaded for a patient — one summary per order day. */
   const [summariesByPatient, setSummariesByPatient] = useState<
     Record<string, CourseInWard[]>
@@ -275,11 +268,7 @@ export function ManageView() {
     setEditingSummary(false);
     setDraft("");
     setSubmitted(false);
-<<<<<<< HEAD
     setOrderError(null);
-    setEditingOrders(edit);
-=======
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
   };
 
   /** Replace the patient's order list with the server's copy. */
@@ -321,9 +310,6 @@ export function ManageView() {
       .finally(() => setGeneratingSummary(false));
   };
 
-<<<<<<< HEAD
-  const refreshSummaryForDay = (targetDay: string) => {
-=======
   // Submit = file the new order in the composer (orders are never edited or
   // deleted once written), then (re)generate the Course in the Ward for its day.
   const submitOrders = async () => {
@@ -333,7 +319,7 @@ export function ManageView() {
     if (!content && !orderDays.length) return;
 
     const admissionId = selected.admissions?.find((admission) => !admission.dischargeDate)?.id;
-    if (content && (!admissionId || !user)) {
+    if (content && !admissionId) {
       setOrderError("This patient has no open admission to add orders to.");
       return;
     }
@@ -343,22 +329,29 @@ export function ManageView() {
     setSubmitted(false);
     let createdDay: string | null = null;
     try {
-      if (content && admissionId && user) {
-        const { data } = await ordersApi.create({
-          admissionId,
-          orderedById: user.id,
-          orderContent: content,
-        });
+      if (content && admissionId) {
+        // The backend attributes the order to the signed-in physician.
+        const { data } = await ordersApi.create({ admissionId, orderContent: content });
         createdDay = orderDayValue(data.dateCreated);
         setDraft("");
       }
       await reloadOrders(patientId);
-    } catch {
+    } catch (err: any) {
       // The composer keeps its text so nothing typed is lost.
-      setOrderError("The order could not be saved. Please try again.");
+      const message = err?.response?.data?.message;
+      setOrderError(
+        Array.isArray(message)
+          ? message.join(", ")
+          : message || "The order could not be saved. Please try again.",
+      );
       return;
     } finally {
       setSavingOrders(false);
+    }
+
+    // Keep the new order visible when the list is filtered to another day.
+    if (createdDay && activeOrderDate && activeOrderDate !== createdDay) {
+      setOrderDateFilter(createdDay);
     }
 
     const targetDay =
@@ -367,7 +360,6 @@ export function ManageView() {
       setSubmitted(true);
       return;
     }
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
     generateSummaryForDay(targetDay, () => {
       // Show the summary that was just filed, without pulling the order list out
       // of "all dates".
@@ -376,62 +368,6 @@ export function ManageView() {
     });
   };
 
-<<<<<<< HEAD
-  const submitOrders = async () => {
-    if (!selected || savingOrder || generatingSummary) return;
-    setSubmitted(false);
-    setOrderError(null);
-
-    const content = draft.trim();
-    if (!content) {
-      if (!orderDays.length) {
-        setOrderError("Write an order before submitting.");
-        return;
-      }
-      refreshSummaryForDay(
-        activeOrderDate ?? summaryDay ?? orderDays[orderDays.length - 1],
-      );
-      return;
-    }
-
-    const admission =
-      selected.admissions?.find((entry) => !entry.dischargeDate) ??
-      selected.admissions?.[0];
-    if (!admission) {
-      setOrderError("This patient has no active admission to attach the order to.");
-      return;
-    }
-
-    setSavingOrder(true);
-    try {
-      const { data: created } = await ordersApi.create({
-        admissionId: admission.id,
-        orderContent: content,
-      });
-      const patientId = selected.id;
-      setOrdersByPatient((previous) => ({
-        ...previous,
-        [patientId]: [created, ...(previous[patientId] ?? [])],
-      }));
-      setDraft("");
-      setSubmitted(true);
-
-      const newDay = orderDayValue(created.dateCreated);
-      if (newDay) {
-        if (activeOrderDate && activeOrderDate !== newDay) setOrderDateFilter(newDay);
-        refreshSummaryForDay(newDay);
-      }
-    } catch (err: any) {
-      const message = err?.response?.data?.message;
-      setOrderError(
-        Array.isArray(message)
-          ? message.join(", ")
-          : message || "Could not submit the order. Please try again.",
-      );
-    } finally {
-      setSavingOrder(false);
-    }
-=======
   const approveSummary = (summaryId: string) => {
     if (!selected || approvingSummary) return;
     setApprovingSummary(true);
@@ -441,7 +377,6 @@ export function ManageView() {
       .then(({ data }) => replaceSummary(selected.id, data))
       .catch(() => setOrderError("The summary could not be approved. Please try again."))
       .finally(() => setApprovingSummary(false));
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
   };
 
   if (loading)
@@ -804,47 +739,28 @@ export function ManageView() {
                       placeholder="Add a new order"
                       rows={2}
                       maxLength={2000}
-                      disabled={savingOrder}
+                      disabled={savingOrders}
                       style={manage.noteArea}
                     />
 
                     <div style={manage.orderActions}>
                       {orderError && (
-<<<<<<< HEAD
-                        <span role="alert" style={{ fontSize: 12, color: "#b91c1c" }}>
-                          {orderError}
-                        </span>
-                      )}
-                      {!orderError && submitted && !generatingSummary && (
-                        <span style={{ fontSize: 12, color: "#166534" }}>
-                          {summary ? "Order and summary saved" : "Order saved"}
-=======
-                        <span style={manage.orderError}>{orderError}</span>
+                        <span role="alert" style={manage.orderError}>{orderError}</span>
                       )}
                       {submitted && !generatingSummary && !orderError && (
                         <span style={{ fontSize: 12, color: "#166534" }}>
                           {summary ? "Orders and summary saved" : "Orders saved"}
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
                         </span>
                       )}
                       <button
                         type="button"
                         style={manage.submitBtn}
-<<<<<<< HEAD
-                        disabled={savingOrder || generatingSummary}
-                        aria-busy={savingOrder || generatingSummary}
-                        onClick={() => void submitOrders()}
-                      >
-                        {savingOrder
-                          ? "Submitting..."
-=======
                         disabled={savingOrders || generatingSummary}
                         aria-busy={savingOrders || generatingSummary}
                         onClick={() => void submitOrders()}
                       >
                         {savingOrders
                           ? "Saving..."
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
                           : generatingSummary
                             ? "Generating..."
                             : "Submit"}

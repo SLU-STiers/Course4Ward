@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import {
   BadRequestException,
   ForbiddenException,
@@ -6,9 +5,6 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-=======
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
 import { ConfigService } from '@nestjs/config';
 import { OrderEnteredBy, OrderStatus, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -35,6 +31,7 @@ function localDayRange(day?: string | null) {
 const orderInclude = {
   orderedBy: { select: { firstName: true, lastName: true } },
   encodedBy: { select: { firstName: true, lastName: true, role: true } },
+  executedBy: { select: { firstName: true, lastName: true } },
 };
 
 @Injectable()
@@ -53,15 +50,6 @@ export class OrdersService {
   }
 
   async create(dto: CreateOrderDto, enteredById: string, enteredByRole: Role) {
-    const admission = await this.prisma.patientAdmission.findUnique({
-      where: { id: dto.admissionId },
-      select: { dischargeDate: true },
-    });
-    if (!admission) throw new NotFoundException('Admission not found');
-    if (admission.dischargeDate) {
-      throw new BadRequestException('Cannot add orders to a discharged admission');
-    }
-
     const enteredByFlag =
       enteredByRole === Role.NURSE ? OrderEnteredBy.NURSE_ON_BEHALF : OrderEnteredBy.PHYSICIAN;
 
@@ -149,15 +137,7 @@ export class OrdersService {
     return this.prisma.physicianOrder.findMany({
       where: { admission: { patientId } },
       orderBy: { dateCreated: 'desc' },
-<<<<<<< HEAD
       include: orderInclude,
-=======
-      include: {
-        orderedBy: { select: { firstName: true, lastName: true } },
-        encodedBy: { select: { firstName: true, lastName: true, role: true } },
-        executedBy: { select: { firstName: true, lastName: true } },
-      },
->>>>>>> 3aa45644467aafd36189ebd1e7677a214f194cd0
     });
   }
 
@@ -179,11 +159,7 @@ export class OrdersService {
         executedById: pending ? null : nurseId,
         executedAt: pending ? null : new Date(),
       },
-      include: {
-        orderedBy: { select: { firstName: true, lastName: true } },
-        encodedBy: { select: { firstName: true, lastName: true, role: true } },
-        executedBy: { select: { firstName: true, lastName: true } },
-      },
+      include: orderInclude,
     });
 
     await this.auditLog.record({
