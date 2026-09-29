@@ -472,6 +472,10 @@ export const orderExec: Record<string, CSSProperties> = {
     color: '#0f172a',
     boxShadow: '0 1px 3px rgba(15, 23, 42, 0.12)',
   },
+  segmentLocked: {
+    color: '#cbd5e1',
+    cursor: 'not-allowed',
+  },
   textarea: {
     width: '100%',
     boxSizing: 'border-box',

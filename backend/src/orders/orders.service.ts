@@ -28,6 +28,13 @@ function localDayRange(day?: string | null) {
   return { start, end };
 }
 
+/** Workflow position of each order status; nurses may only move forward. */
+const ORDER_STATUS_RANK: Record<OrderStatus, number> = {
+  [OrderStatus.TO_ACCOMPLISH]: 0,
+  [OrderStatus.ONGOING]: 1,
+  [OrderStatus.FINISHED]: 2,
+};
+
 const orderInclude = {
   orderedBy: { select: { firstName: true, lastName: true } },
   encodedBy: { select: { firstName: true, lastName: true, role: true } },
@@ -142,22 +149,26 @@ export class OrdersService {
   }
 
   /**
-   * Nurse execution tracking. Moving an order off `TO_ACCOMPLISH` stamps the
-   * acting nurse and time; moving it back clears them, so `executedBy` always
-   * describes the current status rather than a stale earlier one.
+   * Nurse execution tracking. Status only moves forward
+   * (`TO_ACCOMPLISH` -> `ONGOING` -> `FINISHED`); re-sending the current
+   * status is allowed so the nurse can still edit the note. Each status change
+   * stamps the acting nurse and time; a note-only edit leaves the stamp alone.
    */
   async updateStatus(id: string, dto: UpdateOrderStatusDto, nurseId: string) {
     const order = await this.prisma.physicianOrder.findFirst({ where: { id, active: true } });
     if (!order) throw new NotFoundException('Order not found');
 
-    const pending = dto.status === OrderStatus.TO_ACCOMPLISH;
+    if (ORDER_STATUS_RANK[dto.status] < ORDER_STATUS_RANK[order.status]) {
+      throw new BadRequestException('An order’s status cannot be moved back once it has progressed');
+    }
+
+    const changed = dto.status !== order.status;
     const updated = await this.prisma.physicianOrder.update({
       where: { id },
       data: {
         status: dto.status,
         ...(dto.nurseComment !== undefined && { nurseComment: dto.nurseComment.trim() || null }),
-        executedById: pending ? null : nurseId,
-        executedAt: pending ? null : new Date(),
+        ...(changed && { executedById: nurseId, executedAt: new Date() }),
       },
       include: orderInclude,
     });
