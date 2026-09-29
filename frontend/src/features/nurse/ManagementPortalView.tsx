@@ -10,6 +10,7 @@ import { formatDateLongFromKey, formatDateNumeric, toDateInputValue } from '../.
 import { daysInCare, statusColor } from '../../lib/patient';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
+import { OrderExecutionPanel } from './OrderExecutionPanel';
 import { triageForDisplay } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ordersApi, patientsApi } from '../../services/domainApi';
@@ -55,6 +56,7 @@ function mapOrder(order: PhysicianOrder): OrderSet {
     time: date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
     doctor: order.orderedBy ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Physician',
     orders: [order.orderContent],
+    order,
   };
 }
 
@@ -130,6 +132,22 @@ export function ManagementPortalView() {
     const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '';
     setSelectedDate(latest);
   };
+
+  /* Swap in the saved copy of an order after the nurse updates its status. */
+  const replaceOrder = (saved: PhysicianOrder) => {
+    setOrdersByPatient((previous) => {
+      const next: Record<string, OrderSet[]> = {};
+      for (const [patientId, sets] of Object.entries(previous)) {
+        next[patientId] = sets.map((set) =>
+          set.order?.id === saved.id ? { ...set, order: { ...set.order, ...saved } } : set,
+        );
+      }
+      return next;
+    });
+  };
+  const ordersById = new Map(
+    ordersForDisplay.flatMap((set) => (set.order ? [[set.order.id, set.order] as const] : [])),
+  );
 
   const shiftDate = (dir: -1 | 1) => {
     if (!datesWithOrders.length) return;
@@ -293,13 +311,22 @@ export function ManagementPortalView() {
               onClear={() => setSelectedDate('')}
               clearLabel="Show all"
               orders={ordersForDisplay.flatMap((set) => set.orders.map((content, index) => ({
-                id: `${set.dateKey}-${set.time}-${index}`,
+                id: set.order?.id ?? `${set.dateKey}-${set.time}-${index}`,
                 dateCreated: `${set.dateKey}T00:00:00`,
                 dateLabel: set.dateLabel,
                 timeLabel: set.time,
                 doctor: set.doctor,
                 content,
               })))}
+              renderContent={(entry) => {
+                const order = ordersById.get(entry.id);
+                return (
+                  <>
+                    <div style={ui.orderContent}>{entry.content}</div>
+                    {order && <OrderExecutionPanel key={order.id} order={order} onSaved={replaceOrder} />}
+                  </>
+                );
+              }}
               emptyMessage={
                 activeDate
                   ? `No physician orders for ${formatDateLongFromKey(activeDate)}. Choose another date to view previous orders.`
