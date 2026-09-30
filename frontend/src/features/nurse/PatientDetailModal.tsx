@@ -220,7 +220,7 @@ export function PatientDetailModal({
                 <>
                   <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                     <select
-                      style={{ ...s.input, flex: 1 }}
+                      style={{ ...s.select, flex: 1 }}
                       value={pendingDoctorId}
                       onChange={(e) => setPendingDoctorId(e.target.value)}
                       disabled={adding || !availableToAdd.length}

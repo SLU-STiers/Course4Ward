@@ -410,7 +410,7 @@ export function AddPatientModal({
               </Field>
               <Field label="Sex" required>
                 <select
-                  style={s.input}
+                  style={s.select}
                   value={form.gender}
                   onChange={(e) => setField('gender', toSex(e.target.value))}
                   required
@@ -542,7 +542,7 @@ export function AddPatientModal({
           <Section icon={SECTION_ICONS.careTeam} title="Care Team" hint="Attending physician leads care; consultants advise">
             <Field label="Attending Physician" required>
               <select
-                style={s.input}
+                style={s.select}
                 value={form.physicianId}
                 onChange={(e) => setAttending(e.target.value)}
                 required
@@ -590,7 +590,7 @@ export function AddPatientModal({
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                 <select
-                  style={{ ...s.input, flex: 1 }}
+                  style={{ ...s.select, flex: 1 }}
                   value={pendingDoctorId}
                   onChange={(e) => setPendingDoctorId(e.target.value)}
                   disabled={!availableToAdd.length}

@@ -17,7 +17,13 @@ export interface TableStateConfig<T> {
   /** Predicate per named filter. Keys map to `filterProps` values. */
   filterPredicates?: Record<string, (item: T, value: string) => boolean>;
   initialFilters?: Record<string, string>;
-  /** Comparand extractors per sortable field. */
+  /**
+   * Comparand extractors per sortable field. Return a RAW value — never a
+   * formatted date. `DD/MM/YYYY` collates by day-of-month first, so sorting a
+   * display string pins `31/08/2026` above `30/09/2026` and the newest record
+   * can never reach the top. Carry a `YYYY-MM-DD` key on the view model and
+   * sort on that (see `CF4Patient.admissionDateRaw`, `AdmissionRecord.admittedOnRaw`).
+   */
   sorters?: Record<string, (item: T) => string | number>;
   initialSort?: SortState;
 }
