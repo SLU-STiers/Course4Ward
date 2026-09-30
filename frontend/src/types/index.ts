@@ -63,7 +63,7 @@ export interface PatientAdmission {
   initialAssessment?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
   additionalPhysicians?: { physician: { id: string; firstName: string; lastName: string } }[];
-  /** Physician payloads carry only `triageLevel`; nurse payloads the full row. */
+  /** Full triage row for nurses and physicians; claims payloads include it on the order's admission. */
   triage?: AdmissionTriage | null;
 }
 
@@ -82,6 +82,8 @@ export interface AdmissionTriage {
   temperature: string | number | null;
   painScore: number | null;
   createdAt: string;
+  /** Nurse who recorded the triage. */
+  recordedBy?: { firstName: string; lastName: string } | null;
 }
 
 /** Nurse execution state of an order (backend `OrderStatus`). */
@@ -182,6 +184,8 @@ export interface ClaimRecord {
       admission: {
         admissionDate: string;
         dischargeDate?: string | null;
+        initialAssessment?: string | null;
+        triage?: AdmissionTriage | null;
       };
       orderedBy: { firstName: string; lastName: string };
     }>;

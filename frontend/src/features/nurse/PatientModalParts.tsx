@@ -5,8 +5,6 @@ import patientInfoIcon from '../../Img/patient-information.png';
 import assessmentIcon from '../../Img/assesment.png';
 import careTeamIcon from '../../Img/care-team.png';
 import { addPatient as s } from './styles';
-import type { TriageAssessment } from './types';
-import type { PatientAdmission } from '../../types';
 
 export const SECTION_ICONS = {
   patientInfo: patientInfoIcon,
@@ -86,34 +84,3 @@ export function DoctorCard({
     </div>
   );
 }
-
-/** Formats an admission's stored triage row and notes for display. */
-export function triageForDisplay(admission?: PatientAdmission | null): TriageAssessment {
-  const triage = admission?.triage;
-  const show = (value: string | number | null | undefined) =>
-    value === null || value === undefined || value === '' ? '—' : String(value);
-  return {
-    level: triage?.triageLevel ?? null,
-    time: show(triage?.triageTime),
-    heartRate: show(triage?.heartRate),
-    respRate: show(triage?.respRate),
-    spo2: show(triage?.spo2),
-    bp:
-      triage?.bpSystolic != null && triage?.bpDiastolic != null
-        ? `${triage.bpSystolic}/${triage.bpDiastolic}`
-        : '—',
-    temp: triage?.temperature != null ? Number(triage.temperature).toFixed(1) : '—',
-    pain: show(triage?.painScore),
-    notes: admission?.initialAssessment?.trim() || 'No notes recorded.',
-  };
-}
-
-export const VITAL_FIELDS = [
-  { key: 'time', label: 'Time' },
-  { key: 'heartRate', label: 'Heart Rate', unit: 'bpm' },
-  { key: 'respRate', label: 'Resp. Rate', unit: '/min' },
-  { key: 'spo2', label: 'SpO₂', unit: '%' },
-  { key: 'bp', label: 'Blood Pressure', unit: 'mmHg' },
-  { key: 'temp', label: 'Temp', unit: '°C' },
-  { key: 'pain', label: 'Pain', unit: '/10' },
-] as const;
