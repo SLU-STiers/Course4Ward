@@ -12,8 +12,9 @@ export function ResetPassword() {
   const logout = useAuthStore((state) => state.logout);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  /* One flag for both fields: the two eye buttons are the same control, so
+     clicking either reveals or hides the new and the confirm input together. */
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -54,7 +55,7 @@ export function ResetPassword() {
           onClick={handleBack}
           aria-label="Back to login"
         >
-          <ArrowLeft size={18} />
+          <ArrowLeft size={24} />
         </button>
         <h1 style={{ margin: 0, color: 'var(--dashboard-primary-dark)', fontSize: 24 }}>Set a new password</h1>
         <p style={{ margin: 0, color: 'var(--dashboard-muted)', lineHeight: 1.5 }}>
@@ -63,7 +64,7 @@ export function ResetPassword() {
         <div className="auth-password-wrap">
           <input
             className="auth-input auth-input-password"
-            type={showNewPassword ? 'text' : 'password'}
+            type={showPassword ? 'text' : 'password'}
             minLength={8}
             required
             placeholder="New password"
@@ -73,16 +74,16 @@ export function ResetPassword() {
           <button
             type="button"
             className="auth-toggle-button"
-            onClick={() => setShowNewPassword(!showNewPassword)}
-            aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+            onClick={() => setShowPassword((visible) => !visible)}
+            aria-label={showPassword ? 'Hide passwords' : 'Show passwords'}
           >
-            {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
         <div className="auth-password-wrap">
           <input
             className="auth-input auth-input-password"
-            type={showConfirmPassword ? 'text' : 'password'}
+            type={showPassword ? 'text' : 'password'}
             minLength={8}
             required
             placeholder="Confirm new password"
@@ -92,10 +93,10 @@ export function ResetPassword() {
           <button
             type="button"
             className="auth-toggle-button"
-            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-            aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+            onClick={() => setShowPassword((visible) => !visible)}
+            aria-label={showPassword ? 'Hide passwords' : 'Show passwords'}
           >
-            {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
         {error && <p className="auth-error" role="alert">{error}</p>}

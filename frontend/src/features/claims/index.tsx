@@ -9,7 +9,8 @@ import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../../compone
 import { patientTableStyles } from '../../components/patientList/PatientTable';
 import { DashboardIcon, ExportIcon, RequestsIcon } from '../../components/icons/NavIcons';
 import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
-import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
+import { ORDER_TEXT_STYLE, SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
+import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
 import { toDateKey } from '../../lib/format';
@@ -938,6 +939,19 @@ export function ClaimsProcessorDashboard() {
                       doctor: order.doctor,
                       content: order.content,
                     }))}
+                  renderContent={(entry) => {
+                    const order = overviewRequest?.orders.find(
+                      (item) => item.id === entry.id,
+                    );
+                    // Same read-only execution state the physician's card shows:
+                    // status badge, order type and the nurse's note.
+                    return (
+                      <>
+                        <div style={ORDER_TEXT_STYLE}>{entry.content}</div>
+                        {order && <OrderStatusSummary order={order} />}
+                      </>
+                    );
+                  }}
                   emptyMessage="No physician orders are available for the selected claim."
                 />
                 <AiSummaryCard

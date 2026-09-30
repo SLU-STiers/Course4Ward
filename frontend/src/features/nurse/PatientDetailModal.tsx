@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import { TriageBadge } from '../../components/ui';
+import { TriageAssessmentPanel } from '../../components/patients/TriageAssessmentPanel';
 import { addPatient as s, ui } from './styles';
-import { DoctorCard, SECTION_ICONS, Section, VITAL_FIELDS } from './PatientModalParts';
+import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { getRoomDestination, setRoomDestination } from './roomDestinations';
 import { OBSERVATION_LIMIT_HOURS, hoursSince } from '../../lib/patient';
 
@@ -171,31 +171,7 @@ export function PatientDetailModal({
           )}
 
           <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Priority and vital signs recorded at triage">
-            <div style={{ marginBottom: 14 }}>
-              <span style={s.label}>Triage Level</span>
-              <TriageBadge level={chart.triage.level} />
-            </div>
-            <div style={s.grid4}>
-              {VITAL_FIELDS.map((field) => {
-                const value = chart.triage[field.key];
-                const hasValue = value && value !== '—';
-                return (
-                  <div key={field.key} style={s.vital}>
-                    <span style={s.vitalLabel}>{field.label}</span>
-                    <span style={s.vitalRow}>
-                      <span style={{ ...s.vitalValue, color: hasValue ? '#0f172a' : '#94a3b8' }}>
-                        {hasValue ? value : '—'}
-                      </span>
-                      {hasValue && 'unit' in field && <span style={s.vitalUnit}>{field.unit}</span>}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ marginTop: 14 }}>
-              <span style={s.label}>Notes</span>
-              <div style={s.readNotes}>{chart.triage.notes}</div>
-            </div>
+            <TriageAssessmentPanel triage={chart.triage} />
           </Section>
 
           <Section icon={SECTION_ICONS.careTeam} title="Care Team" hint="Attending physician leads care; consultants advise">
