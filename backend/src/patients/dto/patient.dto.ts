@@ -16,12 +16,22 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { CommunicationChannel, PatientClass, Sex } from '@prisma/client';
+import { CommunicationChannel, InsuranceType, PatientClass, Sex } from '@prisma/client';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
+/** "room 101", " Rm. 101 " and "101" all name room 101. */
+export const normalizeRoom = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim().replace(/^(room|rm\.?)\s*/i, '').toUpperCase() : value;
+
+/** Digits with optional +, spaces, dashes and parentheses; 7–20 characters. */
+const PHONE_PATTERN = /^\+?[0-9()\-\s]{7,20}$/;
+const PHONE_MESSAGE = (field: string) =>
+  `${field} may only contain digits, spaces, +, - and parentheses (7–20 characters)`;
 
 export class CreatePatientDto {
   @ApiProperty()
@@ -43,6 +53,60 @@ export class CreatePatientDto {
   @IsOptional()
   @IsDateString()
   dateOfBirth?: string;
+
+  @ApiPropertyOptional({ description: "Patient's own contact / mobile number", example: '0917 123 4567' })
+  @IsOptional()
+  @Transform(trim)
+  @Matches(PHONE_PATTERN, { message: PHONE_MESSAGE('Contact number') })
+  contactNumber?: string;
+
+  @ApiPropertyOptional({ example: '123 Session Rd, Baguio City' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(300)
+  address?: string;
+
+  @ApiPropertyOptional({ enum: InsuranceType })
+  @IsOptional()
+  @IsEnum(InsuranceType, { message: 'Insurance must be one of PHILHEALTH, HMO, PRIVATE, NONE, OTHER' })
+  insurance?: InsuranceType;
+
+  // Required when insurance is OTHER, so "Other" never stands alone on the record.
+  @ApiPropertyOptional({ description: 'The specific insurance; required when insurance is OTHER', example: 'Intellicare' })
+  @ValidateIf((dto: CreatePatientDto) => dto.insurance === InsuranceType.OTHER || dto.insuranceOther !== undefined)
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty({ message: 'Please specify the insurance when "Other" is selected' })
+  @MaxLength(100)
+  insuranceOther?: string;
+
+  @ApiPropertyOptional({ example: 'Roman Catholic' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  religion?: string;
+
+  @ApiPropertyOptional({ description: 'Person to contact about the patient', example: 'Maria Dela Cruz' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(150)
+  contactPersonName?: string;
+
+  @ApiPropertyOptional({ example: '0918 765 4321' })
+  @IsOptional()
+  @Transform(trim)
+  @Matches(PHONE_PATTERN, { message: PHONE_MESSAGE('Contact person number') })
+  contactPersonNumber?: string;
+
+  @ApiPropertyOptional({ example: '45 Magsaysay Ave, Baguio City' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(300)
+  contactPersonAddress?: string;
 
   @ApiPropertyOptional({ description: 'Approximate age in years; used when dateOfBirth is omitted' })
   @IsOptional()
@@ -83,6 +147,14 @@ export class CreatePatientDto {
   @IsOptional()
   @IsEnum(CommunicationChannel)
   registrationOrderChannel?: CommunicationChannel;
+
+  @ApiPropertyOptional({ description: 'Ward room number; only for INPATIENT registrations', example: '101' })
+  @IsOptional()
+  @Transform(normalizeRoom)
+  @IsString()
+  @IsNotEmpty({ message: 'The room number must not be empty' })
+  @MaxLength(20)
+  roomNumber?: string;
 
   @ApiProperty({ description: 'Attending physician user id (UUID)' })
   @IsUUID()
@@ -176,6 +248,16 @@ export class AddConsultingPhysicianDto {
   @ApiProperty({ description: 'Physician user id (UUID) to add as a consultant' })
   @IsUUID()
   physicianId: string;
+}
+
+export class AssignRoomDto {
+  @ApiProperty({ description: 'Ward room number, or null to clear the room', example: '101', nullable: true, type: String })
+  @ValidateIf((dto: AssignRoomDto) => dto.roomNumber !== null)
+  @Transform(normalizeRoom)
+  @IsString()
+  @IsNotEmpty({ message: 'The room number must not be empty' })
+  @MaxLength(20)
+  roomNumber: string | null;
 }
 
 export class UpdatePatientDto {

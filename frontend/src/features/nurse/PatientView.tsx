@@ -9,7 +9,8 @@ import { sexLabel, statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
-import { triageForDisplay } from './PatientModalParts';
+import { contactDetailsOf } from './PatientModalParts';
+import { triageForDisplay } from '../../lib/triage';
 import type { AdmissionRecord } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
 import { ordersApi, patientsApi } from '../../services/domainApi';
@@ -101,6 +102,8 @@ export function PatientView() {
           ),
         ],
         triage: triageForDisplay(viewingAdmission),
+        contact: contactDetailsOf(viewingPatient),
+        room: viewingAdmission?.room?.number,
         classSince: viewingAdmission?.classSince,
       }
     : null;
@@ -288,6 +291,7 @@ export function PatientView() {
           onClose={() => setViewingName(null)}
           status={viewingRecord?.status}
           onCareTeamChanged={reload}
+          onRoomChanged={reload}
           onDischarge={
             viewingRecord && viewingRecord.status !== 'Discharged'
               ? () => runAdmissionAction(() => patientsApi.discharge(viewingRecord.id))

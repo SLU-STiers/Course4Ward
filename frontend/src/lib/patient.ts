@@ -8,7 +8,7 @@
  * about each view.
  */
 
-import type { PatientClass, Sex } from '../types';
+import type { InsuranceType, PatientClass, Sex } from '../types';
 
 export type AdmissionStatus = 'admitted' | 'discharged';
 
@@ -24,6 +24,14 @@ export const PATIENT_CLASS_LABEL: Record<PatientClass, string> = {
 export const SEX_LABEL: Record<Sex, string> = {
   MALE: 'Male',
   FEMALE: 'Female',
+  OTHER: 'Other',
+};
+
+export const INSURANCE_LABEL: Record<InsuranceType, string> = {
+  PHILHEALTH: 'PhilHealth',
+  HMO: 'HMO',
+  PRIVATE: 'Private',
+  NONE: 'None',
   OTHER: 'Other',
 };
 

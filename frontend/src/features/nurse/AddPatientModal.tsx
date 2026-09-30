@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import type { PatientClass, Sex, TriageLevel } from '../../types';
+import type { InsuranceType, PatientClass, Sex, TriageLevel } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { formatDateMedium } from '../../lib/format';
-import { SEX_LABEL } from '../../lib/patient';
+import { INSURANCE_LABEL, SEX_LABEL } from '../../lib/patient';
 import { TRIAGE_LEVELS, triageLevelInfo } from '../../lib/triage';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
-import { setRoomDestination } from './roomDestinations';
+import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { TimePickerField } from './TimePickerField';
 
 type PhysicianOption = {
@@ -67,6 +67,17 @@ export type AddPatientFormResult = {
   registrationOrderChannel: OrderChannel;
   physicianId: string;
   consultingPhysicianIds: string[];
+  /** The patient's own contact / mobile number. */
+  contactNumber: string;
+  address: string;
+  /** '' = not recorded. */
+  insurance: InsuranceType | '';
+  /** Required when insurance is OTHER. */
+  insuranceOther: string;
+  religion: string;
+  contactPersonName: string;
+  contactPersonNumber: string;
+  contactPersonAddress: string;
   /** 5-level triage priority; null until the nurse picks one. */
   triageLevel: TriageLevel | null;
   triageTime: string;
@@ -88,6 +99,14 @@ const emptyForm = (): AddPatientFormResult => ({
   registrationOrderChannel: '',
   physicianId: '',
   consultingPhysicianIds: [],
+  contactNumber: '',
+  address: '',
+  insurance: '',
+  insuranceOther: '',
+  religion: '',
+  contactPersonName: '',
+  contactPersonNumber: '',
+  contactPersonAddress: '',
   triageLevel: null,
   triageTime: '',
   heartRate: '',
@@ -128,6 +147,7 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       ...draft.form,
       age: String(draft.form?.age ?? ''),
       gender: toSex(draft.form?.gender),
+      insurance: toInsurance(draft.form?.insurance),
       triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
     };
     // A draft may hold a class the form no longer offers (e.g. Emergency).
@@ -168,6 +188,9 @@ const toSex = (value: unknown): Sex | '' => {
   return isSex(upper) ? upper : '';
 };
 
+const toInsurance = (value: unknown): InsuranceType | '' =>
+  typeof value === 'string' && value in INSURANCE_LABEL ? (value as InsuranceType) : '';
+
 const toNumber = (value: string) => (value.trim() === '' ? undefined : Number(value));
 
 const doctorName = (doctor: PhysicianOption) => `Dr. ${doctor.firstName} ${doctor.lastName}`;
@@ -185,7 +208,6 @@ export function AddPatientModal({
   const [form, setForm] = useState<AddPatientFormResult>(() => initialDraft?.form ?? emptyForm());
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
   const [pendingDoctorId, setPendingDoctorId] = useState('');
-  // Not sent to the API; kept in the in-memory room store only.
   const [roomNumber, setRoomNumber] = useState(() => initialDraft?.roomNumber ?? '');
   const [draftRestored, setDraftRestored] = useState(initialDraft !== null);
   const [ageTouched, setAgeTouched] = useState(initialDraft !== null);
@@ -196,6 +218,7 @@ export function AddPatientModal({
   const classOption =
     CLASS_OPTIONS.find((option) => option.value === form.patientClass) ?? CLASS_OPTIONS[0];
   const toWard = form.patientClass === 'INPATIENT';
+  const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(toWard);
   /** 'Admission' when the class needs a physician order. */
   const orderName = classOption.order;
   const showAgeError = ageTouched && ageMessage !== null;
@@ -274,6 +297,11 @@ export function AddPatientModal({
       setError('Please select the patient’s sex.');
       return;
     }
+    const insuranceOther = form.insuranceOther.trim();
+    if (form.insurance === 'OTHER' && !insuranceOther) {
+      setError('Please specify the patient’s insurance.');
+      return;
+    }
     if (!form.physicianId) {
       setError('Please select the attending physician.');
       return;
@@ -283,10 +311,19 @@ export function AddPatientModal({
       setError(`Enter the physician's ${orderName.toLowerCase()} order, or register the patient as Outpatient.`);
       return;
     }
+    if (toWard) {
+      const problem = normalizeRoom(roomNumber)
+        ? roomProblem(roomNumber, rooms)
+        : 'Please enter the room number';
+      if (problem) {
+        setError(`${problem}.`);
+        return;
+      }
+    }
 
     setSaving(true);
     try {
-      const { data: created } = await patientsApi.create({
+      await patientsApi.create({
         firstName,
         lastName,
         age: Number(form.age),
@@ -299,6 +336,15 @@ export function AddPatientModal({
           registrationOrder,
           registrationOrderChannel: form.registrationOrderChannel || undefined,
         }),
+        roomNumber: toWard ? normalizeRoom(roomNumber) : undefined,
+        contactNumber: form.contactNumber.trim() || undefined,
+        address: form.address.trim() || undefined,
+        insurance: form.insurance || undefined,
+        insuranceOther: form.insurance === 'OTHER' ? insuranceOther : undefined,
+        religion: form.religion.trim() || undefined,
+        contactPersonName: form.contactPersonName.trim() || undefined,
+        contactPersonNumber: form.contactPersonNumber.trim() || undefined,
+        contactPersonAddress: form.contactPersonAddress.trim() || undefined,
         physicianId: form.physicianId,
         additionalPhysicianIds: form.consultingPhysicianIds,
         triageLevel: form.triageLevel ?? undefined,
@@ -311,12 +357,12 @@ export function AddPatientModal({
         pain: toNumber(form.pain),
         notes: form.notes || undefined,
       });
-      const admissionId = created.admissions?.[0]?.id;
-      if (toWard && admissionId) setRoomDestination(admissionId, roomNumber);
       saveDraft(null);
       onCreated();
       onClose();
     } catch (err: any) {
+      // Someone may have just taken the room: refresh what is free.
+      if (toWard) reloadRooms();
       const message = err?.response?.data?.message;
       setError(
         Array.isArray(message)
@@ -434,6 +480,58 @@ export function AddPatientModal({
                   title="Patients are triaged with today's date"
                 />
               </Field>
+              <Field label="Personal Number">
+                <PhoneInput
+                  value={form.contactNumber}
+                  onChange={(v) => setField('contactNumber', v)}
+                  placeholder="e.g. 0917 123 4567"
+                />
+              </Field>
+              <Field label="Insurance">
+                <select
+                  style={s.input}
+                  value={form.insurance}
+                  onChange={(e) => setField('insurance', toInsurance(e.target.value))}
+                >
+                  <option value="">Select insurance</option>
+                  {Object.entries(INSURANCE_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                {form.insurance === 'OTHER' && (
+                  <input
+                    style={{ ...s.input, marginTop: 8 }}
+                    value={form.insuranceOther}
+                    onChange={(e) => setField('insuranceOther', e.target.value)}
+                    placeholder="Specify insurance, e.g. Intellicare"
+                    aria-label="Specify insurance"
+                    maxLength={100}
+                    required
+                  />
+                )}
+              </Field>
+              <Field label="Religion">
+                <input
+                  style={s.input}
+                  value={form.religion}
+                  onChange={(e) => setField('religion', e.target.value)}
+                  placeholder="e.g. Roman Catholic"
+                  maxLength={100}
+                />
+              </Field>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Field label="Address">
+                  <input
+                    style={s.input}
+                    value={form.address}
+                    onChange={(e) => setField('address', e.target.value)}
+                    placeholder="House no., street, barangay, city / municipality, province"
+                    maxLength={300}
+                  />
+                </Field>
+              </div>
               {/* Full row, one segment per class. */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <span style={s.label}>
@@ -465,22 +563,51 @@ export function AddPatientModal({
             <p style={{ margin: '10px 0 0', fontSize: 12, color: '#64748b' }}>
               {classOption.hint}
             </p>
+
+            <h5 style={s.subsectionTitle}>Contact Person</h5>
+            <div style={s.grid2}>
+              <Field label="Contact Person">
+                <input
+                  style={s.input}
+                  value={form.contactPersonName}
+                  onChange={(e) => setField('contactPersonName', e.target.value)}
+                  placeholder="e.g. Maria Dela Cruz"
+                  maxLength={150}
+                />
+              </Field>
+              <Field label="Contact Number">
+                <PhoneInput
+                  value={form.contactPersonNumber}
+                  onChange={(v) => setField('contactPersonNumber', v)}
+                  placeholder="e.g. 0918 765 4321"
+                />
+              </Field>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Field label="Contact Person Address">
+                  <input
+                    style={s.input}
+                    value={form.contactPersonAddress}
+                    onChange={(e) => setField('contactPersonAddress', e.target.value)}
+                    placeholder="House no., street, barangay, city / municipality, province"
+                    maxLength={300}
+                  />
+                </Field>
+              </div>
+            </div>
           </Section>
 
           {toWard && (
             <Section icon={SECTION_ICONS.room} title="Room Destination" hint="Ward room for the admitted patient">
-              <div style={s.grid2}>
-                <Field label="Room Number" required>
-                  <input
-                    style={s.input}
-                    value={roomNumber}
-                    onChange={(e) => setRoomNumber(e.target.value)}
-                    placeholder="e.g. Room 305"
-                    maxLength={20}
-                    required
-                  />
-                </Field>
-              </div>
+              <span style={s.label}>
+                Room Number<span style={s.required}>*</span>
+              </span>
+              <RoomPicker
+                value={roomNumber}
+                onChange={setRoomNumber}
+                rooms={rooms}
+                failed={roomsFailed}
+                disabled={saving}
+              />
             </Section>
           )}
 
@@ -710,6 +837,32 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function PhoneInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <input
+      style={s.input}
+      type="tel"
+      inputMode="tel"
+      autoComplete="off"
+      value={value}
+      // Keep only characters a phone number can contain.
+      onChange={(e) => onChange(e.target.value.replace(/[^0-9+()\-\s]/g, ''))}
+      placeholder={placeholder}
+      maxLength={20}
+      pattern="\+?[0-9\s\-\(\)]{7,20}"
+      title="7–20 digits; spaces, +, - and parentheses are allowed"
+    />
   );
 }
 

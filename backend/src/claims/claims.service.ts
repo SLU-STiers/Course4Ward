@@ -3,6 +3,7 @@ import { NotificationType, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { triageSelect } from '../patients/patients.service';
 
 @Injectable()
 export class ClaimsService {
@@ -89,7 +90,15 @@ export class ClaimsService {
             orders: {
               orderBy: { dateCreated: 'desc' },
               include: {
-                admission: { select: { admissionDate: true, dischargeDate: true } },
+                admission: {
+                  select: {
+                    admissionDate: true,
+                    dischargeDate: true,
+                    // The claim review shows the patient's triage assessment.
+                    initialAssessment: true,
+                    triage: triageSelect,
+                  },
+                },
                 orderedBy: { select: { firstName: true, lastName: true } },
                 // Who the nurse executed the order and when -- the claims
                 // timeline shows the same execution state as the physician's.

@@ -8,11 +8,11 @@ import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useTableState } from '../../hooks/useTableState';
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
 import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
-import { triageUrgency } from '../../lib/triage';
+import { triageForDisplay, triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
-import { triageForDisplay } from './PatientModalParts';
+import { contactDetailsOf } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
@@ -40,6 +40,8 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     daysInCare: daysInCare(admissionDate, admission?.dischargeDate),
     initialAssessment: admission?.initialAssessment,
     triage: triageForDisplay(admission),
+    contact: contactDetailsOf(patient),
+    room: admission?.room?.number,
     patientClass: admission?.patientClass,
     classSince: admission?.classSince,
     assignedDoctor: admission?.physician
@@ -216,6 +218,8 @@ export function ManagementPortalView() {
       ...(detailPatient.additionalDoctors ?? []),
     ],
     triage: detailPatient.triage ?? triageForDisplay(null),
+    contact: detailPatient.contact,
+    room: detailPatient.room,
     classSince: detailPatient.classSince,
   } : null;
   const detailStatus: AdmissionStatus | undefined = detailPatient
@@ -413,6 +417,9 @@ export function ManagementPortalView() {
           chart={detailChart}
           status={detailStatus}
           onCareTeamChanged={() => {
+            loadPatients().catch(() => undefined);
+          }}
+          onRoomChanged={() => {
             loadPatients().catch(() => undefined);
           }}
           onClose={() => setDetailName(null)}

@@ -41,6 +41,17 @@ enum Sex {
   @@map("sex")
 }
 
+/// How the patient's care is covered, as recorded at registration.
+enum InsuranceType {
+  PHILHEALTH
+  HMO
+  PRIVATE
+  NONE
+  OTHER
+
+  @@map("insurance_type")
+}
+
 enum PatientClass {
   EMERGENCY
   OUTPATIENT
@@ -168,6 +179,15 @@ model Patient {
   lastName    String
   gender      Sex?
   dateOfBirth DateTime?
+  contactNumber String?
+  address       String?
+  insurance     InsuranceType?
+  /// The specific insurance when `insurance` is OTHER.
+  insuranceOther String?
+  religion      String?
+  contactPersonName    String?
+  contactPersonNumber  String?
+  contactPersonAddress String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -188,13 +208,29 @@ model PatientAdmission {
   initialAssessment String?
   patientId         String
   physicianId       String?      
+  /// The ward room of an admitted patient; freed once the admission is discharged.
+  roomId            String?
   patient           Patient @relation(fields: [patientId], references: [id])
   physician         User?   @relation(fields: [physicianId], references: [id])
+  room              Room?   @relation(fields: [roomId], references: [id])
   orders PhysicianOrder[]
   additionalPhysicians AdmissionPhysician[]
   triage               TriageAssessment?
 
+  @@index([roomId])
   @@map("patient_admissions")
+}
+
+/// A ward room. Occupied while an undischarged admission is assigned to it.
+model Room {
+  id         String   @id @default(uuid())
+  number     String   @unique
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  admissions PatientAdmission[]
+
+  @@map("rooms")
 }
 
 model TriageAssessment {
