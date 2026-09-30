@@ -1,8 +1,9 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { jsPDF } from 'jspdf';
 
-import { Button, StatusBadge } from '../../components/ui';
+import { Button, Modal, StatusBadge } from '../../components/ui';
 import type { Cf4SummaryDraft, ExportSource } from './types';
 import { styles } from './styles';
 
@@ -54,6 +55,10 @@ export function Cf4SummaryPreview({
   confirming = false,
 }: Cf4SummaryPreviewProps) {
   const [copied, setCopied] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'json' | 'pdf'>('json');
+  const [rendered, setRendered] = useState<{ draft: Cf4SummaryDraft; doc: jsPDF } | null>(null);
+  /** Full-screen PDF viewer, opened by clicking the inline preview. */
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   const total = drafts.length;
   const activeIndex = total ? Math.min(Math.max(index, 0), total - 1) : 0;
@@ -98,6 +103,34 @@ export function Cf4SummaryPreview({
     return JSON.stringify(payload, null, 2);
   }, [patient, request, evaluator, source, sourceFileName]);
 
+  /* One document per draft, shared by the embedded preview and the download so
+     the two can never drift apart. jsPDF is ~336 kB, so it is imported only
+     once this review step opens instead of shipping in every dashboard's
+     bundle. Building is a pure function of the draft, so the "Generated ..."
+     timestamp stays stable while the processor toggles tabs or re-renders. */
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    void import('./cf4Pdf').then(({ buildCf4Pdf }) => {
+      if (!cancelled) {
+        setRendered({ draft: active, doc: buildCf4Pdf(active, source, evaluator, sourceFileName) });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, source, evaluator, sourceFileName]);
+
+  /* Only the document built for the draft currently on screen. Keying on draft
+     identity means a stale PDF from the previous patient is ignored while the
+     next one is still building, instead of being shown or downloaded. */
+  const pdf = rendered && rendered.draft === active ? rendered.doc : null;
+
+  /* Inlined as a data URI rather than an object URL: the document is
+     text-only, so it stays small, and this keeps the preview a pure value —
+     no effect, no setState and no blob to revoke when the queue is paged. */
+  const pdfUrl = useMemo(() => (pdf ? pdf.output('datauristring') : null), [pdf]);
+
   if (!patient) return null;
 
   const hasPrevious = activeIndex > 0;
@@ -113,16 +146,10 @@ export function Cf4SummaryPreview({
     }
   };
 
+  /** Saves the exact document shown in the PDF preview tab. */
   const handleDownload = () => {
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `course-in-the-ward-${patient.patientId}.json`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
+    if (!pdf) return;
+    pdf.save(`course-in-the-ward-${patient.patientId}.pdf`);
   };
 
   return (
@@ -141,8 +168,8 @@ export function Cf4SummaryPreview({
         </span>
         <span style={styles.summarySourceHint}>
           {total > 1
-            ? `Review each selected patient below — one CF4 is generated per patient. The JSON on the right is what gets written for the Course in the Ward.`
-            : 'Review the summary below. The JSON on the right is what gets written for the Course in the Ward; confirming generates the CF4 document.'}
+            ? `Review each selected patient below — one CF4 is generated per patient. The preview on the right shows the record that gets written for the Course in the Ward.`
+            : 'Review the summary below. The preview on the right shows the record that gets written for the Course in the Ward; confirming generates the CF4 document.'}
         </span>
       </div>
 
@@ -249,19 +276,86 @@ export function Cf4SummaryPreview({
 
         <div style={styles.summaryPanel}>
           <div style={styles.summaryPanelHeader}>
-            <span style={styles.summaryPanelTitle}>JSON File Preview</span>
+            <div style={styles.summaryPanelTabs}>
+              <button
+                type="button"
+                aria-pressed={previewMode === 'json'}
+                style={
+                  previewMode === 'json'
+                    ? { ...styles.summaryTab, ...styles.summaryTabActive }
+                    : styles.summaryTab
+                }
+                onClick={() => setPreviewMode('json')}
+              >
+                JSON
+              </button>
+              <button
+                type="button"
+                aria-pressed={previewMode === 'pdf'}
+                style={
+                  previewMode === 'pdf'
+                    ? { ...styles.summaryTab, ...styles.summaryTabActive }
+                    : styles.summaryTab
+                }
+                onClick={() => setPreviewMode('pdf')}
+              >
+                PDF Preview
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <Button size="sm" variant="ghost" onClick={() => void handleCopy()}>
-                {copied ? 'Copied' : 'Copy'}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={handleDownload}>
-                Download
+              {previewMode === 'json' && (
+                <Button size="sm" variant="ghost" onClick={() => void handleCopy()}>
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={handleDownload} disabled={!pdf}>
+                Download PDF
               </Button>
             </div>
           </div>
-          <pre style={styles.jsonPreview}>{json}</pre>
+
+          {previewMode === 'json' ? (
+            <pre style={styles.jsonPreview}>{json}</pre>
+          ) : pdfUrl ? (
+            /* An <iframe> swallows clicks, so a transparent button sits over it
+               to open the enlarged viewer. */
+            <div style={styles.pdfPreviewShell}>
+              <iframe
+                title={`CF4 preview for ${patient.name}`}
+                src={pdfUrl}
+                style={styles.pdfPreviewFrame}
+              />
+              <button
+                type="button"
+                style={styles.pdfPreviewHitArea}
+                aria-label={`Open the full-size CF4 preview for ${patient.name}`}
+                onClick={() => setViewerOpen(true)}
+              >
+                <span style={styles.pdfPreviewHint}>Click to enlarge</span>
+              </button>
+            </div>
+          ) : (
+            <div style={styles.pdfPreviewEmpty}>Preparing preview…</div>
+          )}
         </div>
       </div>
+
+      <Modal
+        open={viewerOpen && Boolean(pdfUrl)}
+        onClose={() => setViewerOpen(false)}
+        size="xl"
+        className="ui-modal--pdf"
+        title="Course in the Ward — CF4 supporting document"
+        description="Scroll to view every page. Click outside the document to close."
+      >
+        {pdfUrl ? (
+          <iframe
+            title={`Full-size CF4 preview for ${patient.name}`}
+            src={pdfUrl}
+            className="ui-modal__pdf-frame"
+          />
+        ) : null}
+      </Modal>
 
       {error ? <p style={styles.exportErrorBanner}>{error}</p> : null}
 
