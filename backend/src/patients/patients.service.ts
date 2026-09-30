@@ -21,7 +21,11 @@ function buildTriage(dto: CreatePatientDto, nurseId: string) {
   return hasAny ? { ...triage, recordedById: nurseId } : null;
 }
 
-const triageSelect = {
+/**
+ * The triage assessment every clinical role reads: nurses, physicians and
+ * (through the claim's admission) claims processors.
+ */
+export const triageSelect = {
   select: {
     triageLevel: true,
     triageTime: true,
@@ -33,6 +37,7 @@ const triageSelect = {
     temperature: true,
     painScore: true,
     createdAt: true,
+    recordedBy: { select: { firstName: true, lastName: true } },
   },
 };
 
@@ -239,8 +244,8 @@ export class PatientsService {
                   dischargeDate: true,
                   patientClass: true,
                   classSince: true,
-                  // Physicians see the priority, not the full vitals row.
-                  triage: { select: { triageLevel: true } },
+                  initialAssessment: true,
+                  triage: triageSelect,
                 },
               }),
         },

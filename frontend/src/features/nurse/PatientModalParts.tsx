@@ -5,9 +5,12 @@ import patientInfoIcon from '../../Img/patient-information.png';
 import assessmentIcon from '../../Img/assesment.png';
 import careTeamIcon from '../../Img/care-team.png';
 import { addPatient as s } from './styles';
+<<<<<<< HEAD
 import { INSURANCE_LABEL } from '../../lib/patient';
 import type { PatientContactDetails, TriageAssessment } from './types';
 import type { Patient, PatientAdmission } from '../../types';
+=======
+>>>>>>> 8067b52a8ffb1d2c0198901553ca8699f77d36d1
 
 export const SECTION_ICONS = {
   patientInfo: patientInfoIcon,
@@ -87,6 +90,7 @@ export function DoctorCard({
     </div>
   );
 }
+<<<<<<< HEAD
 
 /** Reads a patient's registration contact and background details for display. */
 export function contactDetailsOf(patient: Patient): PatientContactDetails {
@@ -136,3 +140,5 @@ export const VITAL_FIELDS = [
   { key: 'temp', label: 'Temp', unit: '°C' },
   { key: 'pain', label: 'Pain', unit: '/10' },
 ] as const;
+=======
+>>>>>>> 8067b52a8ffb1d2c0198901553ca8699f77d36d1

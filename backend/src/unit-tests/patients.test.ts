@@ -92,7 +92,19 @@ describe("Patients Module", () => {
         patientClass: PatientClass.INPATIENT,
         classSince: new Date("2024-01-01"),
         initialAssessment: null,
-        triage: { triageLevel: 3 },
+        triage: {
+          triageLevel: 3,
+          triageTime: "08:30",
+          heartRate: 88,
+          respRate: 18,
+          spo2: 97,
+          bpSystolic: 120,
+          bpDiastolic: 80,
+          temperature: null,
+          painScore: 2,
+          createdAt: new Date("2024-01-01"),
+          recordedBy: { firstName: "Nora", lastName: "Reyes" },
+        },
         createdAt: new Date(),
         updatedAt: new Date(),
         orders: [
@@ -774,7 +786,16 @@ describe("Patients Module", () => {
                 dischargeDate: true,
                 patientClass: true,
                 classSince: true,
-                triage: { select: { triageLevel: true } },
+                initialAssessment: true,
+                // Physicians read the full triage assessment, not just the level.
+                triage: expect.objectContaining({
+                  select: expect.objectContaining({
+                    triageLevel: true,
+                    heartRate: true,
+                    bpSystolic: true,
+                    recordedBy: { select: { firstName: true, lastName: true } },
+                  }),
+                }),
               },
             },
           },

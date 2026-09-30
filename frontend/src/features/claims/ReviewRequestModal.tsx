@@ -1,6 +1,7 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
 import { useState } from 'react';
+import { TriageAssessmentPanel } from '../../components/patients/TriageAssessmentPanel';
 
 import type { SummarizationRequest } from './types';
 
@@ -135,6 +136,13 @@ export function ReviewRequestModal({
       fontWeight: 700,
       color: '#334155',
       marginBottom: '8px',
+    },
+    triageCard: {
+      border: '1px solid #e2e8f0',
+      borderRadius: '12px',
+      backgroundColor: '#ffffff',
+      padding: '16px',
+      marginBottom: '18px',
     },
     summaryCard: {
       border: '1px solid #e2e8f0',
@@ -298,6 +306,11 @@ export function ReviewRequestModal({
                 </div>
               </div>
             </div>
+          </div>
+
+          <div style={modalStyles.sectionLabel}>Triage Assessment</div>
+          <div style={modalStyles.triageCard}>
+            <TriageAssessmentPanel triage={request.triage} />
           </div>
 
           <div style={modalStyles.sectionLabel}>Physician Reviewed</div>

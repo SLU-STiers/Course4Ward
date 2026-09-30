@@ -250,7 +250,14 @@ describe("Claims Module", () => {
                   orderBy: { dateCreated: "desc" },
                   include: {
                     admission: {
-                      select: { admissionDate: true, dischargeDate: true },
+                      select: {
+                        admissionDate: true,
+                        dischargeDate: true,
+                        initialAssessment: true,
+                        triage: expect.objectContaining({
+                          select: expect.objectContaining({ triageLevel: true, heartRate: true }),
+                        }),
+                      },
                     },
                     orderedBy: { select: { firstName: true, lastName: true } },
                     executedBy: { select: { firstName: true, lastName: true } },

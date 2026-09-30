@@ -1,27 +1,64 @@
 /** Part of the admin dashboard — see index.tsx for the screen shell. */
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Modal } from '../../components/ui/Modal';
 import { adminApi } from '../../services/domainApi';
 import { styles } from './styles';
 import type { StaffAccount } from '../../types';
 
-import { AccountFormModal } from './AccountFormModal';
+import { ConfirmationDialog } from './ConfirmationDialog';
 
 export function AccountsPanel() {
+  const qc = useQueryClient();
   const { data: users } = useQuery({
     queryKey: ['admin-users'],
     queryFn: () => adminApi.listUsers().then((r) => r.data),
   });
 
-  // null = closed, 'new' = Add User pop-up, otherwise the account being edited.
-  const [formTarget, setFormTarget] = useState<StaffAccount | 'new' | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    role: '',
+    temporaryPassword: '',
+  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', role: 'NURSE', isActive: true });
+  const [confirmation, setConfirmation] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const createUser = useMutation({
+    mutationFn: () => adminApi.createUser(form),
+    onSuccess: () => {
+      setForm({ firstName: '', lastName: '', role: '', temporaryPassword: '' });
+      setAddOpen(false);
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+
+  const updateUser = useMutation({
+    mutationFn: () => adminApi.updateUser(editingId as string, editForm),
+    onSuccess: () => {
+      setEditingId(null);
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+
+  const beginEdit = (user: StaffAccount) => {
+    setEditingId(user.id);
+    setEditForm({ firstName: user.firstName, lastName: user.lastName, role: user.role, isActive: user.isActive });
+  };
 
   return (
     <div style={styles.cardContainer}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
         <h4 style={{ margin: 0, color: '#0f172a' }}>Staff Accounts</h4>
-        <button style={styles.primaryButton} onClick={() => setFormTarget('new')}>
+        <button style={styles.primaryButton} onClick={() => setAddOpen(true)}>
           + Add User
         </button>
       </div>
@@ -45,17 +82,133 @@ export function AccountsPanel() {
               <td style={styles.td}>{u.role}</td>
               <td style={styles.td}>{u.isActive ? 'Active' : 'Deactivated'}</td>
               <td style={styles.td}>
-                <button onClick={() => setFormTarget(u)} style={styles.actionButton}>Edit</button>
+                <button onClick={() => beginEdit(u)} style={styles.actionButton}>Edit</button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {formTarget && (
-        <AccountFormModal
-          key={formTarget === 'new' ? 'new' : formTarget.id}
-          account={formTarget === 'new' ? undefined : formTarget}
-          onClose={() => setFormTarget(null)}
+
+      <Modal
+        open={addOpen}
+        // Stay open while its confirmation dialog is on top.
+        onClose={() => {
+          if (!confirmation) setAddOpen(false);
+        }}
+        size="sm"
+        title="Add Account"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <input
+            style={styles.formInput}
+            placeholder="First name"
+            value={form.firstName}
+            onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+          />
+          <input
+            style={styles.formInput}
+            placeholder="Last name"
+            value={form.lastName}
+            onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+          />
+          <select
+            style={styles.formInput}
+            value={form.role}
+            onChange={(e) => setForm({ ...form, role: e.target.value })}
+          >
+            <option value="" disabled>Select a role</option>
+            <option value="PHYSICIAN">Physician</option>
+            <option value="NURSE">Nurse</option>
+            <option value="CLAIMS_PROCESSOR">Claims Processor</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+          <input
+            style={styles.formInput}
+            placeholder="Temporary password"
+            type="password"
+            value={form.temporaryPassword}
+            onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })}
+          />
+          <button
+            style={styles.primaryButton}
+            onClick={() => {
+              const fullName = `${form.firstName || 'New'} ${form.lastName || 'User'}`.trim();
+              setConfirmation({
+                title: 'Create account',
+                message: `Are you sure you want to create an account for ${fullName}?`,
+                confirmLabel: 'Create Account',
+                onConfirm: () => {
+                  setConfirmation(null);
+                  createUser.mutate();
+                },
+              });
+            }}
+          >
+            Create Account
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={editingId !== null}
+        onClose={() => {
+          if (!confirmation) setEditingId(null);
+        }}
+        size="sm"
+        title="Edit Account"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <input
+            style={styles.formInput}
+            placeholder="First name"
+            value={editForm.firstName}
+            onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+          />
+          <input
+            style={styles.formInput}
+            placeholder="Last name"
+            value={editForm.lastName}
+            onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+          />
+          <select style={styles.formInput} value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
+            <option value="PHYSICIAN">Physician</option>
+            <option value="NURSE">Nurse</option>
+            <option value="CLAIMS_PROCESSOR">Claims Processor</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
+            <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} /> Active
+          </label>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <button style={styles.secondaryButton} onClick={() => setEditingId(null)}>Cancel</button>
+            <button
+              style={styles.primaryButton}
+              onClick={() => {
+                const fullName = `${editForm.firstName || 'User'} ${editForm.lastName || ''}`.trim();
+                setConfirmation({
+                  title: 'Save account changes',
+                  message: `Are you sure you want to save changes for ${fullName}?`,
+                  confirmLabel: 'Save Changes',
+                  onConfirm: () => {
+                    setConfirmation(null);
+                    updateUser.mutate();
+                  },
+                });
+              }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {confirmation && (
+        <ConfirmationDialog
+          title={confirmation.title}
+          message={confirmation.message}
+          confirmLabel={confirmation.confirmLabel}
+          onCancel={() => setConfirmation(null)}
+          onConfirm={confirmation.onConfirm}
         />
       )}
     </div>

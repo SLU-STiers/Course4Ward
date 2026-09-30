@@ -320,6 +320,38 @@ export const manage: Record<string, CSSProperties> = {
     height: "100%",
     minHeight: 0,
   },
+  /** Chart column: triage summary on top, the resizable orders/summary group below. */
+  chartColumn: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+    height: "100%",
+    minHeight: 0,
+  },
+  triageBar: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 10,
+    flex: "0 0 auto",
+    padding: "10px 16px",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    border: "1px solid #e2e8f0",
+  },
+  triageBarTitle: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#0f172a",
+  },
+  triageBarVitals: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 12,
+    flex: "1 1 auto",
+    fontSize: 12,
+    color: "#64748b",
+  },
   listCard: {
     backgroundColor: "#ffffff",
     borderRadius: 12,
