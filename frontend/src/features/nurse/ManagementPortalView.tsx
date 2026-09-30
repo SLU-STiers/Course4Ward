@@ -12,10 +12,7 @@ import { triageForDisplay, triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
-<<<<<<< HEAD
-import { contactDetailsOf, triageForDisplay } from './PatientModalParts';
-=======
->>>>>>> 8067b52a8ffb1d2c0198901553ca8699f77d36d1
+import { contactDetailsOf } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';

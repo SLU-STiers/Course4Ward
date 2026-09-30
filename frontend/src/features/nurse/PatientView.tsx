@@ -8,11 +8,8 @@ import { sexLabel, statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
-<<<<<<< HEAD
-import { contactDetailsOf, triageForDisplay } from './PatientModalParts';
-=======
+import { contactDetailsOf } from './PatientModalParts';
 import { triageForDisplay } from '../../lib/triage';
->>>>>>> 8067b52a8ffb1d2c0198901553ca8699f77d36d1
 import type { AdmissionRecord } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
 import { ordersApi, patientsApi } from '../../services/domainApi';
