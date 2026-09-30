@@ -22,23 +22,17 @@ type PhysicianOption = {
 /** How the physician gave the order; '' = written / signed order. */
 type OrderChannel = '' | 'VERBAL' | 'CALL' | 'SMS' | 'OTHER';
 
-/** Registration choices; the order a class needs is entered with it. */
+/**
+ * Registration choices; the order a class needs is entered with it. Emergency
+ * is not offered for now: new patients default to Outpatient. Observation is
+ * never a starting class: the physician orders it after seeing the patient and
+ * the nurse then moves them with Observe.
+ */
 const CLASS_OPTIONS: { value: PatientClass; label: string; hint: string; order?: string }[] = [
-  {
-    value: 'EMERGENCY',
-    label: 'Emergency',
-    hint: 'Seen in the ER. The physician then orders observation, admission or discharge.',
-  },
   {
     value: 'OUTPATIENT',
     label: 'Outpatient',
-    hint: 'Clinic visit or day procedure. End the visit from the patient details when done.',
-  },
-  {
-    value: 'OBSERVATION',
-    label: 'Observation',
-    hint: "Short stay (usually under 24 hours) to decide on admission. Needs the physician's observation order.",
-    order: 'Observation',
+    hint: 'Triaged and seen by the physician, who may order observation or admission. End the visit from the patient details when done.',
   },
   {
     value: 'INPATIENT',
@@ -64,9 +58,9 @@ export type AddPatientFormResult = {
   /** '' until the nurse picks one: there is deliberately no default. */
   gender: Sex | '';
   /**
-   * EMERGENCY / OUTPATIENT need no order. OBSERVATION and INPATIENT (direct
-   * admission, trauma, scheduled surgery) need the physician's observation /
-   * admission order, entered below on their behalf.
+   * OUTPATIENT needs no order. INPATIENT (direct admission, trauma,
+   * scheduled surgery) needs the physician's admission order, entered below
+   * on their behalf.
    */
   patientClass: PatientClass;
   registrationOrder: string;
@@ -89,7 +83,7 @@ const emptyForm = (): AddPatientFormResult => ({
   lastName: '',
   age: '',
   gender: '',
-  patientClass: 'EMERGENCY',
+  patientClass: 'OUTPATIENT',
   registrationOrder: '',
   registrationOrderChannel: '',
   physicianId: '',
@@ -136,6 +130,10 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       gender: toSex(draft.form?.gender),
       triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
     };
+    // A draft may hold a class the form no longer offers (e.g. Emergency).
+    if (!CLASS_OPTIONS.some((option) => option.value === form.patientClass)) {
+      form.patientClass = emptyForm().patientClass;
+    }
     // Fields of older versions of this form.
     for (const legacy of ['admissionStatus', 'admissionOrder', 'admissionOrderChannel']) {
       delete (form as Partial<Record<string, unknown>>)[legacy];
@@ -198,7 +196,7 @@ export function AddPatientModal({
   const classOption =
     CLASS_OPTIONS.find((option) => option.value === form.patientClass) ?? CLASS_OPTIONS[0];
   const toWard = form.patientClass === 'INPATIENT';
-  /** 'Admission' / 'Observation' when the class needs a physician order. */
+  /** 'Admission' when the class needs a physician order. */
   const orderName = classOption.order;
   const showAgeError = ageTouched && ageMessage !== null;
 
@@ -282,7 +280,7 @@ export function AddPatientModal({
     }
     const registrationOrder = form.registrationOrder.trim();
     if (orderName && !registrationOrder) {
-      setError(`Enter the physician's ${orderName.toLowerCase()} order, or register the patient as Emergency.`);
+      setError(`Enter the physician's ${orderName.toLowerCase()} order, or register the patient as Outpatient.`);
       return;
     }
 
@@ -295,7 +293,7 @@ export function AddPatientModal({
         gender: form.gender,
         // No admissionDate: admission is always today, stamped by the server with the current time.
         patientClass: form.patientClass,
-        // Observation / inpatient only with the physician's order, which is
+        // Inpatient only with the physician's admission order, which is
         // filed on their behalf in the same request.
         ...(orderName && {
           registrationOrder,
@@ -436,7 +434,7 @@ export function AddPatientModal({
                   title="Patients are triaged with today's date"
                 />
               </Field>
-              {/* Full row: four classes don't fit in one grid column. */}
+              {/* Full row, one segment per class. */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <span style={s.label}>
                   Admission Status<span style={s.required}>*</span>

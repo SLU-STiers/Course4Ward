@@ -62,7 +62,7 @@ export class CreatePatientDto {
   // scheduled surgery) are physician decisions, so they need
   // `registrationOrder`: the observation / admission order the nurse enters
   // on the attending physician's behalf.
-  @ApiPropertyOptional({ enum: PatientClass, default: PatientClass.EMERGENCY })
+  @ApiPropertyOptional({ enum: PatientClass, default: PatientClass.OUTPATIENT })
   @IsOptional()
   @IsEnum(PatientClass)
   patientClass?: PatientClass;

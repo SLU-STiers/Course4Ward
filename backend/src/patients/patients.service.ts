@@ -96,12 +96,13 @@ export class PatientsService {
     });
   }
 
-  // Nurse patient management: demographics + admission. EMERGENCY and
+  // Nurse patient management: demographics + admission. New patients default
+  // to OUTPATIENT (the nurse form no longer offers EMERGENCY); EMERGENCY and
   // OUTPATIENT registrations need no order. OBSERVATION and INPATIENT (direct
   // admission, trauma, scheduled surgery) are physician decisions, so the
   // nurse enters the physician's order on their behalf in the same request.
   async create(dto: CreatePatientDto, nurseId: string) {
-    const patientClass = dto.patientClass ?? PatientClass.EMERGENCY;
+    const patientClass = dto.patientClass ?? PatientClass.OUTPATIENT;
     const orderType = CLASS_ORDER[patientClass];
     const registrationOrder = dto.registrationOrder?.trim();
     if (orderType && !registrationOrder) {

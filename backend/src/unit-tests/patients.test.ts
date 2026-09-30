@@ -214,8 +214,8 @@ describe("Patients Module", () => {
               dateOfBirth: new Date(mockCreatePatientDto.dateOfBirth),
               admissions: expect.objectContaining({
                 create: expect.objectContaining({
-                  // No class given: an emergency patient, no order needed.
-                  patientClass: PatientClass.EMERGENCY,
+                  // No class given: an outpatient, no order needed.
+                  patientClass: PatientClass.OUTPATIENT,
                   classSince: expect.any(Date),
                   physicianId: "physician-123",
                 }),
