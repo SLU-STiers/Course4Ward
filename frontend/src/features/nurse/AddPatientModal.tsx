@@ -420,13 +420,13 @@ export function AddPatientModal({
                   ))}
                 </select>
               </Field>
-              <Field label="Admission Date" required>
+              <Field label="Triage Date" required>
                 <input
                   style={{ ...s.input, ...s.inputReadOnly }}
                   value={formatDateMedium(new Date())}
                   readOnly
                   aria-readonly="true"
-                  title="Patients are admitted with today's date"
+                  title="Patients are triaged with today's date"
                 />
               </Field>
               {/* Full row: four classes don't fit in one grid column. */}
