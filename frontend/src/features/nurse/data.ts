@@ -19,6 +19,7 @@ export const AVAILABLE_DOCTORS = [
   'Dr. John Doe',
 ];
 const DEFAULT_TRIAGE: TriageAssessment = {
+  level: null,
   time: '08:00 AM',
   heartRate: '86 bpm',
   respRate: '18 /min',
@@ -30,7 +31,7 @@ const DEFAULT_TRIAGE: TriageAssessment = {
 };
 function buildChart(
   name: string,
-  extras: Partial<PatientChart> & { triage?: Partial<TriageAssessment> } = {}
+  extras: Omit<Partial<PatientChart>, 'triage'> & { triage?: Partial<TriageAssessment> } = {}
 ): PatientChart {
   const fromList = MOCK_PATIENTS.find((p) => p.name === name);
   return {

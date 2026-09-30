@@ -1,6 +1,6 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import type { PatientClass, PhysicianOrder } from '../../types';
+import type { PatientClass, PhysicianOrder, TriageLevel } from '../../types';
 
 
 export type TabType = 'management' | 'patient';
@@ -28,6 +28,8 @@ export type NursePatient = {
   additionalDoctors?: string[];
 };
 export type TriageAssessment = {
+  /** 5-level triage priority; null when none was recorded. */
+  level: TriageLevel | null;
   time: string;
   heartRate: string;
   respRate: string;

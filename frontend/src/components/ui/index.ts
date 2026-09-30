@@ -7,6 +7,7 @@ export {
   type StatusValue,
   type StatusTone,
 } from './StatusBadge';
+export { TriageBadge, type TriageBadgeProps } from './TriageBadge';
 export { PageHeader, type PageHeaderProps } from './PageHeader';
 export { Popover, type PopoverProps, type PopoverRenderArgs } from './Popover';
 export { Modal, type ModalProps, type ModalSize } from './Modal';

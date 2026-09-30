@@ -93,6 +93,7 @@ export function triageForDisplay(admission?: PatientAdmission | null): TriageAss
   const show = (value: string | number | null | undefined) =>
     value === null || value === undefined || value === '' ? '—' : String(value);
   return {
+    level: triage?.triageLevel ?? null,
     time: show(triage?.triageTime),
     heartRate: show(triage?.heartRate),
     respRate: show(triage?.respRate),

@@ -63,10 +63,15 @@ export interface PatientAdmission {
   initialAssessment?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
   additionalPhysicians?: { physician: { id: string; firstName: string; lastName: string } }[];
+  /** Physician payloads carry only `triageLevel`; nurse payloads the full row. */
   triage?: AdmissionTriage | null;
 }
 
+/** 5-level triage priority, 1 (Resuscitation) to 5 (Non-Urgent). */
+export type TriageLevel = 1 | 2 | 3 | 4 | 5;
+
 export interface AdmissionTriage {
+  triageLevel: TriageLevel | null;
   triageTime: string | null;
   heartRate: number | null;
   respRate: number | null;

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
+import { TriageBadge } from '../../components/ui';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section, VITAL_FIELDS } from './PatientModalParts';
 import { getRoomDestination, setRoomDestination } from './roomDestinations';
@@ -169,7 +170,11 @@ export function PatientDetailModal({
             </Section>
           )}
 
-          <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Vital signs recorded at admission">
+          <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Priority and vital signs recorded at triage">
+            <div style={{ marginBottom: 14 }}>
+              <span style={s.label}>Triage Level</span>
+              <TriageBadge level={chart.triage.level} />
+            </div>
             <div style={s.grid4}>
               {VITAL_FIELDS.map((field) => {
                 const value = chart.triage[field.key];

@@ -1,13 +1,14 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
 import { useCallback, useEffect, useState } from 'react';
-import { DataTableToolbar, StatusBadge } from '../../components/ui';
+import { DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useTableState } from '../../hooks/useTableState';
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
 import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
+import { triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
@@ -136,6 +137,7 @@ export function ManagementPortalView() {
     initialFilters: { status: 'all' },
     sorters: {
       name: (patient) => patient.name,
+      triage: (patient) => triageUrgency(patient.triage?.level),
       age: (patient) => patient.age,
       daysInCare: (patient) => patient.daysInCare,
       admissionDate: (patient) => patient.admissionDateRaw,
@@ -244,6 +246,7 @@ export function ManagementPortalView() {
             title: 'Sort patients by',
             options: [
               { value: 'admissionDate', label: 'Admission date' },
+              { value: 'triage', label: 'Triage priority' },
               { value: 'daysInCare', label: 'Days in care' },
               { value: 'age', label: 'Age' },
               { value: 'name', label: 'Patient name' },
@@ -259,6 +262,7 @@ export function ManagementPortalView() {
           <thead>
             <tr style={patientTableStyles.thRow}>
               <th style={patientTableStyles.th}>Patient</th>
+              <th style={patientTableStyles.th}>Triage</th>
               <th style={patientTableStyles.th}>Sex</th>
               <th style={patientTableStyles.th}>Age</th>
               <th style={patientTableStyles.th}>Admitted</th>
@@ -285,6 +289,9 @@ export function ManagementPortalView() {
                       <span style={{ ...patientTableStyles.dot, backgroundColor: statusColor(p.status ?? 'admitted') }} />
                       <span style={patientTableStyles.name}>{p.name}</span>
                     </div>
+                  </td>
+                  <td style={patientTableStyles.td}>
+                    <TriageBadge level={p.triage?.level} compact />
                   </td>
                   <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.gender}</td>
                   <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.age}</td>
@@ -319,7 +326,7 @@ export function ManagementPortalView() {
               <tr>
                 <td
                   style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                  colSpan={7}
+                  colSpan={8}
                 >
                   {patients.length === 0
                     ? 'No patients are currently admitted.'

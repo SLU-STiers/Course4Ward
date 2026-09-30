@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import type { PatientClass, Sex } from '../../types';
+import type { PatientClass, Sex, TriageLevel } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { formatDateMedium } from '../../lib/format';
 import { SEX_LABEL } from '../../lib/patient';
+import { TRIAGE_LEVELS, triageLevelInfo } from '../../lib/triage';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { setRoomDestination } from './roomDestinations';
@@ -72,6 +73,8 @@ export type AddPatientFormResult = {
   registrationOrderChannel: OrderChannel;
   physicianId: string;
   consultingPhysicianIds: string[];
+  /** 5-level triage priority; null until the nurse picks one. */
+  triageLevel: TriageLevel | null;
   triageTime: string;
   heartRate: string;
   respRate: string;
@@ -91,6 +94,7 @@ const emptyForm = (): AddPatientFormResult => ({
   registrationOrderChannel: '',
   physicianId: '',
   consultingPhysicianIds: [],
+  triageLevel: null,
   triageTime: '',
   heartRate: '',
   respRate: '',
@@ -130,6 +134,7 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       ...draft.form,
       age: String(draft.form?.age ?? ''),
       gender: toSex(draft.form?.gender),
+      triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
     };
     // Fields of older versions of this form.
     for (const legacy of ['admissionStatus', 'admissionOrder', 'admissionOrderChannel']) {
@@ -298,6 +303,7 @@ export function AddPatientModal({
         }),
         physicianId: form.physicianId,
         additionalPhysicianIds: form.consultingPhysicianIds,
+        triageLevel: form.triageLevel ?? undefined,
         triageTime: form.triageTime || undefined,
         heartRate: toNumber(form.heartRate),
         respRate: toNumber(form.respRate),
@@ -325,6 +331,7 @@ export function AddPatientModal({
   };
 
   const attending = physicianById(form.physicianId);
+  const selectedTriage = triageLevelInfo(form.triageLevel);
 
   return (
     <div style={ui.overlay} onClick={onClose}>
@@ -479,7 +486,40 @@ export function AddPatientModal({
             </Section>
           )}
 
-          <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Initial vital signs — leave blank if not taken">
+          <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Priority level and initial vital signs — leave blank if not taken">
+            <div style={{ marginBottom: 14 }}>
+              <span style={s.label}>Triage Level</span>
+              <div style={s.triageLevels} role="radiogroup" aria-label="Triage level">
+                {TRIAGE_LEVELS.map((info) => {
+                  const active = form.triageLevel === info.level;
+                  return (
+                    <button
+                      key={info.level}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      title={`${info.name} (${info.tag}) — ${info.target}`}
+                      style={{
+                        ...s.triageLevel,
+                        ...(active
+                          ? { backgroundColor: info.background, borderColor: info.color, color: info.color }
+                          : {}),
+                      }}
+                      // Clicking the chosen level again clears it.
+                      onClick={() => setField('triageLevel', active ? null : info.level)}
+                    >
+                      <span style={s.triageLevelNumber}>Level {info.level}</span>
+                      <span style={s.triageLevelName}>{info.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ margin: '8px 0 0', fontSize: 12, color: '#64748b' }}>
+                {selectedTriage
+                  ? `${selectedTriage.tag} · ${selectedTriage.target}: ${selectedTriage.description} e.g. ${selectedTriage.examples}.`
+                  : 'Level 1 is the most urgent. The attending physician sees this priority in their patient list.'}
+              </p>
+            </div>
             <div style={s.grid4}>
               <TimePickerField value={form.triageTime} onChange={(v) => setField('triageTime', v)} />
               <Vital label="Heart Rate" unit="bpm" type="number" min={20} max={300} value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" />
