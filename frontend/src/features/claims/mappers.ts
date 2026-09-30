@@ -34,6 +34,12 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
       doctor: summaryOrder.orderedBy
         ? `${summaryOrder.orderedBy.firstName} ${summaryOrder.orderedBy.lastName}`
         : 'Attending physician',
+      /* Nurse execution state — the timeline renders it via OrderStatusSummary. */
+      status: summaryOrder.status,
+      type: summaryOrder.type,
+      nurseComment: summaryOrder.nurseComment,
+      executedAt: summaryOrder.executedAt,
+      executedBy: summaryOrder.executedBy,
     })),
   };
 }

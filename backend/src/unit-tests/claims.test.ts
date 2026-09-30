@@ -241,6 +241,7 @@ describe("Claims Module", () => {
                       select: { admissionDate: true, dischargeDate: true },
                     },
                     orderedBy: { select: { firstName: true, lastName: true } },
+                    executedBy: { select: { firstName: true, lastName: true } },
                   },
                 },
               },

@@ -23,6 +23,17 @@ export type SubmittedOrderTimelineEntry = {
   content: string;
 };
 
+/**
+ * The card's default order-text style. A `renderContent` that adds to the body
+ * should spread this so the extra markup keeps the shared type scale instead of
+ * re-declaring the 12px / #334155 numbers in a third place.
+ */
+export const ORDER_TEXT_STYLE: CSSProperties = {
+  fontSize: '12px',
+  color: '#334155',
+  lineHeight: '1.4',
+};
+
 type SubmittedOrdersTimelineProps = {
   title?: string;
   /** Renders the standard prev / date / next cluster, identical to Claims. */
@@ -133,7 +144,7 @@ const styles: Record<string, CSSProperties> = {
     color: '#0f172a',
     marginBottom: '6px',
   },
-  orderContent: { fontSize: '12px', color: '#334155', lineHeight: '1.4' },
+  orderContent: ORDER_TEXT_STYLE,
   empty: { padding: '24px', color: '#64748b', fontSize: '13px' },
   footer: { marginTop: '12px', flexShrink: 0 },
 };

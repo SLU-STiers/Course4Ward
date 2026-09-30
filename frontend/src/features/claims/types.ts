@@ -1,5 +1,7 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
+import type { OrderExecutionState } from '../../components/orders/orderStatus';
+
 
 export type TabType = 'overview' | 'requests' | 'export';
 export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4' | 'summary';
@@ -24,8 +26,20 @@ export interface SummarizationRequest {
     admissionDate: string;
   };
   summaryText: string;
-  /** `id` is the physician order's own id — unique per order, never per claim. */
-  orders: Array<{ id: string; content: string; dateCreated: string; doctor: string }>;
+  /**
+   * `id` is the physician order's own id — unique per order, never per claim.
+   * Carries the nurse's execution state (`OrderExecutionState`) so the timeline
+   * can render the same status badge, type tag, executor and note the physician
+   * sees, not just the raw order text.
+   */
+  orders: Array<
+    OrderExecutionState & {
+      id: string;
+      content: string;
+      dateCreated: string;
+      doctor: string;
+    }
+  >;
 }
 export interface CF4Patient {
   id: string;

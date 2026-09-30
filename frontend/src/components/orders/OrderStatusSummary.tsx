@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { StatusBadge } from '../ui';
 import { formatDateMedium, formatTimeMedium } from '../../lib/format';
-import type { PhysicianOrder } from '../../types';
+import type { OrderExecutionState } from './orderStatus';
 import { ORDER_STATUS_OPTIONS } from './orderStatus';
 import { orderTypeLabel } from './orderType';
 
@@ -40,7 +40,7 @@ const styles: Record<string, CSSProperties> = {
 };
 
 type OrderStatusSummaryProps = {
-  order: PhysicianOrder;
+  order: OrderExecutionState;
   /** Rendered at the end of the status row, e.g. the nurse's "Update status" link. */
   action?: ReactNode;
   /** Hide the nurse note, e.g. while it is being edited. */

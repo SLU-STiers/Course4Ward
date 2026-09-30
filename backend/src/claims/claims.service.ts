@@ -91,6 +91,9 @@ export class ClaimsService {
               include: {
                 admission: { select: { admissionDate: true, dischargeDate: true } },
                 orderedBy: { select: { firstName: true, lastName: true } },
+                // Who the nurse executed the order and when -- the claims
+                // timeline shows the same execution state as the physician's.
+                executedBy: { select: { firstName: true, lastName: true } },
               },
             },
           },
