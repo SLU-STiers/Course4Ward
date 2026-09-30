@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, OrderType, PhysicianOrder } from '../../types';
-import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
+import { Button, DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
@@ -19,6 +19,7 @@ import { manage } from './styles';
 
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
 import { mapPatient } from './patient';
+import { triageUrgency } from '../../lib/triage';
 import { mergeSummaries, summariesPerDay } from './summaries';
 import type { DashboardPatient } from './types';
 
@@ -114,6 +115,7 @@ export function ManageView() {
     sorters: {
       name: (p) => p.name,
       admitted: (p) => p.admissionDateRaw,
+      triage: (p) => triageUrgency(p.triageLevel),
       days: (p) => p.daysInCare,
       age: (p) => p.age ?? -1,
     },
@@ -569,6 +571,7 @@ export function ManageView() {
               title: "Sort patients by",
               options: [
                 { value: "admitted", label: "Admission date" },
+                { value: "triage", label: "Triage priority" },
                 { value: "days", label: "Days in care" },
                 { value: "age", label: "Age" },
                 { value: "name", label: "Patient name" },
@@ -591,6 +594,7 @@ export function ManageView() {
               <thead>
                 <tr style={patientTableStyles.thRow}>
                   <th style={patientTableStyles.th}>Patient</th>
+                  <th style={patientTableStyles.th}>Triage</th>
                   <th style={patientTableStyles.th}>Sex</th>
                   <th style={patientTableStyles.th}>Age</th>
                   <th style={patientTableStyles.th}>Admitted</th>
@@ -631,6 +635,9 @@ export function ManageView() {
                           <span style={patientTableStyles.name}>{p.name}</span>
                         </div>
                       </td>
+                      <td style={patientTableStyles.td}>
+                        <TriageBadge level={p.triageLevel} compact />
+                      </td>
                       <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
                         {p.gender}
                       </td>
@@ -653,7 +660,7 @@ export function ManageView() {
                   <tr>
                     <td
                       style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                      colSpan={6}
+                      colSpan={7}
                     >
                       {admittedPatients.length === 0
                         ? "You have no admitted patients assigned to you."

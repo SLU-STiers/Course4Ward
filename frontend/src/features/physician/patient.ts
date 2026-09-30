@@ -21,6 +21,7 @@ export function mapPatient(patient: Patient): DashboardPatient {
     admissionDate: admissionDate ? formatDateNumeric(admissionDate) : "—",
     admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : "",
     daysInCare: daysInCare(admissionDate, currentAdmission?.dischargeDate),
+    triageLevel: currentAdmission?.triage?.triageLevel ?? null,
     color: statusColor(status),
     status,
     admissions: patient.admissions,

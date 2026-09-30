@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import { StatusBadge } from '../../components/ui';
+import { StatusBadge, TriageBadge } from '../../components/ui';
 import { overview, TEAL } from './styles';
 
 import { CalendarWidget } from './CalendarWidget';
@@ -108,6 +108,7 @@ export function OverviewView() {
                 <tr>
                   <th style={{ ...overview.th, width: 22 }} />
                   <th style={overview.th}>Patient</th>
+                  <th style={overview.th}>Triage</th>
                   <th style={overview.th}>Sex</th>
                   <th style={overview.th}>Admitted</th>
                   <th style={overview.th}>Days in care</th>
@@ -134,6 +135,9 @@ export function OverviewView() {
                     }}
                   >
                     {p.name}
+                  </td>
+                  <td style={overview.td}>
+                    <TriageBadge level={p.triageLevel} compact />
                   </td>
                   <td style={{ ...overview.td, color: "#64748b" }}>
                     {p.gender}
