@@ -15,6 +15,8 @@ export type DashboardPatient = {
   admissionDate: string;
   /** Raw ISO admission date — used for filtering/sorting, never displayed. */
   admissionDateRaw: string;
+  /** Full ISO admission timestamp (or null) — triage queue tie-break. */
+  admittedAt: string | null;
   daysInCare: number;
   /** 5-level triage priority of the current admission; null when not triaged. */
   triageLevel: TriageLevel | null;

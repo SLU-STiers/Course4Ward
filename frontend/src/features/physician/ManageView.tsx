@@ -19,7 +19,7 @@ import { manage } from './styles';
 
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
 import { mapPatient } from './patient';
-import { triageUrgency } from '../../lib/triage';
+import { triageQueueKey } from '../../lib/triage';
 import { mergeSummaries, summariesPerDay } from './summaries';
 import type { DashboardPatient } from './types';
 
@@ -115,11 +115,12 @@ export function ManageView() {
     sorters: {
       name: (p) => p.name,
       admitted: (p) => p.admissionDateRaw,
-      triage: (p) => triageUrgency(p.triageLevel),
+      triage: (p) => triageQueueKey(p.triageLevel, p.admittedAt),
       days: (p) => p.daysInCare,
       age: (p) => p.age ?? -1,
     },
-    initialSort: { field: "admitted", direction: "descending" },
+    // Most urgent first, longest waiting first within a level.
+    initialSort: { field: "triage", direction: "descending" },
   });
 
   // Keep the selection on a patient that still matches the active filters.

@@ -8,6 +8,7 @@ import { overview, TEAL } from './styles';
 import { CalendarWidget } from './CalendarWidget';
 import { BedIcon, HeartIcon, WheelchairIcon } from './icons';
 import { mapPatient } from './patient';
+import { triageQueueKey } from '../../lib/triage';
 import { TodoListWidget } from './TodoListWidget';
 import type { DashboardPatient, OverviewFilter } from './types';
 
@@ -28,8 +29,20 @@ export function OverviewView() {
   const dischargedCount = patients.filter(
     (p) => p.status === "discharged",
   ).length;
-  const filteredPatients =
-    filter === "all" ? patients : patients.filter((p) => p.status === filter);
+  // Active patients first, most urgent then longest waiting; discharged
+  // patients after them in their existing (most recently updated) order.
+  const filteredPatients = (
+    filter === "all" ? patients : patients.filter((p) => p.status === filter)
+  )
+    .slice()
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "admitted" ? -1 : 1;
+      if (a.status === "discharged") return 0;
+      return (
+        triageQueueKey(b.triageLevel, b.admittedAt) -
+        triageQueueKey(a.triageLevel, a.admittedAt)
+      );
+    });
 
   const pageCount = Math.max(1, Math.ceil(filteredPatients.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);

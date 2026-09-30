@@ -96,3 +96,14 @@ export function triageUrgency(level: number | null | undefined): number {
   const info = triageLevelInfo(level);
   return info ? TRIAGE_LEVELS.length + 1 - info.level : 0;
 }
+
+/**
+ * Queue sort key for a descending sort: most urgent level first, and within a
+ * level the patient who arrived earliest (waited longest) first. Urgency is
+ * scaled past any epoch-ms timestamp so it always outranks arrival time.
+ * A missing arrival counts as just now, i.e. the shortest wait.
+ */
+export function triageQueueKey(level: number | null | undefined, arrivedAt?: string | null): number {
+  const arrived = arrivedAt ? new Date(arrivedAt).getTime() : NaN;
+  return triageUrgency(level) * 1e13 - (Number.isFinite(arrived) ? arrived : Date.now());
+}
