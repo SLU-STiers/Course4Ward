@@ -28,6 +28,8 @@ export type NursePatient = {
   assignedDoctor?: string | null;
   additionalDoctors?: string[];
   contact?: PatientContactDetails;
+  /** Ward room number of an admitted patient. */
+  room?: string;
 };
 /** Registration contact and background details, as display strings ('' when not recorded). */
 export type PatientContactDetails = {
@@ -51,6 +53,8 @@ export type PatientChart = {
   /** First entry is the attending physician; the rest are consulting physicians. */
   assignedDoctors: string[];
   contact?: PatientContactDetails;
+  /** Ward room number of an admitted patient. */
+  room?: string;
 };
 export type OrderSet = {
   dateKey: string;

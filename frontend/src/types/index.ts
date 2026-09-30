@@ -78,6 +78,16 @@ export interface PatientAdmission {
   additionalPhysicians?: { physician: { id: string; firstName: string; lastName: string } }[];
   /** Full triage row for nurses and physicians; claims payloads include it on the order's admission. */
   triage?: AdmissionTriage | null;
+  /** Ward room of an admitted patient. */
+  room?: { id: string; number: string } | null;
+}
+
+/** A ward room, occupied while an undischarged admission holds it. */
+export interface WardRoom {
+  id: string;
+  number: string;
+  occupied: boolean;
+  occupiedByAdmissionId: string | null;
 }
 
 /** 5-level triage priority, 1 (Resuscitation) to 5 (Non-Urgent). */

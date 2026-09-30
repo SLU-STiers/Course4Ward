@@ -5,7 +5,7 @@ import { patientsApi } from '../../services/domainApi';
 import { TriageAssessmentPanel } from '../../components/patients/TriageAssessmentPanel';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
-import { getRoomDestination, setRoomDestination } from './roomDestinations';
+import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { OBSERVATION_LIMIT_HOURS, hoursSince } from '../../lib/patient';
 
 import type { AdmissionStatus, PatientChart } from './types';
@@ -25,6 +25,7 @@ export function PatientDetailModal({
   actionBusy = false,
   actionError,
   onCareTeamChanged,
+  onRoomChanged,
 }: {
   /** `classSince`: when the patient entered their current class (observation timer). */
   chart: PatientChart & { classSince?: string };
@@ -46,6 +47,8 @@ export function PatientDetailModal({
   actionError?: string | null;
   /** When provided (and the patient is not discharged), nurses can add consulting physicians. */
   onCareTeamChanged?: () => void;
+  /** Called after the admitted patient's room is saved, to reload the list. */
+  onRoomChanged?: () => void;
 }) {
   const [attending, ...consulting] = chart.assignedDoctors;
   const badge: AdmissionStatus = status ?? 'Admitted';
@@ -181,7 +184,12 @@ export function PatientDetailModal({
 
           {badge === 'Admitted' && (
             <Section icon={SECTION_ICONS.room} title="Room Destination" hint="Ward room for the admitted patient">
-              <RoomDestinationField key={chart.recordId} admissionId={chart.recordId} />
+              <RoomDestinationField
+                key={`${chart.recordId}:${chart.room ?? ''}`}
+                admissionId={chart.recordId}
+                currentRoom={chart.room ?? ''}
+                onSaved={onRoomChanged}
+              />
             </Section>
           )}
 
@@ -303,21 +311,48 @@ export function PatientDetailModal({
   );
 }
 
-function RoomDestinationField({ admissionId }: { admissionId: string }) {
-  const [room, setRoom] = useState(() => getRoomDestination(admissionId));
-  const [draft, setDraft] = useState(room);
-  const [editing, setEditing] = useState(!room);
+function RoomDestinationField({
+  admissionId,
+  currentRoom,
+  onSaved,
+}: {
+  admissionId: string;
+  currentRoom: string;
+  onSaved?: () => void;
+}) {
+  const [room, setRoom] = useState(currentRoom);
+  const [draft, setDraft] = useState(currentRoom);
+  const [editing, setEditing] = useState(!currentRoom);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { rooms, failed, reload } = useWardRooms(editing);
 
-  const save = () => {
-    const value = draft.trim();
-    if (!value) return;
-    setRoomDestination(admissionId, value);
-    setRoom(value);
-    setEditing(false);
+  const typed = normalizeRoom(draft);
+  const problem = roomProblem(draft, rooms, admissionId);
+  const canSave = Boolean(typed) && !problem && !saving && typed !== room;
+
+  const save = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { data } = await patientsApi.assignRoom(admissionId, typed);
+      setRoom(data.room?.number ?? typed);
+      setEditing(false);
+      onSaved?.();
+    } catch (err: any) {
+      // Someone may have just taken the room: refresh what is free.
+      reload();
+      const message = err?.response?.data?.message;
+      setError(Array.isArray(message) ? message.join(', ') : message || 'Could not save the room.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const cancel = () => {
     setDraft(room);
+    setError(null);
     setEditing(!room);
   };
 
@@ -326,13 +361,13 @@ function RoomDestinationField({ admissionId }: { admissionId: string }) {
       <div>
         <span style={s.label}>Room Number</span>
         <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ ...s.readValue, flex: 1 }}>{room}</div>
+          <div style={{ ...s.readValue, flex: 1 }}>Room {room}</div>
           <button
             type="button"
             style={{ ...ui.outlineBtn, height: 40 }}
             onClick={() => setEditing(true)}
           >
-            Edit
+            Change
           </button>
         </div>
       </div>
@@ -342,37 +377,42 @@ function RoomDestinationField({ admissionId }: { admissionId: string }) {
   return (
     <div>
       <span style={s.label}>Room Number</span>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input
-          style={{ ...s.input, flex: 1 }}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') save();
-            if (e.key === 'Escape') cancel();
-          }}
-          placeholder="e.g. Room 305"
-          maxLength={20}
-          aria-label="Room number"
-        />
+      <RoomPicker
+        value={draft}
+        onChange={(value) => {
+          setDraft(value);
+          setError(null);
+        }}
+        rooms={rooms}
+        failed={failed}
+        admissionId={admissionId}
+        disabled={saving}
+      />
+      {error && (
+        <div style={{ ...s.error, marginTop: 10 }} role="alert">
+          <span aria-hidden="true">⚠</span>
+          {error}
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+        {room && (
+          <button type="button" style={{ ...ui.outlineBtn, height: 40 }} onClick={cancel} disabled={saving}>
+            Cancel
+          </button>
+        )}
         <button
           type="button"
           style={{
             ...ui.outlineBtn,
             height: 40,
-            opacity: draft.trim() ? 1 : 0.5,
-            cursor: draft.trim() ? 'pointer' : 'not-allowed',
+            opacity: canSave ? 1 : 0.5,
+            cursor: canSave ? 'pointer' : 'not-allowed',
           }}
           onClick={save}
-          disabled={!draft.trim()}
+          disabled={!canSave}
         >
-          {room ? 'Save' : '+ Add'}
+          {saving ? 'Saving...' : room ? 'Save Room' : '+ Assign Room'}
         </button>
-        {room && (
-          <button type="button" style={{ ...ui.outlineBtn, height: 40 }} onClick={cancel}>
-            Cancel
-          </button>
-        )}
       </div>
     </div>
   );

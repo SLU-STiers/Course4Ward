@@ -99,6 +99,7 @@ export function PatientView() {
         ],
         triage: triageForDisplay(viewingAdmission),
         contact: contactDetailsOf(viewingPatient),
+        room: viewingAdmission?.room?.number,
         classSince: viewingAdmission?.classSince,
       }
     : null;
@@ -286,6 +287,7 @@ export function PatientView() {
           onClose={() => setViewingName(null)}
           status={viewingRecord?.status}
           onCareTeamChanged={reload}
+          onRoomChanged={reload}
           onDischarge={
             viewingRecord && viewingRecord.status !== 'Discharged'
               ? () => runAdmissionAction(() => patientsApi.discharge(viewingRecord.id))

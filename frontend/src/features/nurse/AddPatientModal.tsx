@@ -9,7 +9,7 @@ import { INSURANCE_LABEL, SEX_LABEL } from '../../lib/patient';
 import { TRIAGE_LEVELS, triageLevelInfo } from '../../lib/triage';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
-import { setRoomDestination } from './roomDestinations';
+import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { TimePickerField } from './TimePickerField';
 
 type PhysicianOption = {
@@ -208,7 +208,6 @@ export function AddPatientModal({
   const [form, setForm] = useState<AddPatientFormResult>(() => initialDraft?.form ?? emptyForm());
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
   const [pendingDoctorId, setPendingDoctorId] = useState('');
-  // Not sent to the API; kept in the in-memory room store only.
   const [roomNumber, setRoomNumber] = useState(() => initialDraft?.roomNumber ?? '');
   const [draftRestored, setDraftRestored] = useState(initialDraft !== null);
   const [ageTouched, setAgeTouched] = useState(initialDraft !== null);
@@ -219,6 +218,7 @@ export function AddPatientModal({
   const classOption =
     CLASS_OPTIONS.find((option) => option.value === form.patientClass) ?? CLASS_OPTIONS[0];
   const toWard = form.patientClass === 'INPATIENT';
+  const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(toWard);
   /** 'Admission' when the class needs a physician order. */
   const orderName = classOption.order;
   const showAgeError = ageTouched && ageMessage !== null;
@@ -311,10 +311,19 @@ export function AddPatientModal({
       setError(`Enter the physician's ${orderName.toLowerCase()} order, or register the patient as Outpatient.`);
       return;
     }
+    if (toWard) {
+      const problem = normalizeRoom(roomNumber)
+        ? roomProblem(roomNumber, rooms)
+        : 'Please enter the room number';
+      if (problem) {
+        setError(`${problem}.`);
+        return;
+      }
+    }
 
     setSaving(true);
     try {
-      const { data: created } = await patientsApi.create({
+      await patientsApi.create({
         firstName,
         lastName,
         age: Number(form.age),
@@ -327,6 +336,7 @@ export function AddPatientModal({
           registrationOrder,
           registrationOrderChannel: form.registrationOrderChannel || undefined,
         }),
+        roomNumber: toWard ? normalizeRoom(roomNumber) : undefined,
         contactNumber: form.contactNumber.trim() || undefined,
         address: form.address.trim() || undefined,
         insurance: form.insurance || undefined,
@@ -347,12 +357,12 @@ export function AddPatientModal({
         pain: toNumber(form.pain),
         notes: form.notes || undefined,
       });
-      const admissionId = created.admissions?.[0]?.id;
-      if (toWard && admissionId) setRoomDestination(admissionId, roomNumber);
       saveDraft(null);
       onCreated();
       onClose();
     } catch (err: any) {
+      // Someone may have just taken the room: refresh what is free.
+      if (toWard) reloadRooms();
       const message = err?.response?.data?.message;
       setError(
         Array.isArray(message)
@@ -588,18 +598,16 @@ export function AddPatientModal({
 
           {toWard && (
             <Section icon={SECTION_ICONS.room} title="Room Destination" hint="Ward room for the admitted patient">
-              <div style={s.grid2}>
-                <Field label="Room Number" required>
-                  <input
-                    style={s.input}
-                    value={roomNumber}
-                    onChange={(e) => setRoomNumber(e.target.value)}
-                    placeholder="e.g. Room 305"
-                    maxLength={20}
-                    required
-                  />
-                </Field>
-              </div>
+              <span style={s.label}>
+                Room Number<span style={s.required}>*</span>
+              </span>
+              <RoomPicker
+                value={roomNumber}
+                onChange={setRoomNumber}
+                rooms={rooms}
+                failed={roomsFailed}
+                disabled={saving}
+              />
             </Section>
           )}
 

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InsuranceType, OrderEnteredBy, OrderType, PatientClass, Role } from '@prisma/client';
+import { InsuranceType, OrderEnteredBy, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
@@ -40,6 +40,15 @@ export const triageSelect = {
     recordedBy: { select: { firstName: true, lastName: true } },
   },
 };
+
+const roomSelect = { select: { id: true, number: true } };
+
+/** Room checks and writes run serializably so two nurses cannot take the same room at once. */
+const ROOM_TX = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable };
+
+function isSerializationFailure(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
+}
 
 const additionalPhysiciansSelect = {
   orderBy: { createdAt: 'asc' as const },
@@ -120,6 +129,9 @@ export class PatientsService {
         `No order is entered when registering a patient as ${CLASS_LABEL[patientClass]}`,
       );
     }
+    if (dto.roomNumber && patientClass !== PatientClass.INPATIENT) {
+      throw new BadRequestException('A room can only be assigned to an admitted patient');
+    }
 
     const additionalPhysicianIds = [...new Set(dto.additionalPhysicianIds ?? [])].filter(
       (id) => id !== dto.physicianId,
@@ -136,7 +148,7 @@ export class PatientsService {
     const initialAssessment = (dto.notes ?? dto.initialAssessment ?? '').trim() || null;
     const triage = buildTriage(dto, nurseId);
 
-    const patient = await this.prisma.patient.create({
+    const createPatient = (db: Prisma.TransactionClient, roomId: string | null) => db.patient.create({
       data: {
         firstName: dto.firstName.trim(),
         lastName: dto.lastName.trim(),
@@ -157,6 +169,7 @@ export class PatientsService {
             classSince: admissionDate,
             initialAssessment,
             physicianId: dto.physicianId,
+            roomId,
             additionalPhysicians: additionalPhysicianIds.length
               ? { create: additionalPhysicianIds.map((physicianId) => ({ physicianId })) }
               : undefined,
@@ -191,10 +204,18 @@ export class PatientsService {
             physician: { select: { id: true, firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
             triage: triageSelect,
+            room: roomSelect,
           },
         },
       },
     });
+
+    const roomNumber = dto.roomNumber;
+    const patient = roomNumber
+      ? await this.inRoomTransaction(async (tx) =>
+          createPatient(tx, await this.freeRoomId(tx, roomNumber)),
+        )
+      : await createPatient(this.prisma, null);
 
     await this.auditLog.record({
       userId: nurseId,
@@ -235,6 +256,7 @@ export class PatientsService {
                   physician: { select: { firstName: true, lastName: true } },
                   additionalPhysicians: additionalPhysiciansSelect,
                   triage: triageSelect,
+                  room: roomSelect,
                 },
               }
             : {
@@ -246,6 +268,7 @@ export class PatientsService {
                   classSince: true,
                   initialAssessment: true,
                   triage: triageSelect,
+                  room: roomSelect,
                 },
               }),
         },
@@ -270,11 +293,89 @@ export class PatientsService {
             physician: { select: { firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
             triage: triageSelect,
+            room: roomSelect,
           },
         },
       },
       orderBy: { updatedAt: 'desc' },
     });
+  }
+
+  /** Active ward rooms, each flagged as occupied while an undischarged admission holds it. */
+  async listRooms() {
+    const rooms = await this.prisma.room.findMany({
+      where: { isActive: true },
+      orderBy: { number: 'asc' },
+      select: {
+        id: true,
+        number: true,
+        admissions: { where: { dischargeDate: null }, select: { id: true }, take: 1 },
+      },
+    });
+    return rooms.map(({ admissions, ...room }) => ({
+      ...room,
+      occupied: admissions.length > 0,
+      occupiedByAdmissionId: admissions[0]?.id ?? null,
+    }));
+  }
+
+  /** Assigns an admitted patient to a free room, moves them to another, or clears it (`null`). */
+  async assignRoom(admissionId: string, roomNumber: string | null, userId: string) {
+    const admission = await this.inRoomTransaction(async (tx) => {
+      const current = await tx.patientAdmission.findUnique({
+        where: { id: admissionId },
+        select: { dischargeDate: true, patientClass: true },
+      });
+      if (!current) throw new NotFoundException('Admission not found');
+      if (current.dischargeDate) {
+        throw new BadRequestException('Cannot assign a room to a discharged patient');
+      }
+      if (current.patientClass !== PatientClass.INPATIENT) {
+        throw new BadRequestException('A room can only be assigned to an admitted patient');
+      }
+      const roomId = roomNumber ? await this.freeRoomId(tx, roomNumber, admissionId) : null;
+      return tx.patientAdmission.update({
+        where: { id: admissionId },
+        data: { roomId },
+        select: { id: true, room: roomSelect },
+      });
+    });
+
+    await this.auditLog.record({ userId, action: 'PATIENT_UPDATED' });
+    return admission;
+  }
+
+  /** The id of room `number`, if it exists and no other undischarged admission holds it. */
+  private async freeRoomId(tx: Prisma.TransactionClient, number: string, exceptAdmissionId?: string) {
+    const room = await tx.room.findUnique({
+      where: { number },
+      select: {
+        id: true,
+        isActive: true,
+        admissions: {
+          where: {
+            dischargeDate: null,
+            ...(exceptAdmissionId ? { id: { not: exceptAdmissionId } } : {}),
+          },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    });
+    if (!room || !room.isActive) throw new NotFoundException(`Room ${number} does not exist`);
+    if (room.admissions.length) throw new ConflictException(`Room ${number} is occupied`);
+    return room.id;
+  }
+
+  private async inRoomTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
+    try {
+      return await this.prisma.$transaction(fn, ROOM_TX);
+    } catch (error) {
+      if (isSerializationFailure(error)) {
+        throw new ConflictException('That room was just taken by another patient; choose another room');
+      }
+      throw error;
+    }
   }
 
   async findOne(id: string) {

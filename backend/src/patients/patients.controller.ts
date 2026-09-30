@@ -16,6 +16,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PatientsService } from './patients.service';
 import {
   AddConsultingPhysicianDto,
+  AssignRoomDto,
   CreatePatientDto,
   UpdatePatientDto,
 } from './dto/patient.dto';
@@ -37,6 +38,12 @@ export class PatientsController {
   @Roles(Role.NURSE)
   listPhysicians() {
     return this.patientsService.listPhysicians();
+  }
+
+  @Get('rooms')
+  @Roles(Role.NURSE)
+  listRooms() {
+    return this.patientsService.listRooms();
   }
 
   @Get()
@@ -85,6 +92,12 @@ export class PatientsController {
   @Roles(Role.NURSE)
   observe(@Param('id') id: string, @CurrentUser() user: any) {
     return this.patientsService.observeAdmission(id, user.id);
+  }
+
+  @Patch('admissions/:id/room')
+  @Roles(Role.NURSE)
+  assignRoom(@Param('id') id: string, @Body() dto: AssignRoomDto, @CurrentUser() user: any) {
+    return this.patientsService.assignRoom(id, dto.roomNumber, user.id);
   }
 
   @Post('admissions/:id/consulting-physicians')

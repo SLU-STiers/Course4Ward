@@ -24,6 +24,10 @@ import { CommunicationChannel, InsuranceType, PatientClass, Sex } from '@prisma/
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
+/** "room 101", " Rm. 101 " and "101" all name room 101. */
+export const normalizeRoom = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim().replace(/^(room|rm\.?)\s*/i, '').toUpperCase() : value;
+
 /** Digits with optional +, spaces, dashes and parentheses; 7–20 characters. */
 const PHONE_PATTERN = /^\+?[0-9()\-\s]{7,20}$/;
 const PHONE_MESSAGE = (field: string) =>
@@ -144,6 +148,14 @@ export class CreatePatientDto {
   @IsEnum(CommunicationChannel)
   registrationOrderChannel?: CommunicationChannel;
 
+  @ApiPropertyOptional({ description: 'Ward room number; only for INPATIENT registrations', example: '101' })
+  @IsOptional()
+  @Transform(normalizeRoom)
+  @IsString()
+  @IsNotEmpty({ message: 'The room number must not be empty' })
+  @MaxLength(20)
+  roomNumber?: string;
+
   @ApiProperty({ description: 'Attending physician user id (UUID)' })
   @IsUUID()
   physicianId: string;
@@ -236,6 +248,16 @@ export class AddConsultingPhysicianDto {
   @ApiProperty({ description: 'Physician user id (UUID) to add as a consultant' })
   @IsUUID()
   physicianId: string;
+}
+
+export class AssignRoomDto {
+  @ApiProperty({ description: 'Ward room number, or null to clear the room', example: '101', nullable: true, type: String })
+  @ValidateIf((dto: AssignRoomDto) => dto.roomNumber !== null)
+  @Transform(normalizeRoom)
+  @IsString()
+  @IsNotEmpty({ message: 'The room number must not be empty' })
+  @MaxLength(20)
+  roomNumber: string | null;
 }
 
 export class UpdatePatientDto {

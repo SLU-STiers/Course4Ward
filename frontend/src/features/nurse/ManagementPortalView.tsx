@@ -41,6 +41,7 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     initialAssessment: admission?.initialAssessment,
     triage: triageForDisplay(admission),
     contact: contactDetailsOf(patient),
+    room: admission?.room?.number,
     patientClass: admission?.patientClass,
     classSince: admission?.classSince,
     assignedDoctor: admission?.physician
@@ -218,6 +219,7 @@ export function ManagementPortalView() {
     ],
     triage: detailPatient.triage ?? triageForDisplay(null),
     contact: detailPatient.contact,
+    room: detailPatient.room,
     classSince: detailPatient.classSince,
   } : null;
   const detailStatus: AdmissionStatus | undefined = detailPatient
@@ -415,6 +417,9 @@ export function ManagementPortalView() {
           chart={detailChart}
           status={detailStatus}
           onCareTeamChanged={() => {
+            loadPatients().catch(() => undefined);
+          }}
+          onRoomChanged={() => {
             loadPatients().catch(() => undefined);
           }}
           onClose={() => setDetailName(null)}
