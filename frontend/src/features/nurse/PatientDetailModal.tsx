@@ -161,6 +161,21 @@ export function PatientDetailModal({
               <ReadField label="Gender" value={chart.gender} />
               <ReadField label="Admission Date" value={chart.admissionDate} />
               <ReadField label="Admission Status" value={badge} />
+              <ReadField label="Personal Number" value={chart.contact?.contactNumber ?? ''} />
+              <ReadField label="Religion" value={chart.contact?.religion ?? ''} />
+              <ReadField label="Insurance" value={chart.contact?.insurance ?? ''} />
+              <div style={{ gridColumn: '1 / -1' }}>
+                <ReadField label="Address" value={chart.contact?.address ?? ''} />
+              </div>
+            </div>
+
+            <h5 style={s.subsectionTitle}>Contact Person</h5>
+            <div style={s.grid2}>
+              <ReadField label="Contact Person" value={chart.contact?.contactPersonName ?? ''} />
+              <ReadField label="Contact Number" value={chart.contact?.contactPersonNumber ?? ''} />
+              <div style={{ gridColumn: '1 / -1' }}>
+                <ReadField label="Contact Person Address" value={chart.contact?.contactPersonAddress ?? ''} />
+              </div>
             </div>
           </Section>
 

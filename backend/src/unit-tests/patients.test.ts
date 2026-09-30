@@ -20,6 +20,17 @@ import {
   SummaryStatus,
 } from "@prisma/client";
 
+const emptyContactDetails = {
+  contactNumber: null,
+  address: null,
+  insurance: null,
+  insuranceOther: null,
+  religion: null,
+  contactPersonName: null,
+  contactPersonNumber: null,
+  contactPersonAddress: null,
+};
+
 const mockPrismaService = {
   patient: {
     create: jest.fn(),
@@ -68,6 +79,7 @@ describe("Patients Module", () => {
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
+    ...emptyContactDetails,
     createdAt: new Date(),
     updatedAt: new Date(),
     admissions: [
@@ -146,6 +158,7 @@ describe("Patients Module", () => {
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
+    ...emptyContactDetails,
     createdAt: new Date(),
     updatedAt: new Date(),
     admissions: [
@@ -332,6 +345,49 @@ describe("Patients Module", () => {
         });
         const errors = await validate(dto);
         expect(errors.map((error) => error.property)).toContain("triageLevel");
+      });
+
+      const insuranceErrors = async (fields: Record<string, unknown>) => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: "MALE",
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          ...fields,
+        });
+        return (await validate(dto)).map((error) => error.property);
+      };
+
+      it.each([undefined, "", "   "])(
+        "should require the specific insurance when OTHER is chosen (%p)",
+        async (insuranceOther) => {
+          expect(await insuranceErrors({ insurance: "OTHER", insuranceOther })).toContain("insuranceOther");
+        },
+      );
+
+      it("should accept OTHER with the specific insurance", async () => {
+        expect(await insuranceErrors({ insurance: "OTHER", insuranceOther: "Intellicare" })).not.toContain(
+          "insuranceOther",
+        );
+      });
+
+      it("should not require the specific insurance for a listed option", async () => {
+        expect(await insuranceErrors({ insurance: "PHILHEALTH" })).not.toContain("insuranceOther");
+      });
+
+      it("should only store the specific insurance when OTHER is chosen", async () => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatient);
+
+        await service.create(
+          { ...mockCreatePatientDto, insurance: "HMO", insuranceOther: "Leftover text" } as any,
+          mockUser.id,
+        );
+
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ insurance: "HMO", insuranceOther: null }),
+          }),
+        );
       });
 
       it("should reject inactive or unknown physicians", async () => {

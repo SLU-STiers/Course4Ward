@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderEnteredBy, OrderType, PatientClass, Role } from '@prisma/client';
+import { InsuranceType, OrderEnteredBy, OrderType, PatientClass, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
@@ -137,6 +137,14 @@ export class PatientsService {
         lastName: dto.lastName.trim(),
         gender: dto.gender,
         dateOfBirth: resolveDateOfBirth(dto),
+        contactNumber: dto.contactNumber || null,
+        address: dto.address || null,
+        insurance: dto.insurance ?? null,
+        insuranceOther: dto.insurance === InsuranceType.OTHER ? dto.insuranceOther || null : null,
+        religion: dto.religion || null,
+        contactPersonName: dto.contactPersonName || null,
+        contactPersonNumber: dto.contactPersonNumber || null,
+        contactPersonAddress: dto.contactPersonAddress || null,
         admissions: {
           create: {
             admissionDate,

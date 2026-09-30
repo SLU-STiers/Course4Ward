@@ -8,7 +8,7 @@ import { sexLabel, statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
-import { triageForDisplay } from './PatientModalParts';
+import { contactDetailsOf, triageForDisplay } from './PatientModalParts';
 import type { AdmissionRecord } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
 import { ordersApi, patientsApi } from '../../services/domainApi';
@@ -97,6 +97,7 @@ export function PatientView() {
           ),
         ],
         triage: triageForDisplay(viewingAdmission),
+        contact: contactDetailsOf(viewingPatient),
         classSince: viewingAdmission?.classSince,
       }
     : null;

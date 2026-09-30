@@ -41,6 +41,17 @@ enum Sex {
   @@map("sex")
 }
 
+/// How the patient's care is covered, as recorded at registration.
+enum InsuranceType {
+  PHILHEALTH
+  HMO
+  PRIVATE
+  NONE
+  OTHER
+
+  @@map("insurance_type")
+}
+
 enum PatientClass {
   EMERGENCY
   OUTPATIENT
@@ -168,6 +179,15 @@ model Patient {
   lastName    String
   gender      Sex?
   dateOfBirth DateTime?
+  contactNumber String?
+  address       String?
+  insurance     InsuranceType?
+  /// The specific insurance when `insurance` is OTHER.
+  insuranceOther String?
+  religion      String?
+  contactPersonName    String?
+  contactPersonNumber  String?
+  contactPersonAddress String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

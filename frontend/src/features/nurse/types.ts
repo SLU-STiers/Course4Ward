@@ -26,6 +26,17 @@ export type NursePatient = {
   classSince?: string;
   assignedDoctor?: string | null;
   additionalDoctors?: string[];
+  contact?: PatientContactDetails;
+};
+/** Registration contact and background details, as display strings ('' when not recorded). */
+export type PatientContactDetails = {
+  contactNumber: string;
+  address: string;
+  insurance: string;
+  religion: string;
+  contactPersonName: string;
+  contactPersonNumber: string;
+  contactPersonAddress: string;
 };
 export type TriageAssessment = {
   /** 5-level triage priority; null when none was recorded. */
@@ -48,6 +59,7 @@ export type PatientChart = {
   triage: TriageAssessment;
   /** First entry is the attending physician; the rest are consulting physicians. */
   assignedDoctors: string[];
+  contact?: PatientContactDetails;
 };
 export type OrderSet = {
   dateKey: string;

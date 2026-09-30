@@ -12,7 +12,7 @@ import { triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
-import { triageForDisplay } from './PatientModalParts';
+import { contactDetailsOf, triageForDisplay } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
@@ -40,6 +40,7 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     daysInCare: daysInCare(admissionDate, admission?.dischargeDate),
     initialAssessment: admission?.initialAssessment,
     triage: triageForDisplay(admission),
+    contact: contactDetailsOf(patient),
     patientClass: admission?.patientClass,
     classSince: admission?.classSince,
     assignedDoctor: admission?.physician
@@ -216,6 +217,7 @@ export function ManagementPortalView() {
       ...(detailPatient.additionalDoctors ?? []),
     ],
     triage: detailPatient.triage ?? triageForDisplay(null),
+    contact: detailPatient.contact,
     classSince: detailPatient.classSince,
   } : null;
   const detailStatus: AdmissionStatus | undefined = detailPatient
