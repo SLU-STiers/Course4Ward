@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import type { PatientClass } from '../../types';
+import type { PatientClass, Sex } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { formatDateMedium } from '../../lib/format';
+import { SEX_LABEL } from '../../lib/patient';
 import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { setRoomDestination } from './roomDestinations';
@@ -59,7 +60,8 @@ export type AddPatientFormResult = {
   lastName: string;
   /** Kept as typed text so an empty field is distinguishable from age 0 (newborn). */
   age: string;
-  gender: string;
+  /** '' until the nurse picks one: there is deliberately no default. */
+  gender: Sex | '';
   /**
    * EMERGENCY / OUTPATIENT need no order. OBSERVATION and INPATIENT (direct
    * admission, trauma, scheduled surgery) need the physician's observation /
@@ -83,7 +85,7 @@ const emptyForm = (): AddPatientFormResult => ({
   firstName: '',
   lastName: '',
   age: '',
-  gender: 'Male',
+  gender: '',
   patientClass: 'EMERGENCY',
   registrationOrder: '',
   registrationOrderChannel: '',
@@ -123,7 +125,12 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
     if (!raw) return null;
     const draft = JSON.parse(raw) as AddPatientDraft;
     if (draft.ownerId !== ownerId) return null;
-    const form = { ...emptyForm(), ...draft.form, age: String(draft.form?.age ?? '') };
+    const form = {
+      ...emptyForm(),
+      ...draft.form,
+      age: String(draft.form?.age ?? ''),
+      gender: toSex(draft.form?.gender),
+    };
     // Fields of older versions of this form.
     for (const legacy of ['admissionStatus', 'admissionOrder', 'admissionOrderChannel']) {
       delete (form as Partial<Record<string, unknown>>)[legacy];
@@ -149,6 +156,14 @@ function saveDraft(draft: AddPatientDraft | null) {
 
 const isPristine = (form: AddPatientFormResult, roomNumber: string) =>
   roomNumber === '' && JSON.stringify(form) === JSON.stringify(emptyForm());
+
+const isSex = (value: unknown): value is Sex => typeof value === 'string' && value in SEX_LABEL;
+
+/** Older drafts stored the label ('Male'); anything unrecognised means "not picked yet". */
+const toSex = (value: unknown): Sex | '' => {
+  const upper = typeof value === 'string' ? value.toUpperCase() : value;
+  return isSex(upper) ? upper : '';
+};
 
 const toNumber = (value: string) => (value.trim() === '' ? undefined : Number(value));
 
@@ -250,6 +265,10 @@ export function AddPatientModal({
     if (ageMessage) {
       setAgeTouched(true);
       setError(ageMessage);
+      return;
+    }
+    if (!form.gender) {
+      setError('Please select the patient’s sex.');
       return;
     }
     if (!form.physicianId) {
@@ -388,11 +407,17 @@ export function AddPatientModal({
                 <select
                   style={s.input}
                   value={form.gender}
-                  onChange={(e) => setField('gender', e.target.value)}
+                  onChange={(e) => setField('gender', toSex(e.target.value))}
+                  required
                 >
-                  <option>Male</option>
-                  <option>Female</option>
-                  <option>Other</option>
+                  <option value="" disabled>
+                    Select sex
+                  </option>
+                  {Object.entries(SEX_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="Admission Date" required>

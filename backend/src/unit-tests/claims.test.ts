@@ -5,7 +5,7 @@ import { ClaimsService } from "../claims/claims.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { NotificationType, PhilHealthCF4Status, SummaryStatus } from "@prisma/client";
+import { NotificationType, PhilHealthCF4Status, Sex, SummaryStatus } from "@prisma/client";
 
 const mockPrismaService = {
   courseInWard: {
@@ -47,7 +47,7 @@ describe("Claims Module", () => {
     id: "patient-123",
     firstName: "John",
     lastName: "Doe",
-    gender: "MALE",
+    gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
     createdAt: new Date(),
     updatedAt: new Date(),

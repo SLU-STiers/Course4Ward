@@ -2,7 +2,7 @@
 
 import type { Patient } from '../../types';
 import { computeAge, formatDateNumeric, toDateInputValue } from '../../lib/format';
-import { admissionStatus, daysInCare, fullName, statusColor } from '../../lib/patient';
+import { admissionStatus, daysInCare, fullName, sexLabel, statusColor } from '../../lib/patient';
 
 import type { DashboardPatient } from './types';
 
@@ -15,7 +15,7 @@ export function mapPatient(patient: Patient): DashboardPatient {
     id: patient.id,
     name: fullName(patient),
     patientId: patient.id,
-    gender: patient.gender,
+    gender: sexLabel(patient.gender),
     dateOfBirth: patient.dateOfBirth ?? null,
     age: computeAge(patient.dateOfBirth),
     admissionDate: admissionDate ? formatDateNumeric(admissionDate) : "—",

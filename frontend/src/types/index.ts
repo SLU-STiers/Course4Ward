@@ -31,11 +31,14 @@ export interface AuthUser {
   mustResetPassword?: boolean;
 }
 
+/** Backend `Sex`; `null` on records registered before it was required. */
+export type Sex = 'MALE' | 'FEMALE' | 'OTHER';
+
 export interface Patient {
   id: string;
   firstName: string;
   lastName: string;
-  gender: string;
+  gender: Sex | null;
   dateOfBirth: string;
   admissionDate?: string | null;
   dischargeDate?: string | null;

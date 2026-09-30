@@ -19,7 +19,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { CommunicationChannel, PatientClass } from '@prisma/client';
+import { CommunicationChannel, PatientClass, Sex } from '@prisma/client';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -34,10 +34,10 @@ export class CreatePatientDto {
   @MinLength(1)
   lastName: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  gender?: string;
+  // Required and never defaulted: the nurse has to pick it.
+  @ApiProperty({ enum: Sex })
+  @IsEnum(Sex, { message: 'Sex must be one of MALE, FEMALE, OTHER' })
+  gender: Sex;
 
   @ApiPropertyOptional({ description: 'ISO date of birth (preferred over age)' })
   @IsOptional()
@@ -166,10 +166,10 @@ export class AddConsultingPhysicianDto {
 }
 
 export class UpdatePatientDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: Sex })
   @IsOptional()
-  @IsString()
-  gender?: string;
+  @IsEnum(Sex, { message: 'Sex must be one of MALE, FEMALE, OTHER' })
+  gender?: Sex;
 
   @ApiPropertyOptional()
   @IsOptional()

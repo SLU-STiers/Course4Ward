@@ -2,7 +2,7 @@
 
 import type { ClaimRecord } from '../../types';
 import { calculateAge, computeAge, formatDateMedium, formatTimeMedium, toDateInputValue } from '../../lib/format';
-import { admissionStatus, daysInCare, fullName, initials, statusColor } from '../../lib/patient';
+import { admissionStatus, daysInCare, fullName, initials, sexLabel, statusColor } from '../../lib/patient';
 
 import type { CF4Patient, SummarizationRequest } from './types';
 
@@ -23,7 +23,7 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
       initials: initials(patient),
       patientId: patient.id,
       age: calculateAge(patient.dateOfBirth),
-      gender: patient.gender ?? 'Not recorded',
+      gender: sexLabel(patient.gender, 'Not recorded'),
       admissionDate: formatDateMedium(admissionDate),
     },
     summaryText: claim.summary.summaryContent,
@@ -49,7 +49,7 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
     claimId: claim.id,
     name: fullName(patient),
     patientId: patient.id,
-    gender: patient.gender ?? '—',
+    gender: sexLabel(patient.gender),
     age: computeAge(patient.dateOfBirth),
     color: statusColor(status),
     admissionDate: formatDateMedium(admissionDate),

@@ -132,7 +132,7 @@ export class PatientsService {
       data: {
         firstName: dto.firstName.trim(),
         lastName: dto.lastName.trim(),
-        gender: dto.gender?.trim() || undefined,
+        gender: dto.gender,
         dateOfBirth: resolveDateOfBirth(dto),
         admissions: {
           create: {

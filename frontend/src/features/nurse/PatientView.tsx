@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
-import { statusColor } from '../../lib/patient';
+import { sexLabel, statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
@@ -83,7 +83,7 @@ export function PatientView() {
         age: viewingPatient.dateOfBirth
           ? Math.max(0, new Date().getFullYear() - new Date(viewingPatient.dateOfBirth).getFullYear())
           : 0,
-        gender: viewingPatient.gender ?? '—',
+        gender: sexLabel(viewingPatient.gender),
         admissionDate: viewingAdmission
           ? new Date(viewingAdmission.admissionDate).toLocaleDateString('en-GB')
           : '—',

@@ -8,7 +8,7 @@
  * about each view.
  */
 
-import type { PatientClass } from '../types';
+import type { PatientClass, Sex } from '../types';
 
 export type AdmissionStatus = 'admitted' | 'discharged';
 
@@ -19,6 +19,18 @@ export const PATIENT_CLASS_LABEL: Record<PatientClass, string> = {
   OBSERVATION: 'Observation',
   INPATIENT: 'Admitted',
 };
+
+/** Display name of each sex, in the order the registration form lists them. */
+export const SEX_LABEL: Record<Sex, string> = {
+  MALE: 'Male',
+  FEMALE: 'Female',
+  OTHER: 'Other',
+};
+
+/** Display name of a patient's sex, or `fallback` when it was never recorded. */
+export function sexLabel(sex: Sex | null | undefined, fallback = '—'): string {
+  return sex ? SEX_LABEL[sex] ?? fallback : fallback;
+}
 
 /**
  * Observation is a short stay to decide between admitting and sending home;

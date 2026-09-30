@@ -7,7 +7,7 @@ import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrders
 import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useTableState } from '../../hooks/useTableState';
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
-import { daysInCare, statusColor } from '../../lib/patient';
+import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
@@ -33,7 +33,7 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : '',
     color: colors[index % colors.length],
     age: patient.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()) : 0,
-    gender: patient.gender ?? '—',
+    gender: sexLabel(patient.gender),
     initials: `${patient.firstName[0] ?? ''}${patient.lastName[0] ?? ''}`,
     status,
     daysInCare: daysInCare(admissionDate, admission?.dischargeDate),

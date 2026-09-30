@@ -32,6 +32,15 @@ enum OrderType {
 /// EMERGENCY / OUTPATIENT -> OBSERVATION needs an OBSERVATION order,
 /// any non-inpatient -> INPATIENT needs an ADMISSION order; the nurse
 /// carries both out. See PatientsService.
+/// Patient sex as recorded at registration (PhilHealth CF4 "Sex").
+enum Sex {
+  MALE
+  FEMALE
+  OTHER
+
+  @@map("sex")
+}
+
 enum PatientClass {
   EMERGENCY
   OUTPATIENT
@@ -157,7 +166,7 @@ model Patient {
   id          String    @id @default(uuid())
   firstName   String
   lastName    String
-  gender      String?
+  gender      Sex?
   dateOfBirth DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

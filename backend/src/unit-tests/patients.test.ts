@@ -16,6 +16,7 @@ import {
   PatientClass,
   PhilHealthCF4Status,
   Role,
+  Sex,
   SummaryStatus,
 } from "@prisma/client";
 
@@ -65,7 +66,7 @@ describe("Patients Module", () => {
     id: mockPatientId,
     firstName: "John",
     lastName: "Doe",
-    gender: "MALE",
+    gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -142,7 +143,7 @@ describe("Patients Module", () => {
     id: mockPatientId,
     firstName: "John",
     lastName: "Doe",
-    gender: "MALE",
+    gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -164,13 +165,13 @@ describe("Patients Module", () => {
   const mockCreatePatientDto = {
     firstName: "John",
     lastName: "Doe",
-    gender: "MALE",
+    gender: Sex.MALE,
     dateOfBirth: "1990-01-01",
     physicianId: "physician-123",
   };
 
   const mockUpdatePatientDto = {
-    gender: "MALE",
+    gender: Sex.MALE,
     dateOfBirth: "1990-01-01",
   };
 
@@ -793,7 +794,7 @@ describe("Patients Module", () => {
 
     describe("update", () => {
       it("should update a patient", async () => {
-        const updatedPatient = { ...mockPatientSimple, gender: "FEMALE" };
+        const updatedPatient = { ...mockPatientSimple, gender: Sex.FEMALE };
         (prismaService.patient.findUnique as jest.Mock).mockResolvedValue(
           mockPatient,
         );
@@ -932,7 +933,7 @@ describe("Patients Module", () => {
 
     describe("update", () => {
       it("should call service.update with correct params", async () => {
-        const updatedPatient = { ...mockPatientSimple, gender: "FEMALE" };
+        const updatedPatient = { ...mockPatientSimple, gender: Sex.FEMALE };
         jest.spyOn(service, "update").mockResolvedValue(updatedPatient);
 
         const result = await controller.update(

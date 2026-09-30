@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
 import { ConfigService } from '@nestjs/config';
-import { SummaryStatus } from '@prisma/client';
+import { Sex, SummaryStatus } from '@prisma/client';
 
 // Mock the OllamaClient BEFORE importing the service. Every `new OllamaClient()`
 // returns this ONE object, so the instance the service builds in its
@@ -124,7 +124,7 @@ describe('CourseInWardService', () => {
       firstName: 'John',
       lastName: 'Doe',
       dateOfBirth: new Date('1980-01-01'),
-      gender: 'MALE',
+      gender: Sex.MALE,
     };
 
     // Both orders are written on the same local calendar day, so the AI folds
@@ -807,7 +807,7 @@ describe('CourseInWardService', () => {
       firstName: 'John',
       lastName: 'Doe',
       dateOfBirth: new Date('1980-01-01'),
-      gender: 'MALE',
+      gender: Sex.MALE,
     };
 
     beforeEach(() => {
