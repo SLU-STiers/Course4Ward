@@ -2,6 +2,7 @@
 
 import type { ClaimRecord } from '../../types';
 import { calculateAge, computeAge, formatDateMedium, formatTimeMedium, toDateInputValue } from '../../lib/format';
+import { triageForDisplay } from '../../lib/triage';
 import { admissionStatus, daysInCare, fullName, initials, sexLabel, statusColor } from '../../lib/patient';
 
 import type { CF4Patient, SummarizationRequest } from './types';
@@ -27,6 +28,7 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
       admissionDate: formatDateMedium(admissionDate),
     },
     summaryText: claim.summary.summaryContent,
+    triage: triageForDisplay(order?.admission),
     orders: claim.summary.orders.map((summaryOrder) => ({
       id: summaryOrder.id,
       content: summaryOrder.orderContent,
