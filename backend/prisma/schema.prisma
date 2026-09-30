@@ -200,6 +200,9 @@ model PatientAdmission {
 model TriageAssessment {
   id           String   @id @default(uuid())
   admissionId  String   @unique
+  /// 5-level triage priority: 1 Resuscitation, 2 Emergent, 3 Urgent,
+  /// 4 Less Urgent, 5 Non-Urgent. The migration adds a CHECK (1-5).
+  triageLevel  Int?
   triageTime   String?
   heartRate    Int?
   respRate     Int?

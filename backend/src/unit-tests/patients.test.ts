@@ -80,6 +80,7 @@ describe("Patients Module", () => {
         patientClass: PatientClass.INPATIENT,
         classSince: new Date("2024-01-01"),
         initialAssessment: null,
+        triage: { triageLevel: 3 },
         createdAt: new Date(),
         updatedAt: new Date(),
         orders: [
@@ -263,6 +264,7 @@ describe("Patients Module", () => {
         await service.create(
           {
             ...mockCreatePatientDto,
+            triageLevel: 2,
             triageTime: "08:30",
             heartRate: 88,
             spo2: 97,
@@ -282,6 +284,7 @@ describe("Patients Module", () => {
                   initialAssessment: "Chest pain since morning",
                   triage: {
                     create: {
+                      triageLevel: 2,
                       triageTime: "08:30",
                       heartRate: 88,
                       respRate: undefined,
@@ -307,6 +310,28 @@ describe("Patients Module", () => {
 
         const call = (prismaService.patient.create as jest.Mock).mock.calls[0][0];
         expect(call.data.admissions.create.triage).toBeUndefined();
+      });
+
+      it("should keep a triage row for the level alone", async () => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+
+        await service.create({ ...mockCreatePatientDto, triageLevel: 4 }, mockUser.id);
+
+        const call = (prismaService.patient.create as jest.Mock).mock.calls[0][0];
+        expect(call.data.admissions.create.triage.create).toEqual(
+          expect.objectContaining({ triageLevel: 4, recordedById: mockUser.id }),
+        );
+      });
+
+      it.each([0, 6, 2.5])("should reject triage level %p in the DTO", async (triageLevel) => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          triageLevel,
+        });
+        const errors = await validate(dto);
+        expect(errors.map((error) => error.property)).toContain("triageLevel");
       });
 
       it("should reject inactive or unknown physicians", async () => {
@@ -693,6 +718,7 @@ describe("Patients Module", () => {
                 dischargeDate: true,
                 patientClass: true,
                 classSince: true,
+                triage: { select: { triageLevel: true } },
               },
             },
           },

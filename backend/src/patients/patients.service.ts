@@ -7,6 +7,7 @@ import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
 function buildTriage(dto: CreatePatientDto, nurseId: string) {
   const [bpSystolic, bpDiastolic] = dto.bp ? dto.bp.split('/').map(Number) : [undefined, undefined];
   const triage = {
+    triageLevel: dto.triageLevel,
     triageTime: dto.triageTime,
     heartRate: dto.heartRate,
     respRate: dto.respRate,
@@ -22,6 +23,7 @@ function buildTriage(dto: CreatePatientDto, nurseId: string) {
 
 const triageSelect = {
   select: {
+    triageLevel: true,
     triageTime: true,
     heartRate: true,
     respRate: true,
@@ -228,6 +230,8 @@ export class PatientsService {
                   dischargeDate: true,
                   patientClass: true,
                   classSince: true,
+                  // Physicians see the priority, not the full vitals row.
+                  triage: { select: { triageLevel: true } },
                 },
               }),
         },

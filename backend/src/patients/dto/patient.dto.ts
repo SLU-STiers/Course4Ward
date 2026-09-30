@@ -103,6 +103,19 @@ export class CreatePatientDto {
   @IsString()
   initialAssessment?: string;
 
+  @ApiPropertyOptional({
+    description: 'Triage level: 1 Resuscitation, 2 Emergent, 3 Urgent, 4 Less Urgent, 5 Non-Urgent',
+    minimum: 1,
+    maximum: 5,
+    example: 3,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Triage level must be a whole number' })
+  @Min(1, { message: 'Triage level must be between 1 and 5' })
+  @Max(5, { message: 'Triage level must be between 1 and 5' })
+  triageLevel?: number;
+
   @ApiPropertyOptional({ description: 'Triage time, 24h HH:mm', example: '08:30' })
   @IsOptional()
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Triage time must be in HH:mm format' })
