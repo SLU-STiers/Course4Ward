@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateNoteDto } from './dto/create-note.dto';
+import { CreateNoteDto, UpdateNoteDto } from './dto/create-note.dto';
 
 @Injectable()
 export class NotesService {
@@ -22,6 +22,27 @@ export class NotesService {
       where: { patientId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async update(id: string, dto: UpdateNoteDto, physicianId: string) {
+    const note = await this.prisma.physicianNote.findFirst({ where: { id, physicianId } });
+    if (!note) throw new NotFoundException('Note not found');
+
+    return this.prisma.physicianNote.update({
+      where: { id },
+      data: {
+        ...(dto.content !== undefined ? { notesArray: dto.content } : {}),
+        ...(dto.reminderAt !== undefined
+          ? { reminderAt: dto.reminderAt ? new Date(dto.reminderAt) : null }
+          : {}),
+      },
+    });
+  }
+
+  async remove(id: string, physicianId: string) {
+    const note = await this.prisma.physicianNote.findFirst({ where: { id, physicianId } });
+    if (!note) throw new NotFoundException('Note not found');
+    return this.prisma.physicianNote.delete({ where: { id } });
   }
 
   // For a physician's personal reminder feed across all their patients

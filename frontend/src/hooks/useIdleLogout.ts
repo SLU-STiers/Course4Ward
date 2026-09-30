@@ -2,18 +2,9 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 
-/** How long the user may stay completely inactive before being logged out. */
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'wheel', 'touchstart', 'scroll', 'click'] as const;
 
-/** Any of these firing counts as "the user is doing something" and resets the timer. */
-const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const;
-
-/**
- * Logs the user out after IDLE_TIMEOUT_MS of no mouse/keyboard/scroll/touch
- * activity. The countdown only ever runs while the user is idle — any
- * activity event cancels the pending timeout and restarts it from zero, so
- * it never fires while the user is actually using the app.
- */
 export function useIdleLogout() {
   const navigate = useNavigate();
   const accessToken = useAuthStore((state) => state.accessToken);
@@ -23,32 +14,37 @@ export function useIdleLogout() {
   useEffect(() => {
     if (!accessToken) return;
 
-    const clearPendingTimeout = () => {
+    const clearTimer = () => {
       if (timeoutRef.current !== null) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
     };
 
-    const handleIdleTimeout = () => {
-      clearPendingTimeout();
+    const onIdle = () => {
+      clearTimer();
       logout();
       navigate('/login', { replace: true });
     };
 
     const resetTimer = () => {
-      clearPendingTimeout();
-      timeoutRef.current = window.setTimeout(handleIdleTimeout, IDLE_TIMEOUT_MS);
+      clearTimer();
+      timeoutRef.current = window.setTimeout(onIdle, IDLE_TIMEOUT_MS);
     };
 
-    // Start the countdown as soon as we're authenticated, then let any
-    // activity push it back.
     resetTimer();
-    ACTIVITY_EVENTS.forEach((event) => window.addEventListener(event, resetTimer, { passive: true }));
+
+    // `scroll` does not bubble, so capture:true is required for window listeners.
+    const options: AddEventListenerOptions = { capture: true, passive: true };
+    for (const event of ACTIVITY_EVENTS) {
+      window.addEventListener(event, resetTimer, options);
+    }
 
     return () => {
-      clearPendingTimeout();
-      ACTIVITY_EVENTS.forEach((event) => window.removeEventListener(event, resetTimer));
+      clearTimer();
+      for (const event of ACTIVITY_EVENTS) {
+        window.removeEventListener(event, resetTimer, options);
+      }
     };
   }, [accessToken, logout, navigate]);
 }

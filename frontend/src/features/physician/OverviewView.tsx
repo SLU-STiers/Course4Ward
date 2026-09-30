@@ -2,12 +2,13 @@
 
 import React, { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import { StatusBadge } from '../../components/ui';
+import { StatusBadge, TriageBadge } from '../../components/ui';
 import { overview, TEAL } from './styles';
 
 import { CalendarWidget } from './CalendarWidget';
 import { BedIcon, HeartIcon, WheelchairIcon } from './icons';
 import { mapPatient } from './patient';
+import { triageQueueKey } from '../../lib/triage';
 import { TodoListWidget } from './TodoListWidget';
 import type { DashboardPatient, OverviewFilter } from './types';
 
@@ -28,8 +29,20 @@ export function OverviewView() {
   const dischargedCount = patients.filter(
     (p) => p.status === "discharged",
   ).length;
-  const filteredPatients =
-    filter === "all" ? patients : patients.filter((p) => p.status === filter);
+  // Active patients first, most urgent then longest waiting; discharged
+  // patients after them in their existing (most recently updated) order.
+  const filteredPatients = (
+    filter === "all" ? patients : patients.filter((p) => p.status === filter)
+  )
+    .slice()
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "admitted" ? -1 : 1;
+      if (a.status === "discharged") return 0;
+      return (
+        triageQueueKey(b.triageLevel, b.admittedAt) -
+        triageQueueKey(a.triageLevel, a.admittedAt)
+      );
+    });
 
   const pageCount = Math.max(1, Math.ceil(filteredPatients.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -108,11 +121,11 @@ export function OverviewView() {
                 <tr>
                   <th style={{ ...overview.th, width: 22 }} />
                   <th style={overview.th}>Patient</th>
+                  <th style={overview.th}>Triage</th>
                   <th style={overview.th}>Sex</th>
                   <th style={overview.th}>Admitted</th>
                   <th style={overview.th}>Days in care</th>
                   <th style={overview.th}>Status</th>
-                  <th style={{ ...overview.th, width: 36 }} />
                 </tr>
               </thead>
               <tbody>
@@ -136,6 +149,9 @@ export function OverviewView() {
                   >
                     {p.name}
                   </td>
+                  <td style={overview.td}>
+                    <TriageBadge level={p.triageLevel} compact />
+                  </td>
                   <td style={{ ...overview.td, color: "#64748b" }}>
                     {p.gender}
                   </td>
@@ -148,9 +164,6 @@ export function OverviewView() {
                   <td style={overview.td}>
                     <StatusBadge status={p.status} showDot />
                   </td>
-                  <td style={{ ...overview.td, textAlign: "right", width: 36 }}>
-                    <span style={overview.rowDots}>⋯</span>
-                  </td>
                 </tr>
               ))}
               </tbody>
@@ -160,7 +173,7 @@ export function OverviewView() {
 
         <div style={overview.rightCol}>
           <CalendarWidget />
-          <TodoListWidget />
+          <TodoListWidget patients={patients} />
         </div>
       </div>
     </div>

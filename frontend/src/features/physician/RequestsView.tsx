@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { claimsApi } from '../../services/domainApi';
 import type { PhysicianRequest } from '../../types';
-import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../../components/ui';
+import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
+import { patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
 import { requests } from './styles';
 
@@ -33,7 +34,6 @@ export function RequestsView() {
     items,
     pageSize: 5,
     searchFields: (request) => [
-      request.id,
       `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
       `${request.processor.firstName} ${request.processor.lastName}`,
     ],
@@ -44,7 +44,6 @@ export function RequestsView() {
     },
     initialFilters: { status: "all" },
     sorters: {
-      id: (request) => request.id,
       patient: (request) =>
         `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
       requestedAt: (request) => request.requestedAt,
@@ -54,10 +53,8 @@ export function RequestsView() {
 
   return (
     <section style={requests.card}>
-      <PageHeader
-        title="Requests"
-        description="Review AI summaries submitted by Claims Processors."
-      />
+      {/* Same card-title scale as the Claims Processor "Patient Overview" card. */}
+      <h2 style={patientTableStyles.cardTitle}>Requests</h2>
 
       <DataTableToolbar
         searchProps={{
@@ -81,7 +78,6 @@ export function RequestsView() {
           options: [
             { value: "requestedAt", label: "Submitted date" },
             { value: "patient", label: "Patient name" },
-            { value: "id", label: "Request ID" },
           ],
           value: table.sort.field,
           onChange: table.setSortField,
@@ -94,7 +90,6 @@ export function RequestsView() {
       <table style={requests.table}>
         <thead>
           <tr>
-            <th style={requests.th}>Request ID</th>
             <th style={requests.th}>Patient</th>
             <th style={requests.th}>Submitted By</th>
             <th style={requests.th}>Submitted On</th>
@@ -106,19 +101,9 @@ export function RequestsView() {
           {table.rows.map((r) => (
             <tr key={r.id}>
               <td style={requests.td}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelected(r)}
-                >
-                  {r.id}
-                </Button>
-              </td>
-              <td style={requests.td}>
                 <div style={requests.primary}>
                   {r.summary.patient.firstName} {r.summary.patient.lastName}
                 </div>
-                <div style={requests.secondary}>ID: {r.summary.patient.id}</div>
               </td>
               <td style={requests.td}>
                 <div style={requests.primary}>
@@ -172,6 +157,7 @@ export function RequestsView() {
 
       {selected && (
         <ReviewSummaryModal
+          key={selected.id}
           request={selected}
           onClose={() => setSelected(null)}
           onApprove={async () => {

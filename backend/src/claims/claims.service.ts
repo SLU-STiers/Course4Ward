@@ -1,30 +1,53 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { SummaryStatus } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { NotificationType, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ClaimsService {
   constructor(
     private prisma: PrismaService,
     private auditLog: AuditLogService,
+    private notifications: NotificationsService,
   ) {}
 
-  // A claim wraps one approved (or pending) Course in the Ward entry for
-  // processor review. Created once a summary exists for a patient.
+  // A claim wraps one Course in the Ward entry for processor review. It can be
+  // opened before the physician has approved the summary: the claim is then
+  // addressed to the attending physician and stays PENDING until they approve
+  // it (via the Requests view or the workspace). An already-approved summary
+  // starts VALIDATED, so CF4 can be generated straight away.
   async createFromSummary(courseInWardId: string, claimsProcessorId: string) {
     const summary = await this.prisma.courseInWard.findUnique({
       where: { id: courseInWardId },
+      include: {
+        requests: { select: { id: true } },
+        orders: {
+          take: 1,
+          orderBy: { dateCreated: 'asc' },
+          select: { orderedById: true, admission: { select: { physicianId: true } } },
+        },
+      },
     });
     if (!summary) throw new NotFoundException('Course in the Ward summary not found');
+    if (summary.requests.length > 0) {
+      throw new ConflictException('A claim already exists for this summary');
+    }
 
-    if (!summary.validatorId) throw new BadRequestException('Summary has no validating physician');
+    const firstOrder = summary.orders[0];
+    const physicianId =
+      summary.validatorId ?? firstOrder?.admission.physicianId ?? firstOrder?.orderedById;
+    if (!physicianId) {
+      throw new BadRequestException('Summary has no attending physician to validate it');
+    }
 
+    const approved = summary.status === SummaryStatus.APPROVED && Boolean(summary.approvedStatus);
     const claim = await this.prisma.summaryApprovalRequest.create({
       data: {
         summaryId: courseInWardId,
-        physicianId: summary.validatorId,
+        physicianId,
         processorId: claimsProcessorId,
+        status: approved ? 'VALIDATED' : 'PENDING',
       },
     });
 
@@ -34,6 +57,26 @@ export class ClaimsService {
     });
 
     return claim;
+  }
+
+  /** Summaries no claim has been opened for yet -- the claims processor's intake list. */
+  findEligibleSummaries() {
+    return this.prisma.courseInWard.findMany({
+      where: { requests: { none: {} } },
+      orderBy: { summaryDate: 'desc' },
+      include: {
+        patient: { select: { id: true, firstName: true, lastName: true } },
+        approvedBy: { select: { firstName: true, lastName: true } },
+        orders: {
+          take: 1,
+          orderBy: { dateCreated: 'asc' },
+          select: {
+            dateCreated: true,
+            orderedBy: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
   }
 
   findAll() {
@@ -48,6 +91,9 @@ export class ClaimsService {
               include: {
                 admission: { select: { admissionDate: true, dischargeDate: true } },
                 orderedBy: { select: { firstName: true, lastName: true } },
+                // Who the nurse executed the order and when -- the claims
+                // timeline shows the same execution state as the physician's.
+                executedBy: { select: { firstName: true, lastName: true } },
               },
             },
           },
@@ -101,8 +147,19 @@ export class ClaimsService {
     return { ...updatedRequest, summary };
   }
 
-  // Claims processor notifies the attending physician to validate the entry
-  async notifyPhysician(claimId: string, claimsProcessorId: string) {
+  // Claims processor notifies the attending physician to validate the entry.
+  // The reminder lands on the physician's notification bell, carrying the
+  // message typed in the review modal.
+  async notifyPhysician(claimId: string, claimsProcessorId: string, message?: string) {
+    const existing = await this.prisma.summaryApprovalRequest.findUnique({
+      where: { id: claimId },
+      include: {
+        summary: { include: { patient: { select: { firstName: true, lastName: true } } } },
+        processor: { select: { firstName: true, lastName: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException('Claim not found');
+
     const claim = await this.prisma.summaryApprovalRequest.update({
       where: { id: claimId },
       data: {
@@ -110,8 +167,22 @@ export class ClaimsService {
       },
     });
 
-    // TODO: wire to an actual notification channel (in-app alert / pager
-    // integration) -- out of scope for this scaffold.
+    const patientName =
+      `${existing.summary.patient.firstName} ${existing.summary.patient.lastName}`.trim();
+    const processorName =
+      `${existing.processor.firstName} ${existing.processor.lastName}`.trim();
+    const note = message?.trim();
+
+    await this.notifications.create({
+      userId: existing.physicianId,
+      type: NotificationType.REVIEW_REQUESTED,
+      title: 'Review requested again',
+      message: note
+        ? `${processorName} (Claims Processor) asked you to review ${patientName}'s summary again: "${note}"`
+        : `${processorName} (Claims Processor) asked you to review ${patientName}'s summary again.`,
+      requestId: claimId,
+    });
+
     await this.auditLog.record({
       userId: claimsProcessorId,
       action: 'CLAIM_PHYSICIAN_NOTIFIED',

@@ -1,5 +1,6 @@
 /** Part of the admin dashboard — see index.tsx for the screen shell. */
 
+import { createPortal } from 'react-dom';
 import { styles } from './styles';
 
 export function ConfirmationDialog({
@@ -15,8 +16,10 @@ export function ConfirmationDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  return (
-    <div style={styles.modalOverlay} onClick={onCancel}>
+  // Portal to <body> above the shared Modal layer so it can confirm actions
+  // started from inside a Modal (e.g. the account form).
+  return createPortal(
+    <div style={{ ...styles.modalOverlay, zIndex: 1200 }} onClick={onCancel}>
       <div style={styles.confirmationModal} onClick={(event) => event.stopPropagation()}>
         <div style={styles.confirmationHeader}>
           <h3 style={styles.confirmationTitle}>{title}</h3>
@@ -27,6 +30,7 @@ export function ConfirmationDialog({
           <button style={styles.primaryButton} onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

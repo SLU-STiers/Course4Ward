@@ -1,9 +1,13 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
+import type { OrderExecutionState } from '../../components/orders/orderStatus';
+
 
 export type TabType = 'overview' | 'requests' | 'export';
-export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4';
-export type PatientSortField = 'name' | 'patientId' | 'admissionDate';
+export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4' | 'summary';
+/** Which export workflow a Course in the Ward Summary is being built from. */
+export type ExportSource = 'new-cf4' | 'existing-cf4';
+export type PatientSortField = 'name' | 'admissionDate' | 'daysInCare' | 'age';
 export type SortDirection = 'ascending' | 'descending';
 export type RequestSortField = 'id' | 'date' | 'status';
 export type PatientStatus = 'all' | 'admitted' | 'discharged';
@@ -22,15 +26,44 @@ export interface SummarizationRequest {
     admissionDate: string;
   };
   summaryText: string;
-  orders: Array<{ content: string; dateCreated: string; doctor: string }>;
+  /**
+   * `id` is the physician order's own id — unique per order, never per claim.
+   * Carries the nurse's execution state (`OrderExecutionState`) so the timeline
+   * can render the same status badge, type tag, executor and note the physician
+   * sees, not just the raw order text.
+   */
+  orders: Array<
+    OrderExecutionState & {
+      id: string;
+      content: string;
+      dateCreated: string;
+      doctor: string;
+    }
+  >;
 }
 export interface CF4Patient {
   id: string;
   claimId: string;
   patientId: string;
   name: string;
+  gender: string;
+  /** Years old, or `null` when the date of birth is missing. */
+  age: number | null;
   color: string;
+  /** Short display date, e.g. `Apr 15, 2026`. */
   admissionDate: string;
+  /** `YYYY-MM-DD` — the key used for sorting and date-range filters. */
+  admissionDateRaw: string;
+  /** Whole days since admission, counted inclusively. */
+  daysInCare: number;
   status: Exclude<PatientStatus, 'all'>;
+  /** Row is queued for CF4 generation; several rows can be queued at once. */
   selected: boolean;
+}
+
+/** One patient queued for the Course in the Ward Summary review step. */
+export interface Cf4SummaryDraft {
+  patient: CF4Patient;
+  /** Persisted claim/summary the JSON is projected from, when one exists. */
+  request?: SummarizationRequest;
 }

@@ -1,37 +1,146 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useState } from 'react';
-import { DataTableToolbar, PageHeader, Pagination } from '../../components/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
+import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
+import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
+import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useTableState } from '../../hooks/useTableState';
-import { formatDateLongFromKey } from '../../lib/format';
-import documentImg from '../../Img/document.png';
-import llamaIcon from '../../Img/llama.png';
+import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
+import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
+import { triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
-
-import { DEFAULT_ORDER_SETS, DEFAULT_SUMMARIES, MOCK_PATIENTS, resolveChart } from './data';
 import { PatientDetailModal } from './PatientDetailModal';
-import type { NursePatient, OrderSet, PatientChart } from './types';
+import { OrderExecutionPanel } from './OrderExecutionPanel';
+import { triageForDisplay } from './PatientModalParts';
+import type { AdmissionStatus, NursePatient, OrderSet } from './types';
+import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
+import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
+import type { CourseInWard, Patient, PhysicianOrder } from '../../types';
 
-export function ManagementPortalView({ charts }: { charts: Record<string, PatientChart> }) {
-  const [patients] = useState(MOCK_PATIENTS);
-  const [selectedId, setSelectedId] = useState<string | null>(MOCK_PATIENTS[0].id);
-  const [viewedIds, setViewedIds] = useState<string[]>([MOCK_PATIENTS[0].id]);
-  const [selectedDate, setSelectedDate] = useState('2026-04-15');
-  const [ordersByPatient] = useState<Record<string, OrderSet[]>>(DEFAULT_ORDER_SETS);
+const colors = ['#ef4444', '#22c55e', '#84cc16', '#6366f1', '#eab308', '#06b6d4'];
+
+function mapPatient(patient: Patient, index: number): NursePatient {
+  const admission = patient.admissions?.[0];
+  const name = `${patient.firstName} ${patient.lastName}`;
+  const status = admission?.dischargeDate ? 'discharged' : 'admitted';
+  const admissionDate = admission?.admissionDate ?? '';
+  return {
+    id: patient.id,
+    name,
+    patientId: patient.id,
+    recordId: admission?.id ?? patient.id,
+    admissionDate: admissionDate ? formatDateNumeric(admissionDate) : '—',
+    admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : '',
+    color: colors[index % colors.length],
+    age: patient.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()) : 0,
+    gender: sexLabel(patient.gender),
+    initials: `${patient.firstName[0] ?? ''}${patient.lastName[0] ?? ''}`,
+    status,
+    daysInCare: daysInCare(admissionDate, admission?.dischargeDate),
+    initialAssessment: admission?.initialAssessment,
+    triage: triageForDisplay(admission),
+    patientClass: admission?.patientClass,
+    classSince: admission?.classSince,
+    assignedDoctor: admission?.physician
+      ? `Dr. ${admission.physician.firstName} ${admission.physician.lastName}`
+      : null,
+    additionalDoctors: (admission?.additionalPhysicians ?? []).map(
+      ({ physician }) => `Dr. ${physician.firstName} ${physician.lastName}`,
+    ),
+  };
+}
+
+/** Status shown in the table and matched by the status filter: discharged, else the patient class. */
+function displayStatus(patient: NursePatient): AdmissionStatus {
+  return admissionStatusOf({
+    dischargeDate: patient.status === 'discharged' ? 'discharged' : null,
+    patientClass: patient.patientClass,
+  });
+}
+
+function mapOrder(order: PhysicianOrder): OrderSet {
+  const date = new Date(order.dateCreated);
+  return {
+    // Local calendar day, the same key the physician files orders and summaries under.
+    dateKey: toDateKey(date),
+    dateLabel: date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+    time: date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    doctor: order.orderedBy ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Physician',
+    orders: [order.orderContent],
+    order,
+  };
+}
+
+/**
+ * The order day a Course in the Ward belongs to: the day of the orders it was
+ * built from, falling back to its `summaryDate` (same rule as the physician view).
+ */
+function summaryDayKey(summary: CourseInWard): string {
+  const days = (summary.orders ?? [])
+    .map((order) => toDateKey(order.dateCreated))
+    .filter(Boolean)
+    .sort();
+  return days[0] ?? toDateKey(summary.summaryDate);
+}
+
+export function ManagementPortalView() {
+  const [patients, setPatients] = useState<NursePatient[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [detailName, setDetailName] = useState<string | null>(null);
+  const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
+
+  /* Refetched every time a patient is opened, so a summary the physician
+     approved since the last look shows up without reloading the page. */
+  const loadSummaries = useCallback((patientId: string) => {
+    courseInWardApi.forPatient(patientId)
+      .then(({ data }) => setSummariesByPatient((previous) => ({ ...previous, [patientId]: data })))
+      .catch(() => undefined);
+  }, []);
+
+  const loadPatients = useCallback(() => {
+    return patientsApi.list().then(({ data }) => {
+      const mapped = data.map(mapPatient);
+      setPatients(mapped);
+      return mapped;
+    });
+  }, []);
+
+  useEffect(() => {
+    loadPatients()
+      .then((mapped) => {
+        if (mapped[0]) setSelectedId((current) => current ?? mapped[0].id);
+      })
+      .catch(() => setPatients([]));
+  }, [loadPatients]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    ordersApi.forPatient(selectedId).then(({ data }) => {
+      const mapped = data.filter((order) => order.active).map(mapOrder);
+      setOrdersByPatient((previous) => ({ ...previous, [selectedId]: mapped }));
+      const days = [...new Set(mapped.map((order) => order.dateKey))].sort().reverse();
+      setSelectedDate((current) => current || days[0] || '');
+    }).catch(() => setOrdersByPatient((previous) => ({ ...previous, [selectedId]: [] })));
+    loadSummaries(selectedId);
+  }, [selectedId, loadSummaries]);
 
   const table = useTableState<NursePatient>({
     items: patients,
     pageSize: 8,
     searchFields: (patient) => [patient.name, patient.patientId, patient.recordId],
     filterPredicates: {
-      status: (patient, value) => value === 'all' || (patient.status ?? 'admitted') === value,
+      status: (patient, value) => value === 'all' || displayStatus(patient) === value,
     },
     initialFilters: { status: 'all' },
     sorters: {
       name: (patient) => patient.name,
-      patientId: (patient) => patient.patientId,
-      admissionDate: (patient) => patient.admissionDate,
+      triage: (patient) => triageUrgency(patient.triage?.level),
+      age: (patient) => patient.age,
+      daysInCare: (patient) => patient.daysInCare,
+      admissionDate: (patient) => patient.admissionDateRaw,
     },
     initialSort: { field: 'admissionDate', direction: 'descending' },
   });
@@ -40,29 +149,83 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
 
   const orderSets = selected ? ordersByPatient[selected.id] ?? [] : [];
   const datesWithOrders = [...new Set(orderSets.map((o) => o.dateKey))].sort().reverse();
-  const ordersForDate = orderSets.filter((o) => o.dateKey === selectedDate);
+  /* `''` means every date; a day that this patient has no orders on falls back
+     to it, so the list can never be emptied by a stale selection. */
+  const activeDate = selectedDate && datesWithOrders.includes(selectedDate) ? selectedDate : '';
+  const dateIndex = activeDate ? datesWithOrders.indexOf(activeDate) : -1;
+  const hasPrevDate = datesWithOrders.length > 0 && (dateIndex < 0 || dateIndex < datesWithOrders.length - 1);
+  const hasNextDate = datesWithOrders.length > 0 && (dateIndex < 0 || dateIndex > 0);
+  const ordersForDisplay = activeDate
+    ? orderSets.filter((set) => set.dateKey === activeDate)
+    : [...orderSets].sort((a, b) => (a.dateKey < b.dateKey ? 1 : -1));
+  /* The AI card always names a day — the newest one while showing all dates. */
+  const cardDay = activeDate || datesWithOrders[0] || '';
+
+  /* Nurses read only what the physician approved; a draft just says it is pending.
+     The list comes newest first, so the first match per day is the latest one. */
+  const summariesForCardDay = (selected ? summariesByPatient[selected.id] ?? [] : [])
+    .filter((summary) => cardDay && summaryDayKey(summary) === cardDay);
+  const approvedSummary = summariesForCardDay.find((summary) => summary.status === 'APPROVED');
+  const pendingSummary = !approvedSummary && summariesForCardDay.length > 0;
+  const cardDayLabel = cardDay ? formatDateLongFromKey(cardDay) : 'this patient';
 
   const openPatient = (id: string) => {
     setSelectedId(id);
+    if (id === selectedId) loadSummaries(id);
     const sets = ordersByPatient[id] ?? [];
-    const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '2026-04-15';
+    const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '';
     setSelectedDate(latest);
-    setViewedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
+
+  /* Swap in the saved copy of an order after the nurse updates its status. */
+  const replaceOrder = (saved: PhysicianOrder) => {
+    setOrdersByPatient((previous) => {
+      const next: Record<string, OrderSet[]> = {};
+      for (const [patientId, sets] of Object.entries(previous)) {
+        next[patientId] = sets.map((set) =>
+          set.order?.id === saved.id ? { ...set, order: { ...set.order, ...saved } } : set,
+        );
+      }
+      return next;
+    });
+  };
+  const ordersById = new Map(
+    ordersForDisplay.flatMap((set) => (set.order ? [[set.order.id, set.order] as const] : [])),
+  );
 
   const shiftDate = (dir: -1 | 1) => {
     if (!datesWithOrders.length) return;
-    const idx = Math.max(0, datesWithOrders.indexOf(selectedDate));
-    const next = datesWithOrders[idx + dir];
+    if (!activeDate) {
+      // From "all dates" the first step focuses the day at that end of the list.
+      setSelectedDate(dir < 0 ? datesWithOrders[datesWithOrders.length - 1] : datesWithOrders[0]);
+      return;
+    }
+    const next = datesWithOrders[datesWithOrders.indexOf(activeDate) + dir];
     if (next) setSelectedDate(next);
   };
 
-  const detailChart = detailName ? resolveChart(detailName, charts) : null;
+  const detailPatient = detailName ? patients.find((patient) => patient.name === detailName) : null;
+  const detailChart = detailPatient ? {
+    name: detailPatient.name,
+    age: detailPatient.age,
+    gender: detailPatient.gender,
+    admissionDate: detailPatient.admissionDate,
+    recordId: detailPatient.recordId,
+    assignedDoctors: [
+      ...(detailPatient.assignedDoctor ? [detailPatient.assignedDoctor] : []),
+      ...(detailPatient.additionalDoctors ?? []),
+    ],
+    triage: detailPatient.triage ?? triageForDisplay(null),
+    classSince: detailPatient.classSince,
+  } : null;
+  const detailStatus: AdmissionStatus | undefined = detailPatient
+    ? displayStatus(detailPatient)
+    : undefined;
 
   return (
     <div style={ui.layout}>
-      <section style={ui.card}>
-        <PageHeader title="Patient Overview" />
+      <section style={patientTableStyles.card}>
+        <h2 style={patientTableStyles.cardTitle}>Patient Overview</h2>
         <DataTableToolbar
           searchProps={{
             value: table.query,
@@ -74,8 +237,7 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
             title: 'Patient status',
             options: [
               { value: 'all', label: 'All patients' },
-              { value: 'admitted', label: 'Admitted' },
-              { value: 'discharged', label: 'Discharged' },
+              ...ADMISSION_STATUSES.map((status) => ({ value: status, label: status })),
             ],
             value: table.filters.status ?? 'all',
             onChange: (value) => table.setFilter('status', value),
@@ -83,9 +245,11 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
           sortProps={{
             title: 'Sort patients by',
             options: [
-              { value: 'name', label: 'Patient name' },
-              { value: 'patientId', label: 'Patient ID' },
               { value: 'admissionDate', label: 'Admission date' },
+              { value: 'triage', label: 'Triage priority' },
+              { value: 'daysInCare', label: 'Days in care' },
+              { value: 'age', label: 'Age' },
+              { value: 'name', label: 'Patient name' },
             ],
             value: table.sort.field,
             onChange: table.setSortField,
@@ -93,14 +257,18 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
             onDirectionChange: (direction) => table.setSort({ field: table.sort.field, direction }),
           }}
         />
-        <div style={ui.tableWrap}>
-          <table style={ui.table}>
+        <div style={patientTableStyles.tableWrapper}>
+          <table style={{ ...patientTableStyles.table, tableLayout: 'auto' }}>
           <thead>
-            <tr>
-              <th style={ui.th}>Patient</th>
-              <th style={ui.th}>Patient ID</th>
-              <th style={ui.th}>Admission Date</th>
-              <th style={{ ...ui.th, textAlign: 'right' }} />
+            <tr style={patientTableStyles.thRow}>
+              <th style={patientTableStyles.th}>Patient</th>
+              <th style={patientTableStyles.th}>Triage</th>
+              <th style={patientTableStyles.th}>Sex</th>
+              <th style={patientTableStyles.th}>Age</th>
+              <th style={patientTableStyles.th}>Admitted</th>
+              <th style={patientTableStyles.th}>Days in care</th>
+              <th style={patientTableStyles.th}>Status</th>
+              <th style={{ ...patientTableStyles.th, textAlign: 'right' }} />
             </tr>
           </thead>
           <tbody>
@@ -111,22 +279,37 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
                   key={p.id}
                   onClick={() => openPatient(p.id)}
                   style={{
+                    ...patientTableStyles.tr,
                     backgroundColor: active ? '#f1f5f9' : 'transparent',
                     cursor: 'pointer',
                   }}
                 >
-                  <td style={ui.td}>
+                  <td style={patientTableStyles.td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ ...ui.dot, backgroundColor: p.status === 'discharged' ? '#ef4444' : '#22c55e' }} />
-                      <span style={{ fontWeight: 600, color: '#334155' }}>{p.name}</span>
+                      <span style={{ ...patientTableStyles.dot, backgroundColor: statusColor(p.status ?? 'admitted') }} />
+                      <span style={patientTableStyles.name}>{p.name}</span>
                     </div>
                   </td>
-                  <td style={{ ...ui.td, color: '#64748b' }}>{p.patientId}</td>
-                  <td style={{ ...ui.td, color: '#64748b' }}>{p.admissionDate}</td>
-                  <td style={{ ...ui.td, textAlign: 'right' }}>
+                  <td style={patientTableStyles.td}>
+                    <TriageBadge level={p.triage?.level} compact />
+                  </td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.gender}</td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.age}</td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.admissionDate}</td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                    {p.daysInCare} {p.daysInCare === 1 ? 'day' : 'days'}
+                  </td>
+                  <td style={patientTableStyles.td}>
+                    <StatusBadge
+                      status={STATUS_TONE[displayStatus(p)]}
+                      label={displayStatus(p)}
+                      showDot
+                    />
+                  </td>
+                  <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
                     <button
                       type="button"
-                      style={ui.viewBtn}
+                      style={patientTableStyles.viewBtn}
                       onClick={(e) => {
                         e.stopPropagation();
                         openPatient(p.id);
@@ -139,115 +322,86 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
                 </tr>
               );
             })}
+            {!table.rows.length && (
+              <tr>
+                <td
+                  style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
+                  colSpan={8}
+                >
+                  {patients.length === 0
+                    ? 'No patients are currently admitted.'
+                    : 'No patients match the current filters.'}
+                </td>
+              </tr>
+            )}
           </tbody>
           </table>
         </div>
-        <div className="ui-table-footer">
-          <span className="ui-table-footer__info">
-            Showing {table.rangeStart} to {table.rangeEnd} of {table.total} patients
-          </span>
-          <Pagination page={table.page} pageCount={table.pageCount} onPageChange={table.setPage} />
-        </div>
+        <PatientTablePagination
+          info={`Showing ${table.rangeStart} to ${table.rangeEnd} of ${table.total} patients`}
+          page={table.page}
+          pageCount={table.pageCount}
+          onPageChange={table.setPage}
+        />
       </section>
 
       <section style={ui.detailCol}>
         {selected ? (
           <>
-            <div style={ui.patientHeader}>
-              <div style={{ ...ui.patientAvatar, backgroundColor: selected.color }}>{selected.initials}</div>
-              <div>
-                <h2 style={{ ...ui.sectionTitle, margin: 0 }}>{selected.name}</h2>
-                <div style={ui.metaRow}>
-                  <span>Patient ID: {selected.recordId}</span>
-                  <span>Age: {selected.age}</span>
-                  <span>Gender: {selected.gender}</span>
-                  <span>Admission Date: {selected.admissionDate}</span>
-                </div>
-              </div>
-            </div>
+            <SubmittedOrdersTimeline
+              dateValue={activeDate}
+              onDateChange={setSelectedDate}
+              onPrev={() => shiftDate(1)}
+              onNext={() => shiftDate(-1)}
+              prevDisabled={!hasPrevDate}
+              nextDisabled={!hasNextDate}
+              availableDays={datesWithOrders}
+              onClear={() => setSelectedDate('')}
+              clearLabel="Show all"
+              orders={ordersForDisplay.flatMap((set) => set.orders.map((content, index) => ({
+                id: set.order?.id ?? `${set.dateKey}-${set.time}-${index}`,
+                dateCreated: `${set.dateKey}T00:00:00`,
+                dateLabel: set.dateLabel,
+                timeLabel: set.time,
+                doctor: set.doctor,
+                content,
+              })))}
+              renderContent={(entry) => {
+                const order = ordersById.get(entry.id);
+                return (
+                  <>
+                    <div style={ui.orderContent}>{entry.content}</div>
+                    {order && <OrderExecutionPanel key={order.id} order={order} onSaved={replaceOrder} />}
+                  </>
+                );
+              }}
+              emptyMessage={
+                activeDate
+                  ? `No physician orders for ${formatDateLongFromKey(activeDate)}. Choose another date to view previous orders.`
+                  : 'No physician orders recorded for this patient yet.'
+              }
+            />
 
-            <div style={ui.orderCard}>
-              <div style={ui.orderHeader}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <img src={documentImg} alt="Doctor's order" style={{ width: 16, height: 16 }} />
-                  <strong>Doctor’s Order</strong>
-                </div>
-                <div style={ui.dateNav}>
-                  <button
-                    type="button"
-                    style={ui.navChevron}
-                    disabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) >= datesWithOrders.length - 1}
-                    onClick={() => shiftDate(1)}
-                    title="Older date"
-                  >
-                    ‹
-                  </button>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    style={ui.dateInput}
-                  />
-                  <button
-                    type="button"
-                    style={ui.navChevron}
-                    disabled={!datesWithOrders.length || datesWithOrders.indexOf(selectedDate) <= 0}
-                    onClick={() => shiftDate(-1)}
-                    title="Newer date"
-                  >
-                    ›
-                  </button>
-                </div>
-              </div>
-
-              {ordersForDate.length ? (
-                <div style={ui.orderBox}>
-                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>
-                    Showing physician orders for {formatDateLongFromKey(selectedDate)}
-                  </div>
-                  {ordersForDate.map((set) => (
-                    <div key={`${set.doctor}-${set.time}`} style={{ marginBottom: 14 }}>
-                      <div style={ui.orderMeta}>
-                        <div>
-                          <div style={{ fontWeight: 800 }}>{set.doctor}</div>
-                          <div style={{ fontSize: 12, color: '#64748b' }}>{set.time}</div>
-                        </div>
-                        {viewedIds.includes(selected.id) && (
-                          <span style={ui.viewedBadge}>✓ Order Viewed</span>
-                        )}
-                      </div>
-                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Orders:</div>
-                      <ul style={ui.orderList}>
-                        {set.orders.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={ui.muted}>
-                  No physician orders for {formatDateLongFromKey(selectedDate)}. Choose another date to view previous
-                  orders.
-                </p>
-              )}
-            </div>
-
-            <div style={ui.aiCard}>
-              <div style={ui.aiHeader}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <img src={llamaIcon} alt="" style={{ width: 16, height: 16, display: 'block', objectFit: 'contain' }} />
-                  <span style={ui.aiTitle}>AI Summarized</span>
-                </div>
-                <span style={ui.aiBadge}>AI Draft ready</span>
-              </div>
-              <div style={ui.aiBody}>
-                <p style={ui.aiText}>
-                  {DEFAULT_SUMMARIES[selected.id] ??
-                    `No AI summary yet for ${selected.name}. Physician orders will appear here once summarized.`}
-                </p>
-              </div>
-            </div>
+            <AiSummaryCard
+              badgeLabel={approvedSummary ? 'Approved' : pendingSummary ? 'Awaiting approval' : 'No summary yet'}
+              badgeMuted={!approvedSummary}
+              dayLabel={cardDay ? formatDateLongFromKey(cardDay) : 'No order dates'}
+              dayPosition={
+                datesWithOrders.length > 1 && cardDay
+                  ? `${datesWithOrders.indexOf(cardDay) + 1} of ${datesWithOrders.length}`
+                  : undefined
+              }
+              onPrevDay={() => shiftDate(1)}
+              onNextDay={() => shiftDate(-1)}
+              prevDayDisabled={!hasPrevDate}
+              nextDayDisabled={!hasNextDate}
+              text={approvedSummary?.summaryContent}
+              emptyMessage={
+                pendingSummary
+                  ? `The Course in the Ward for ${cardDayLabel} is waiting for the physician's approval.`
+                  : `No Course in the Ward for ${cardDayLabel} yet. Physician summaries are written in the physician workflow.`
+              }
+            />
           </>
         ) : (
           <p style={ui.muted}>Select a patient to view physician orders.</p>
@@ -257,7 +411,10 @@ export function ManagementPortalView({ charts }: { charts: Record<string, Patien
       {detailChart && (
         <PatientDetailModal
           chart={detailChart}
-          canAddDoctor={false}
+          status={detailStatus}
+          onCareTeamChanged={() => {
+            loadPatients().catch(() => undefined);
+          }}
           onClose={() => setDetailName(null)}
         />
       )}

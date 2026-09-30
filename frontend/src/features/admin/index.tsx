@@ -1,6 +1,6 @@
 /** Part of the admin dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from '../../services/domainApi';
@@ -9,14 +9,12 @@ import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { PageHeader } from '../../components/ui';
-import dashboardIcon from '../../Img/dashboard.png';
-import userIcon from '../../Img/user.png';
-import requestsIcon from '../../Img/requests.png';
-import { styles } from './styles';
+import { DashboardIcon, RequestsIcon, UsersIcon } from '../../components/icons/NavIcons';
 
 import { AccountsPanel } from './AccountsPanel';
 import { DashboardView } from './DashboardView';
 import { RequestsView } from './RequestsView';
+import type { ResetRequestRow } from './types';
 
 export function AdminPanel() {
   const [activeNav, setActiveNav] = useState<'dashboard' | 'users' | 'requests'>('dashboard');
@@ -25,19 +23,25 @@ export function AdminPanel() {
   const navigate = useNavigate();
   const knownRequestIds = useRef<Set<string> | null>(null);
 
-  const { data: resetRequestsData } = useQuery({
-    queryKey: ['reset-requests'],
-    queryFn: () => adminApi.getResetRequests().then((response) => response.data),
-    refetchInterval: 15000,
+  // Newest pending requests only: enough to spot new ones for notifications,
+  // while `total` gives the real pending count however many there are.
+  const { data: pendingResetPage } = useQuery({
+    queryKey: ['reset-requests', 'pending-poll'],
+    queryFn: () =>
+      adminApi
+        .getResetRequests({ status: 'PENDING', take: 100 })
+        .then((response) => response.data),
+    refetchInterval: 5000,
   });
 
-  const pendingResetRequests = (resetRequestsData ?? []).filter(
-    (request: any) => request.status === 'PENDING',
+  const pendingResetRequests: ResetRequestRow[] = useMemo(
+    () => pendingResetPage?.items ?? [],
+    [pendingResetPage],
   );
 
   useEffect(() => {
     const currentRequestIds = new Set<string>(
-      pendingResetRequests.map((request: any) => String(request.id)),
+      pendingResetRequests.map((request) => String(request.id)),
     );
 
     if (knownRequestIds.current === null) {
@@ -46,7 +50,7 @@ export function AdminPanel() {
     }
 
     const newRequest = pendingResetRequests.find(
-      (request: any) => !knownRequestIds.current?.has(request.id),
+      (request) => !knownRequestIds.current?.has(request.id),
     );
     knownRequestIds.current = currentRequestIds;
 
@@ -56,6 +60,10 @@ export function AdminPanel() {
       });
     }
   }, [pendingResetRequests]);
+
+  const pendingCount = pendingResetPage?.total ?? 0;
+  const requestsBadge =
+    pendingCount > 0 ? (pendingCount > 99 ? '99+' : String(pendingCount)) : undefined;
 
   const handleLogout = () => {
     logout(); // Clears Zustand state and deletes sessionStorage['cims_auth'] automatically
@@ -69,9 +77,14 @@ export function AdminPanel() {
         activeId: activeNav,
         onNavigate: (id) => setActiveNav(id as 'dashboard' | 'users' | 'requests'),
         items: [
-          { id: 'dashboard', label: 'Dashboard', icon: <img src={dashboardIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'users', label: 'Users', icon: <img src={userIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
-          { id: 'requests', label: 'Requests', icon: <img src={requestsIcon} alt="" aria-hidden="true" style={styles.navIconImage} /> },
+          { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
+          { id: 'users', label: 'Users', icon: <UsersIcon /> },
+          {
+            id: 'requests',
+            label: 'Requests',
+            icon: <RequestsIcon />,
+            badge: requestsBadge,
+          },
         ],
         profile: (
           <SidebarProfile
@@ -87,7 +100,7 @@ export function AdminPanel() {
           title="Admin"
           actions={
             <NotificationBell
-              count={String(pendingResetRequests.length)}
+              count={pendingCount}
               onClick={() => setActiveNav('requests')}
             />
           }
@@ -100,7 +113,3 @@ export function AdminPanel() {
     </Layout>
   );
 }
-
-/* ==========================================================================
-   DASHBOARD VIEW (Matching image metrics & activity log table)
-   ========================================================================== */

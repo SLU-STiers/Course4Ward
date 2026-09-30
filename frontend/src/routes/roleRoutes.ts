@@ -7,10 +7,10 @@ export const ROLE_PATH: Record<Role, string> = {
   CLAIMS_PROCESSOR: '/claims',
   ADMIN: '/admin',
 };
-
 export const PATH_ROLE: Record<string, Role> = {
   '/physician': 'PHYSICIAN',
   '/nurse': 'NURSE',
   '/claims': 'CLAIMS_PROCESSOR',
   '/admin': 'ADMIN',
 };
+

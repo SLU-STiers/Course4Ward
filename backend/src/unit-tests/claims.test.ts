@@ -4,7 +4,8 @@ import { ClaimsController } from "../claims/claims.controller";
 import { ClaimsService } from "../claims/claims.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
-import { PhilHealthCF4Status, SummaryStatus } from "@prisma/client";
+import { NotificationsService } from "../notifications/notifications.service";
+import { NotificationType, PhilHealthCF4Status, Sex, SummaryStatus } from "@prisma/client";
 
 const mockPrismaService = {
   courseInWard: {
@@ -22,11 +23,16 @@ const mockAuditLogService = {
   record: jest.fn(),
 } as unknown as jest.Mocked<AuditLogService>;
 
+const mockNotificationsService = {
+  create: jest.fn(),
+} as unknown as jest.Mocked<NotificationsService>;
+
 describe("Claims Module", () => {
   let controller: ClaimsController;
   let service: ClaimsService;
   let prismaService: typeof mockPrismaService;
   let auditLogService: typeof mockAuditLogService;
+  let notificationsService: typeof mockNotificationsService;
 
   const mockUser = {
     id: "user-123",
@@ -41,7 +47,7 @@ describe("Claims Module", () => {
     id: "patient-123",
     firstName: "John",
     lastName: "Doe",
-    gender: "MALE",
+    gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -82,6 +88,7 @@ describe("Claims Module", () => {
         ClaimsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
@@ -89,6 +96,7 @@ describe("Claims Module", () => {
     service = module.get<ClaimsService>(ClaimsService);
     prismaService = module.get(PrismaService);
     auditLogService = module.get(AuditLogService);
+    notificationsService = module.get(NotificationsService);
 
     jest.clearAllMocks();
   });
@@ -97,9 +105,11 @@ describe("Claims Module", () => {
   describe("ClaimsService", () => {
     describe("createFromSummary", () => {
       it("should create a claim from a valid summary", async () => {
-        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue(
-          mockSummary,
-        );
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          requests: [],
+          orders: [],
+        });
         (
           prismaService.summaryApprovalRequest.create as jest.Mock
         ).mockResolvedValue(mockClaim);
@@ -109,9 +119,9 @@ describe("Claims Module", () => {
           mockUser.id,
         );
 
-        expect(prismaService.courseInWard.findUnique).toHaveBeenCalledWith({
-          where: { id: mockCourseInWardId },
-        });
+        expect(prismaService.courseInWard.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: mockCourseInWardId } }),
+        );
         expect(
           prismaService.summaryApprovalRequest.create,
         ).toHaveBeenCalledWith({
@@ -119,6 +129,7 @@ describe("Claims Module", () => {
             summaryId: mockCourseInWardId,
             physicianId: mockSummary.validatorId,
             processorId: mockUser.id,
+            status: "VALIDATED",
           },
         });
         expect(auditLogService.record).toHaveBeenCalledWith({
@@ -143,20 +154,67 @@ describe("Claims Module", () => {
         expect(auditLogService.record).not.toHaveBeenCalled();
       });
 
-      it("should throw BadRequestException when summary has no validator", async () => {
+      it("should address an unapproved summary to the attending physician as PENDING", async () => {
         (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
           ...mockSummary,
           validatorId: null,
+          status: SummaryStatus.DRAFT_AI,
+          approvedStatus: null,
+          requests: [],
+          orders: [
+            { orderedById: "physician-ordering", admission: { physicianId: "physician-attending" } },
+          ],
+        });
+        (
+          prismaService.summaryApprovalRequest.create as jest.Mock
+        ).mockResolvedValue(mockClaim);
+
+        await service.createFromSummary(mockCourseInWardId, mockUser.id);
+
+        expect(
+          prismaService.summaryApprovalRequest.create,
+        ).toHaveBeenCalledWith({
+          data: {
+            summaryId: mockCourseInWardId,
+            physicianId: "physician-attending",
+            processorId: mockUser.id,
+            status: "PENDING",
+          },
+        });
+      });
+
+      it("should throw BadRequestException when no physician can validate the summary", async () => {
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          validatorId: null,
+          requests: [],
+          orders: [],
         });
 
         await expect(
           service.createFromSummary(mockCourseInWardId, mockUser.id),
-        ).rejects.toThrow("Summary has no validating physician");
+        ).rejects.toThrow("Summary has no attending physician to validate it");
 
         expect(
           prismaService.summaryApprovalRequest.create,
         ).not.toHaveBeenCalled();
         expect(auditLogService.record).not.toHaveBeenCalled();
+      });
+
+      it("should throw ConflictException when the summary already has a claim", async () => {
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          requests: [{ id: "claim-existing" }],
+          orders: [],
+        });
+
+        await expect(
+          service.createFromSummary(mockCourseInWardId, mockUser.id),
+        ).rejects.toThrow("A claim already exists for this summary");
+
+        expect(
+          prismaService.summaryApprovalRequest.create,
+        ).not.toHaveBeenCalled();
       });
     });
 
@@ -183,6 +241,7 @@ describe("Claims Module", () => {
                       select: { admissionDate: true, dischargeDate: true },
                     },
                     orderedBy: { select: { firstName: true, lastName: true } },
+                    executedBy: { select: { firstName: true, lastName: true } },
                   },
                 },
               },
@@ -204,7 +263,20 @@ describe("Claims Module", () => {
     });
 
     describe("notifyPhysician", () => {
-      it("should update claim status and log audit", async () => {
+      // The service loads the claim with its patient + processor before it
+      // updates the status and raises the notification.
+      const claimWithRelations = {
+        ...mockClaim,
+        processor: { firstName: "Kristine", lastName: "Bautista" },
+      };
+
+      beforeEach(() => {
+        (
+          prismaService.summaryApprovalRequest.findUnique as jest.Mock
+        ).mockResolvedValue(claimWithRelations);
+      });
+
+      it("should update status, notify the physician and log audit", async () => {
         const updatedClaim = {
           ...mockClaim,
           status: "PHYSICIAN_VALIDATION_REQUESTED",
@@ -213,7 +285,11 @@ describe("Claims Module", () => {
           prismaService.summaryApprovalRequest.update as jest.Mock
         ).mockResolvedValue(updatedClaim);
 
-        const result = await service.notifyPhysician(mockClaimId, mockUser.id);
+        const result = await service.notifyPhysician(
+          mockClaimId,
+          mockUser.id,
+          "Please re-check the dosage.",
+        );
 
         expect(
           prismaService.summaryApprovalRequest.update,
@@ -221,11 +297,49 @@ describe("Claims Module", () => {
           where: { id: mockClaimId },
           data: { status: "PHYSICIAN_VALIDATION_REQUESTED" },
         });
+        expect(notificationsService.create).toHaveBeenCalledWith({
+          userId: mockClaim.physicianId,
+          type: NotificationType.REVIEW_REQUESTED,
+          title: "Review requested again",
+          message: expect.stringContaining("Please re-check the dosage."),
+          requestId: mockClaimId,
+        });
         expect(auditLogService.record).toHaveBeenCalledWith({
           userId: mockUser.id,
           action: "CLAIM_PHYSICIAN_NOTIFIED",
         });
         expect(result).toEqual(updatedClaim);
+      });
+
+      it("should notify without a message when the processor sends none", async () => {
+        (
+          prismaService.summaryApprovalRequest.update as jest.Mock
+        ).mockResolvedValue(mockClaim);
+
+        await service.notifyPhysician(mockClaimId, mockUser.id);
+
+        expect(notificationsService.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: mockClaim.physicianId,
+            requestId: mockClaimId,
+          }),
+        );
+      });
+
+      it("should throw NotFoundException when claim id is unknown", async () => {
+        (
+          prismaService.summaryApprovalRequest.findUnique as jest.Mock
+        ).mockResolvedValue(null);
+
+        await expect(
+          service.notifyPhysician("unknown-claim-id", mockUser.id),
+        ).rejects.toThrow("Claim not found");
+
+        expect(
+          prismaService.summaryApprovalRequest.update,
+        ).not.toHaveBeenCalled();
+        expect(notificationsService.create).not.toHaveBeenCalled();
+        expect(auditLogService.record).not.toHaveBeenCalled();
       });
     });
 
@@ -342,13 +456,30 @@ describe("Claims Module", () => {
         };
         jest.spyOn(service, "notifyPhysician").mockResolvedValue(updatedClaim);
 
-        const result = await controller.notifyPhysician(mockClaimId, mockUser);
+        const result = await controller.notifyPhysician(
+          mockClaimId,
+          { message: "Please double-check the dosage." },
+          mockUser,
+        );
 
         expect(service.notifyPhysician).toHaveBeenCalledWith(
           mockClaimId,
           mockUser.id,
+          "Please double-check the dosage.",
         );
         expect(result).toEqual(updatedClaim);
+      });
+
+      it("should forward an undefined message when the processor sends none", async () => {
+        jest.spyOn(service, "notifyPhysician").mockResolvedValue(mockClaim);
+
+        await controller.notifyPhysician(mockClaimId, {}, mockUser);
+
+        expect(service.notifyPhysician).toHaveBeenCalledWith(
+          mockClaimId,
+          mockUser.id,
+          undefined,
+        );
       });
     });
 

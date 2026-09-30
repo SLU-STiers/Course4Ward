@@ -1,8 +1,8 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
 import type { ClaimRecord } from '../../types';
-import { calculateAge, formatDateMedium, formatTimeMedium } from '../../lib/format';
-import { admissionStatus, fullName, initials } from '../../lib/patient';
+import { calculateAge, computeAge, formatDateMedium, formatTimeMedium, toDateInputValue } from '../../lib/format';
+import { admissionStatus, daysInCare, fullName, initials, sexLabel, statusColor } from '../../lib/patient';
 
 import type { CF4Patient, SummarizationRequest } from './types';
 
@@ -23,30 +23,45 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
       initials: initials(patient),
       patientId: patient.id,
       age: calculateAge(patient.dateOfBirth),
-      gender: patient.gender ?? 'Not recorded',
+      gender: sexLabel(patient.gender, 'Not recorded'),
       admissionDate: formatDateMedium(admissionDate),
     },
     summaryText: claim.summary.summaryContent,
     orders: claim.summary.orders.map((summaryOrder) => ({
+      id: summaryOrder.id,
       content: summaryOrder.orderContent,
       dateCreated: summaryOrder.dateCreated,
-      doctor: `${summaryOrder.orderedBy.firstName} ${summaryOrder.orderedBy.lastName}`,
+      doctor: summaryOrder.orderedBy
+        ? `${summaryOrder.orderedBy.firstName} ${summaryOrder.orderedBy.lastName}`
+        : 'Attending physician',
+      /* Nurse execution state — the timeline renders it via OrderStatusSummary. */
+      status: summaryOrder.status,
+      type: summaryOrder.type,
+      nurseComment: summaryOrder.nurseComment,
+      executedAt: summaryOrder.executedAt,
+      executedBy: summaryOrder.executedBy,
     })),
   };
 }
 export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
   const patient = claim.summary.patient;
-  const admissionDate = claim.summary.orders[0]?.admission.admissionDate ?? claim.summary.summaryDate;
-  const dischargeDate = claim.summary.orders[0]?.admission.dischargeDate;
+  const admission = claim.summary.orders[0]?.admission;
+  const admissionDate = admission?.admissionDate ?? claim.summary.summaryDate;
+  const dischargeDate = admission?.dischargeDate;
+  const status = admissionStatus(dischargeDate);
 
   return {
     id: claim.id,
     claimId: claim.id,
     name: fullName(patient),
     patientId: patient.id,
+    gender: sexLabel(patient.gender),
+    age: computeAge(patient.dateOfBirth),
+    color: statusColor(status),
     admissionDate: formatDateMedium(admissionDate),
-    color: '#22c55e',
-    status: admissionStatus(dischargeDate),
+    admissionDateRaw: toDateInputValue(new Date(admissionDate)),
+    daysInCare: daysInCare(admissionDate, dischargeDate),
+    status,
     selected: false,
   };
 }

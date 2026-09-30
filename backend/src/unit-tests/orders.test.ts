@@ -1,17 +1,43 @@
 // backend/src/unit-tests/orders.service.test.ts
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { OrdersService } from '../orders/orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { OrderEnteredBy, Role } from '@prisma/client';
+import { OrderEnteredBy, OrderStatus, OrderType, PatientClass, Role } from '@prisma/client';
 import { CreateOrderDto } from '../orders/dto/create-order.dto';
 
 const mockPrismaService = {
   physicianOrder: {
     create: jest.fn(),
     findMany: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
   },
+  patientAdmission: {
+    findUnique: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  $executeRaw: jest.fn(),
 } as unknown as jest.Mocked<PrismaService>;
+
+const mockConfigService = {
+  get: jest.fn().mockReturnValue('http://localhost:8000'),
+} as unknown as jest.Mocked<ConfigService>;
+
+const orderInclude = {
+  orderedBy: { select: { firstName: true, lastName: true } },
+  encodedBy: { select: { firstName: true, lastName: true, role: true } },
+  executedBy: { select: { firstName: true, lastName: true } },
+};
+
+const openAdmission = {
+  dischargeDate: null,
+  patientClass: PatientClass.INPATIENT,
+  physicianId: 'doctor-123',
+  additionalPhysicians: [{ physicianId: 'doctor-456' }],
+};
 
 const mockAuditLogService = {
   record: jest.fn(),
@@ -29,6 +55,7 @@ describe('OrdersService', () => {
     encodedById: 'nurse-123',
     enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
     orderContent: 'Administer 500mg paracetamol',
+    status: OrderStatus.TO_ACCOMPLISH,
     dateCreated: new Date(),
   };
 
@@ -38,6 +65,7 @@ describe('OrdersService', () => {
         OrdersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
 
@@ -46,6 +74,9 @@ describe('OrdersService', () => {
     auditLogService = module.get(AuditLogService);
 
     jest.clearAllMocks();
+    // Embedding is best-effort and fire-and-forget; keep it off the network.
+    jest.spyOn(service as any, 'persistOrderEmbedding').mockResolvedValue(undefined);
+    (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(openAdmission);
   });
 
   describe('create', () => {
@@ -67,7 +98,9 @@ describe('OrdersService', () => {
           encodedById: 'nurse-123',
           enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
           orderContent: dto.orderContent,
+          type: OrderType.DEFAULT,
         },
+        include: orderInclude,
       });
       expect(auditLogService.record).toHaveBeenCalledWith({
         userId: 'nurse-123',
@@ -81,12 +114,14 @@ describe('OrdersService', () => {
 
       await service.create(dto, 'doctor-123', Role.PHYSICIAN);
 
-      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          encodedById: 'doctor-123',
-          enteredByRole: OrderEnteredBy.PHYSICIAN,
+      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            encodedById: 'doctor-123',
+            enteredByRole: OrderEnteredBy.PHYSICIAN,
+          }),
         }),
-      });
+      );
     });
 
     it('should flag order as PHYSICIAN for any non-nurse role (e.g. ADMIN)', async () => {
@@ -94,10 +129,225 @@ describe('OrdersService', () => {
 
       await service.create(dto, 'admin-123', Role.ADMIN);
 
-      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          enteredByRole: OrderEnteredBy.PHYSICIAN,
+      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            enteredByRole: OrderEnteredBy.PHYSICIAN,
+          }),
         }),
+      );
+    });
+
+    it('should attribute the order to the submitting physician when orderedById is omitted', async () => {
+      (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.create(
+        { admissionId: 'admission-123', orderContent: 'CBC tomorrow AM' } as CreateOrderDto,
+        'doctor-456',
+        Role.PHYSICIAN,
+      );
+
+      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ orderedById: 'doctor-456', encodedById: 'doctor-456' }),
+        }),
+      );
+    });
+
+    it('should reject a physician who is not on the care team', async () => {
+      await expect(service.create(dto, 'doctor-999', Role.PHYSICIAN)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a nurse order without an ordering physician', async () => {
+      await expect(
+        service.create(
+          { admissionId: 'admission-123', orderContent: 'CBC' } as CreateOrderDto,
+          'nurse-123',
+          Role.NURSE,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject an ordering physician outside the care team', async () => {
+      await expect(
+        service.create({ ...dto, orderedById: 'doctor-999' }, 'nurse-123', Role.NURSE),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject orders on a missing admission', async () => {
+      (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.create(dto, 'doctor-123', Role.PHYSICIAN)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should reject orders on a discharged admission', async () => {
+      (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+        ...openAdmission,
+        dischargeDate: new Date(),
+      });
+
+      await expect(service.create(dto, 'doctor-123', Role.PHYSICIAN)).rejects.toThrow(
+        'Cannot add orders to a discharged admission',
+      );
+      expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
+    });
+
+    describe('order types', () => {
+      const erAdmission = { ...openAdmission, patientClass: PatientClass.EMERGENCY };
+
+      beforeEach(() => {
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([]);
+        (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);
+        (prismaService.patientAdmission.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      });
+
+      it('should not check admission/discharge rules for a general order', async () => {
+        await service.create(dto, 'doctor-123', Role.PHYSICIAN);
+
+        expect(prismaService.physicianOrder.findMany).not.toHaveBeenCalled();
+        expect(prismaService.patientAdmission.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('should file an admission order for an emergency patient without admitting them', async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(erAdmission);
+
+        await service.create({ ...dto, type: OrderType.ADMISSION }, 'doctor-123', Role.PHYSICIAN);
+
+        // The nurse admits the patient afterwards (PATCH /patients/admissions/:id/admit).
+        expect(prismaService.patientAdmission.updateMany).not.toHaveBeenCalled();
+        expect(prismaService.physicianOrder.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ type: OrderType.ADMISSION }) }),
+        );
+      });
+
+      it('should reject an admission order for an already admitted patient', async () => {
+        await expect(
+          service.create({ ...dto, type: OrderType.ADMISSION }, 'doctor-123', Role.PHYSICIAN),
+        ).rejects.toThrow(ConflictException);
+        expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject a second admission order', async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(erAdmission);
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([
+          { type: OrderType.ADMISSION },
+        ]);
+
+        await expect(
+          service.create({ ...dto, type: OrderType.ADMISSION }, 'doctor-123', Role.PHYSICIAN),
+        ).rejects.toThrow('This patient already has an admission order');
+      });
+
+      it('should reject an admission order once a discharge has been ordered', async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(erAdmission);
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([
+          { type: OrderType.DISCHARGE },
+        ]);
+
+        await expect(
+          service.create({ ...dto, type: OrderType.ADMISSION }, 'doctor-123', Role.PHYSICIAN),
+        ).rejects.toThrow('This patient already has a discharge order');
+      });
+
+      it.each([PatientClass.EMERGENCY, PatientClass.OUTPATIENT])(
+        'should allow an observation order for a %s patient',
+        async (patientClass) => {
+          (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+            ...openAdmission,
+            patientClass,
+          });
+
+          await service.create({ ...dto, type: OrderType.OBSERVATION }, 'doctor-123', Role.PHYSICIAN);
+
+          expect(prismaService.physicianOrder.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+              data: expect.objectContaining({ type: OrderType.OBSERVATION }),
+            }),
+          );
+        },
+      );
+
+      it.each([
+        [PatientClass.OBSERVATION, 'This patient is already under observation'],
+        [PatientClass.INPATIENT, 'An admitted patient cannot be placed under observation'],
+      ])('should reject an observation order for a %s patient', async (patientClass, message) => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+          ...openAdmission,
+          patientClass,
+        });
+
+        await expect(
+          service.create({ ...dto, type: OrderType.OBSERVATION }, 'doctor-123', Role.PHYSICIAN),
+        ).rejects.toThrow(message);
+      });
+
+      it('should reject an observation order while one waits for the nurse', async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(erAdmission);
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([
+          { type: OrderType.OBSERVATION },
+        ]);
+
+        await expect(
+          service.create({ ...dto, type: OrderType.OBSERVATION }, 'doctor-123', Role.PHYSICIAN),
+        ).rejects.toThrow('This patient already has an observation order');
+      });
+
+      it('should allow an admission order for a patient under observation', async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+          ...openAdmission,
+          patientClass: PatientClass.OBSERVATION,
+        });
+        // The observation order that put them there is already carried out.
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([
+          { type: OrderType.OBSERVATION },
+        ]);
+
+        await service.create({ ...dto, type: OrderType.ADMISSION }, 'doctor-123', Role.PHYSICIAN);
+
+        expect(prismaService.physicianOrder.create).toHaveBeenCalled();
+      });
+
+      it('should reject an observation order once admission is ordered', async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(erAdmission);
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([
+          { type: OrderType.ADMISSION },
+        ]);
+
+        await expect(
+          service.create({ ...dto, type: OrderType.OBSERVATION }, 'doctor-123', Role.PHYSICIAN),
+        ).rejects.toThrow('This patient already has an admission order');
+      });
+
+      it('should allow a discharge order for admitted and ER patients alike', async () => {
+        await service.create({ ...dto, type: OrderType.DISCHARGE }, 'doctor-123', Role.PHYSICIAN);
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(erAdmission);
+        await service.create({ ...dto, type: OrderType.DISCHARGE }, 'doctor-123', Role.PHYSICIAN);
+
+        expect(prismaService.physicianOrder.create).toHaveBeenCalledTimes(2);
+        expect(prismaService.patientAdmission.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('should reject a second discharge order', async () => {
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([
+          { type: OrderType.DISCHARGE },
+        ]);
+
+        await expect(
+          service.create({ ...dto, type: OrderType.DISCHARGE }, 'doctor-123', Role.PHYSICIAN),
+        ).rejects.toThrow('This patient already has a discharge order');
+      });
+
+      it('should only count active admission/discharge orders', async () => {
+        await service.create({ ...dto, type: OrderType.DISCHARGE }, 'doctor-123', Role.PHYSICIAN);
+
+        expect(prismaService.physicianOrder.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ active: true }) }),
+        );
       });
     });
 
@@ -119,10 +369,7 @@ describe('OrdersService', () => {
       expect(prismaService.physicianOrder.findMany).toHaveBeenCalledWith({
         where: { admission: { patientId: 'patient-123' } },
         orderBy: { dateCreated: 'desc' },
-        include: {
-          orderedBy: { select: { firstName: true, lastName: true } },
-          encodedBy: { select: { firstName: true, lastName: true, role: true } },
-        },
+        include: orderInclude,
       });
       expect(result).toEqual([mockOrder]);
     });
@@ -137,9 +384,10 @@ describe('OrdersService', () => {
       expect(prismaService.physicianOrder.findMany).toHaveBeenCalledWith({
         where: {
           admission: { patientId: 'patient-123' },
-          dateCreated: { gte: expect.any(Date) },
+          dateCreated: { gte: expect.any(Date), lt: expect.any(Date) },
         },
         orderBy: { dateCreated: 'asc' },
+        include: { admission: { select: { id: true, admissionDate: true } } },
       });
     });
 
@@ -155,6 +403,85 @@ describe('OrdersService', () => {
       expect(gte.getMinutes()).toBe(0);
       expect(gte.getSeconds()).toBe(0);
       expect(gte.getMilliseconds()).toBe(0);
+    });
+  });
+
+  describe('updateStatus', () => {
+    it('should stamp the nurse and time when an order is carried out', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateStatus(
+        'order-123',
+        { status: OrderStatus.FINISHED, nurseComment: '  Given at 08:00  ' },
+        'nurse-123',
+      );
+
+      expect(prismaService.physicianOrder.findFirst).toHaveBeenCalledWith({
+        where: { id: 'order-123', active: true },
+      });
+      const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
+      expect(data).toEqual({
+        status: OrderStatus.FINISHED,
+        nurseComment: 'Given at 08:00',
+        executedById: 'nurse-123',
+        executedAt: expect.any(Date),
+      });
+      expect(auditLogService.record).toHaveBeenCalledWith({
+        userId: 'nurse-123',
+        action: 'ORDER_STATUS_UPDATED',
+      });
+    });
+
+    it.each([
+      [OrderStatus.ONGOING, OrderStatus.TO_ACCOMPLISH],
+      [OrderStatus.FINISHED, OrderStatus.TO_ACCOMPLISH],
+      [OrderStatus.FINISHED, OrderStatus.ONGOING],
+    ])('should refuse to move an order from %s back to %s', async (current, next) => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({ ...mockOrder, status: current });
+
+      await expect(service.updateStatus('order-123', { status: next }, 'nurse-123')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
+      expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('should keep the executor stamp when only the note changes', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: OrderStatus.FINISHED,
+      });
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateStatus(
+        'order-123',
+        { status: OrderStatus.FINISHED, nurseComment: 'Patient tolerated well' },
+        'nurse-456',
+      );
+
+      const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
+      expect(data).toEqual({ status: OrderStatus.FINISHED, nurseComment: 'Patient tolerated well' });
+    });
+
+    it('should store an empty comment as null', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(mockOrder);
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.updateStatus('order-123', { status: OrderStatus.ONGOING, nurseComment: '   ' }, 'nurse-123');
+
+      const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
+      expect(data.nurseComment).toBeNull();
+    });
+
+    it('should throw NotFoundException for a missing or inactive order', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.updateStatus('missing', { status: OrderStatus.FINISHED }, 'nurse-123'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
+      expect(auditLogService.record).not.toHaveBeenCalled();
     });
   });
 });

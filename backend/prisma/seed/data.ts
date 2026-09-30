@@ -1,4 +1,5 @@
 import {
+  PatientClass,
   ActionType,
   CommunicationChannel,
   OrderEnteredBy,
@@ -7,6 +8,7 @@ import {
   PhilHealthCF4Status,
   ResetStatus,
   Role,
+  Sex,
   SummaryStatus,
 } from '@prisma/client';
 
@@ -97,41 +99,41 @@ export interface SeedPatient {
   key: string;
   firstName: string;
   lastName: string;
-  gender: string;
+  gender: Sex;
   dateOfBirth: Date;
 }
 
 export const patients: SeedPatient[] = [
-  { id: uid(101), key: 'pt1', firstName: 'Juan', lastName: 'Dela Cruz', gender: 'Male', dateOfBirth: new Date(1965, 2, 14) },
-  { id: uid(102), key: 'pt2', firstName: 'Maria Clara', lastName: 'Mendoza', gender: 'Female', dateOfBirth: new Date(1978, 6, 22) },
-  { id: uid(103), key: 'pt3', firstName: 'Pedro', lastName: 'Lim', gender: 'Male', dateOfBirth: new Date(1952, 10, 2) },
-  { id: uid(104), key: 'pt4', firstName: 'Ana Marie', lastName: 'Villanueva', gender: 'Female', dateOfBirth: new Date(1988, 0, 30) },
-  { id: uid(105), key: 'pt5', firstName: 'Ramon', lastName: 'Garcia', gender: 'Male', dateOfBirth: new Date(1941, 4, 9) },
-  { id: uid(106), key: 'pt6', firstName: 'Liza', lastName: 'Fernandez', gender: 'Female', dateOfBirth: new Date(1996, 8, 18) },
-  { id: uid(107), key: 'pt7', firstName: 'Carlos', lastName: 'Reyes', gender: 'Male', dateOfBirth: new Date(1970, 3, 12) },
-  { id: uid(108), key: 'pt8', firstName: 'Rosario', lastName: 'Bautista', gender: 'Female', dateOfBirth: new Date(1955, 5, 4) },
-  { id: uid(109), key: 'pt9', firstName: 'Miguel', lastName: 'Santos', gender: 'Male', dateOfBirth: new Date(1982, 11, 19) },
-  { id: uid(110), key: 'pt10', firstName: 'Elena', lastName: 'Cruz', gender: 'Female', dateOfBirth: new Date(1990, 1, 8) },
-  { id: uid(111), key: 'pt11', firstName: 'Ricardo', lastName: 'Aquino', gender: 'Male', dateOfBirth: new Date(1968, 7, 27) },
-  { id: uid(112), key: 'pt12', firstName: 'Josefina', lastName: 'Ramos', gender: 'Female', dateOfBirth: new Date(1948, 9, 3) },
-  { id: uid(113), key: 'pt13', firstName: 'Eduardo', lastName: 'Torres', gender: 'Male', dateOfBirth: new Date(1975, 2, 16) },
-  { id: uid(114), key: 'pt14', firstName: 'Carmen', lastName: 'Delgado', gender: 'Female', dateOfBirth: new Date(1985, 6, 5) },
-  { id: uid(115), key: 'pt15', firstName: 'Fernando', lastName: 'Pascual', gender: 'Male', dateOfBirth: new Date(1960, 0, 23) },
-  { id: uid(116), key: 'pt16', firstName: 'Gloria', lastName: 'Sandoval', gender: 'Female', dateOfBirth: new Date(1993, 4, 11) },
-  { id: uid(117), key: 'pt17', firstName: 'Andres', lastName: 'Navarro', gender: 'Male', dateOfBirth: new Date(1958, 8, 30) },
-  { id: uid(118), key: 'pt18', firstName: 'Teresa', lastName: 'Gomez', gender: 'Female', dateOfBirth: new Date(1963, 10, 17) },
-  { id: uid(119), key: 'pt19', firstName: 'Rafael', lastName: 'Villanueva', gender: 'Male', dateOfBirth: new Date(1987, 3, 9) },
-  { id: uid(120), key: 'pt20', firstName: 'Lucila', lastName: 'Domingo', gender: 'Female', dateOfBirth: new Date(1972, 1, 26) },
-  { id: uid(121), key: 'pt21', firstName: 'Arturo', lastName: 'Salazar', gender: 'Male', dateOfBirth: new Date(1945, 7, 13) },
-  { id: uid(122), key: 'pt22', firstName: 'Maribel', lastName: 'Castillo', gender: 'Female', dateOfBirth: new Date(1999, 11, 1) },
-  { id: uid(123), key: 'pt23', firstName: 'Joaquin', lastName: 'Mercado', gender: 'Male', dateOfBirth: new Date(1980, 5, 21) },
-  { id: uid(124), key: 'pt24', firstName: 'Pilar', lastName: 'Espinosa', gender: 'Female', dateOfBirth: new Date(1957, 9, 28) },
-  { id: uid(125), key: 'pt25', firstName: 'Nestor', lastName: 'Agustin', gender: 'Male', dateOfBirth: new Date(1976, 2, 7) },
-  { id: uid(126), key: 'pt26', firstName: 'Rosalinda', lastName: 'Padilla', gender: 'Female', dateOfBirth: new Date(1966, 4, 15) },
-  { id: uid(127), key: 'pt27', firstName: 'Emilio', lastName: 'Buenaventura', gender: 'Male', dateOfBirth: new Date(1991, 8, 24) },
-  { id: uid(128), key: 'pt28', firstName: 'Corazon', lastName: 'Lumibao', gender: 'Female', dateOfBirth: new Date(1950, 6, 30) },
-  { id: uid(129), key: 'pt29', firstName: 'Ismael', lastName: 'Ocampo', gender: 'Male', dateOfBirth: new Date(1969, 1, 18) },
-  { id: uid(130), key: 'pt30', firstName: 'Dolores', lastName: 'Manalo', gender: 'Female', dateOfBirth: new Date(1983, 10, 12) },
+  { id: uid(101), key: 'pt1', firstName: 'Juan', lastName: 'Dela Cruz', gender: Sex.MALE, dateOfBirth: new Date(1965, 2, 14) },
+  { id: uid(102), key: 'pt2', firstName: 'Maria Clara', lastName: 'Mendoza', gender: Sex.FEMALE, dateOfBirth: new Date(1978, 6, 22) },
+  { id: uid(103), key: 'pt3', firstName: 'Pedro', lastName: 'Lim', gender: Sex.MALE, dateOfBirth: new Date(1952, 10, 2) },
+  { id: uid(104), key: 'pt4', firstName: 'Ana Marie', lastName: 'Villanueva', gender: Sex.FEMALE, dateOfBirth: new Date(1988, 0, 30) },
+  { id: uid(105), key: 'pt5', firstName: 'Ramon', lastName: 'Garcia', gender: Sex.MALE, dateOfBirth: new Date(1941, 4, 9) },
+  { id: uid(106), key: 'pt6', firstName: 'Liza', lastName: 'Fernandez', gender: Sex.FEMALE, dateOfBirth: new Date(1996, 8, 18) },
+  { id: uid(107), key: 'pt7', firstName: 'Carlos', lastName: 'Reyes', gender: Sex.MALE, dateOfBirth: new Date(1970, 3, 12) },
+  { id: uid(108), key: 'pt8', firstName: 'Rosario', lastName: 'Bautista', gender: Sex.FEMALE, dateOfBirth: new Date(1955, 5, 4) },
+  { id: uid(109), key: 'pt9', firstName: 'Miguel', lastName: 'Santos', gender: Sex.MALE, dateOfBirth: new Date(1982, 11, 19) },
+  { id: uid(110), key: 'pt10', firstName: 'Elena', lastName: 'Cruz', gender: Sex.FEMALE, dateOfBirth: new Date(1990, 1, 8) },
+  { id: uid(111), key: 'pt11', firstName: 'Ricardo', lastName: 'Aquino', gender: Sex.MALE, dateOfBirth: new Date(1968, 7, 27) },
+  { id: uid(112), key: 'pt12', firstName: 'Josefina', lastName: 'Ramos', gender: Sex.FEMALE, dateOfBirth: new Date(1948, 9, 3) },
+  { id: uid(113), key: 'pt13', firstName: 'Eduardo', lastName: 'Torres', gender: Sex.MALE, dateOfBirth: new Date(1975, 2, 16) },
+  { id: uid(114), key: 'pt14', firstName: 'Carmen', lastName: 'Delgado', gender: Sex.FEMALE, dateOfBirth: new Date(1985, 6, 5) },
+  { id: uid(115), key: 'pt15', firstName: 'Fernando', lastName: 'Pascual', gender: Sex.MALE, dateOfBirth: new Date(1960, 0, 23) },
+  { id: uid(116), key: 'pt16', firstName: 'Gloria', lastName: 'Sandoval', gender: Sex.FEMALE, dateOfBirth: new Date(1993, 4, 11) },
+  { id: uid(117), key: 'pt17', firstName: 'Andres', lastName: 'Navarro', gender: Sex.MALE, dateOfBirth: new Date(1958, 8, 30) },
+  { id: uid(118), key: 'pt18', firstName: 'Teresa', lastName: 'Gomez', gender: Sex.FEMALE, dateOfBirth: new Date(1963, 10, 17) },
+  { id: uid(119), key: 'pt19', firstName: 'Rafael', lastName: 'Villanueva', gender: Sex.MALE, dateOfBirth: new Date(1987, 3, 9) },
+  { id: uid(120), key: 'pt20', firstName: 'Lucila', lastName: 'Domingo', gender: Sex.FEMALE, dateOfBirth: new Date(1972, 1, 26) },
+  { id: uid(121), key: 'pt21', firstName: 'Arturo', lastName: 'Salazar', gender: Sex.MALE, dateOfBirth: new Date(1945, 7, 13) },
+  { id: uid(122), key: 'pt22', firstName: 'Maribel', lastName: 'Castillo', gender: Sex.FEMALE, dateOfBirth: new Date(1999, 11, 1) },
+  { id: uid(123), key: 'pt23', firstName: 'Joaquin', lastName: 'Mercado', gender: Sex.MALE, dateOfBirth: new Date(1980, 5, 21) },
+  { id: uid(124), key: 'pt24', firstName: 'Pilar', lastName: 'Espinosa', gender: Sex.FEMALE, dateOfBirth: new Date(1957, 9, 28) },
+  { id: uid(125), key: 'pt25', firstName: 'Nestor', lastName: 'Agustin', gender: Sex.MALE, dateOfBirth: new Date(1976, 2, 7) },
+  { id: uid(126), key: 'pt26', firstName: 'Rosalinda', lastName: 'Padilla', gender: Sex.FEMALE, dateOfBirth: new Date(1966, 4, 15) },
+  { id: uid(127), key: 'pt27', firstName: 'Emilio', lastName: 'Buenaventura', gender: Sex.MALE, dateOfBirth: new Date(1991, 8, 24) },
+  { id: uid(128), key: 'pt28', firstName: 'Corazon', lastName: 'Lumibao', gender: Sex.FEMALE, dateOfBirth: new Date(1950, 6, 30) },
+  { id: uid(129), key: 'pt29', firstName: 'Ismael', lastName: 'Ocampo', gender: Sex.MALE, dateOfBirth: new Date(1969, 1, 18) },
+  { id: uid(130), key: 'pt30', firstName: 'Dolores', lastName: 'Manalo', gender: Sex.FEMALE, dateOfBirth: new Date(1983, 10, 12) },
 ];
 
 // ---------------------------------------------------------------------------
@@ -146,8 +148,9 @@ export interface SeedAdmission {
   physicianUserId: string;
   admissionDate: Date;
   dischargeDate?: Date;
-  isOutpatient?: boolean;
-  outpatientSetAt?: Date;
+  /** Defaults to INPATIENT (the seeded stays are ward admissions). */
+  patientClass?: PatientClass;
+  classSince?: Date;
   initialAssessment?: string;
 }
 
@@ -163,7 +166,7 @@ export const admissions: SeedAdmission[] = [
   { id: uid(208), key: 'adm14', patientKey: 'pt13', physicianUserId: 'DOC006', admissionDate: daysAgo(1), initialAssessment: 'Acute coronary syndrome, NSTEMI. Chest pain, troponin elevated.' },
   { id: uid(209), key: 'adm15', patientKey: 'pt14', physicianUserId: 'DOC006', admissionDate: daysAgo(6), initialAssessment: 'Hyperthyroidism, thyroid storm in evolution.' },
   { id: uid(210), key: 'adm17', patientKey: 'pt16', physicianUserId: 'DOC002', admissionDate: daysAgo(3), initialAssessment: 'Acute gastritis with dehydration secondary to NSAID use.' },
-  { id: uid(211), key: 'adm19', patientKey: 'pt18', physicianUserId: 'DOC004', admissionDate: daysAgo(2), isOutpatient: true, outpatientSetAt: daysAgo(2, 11), initialAssessment: 'Outpatient chemotherapy infusion, cycle 2 of 6.' },
+  { id: uid(211), key: 'adm19', patientKey: 'pt18', physicianUserId: 'DOC004', admissionDate: daysAgo(2), patientClass: PatientClass.OUTPATIENT, classSince: daysAgo(2, 11), initialAssessment: 'Outpatient chemotherapy infusion, cycle 2 of 6.' },
   { id: uid(212), key: 'adm20', patientKey: 'pt19', physicianUserId: 'DOC005', admissionDate: daysAgo(5), initialAssessment: 'Acute pancreatitis, mild. Alcohol-related.' },
   { id: uid(213), key: 'adm23', patientKey: 'pt22', physicianUserId: 'DOC002', admissionDate: daysAgo(1), initialAssessment: 'Dengue fever with warning signs. Platelet 88 x10^9/L.' },
   { id: uid(214), key: 'adm24', patientKey: 'pt23', physicianUserId: 'DOC003', admissionDate: daysAgo(11), initialAssessment: 'Chronic kidney disease stage 5, uremic symptoms. For dialysis initiation.' },
@@ -171,7 +174,7 @@ export const admissions: SeedAdmission[] = [
   { id: uid(216), key: 'adm28', patientKey: 'pt27', physicianUserId: 'DOC001', admissionDate: daysAgo(2), initialAssessment: 'Acute bronchitis, viral versus bacterial.' },
   { id: uid(217), key: 'adm30', patientKey: 'pt29', physicianUserId: 'DOC003', admissionDate: daysAgo(3), initialAssessment: 'Transient ischemic attack, carotid bruit on exam.' },
   { id: uid(218), key: 'adm31', patientKey: 'pt30', physicianUserId: 'DOC004', admissionDate: daysAgo(8), initialAssessment: 'Asthma exacerbation, moderate.' },
-  { id: uid(219), key: 'adm36', patientKey: 'pt19', physicianUserId: 'DOC005', admissionDate: daysAgo(4), isOutpatient: true, outpatientSetAt: daysAgo(4, 10), initialAssessment: 'Outpatient follow-up endoscopy for pancreatitis.' },
+  { id: uid(219), key: 'adm36', patientKey: 'pt19', physicianUserId: 'DOC005', admissionDate: daysAgo(4), patientClass: PatientClass.OUTPATIENT, classSince: daysAgo(4, 10), initialAssessment: 'Outpatient follow-up endoscopy for pancreatitis.' },
 
   // Discharged
   { id: uid(220), key: 'adm3', patientKey: 'pt3', physicianUserId: 'DOC001', admissionDate: daysAgo(21), dischargeDate: daysAgo(6), initialAssessment: 'Infected diabetic foot ulcer, right lower extremity.' },

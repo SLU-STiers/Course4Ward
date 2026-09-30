@@ -26,7 +26,8 @@ export class CourseInWardController {
   @Post('generate')
   @Roles(Role.PHYSICIAN)
   generate(@Body() dto: GenerateSummaryDto, @CurrentUser() user: any) {
-    return this.courseInWardService.generateSummary(dto.patientId, user.id);
+    // Returns one Course in the Ward per summarized order day (usually one).
+    return this.courseInWardService.generateSummary(dto.patientId, user.id, dto.day);
   }
 
   @Patch(':id/edit')

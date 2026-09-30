@@ -14,9 +14,14 @@ const mockPrismaService = {
     update: jest.fn(),
   },
   passwordResetRequest: {
+    findUnique: jest.fn(),
     updateMany: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
   },
+  $transaction: jest.fn(),
 } as unknown as jest.Mocked<PrismaService>;
 
 const mockJwtService = {
@@ -86,17 +91,82 @@ describe('AuthService', () => {
   });
 
   describe('requestPasswordReset', () => {
-    it('should throw a clear error when the user ID does not exist', async () => {
-      // Arrange
+    it('should not reveal whether a user ID exists', async () => {
       (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
 
-      // Act & Assert
-      await expect(
-        service.requestPasswordReset({ userId: 'INVALID-USER' }),
-      ).rejects.toThrow('User ID not found. Please enter the proper user ID.');
+      await expect(service.requestPasswordReset({ userId: 'INVALID-USER' })).resolves.toEqual({
+        message: 'If the user ID exists, a reset request has been submitted for administrator approval.',
+      });
 
       expect(prismaService.passwordResetRequest.updateMany).not.toHaveBeenCalled();
       expect(prismaService.passwordResetRequest.create).not.toHaveBeenCalled();
+    });
+
+    it('should not expose the raw reset token in the response', async () => {
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      (prismaService.passwordResetRequest.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+      (prismaService.passwordResetRequest.create as jest.Mock).mockResolvedValue({ id: 'req-1' });
+
+      const response = await service.requestPasswordReset({ userId: 'DRJ-0231' });
+
+      expect(response).toEqual({
+        message: 'Reset request submitted for administrator approval.',
+      });
+      expect(response).not.toHaveProperty('resetToken');
+    });
+  });
+
+  describe('getPasswordResetStatus', () => {
+    it('should return EXPIRED when the token is missing or expired', async () => {
+      (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue(null);
+      await expect(service.getPasswordResetStatus('missing-token')).resolves.toEqual({ status: 'EXPIRED' });
+
+      (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue({
+        status: 'PENDING',
+        expiresAt: new Date(Date.now() - 60_000),
+        temporaryPassword: null,
+      });
+
+      await expect(service.getPasswordResetStatus('expired-token')).resolves.toEqual({ status: 'EXPIRED' });
+    });
+
+    it('should return REJECTED for a rejected request', async () => {
+      (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue({
+        status: 'REJECTED',
+        expiresAt: new Date(Date.now() + 60_000),
+        temporaryPassword: null,
+      });
+
+      await expect(service.getPasswordResetStatus('rejected-token')).resolves.toEqual({
+        status: 'REJECTED',
+        temporaryPassword: null,
+      });
+    });
+  });
+
+  describe('rejectPasswordReset', () => {
+    it('should mark a pending request as rejected', async () => {
+      const request = {
+        id: 'req-123',
+        userId: 'user-123',
+        status: 'PENDING',
+        expiresAt: new Date(Date.now() + 60_000),
+        user: { userId: 'DRJ-0231', firstName: 'John', lastName: 'Doe' },
+      };
+
+      (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue(request);
+      (prismaService.$transaction as jest.Mock).mockResolvedValue([request]);
+
+      await expect(service.rejectPasswordReset('req-123', 'admin-456')).resolves.toEqual({
+        message: 'Password reset request rejected.',
+        user: {
+          userId: 'DRJ-0231',
+          firstName: 'John',
+          lastName: 'Doe',
+        },
+      });
+
+      expect(prismaService.$transaction).toHaveBeenCalled();
     });
   });
 
@@ -187,6 +257,56 @@ describe('AuthService', () => {
       expect(bcrypt.compare).toHaveBeenCalledWith('wrong-password'.length ? dto.password : dto.password, mockUser.passwordHash);
       expect(jwtService.signAsync).not.toHaveBeenCalled();
       expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+  });
+  describe('findPasswordResetRequests', () => {
+    const findManyArgs = () =>
+      (prismaService.passwordResetRequest.findMany as jest.Mock).mock.calls[0][0];
+
+    beforeEach(() => {
+      (prismaService.$transaction as jest.Mock).mockResolvedValue([[{ id: 'req-1' }], 1234]);
+    });
+
+    it('returns one page plus the full total, newest first by default', async () => {
+      const result = await service.findPasswordResetRequests();
+
+      expect(result).toEqual({ items: [{ id: 'req-1' }], total: 1234, skip: 0, take: 10 });
+      const args = findManyArgs();
+      expect(args.skip).toBe(0);
+      expect(args.take).toBe(10);
+      expect(args.where).toEqual({});
+      expect(args.orderBy).toEqual([{ requestedAt: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('applies skip/take and sorts by user name', async () => {
+      await service.findPasswordResetRequests({ skip: 100, take: 50, sort: 'name', direction: 'asc' });
+
+      const args = findManyArgs();
+      expect(args.skip).toBe(100);
+      expect(args.take).toBe(50);
+      expect(args.orderBy).toEqual([
+        { user: { firstName: 'asc' } },
+        { user: { lastName: 'asc' } },
+        { id: 'asc' },
+      ]);
+    });
+
+    it('filters by status and requires every search word to match, in the page and the count', async () => {
+      await service.findPasswordResetRequests({ status: 'PENDING', search: ' john  doe ' });
+
+      const where = findManyArgs().where;
+      expect(where.AND).toHaveLength(3);
+      expect(where.AND[0]).toEqual({ status: 'PENDING' });
+      expect(JSON.stringify(where.AND[1])).toContain('"contains":"john"');
+      expect(JSON.stringify(where.AND[2])).toContain('"contains":"doe"');
+      expect(prismaService.passwordResetRequest.count).toHaveBeenCalledWith({ where });
+    });
+
+    it('never returns the temporary password in the list', async () => {
+      await service.findPasswordResetRequests();
+
+      expect(findManyArgs().select.temporaryPassword).toBeUndefined();
+      expect(findManyArgs().select.status).toBe(true);
     });
   });
 });

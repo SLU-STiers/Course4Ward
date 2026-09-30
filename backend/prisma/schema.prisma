@@ -23,8 +23,31 @@ enum OrderType {
   ADMISSION
   DISCHARGE
   DEFAULT
+  OBSERVATION
 
   @@map("order_type")
+}
+
+/// Kind of hospital encounter an admission record currently is.
+/// EMERGENCY / OUTPATIENT -> OBSERVATION needs an OBSERVATION order,
+/// any non-inpatient -> INPATIENT needs an ADMISSION order; the nurse
+/// carries both out. See PatientsService.
+/// Patient sex as recorded at registration (PhilHealth CF4 "Sex").
+enum Sex {
+  MALE
+  FEMALE
+  OTHER
+
+  @@map("sex")
+}
+
+enum PatientClass {
+  EMERGENCY
+  OUTPATIENT
+  OBSERVATION
+  INPATIENT
+
+  @@map("patient_class")
 }
 
 enum OrderStatus {
@@ -54,6 +77,7 @@ enum ResetStatus {
   EXPIRED
 }
 
+
 enum ActionType {
   LOGIN
   LOGOUT
@@ -68,6 +92,12 @@ enum ActionType {
   EDIT_ACCOUNT
   DELETE_ACCOUNT
   REGISTER_PATIENT
+  PATIENT_UPDATED
+  PASSWORD_RESET
+  CLAIM_CREATED
+  CLAIM_PHYSICIAN_NOTIFIED
+  CF4_GENERATED
+  UPDATE_ORDER_STATUS
 }
 
 enum PhilHealthCF4Status {
@@ -84,6 +114,14 @@ enum CommunicationChannel {
   CALL
   VERBAL
   OTHER
+}
+
+enum NotificationType {
+  /// Claims processor asked the physician to review a summary again.
+  REVIEW_REQUESTED
+  GENERAL
+
+  @@map("notification_type")
 }
 
 // ---------- Models ----------
@@ -106,8 +144,11 @@ model User {
   notes                      PhysicianNote[]
   summariesValidated         CourseInWard[]           @relation("ApprovedBy")
   admissions                 PatientAdmission[]
+  additionalAdmissions       AdmissionPhysician[]
+  triagesRecorded            TriageAssessment[]       @relation("TriageRecordedBy")
   auditLogs                  AuditLog[]
   passwordResets             PasswordResetRequest[]
+  notifications              Notification[]
   summaryRequestsAsPhysician SummaryApprovalRequest[] @relation("RequestedPhysician")
   summaryRequestsAsProcessor SummaryApprovalRequest[] @relation("RequestedProcessor")
 
@@ -125,7 +166,7 @@ model Patient {
   id          String    @id @default(uuid())
   firstName   String
   lastName    String
-  gender      String?
+  gender      Sex?
   dateOfBirth DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -141,16 +182,56 @@ model PatientAdmission {
   id                String    @id @default(uuid())
   admissionDate     DateTime
   dischargeDate     DateTime?
-  isOutpatient      Boolean   @default(false)
-  outpatientSetAt DateTime?
+  patientClass      PatientClass @default(EMERGENCY)
+  /// When the admission entered its current class (e.g. start of observation).
+  classSince        DateTime     @default(now())
   initialAssessment String?
   patientId         String
   physicianId       String?      
   patient           Patient @relation(fields: [patientId], references: [id])
   physician         User?   @relation(fields: [physicianId], references: [id])
   orders PhysicianOrder[]
+  additionalPhysicians AdmissionPhysician[]
+  triage               TriageAssessment?
 
   @@map("patient_admissions")
+}
+
+model TriageAssessment {
+  id           String   @id @default(uuid())
+  admissionId  String   @unique
+  /// 5-level triage priority: 1 Resuscitation, 2 Emergent, 3 Urgent,
+  /// 4 Less Urgent, 5 Non-Urgent. The migration adds a CHECK (1-5).
+  triageLevel  Int?
+  triageTime   String?
+  heartRate    Int?
+  respRate     Int?
+  spo2         Int?
+  bpSystolic   Int?
+  bpDiastolic  Int?
+  temperature  Decimal? @db.Decimal(4, 1)
+  painScore    Int?
+  recordedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  admission  PatientAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  recordedBy User?            @relation("TriageRecordedBy", fields: [recordedById], references: [id])
+
+  @@map("triage_assessments")
+}
+
+model AdmissionPhysician {
+  admissionId String
+  physicianId String
+  createdAt   DateTime @default(now())
+
+  admission PatientAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  physician User             @relation(fields: [physicianId], references: [id])
+
+  @@id([admissionId, physicianId])
+  @@index([physicianId])
+  @@map("admission_physicians")
 }
 
 model PhysicianOrder {
@@ -262,4 +343,28 @@ model AuditLog {
   user User @relation(fields: [userId], references: [id])
 
   @@map("audit_logs")
+}
+
+/// In-app notification for one user, rendered by the header bell
+/// (`components/layout/NotificationBell.tsx`) and its panel.
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType @default(GENERAL)
+  title     String
+  message   String
+  /// The summary approval request this notification points at, when any.
+  requestId String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  /// Set when the user clears the bell. The row leaves the inbox (and the
+  /// badge) but stays visible in the notification history.
+  clearedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([userId, clearedAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

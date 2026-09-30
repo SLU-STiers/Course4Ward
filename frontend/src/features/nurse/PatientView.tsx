@@ -1,25 +1,62 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import React, { useState } from 'react';
-import { Button, DataTableToolbar, PageHeader, Pagination, StatusBadge } from '../../components/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
+import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
-import { ui } from './styles';
+import { sexLabel, statusColor } from '../../lib/patient';
 
-import { INITIAL_ADMISSIONS, resolveChart } from './data';
+import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
-import type { AdmissionRecord, PatientChart } from './types';
+import { triageForDisplay } from './PatientModalParts';
+import type { AdmissionRecord } from './types';
+import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
+import { ordersApi, patientsApi } from '../../services/domainApi';
+import type { Patient, PhysicianOrder } from '../../types';
 
-export function PatientView({
-  charts,
-  setCharts,
-}: {
-  charts: Record<string, PatientChart>;
-  setCharts: React.Dispatch<React.SetStateAction<Record<string, PatientChart>>>;
-}) {
-  const [records, setRecords] = useState(INITIAL_ADMISSIONS);
+function toRecord(patient: Patient): AdmissionRecord {
+  const admission = patient.admissions?.[0];
+  return {
+    id: admission?.id ?? patient.id,
+    name: `${patient.firstName} ${patient.lastName}`,
+    admittedOn: admission ? new Date(admission.admissionDate).toLocaleDateString('en-GB') : '—',
+    dischargedOn: admission?.dischargeDate
+      ? new Date(admission.dischargeDate).toLocaleDateString('en-GB')
+      : null,
+    status: admissionStatusOf(admission),
+  };
+}
+
+export function PatientView() {
+  const [records, setRecords] = useState<AdmissionRecord[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [viewingName, setViewingName] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  /** Orders of the patient in the detail modal; tagged with its id so stale ones are ignored. */
+  const [viewingOrders, setViewingOrders] = useState<{
+    patientId: string;
+    orders: PhysicianOrder[];
+  } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
 
-  // Shared search / filter / sort / pagination state.
+  const reload = useCallback(() => {
+    patientsApi
+      .list()
+      .then(({ data }) => {
+        setPatients(data);
+        setRecords(data.map(toRecord));
+      })
+      .catch(() => {
+        setPatients([]);
+        setRecords([]);
+      });
+  }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
   const table = useTableState<AdmissionRecord>({
     items: records,
     pageSize: 8,
@@ -36,32 +73,108 @@ export function PatientView({
     initialSort: { field: 'admittedOn', direction: 'descending' },
   });
 
-  const viewing = viewingName ? resolveChart(viewingName, charts) : null;
+  const viewingPatient = viewingName
+    ? patients.find((patient) => `${patient.firstName} ${patient.lastName}` === viewingName)
+    : null;
+  const viewingAdmission = viewingPatient?.admissions?.[0];
+  const viewing = viewingPatient
+    ? {
+        name: viewingName ?? '',
+        age: viewingPatient.dateOfBirth
+          ? Math.max(0, new Date().getFullYear() - new Date(viewingPatient.dateOfBirth).getFullYear())
+          : 0,
+        gender: sexLabel(viewingPatient.gender),
+        admissionDate: viewingAdmission
+          ? new Date(viewingAdmission.admissionDate).toLocaleDateString('en-GB')
+          : '—',
+        recordId: viewingAdmission?.id ?? viewingPatient.id,
+        assignedDoctors: [
+          ...(viewingAdmission?.physician
+            ? [`Dr. ${viewingAdmission.physician.firstName} ${viewingAdmission.physician.lastName}`]
+            : []),
+          ...(viewingAdmission?.additionalPhysicians ?? []).map(
+            ({ physician }) => `Dr. ${physician.firstName} ${physician.lastName}`,
+          ),
+        ],
+        triage: triageForDisplay(viewingAdmission),
+        classSince: viewingAdmission?.classSince,
+      }
+    : null;
   const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;
 
-  const discharge = (id: string) => {
-    setRecords((prev) =>
-      prev.map((r) =>
-        r.id === id ? { ...r, status: 'Discharged', dischargedOn: '01 Sep 2026' } : r
-      )
+  // The nurse only carries out observation / admission / discharge once a
+  // physician has ordered it, so the modal needs the admission's orders.
+  const viewingPatientId = viewingPatient?.id;
+  useEffect(() => {
+    if (!viewingPatientId) return;
+    let cancelled = false;
+    ordersApi
+      .forPatient(viewingPatientId)
+      .then(({ data }) => {
+        if (!cancelled) setViewingOrders({ patientId: viewingPatientId, orders: data });
+      })
+      .catch(() => {
+        if (!cancelled) setViewingOrders({ patientId: viewingPatientId, orders: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewingPatientId]);
+
+  const loadedOrders =
+    viewingOrders && viewingOrders.patientId === viewingPatientId ? viewingOrders.orders : null;
+  const hasActiveOrder = (type: PhysicianOrder['type']) =>
+    Boolean(
+      loadedOrders?.some(
+        (order) =>
+          order.admissionId === viewingAdmission?.id && order.active !== false && order.type === type,
+      ),
     );
+  const waitingFor = (type: PhysicianOrder['type'], name: string) =>
+    !loadedOrders
+      ? 'Checking physician orders...'
+      : hasActiveOrder(type)
+        ? undefined
+        : `Waiting for the physician's ${name} order`;
+  const observeBlockedReason = waitingFor('OBSERVATION', 'observation');
+  const admitBlockedReason = waitingFor('ADMISSION', 'admission');
+  // An outpatient visit is simply ended; everyone else needs a discharge order.
+  const dischargeBlockedReason =
+    viewingRecord?.status === 'Outpatient' ? undefined : waitingFor('DISCHARGE', 'discharge');
+
+  const openViewing = (name: string) => {
+    setActionError(null);
+    setViewingName(name);
   };
 
-  const addDoctor = (doctor: string) => {
-    if (!viewingName) return;
-    setCharts((prev) => {
-      const current = resolveChart(viewingName, prev);
-      if (current.assignedDoctors.includes(doctor)) return prev;
-      return {
-        ...prev,
-        [viewingName]: { ...current, assignedDoctors: [...current.assignedDoctors, doctor] },
-      };
-    });
+  // Observe / admit / discharge, then refresh the list. A refusal (e.g. the order was
+  // discontinued meanwhile) stays in the modal.
+  const runAdmissionAction = (action: () => Promise<unknown>) => {
+    setActionBusy(true);
+    setActionError(null);
+    action()
+      .then(() => {
+        setViewingName(null);
+        reload();
+      })
+      .catch((err) => {
+        const message = err?.response?.data?.message;
+        setActionError(
+          Array.isArray(message) ? message.join(', ') : message || 'The action could not be completed.',
+        );
+      })
+      .finally(() => setActionBusy(false));
   };
 
   return (
-    <section style={ui.card}>
-      <PageHeader title="Patient Management" description="Manage admissions and discharges." />
+    <section style={patientTableStyles.card}>
+      {/* Same card-title scale as the Claims Processor "Patient Overview" card. */}
+      <div style={patientTableStyles.cardHeader}>
+        <h2 style={{ ...patientTableStyles.cardTitle, margin: 0 }}>Patient Management</h2>
+        <Button variant="primary" onClick={() => setShowAddModal(true)}>
+          Add Patient
+        </Button>
+      </div>
 
       <DataTableToolbar
         searchProps={{
@@ -74,8 +187,7 @@ export function PatientView({
           title: 'Admission status',
           options: [
             { value: 'all', label: 'All statuses' },
-            { value: 'Admitted', label: 'Admitted' },
-            { value: 'Discharged', label: 'Discharged' },
+            ...ADMISSION_STATUSES.map((status) => ({ value: status, label: status })),
           ],
           value: table.filters.status ?? 'all',
           onChange: (value) => table.setFilter('status', value),
@@ -85,7 +197,6 @@ export function PatientView({
           options: [
             { value: 'admittedOn', label: 'Admission date' },
             { value: 'name', label: 'Patient name' },
-            { value: 'id', label: 'Admission ID' },
           ],
           value: table.sort.field,
           onChange: table.setSortField,
@@ -94,70 +205,113 @@ export function PatientView({
         }}
       />
 
-      <div style={ui.tableWrap}>
-        <table style={ui.table}>
+      <div style={patientTableStyles.tableWrapper}>
+        <table style={{ ...patientTableStyles.table, tableLayout: 'auto' }}>
           <thead>
-            <tr>
-              <th style={ui.thBlue}>Admission ID</th>
-              <th style={ui.thBlue}>Full Name</th>
-              <th style={ui.thBlue}>Admission Date</th>
-              <th style={ui.thBlue}>Discharge Date</th>
-              <th style={ui.thBlue}>Status</th>
-              <th style={{ ...ui.thBlue, textAlign: 'right' }}>Actions</th>
+            <tr style={patientTableStyles.thRow}>
+              <th style={patientTableStyles.th}>Full Name</th>
+              <th style={patientTableStyles.th}>Admission Date</th>
+              <th style={patientTableStyles.th}>Discharge Date</th>
+              <th style={patientTableStyles.th}>Status</th>
+              <th style={{ ...patientTableStyles.th, textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {table.rows.map((r) => (
-              <tr key={r.id}>
-                <td style={ui.td}>
-                  <button type="button" style={ui.idLink} onClick={() => setViewingName(r.name)}>
-                    {r.id}
-                  </button>
-                </td>
-                <td style={ui.td}>
-                  <button type="button" style={ui.nameBtn} onClick={() => setViewingName(r.name)}>
-                    {r.name}
-                  </button>
-                </td>
-                <td style={{ ...ui.td, color: '#334155' }}>{r.admittedOn}</td>
-                <td style={{ ...ui.td, color: '#64748b' }}>{r.dischargedOn ?? '—'}</td>
-                <td style={ui.td}>
-                  <StatusBadge
-                    showDot
-                    status={r.status === 'Admitted' ? 'admitted' : 'discharged'}
-                  />
-                </td>
-                <td style={{ ...ui.td, textAlign: 'right' }}>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                    <Button variant="secondary" size="sm" onClick={() => setViewingName(r.name)}>
-                      View Record
-                    </Button>
+              <tr
+                key={r.id}
+                onClick={() => openViewing(r.name)}
+                style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
+              >
+                <td style={patientTableStyles.td}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span
+                      style={{
+                        ...patientTableStyles.dot,
+                        backgroundColor: statusColor(
+                          r.status === 'Discharged' ? 'discharged' : 'admitted',
+                        ),
+                      }}
+                    />
+                    <span style={patientTableStyles.name}>{r.name}</span>
                   </div>
+                </td>
+                <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.admittedOn}</td>
+                <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                  {r.dischargedOn ?? '—'}
+                </td>
+                <td style={patientTableStyles.td}>
+                  <StatusBadge showDot status={STATUS_TONE[r.status]} label={r.status} />
+                </td>
+                <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
+                  <button
+                    type="button"
+                    style={patientTableStyles.viewBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openViewing(r.name);
+                    }}
+                  >
+                    View
+                  </button>
                 </td>
               </tr>
             ))}
+            {!table.rows.length && (
+              <tr>
+                <td
+                  style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
+                  colSpan={5}
+                >
+                  No admissions match the current filters.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
 
-      <div className="ui-table-footer">
-        <span className="ui-table-footer__info">
-          Showing {table.rangeStart} to {table.rangeEnd} of {table.total} patients
-        </span>
-        <Pagination page={table.page} pageCount={table.pageCount} onPageChange={table.setPage} />
-      </div>
+      <PatientTablePagination
+        info={`Showing ${table.rangeStart} to ${table.rangeEnd} of ${table.total} patients`}
+        page={table.page}
+        pageCount={table.pageCount}
+        onPageChange={table.setPage}
+      />
 
       {viewing && (
         <PatientDetailModal
           chart={viewing}
-          canAddDoctor
           onClose={() => setViewingName(null)}
-          onAddDoctor={addDoctor}
           status={viewingRecord?.status}
+          onCareTeamChanged={reload}
           onDischarge={
-            viewingRecord ? () => discharge(viewingRecord.id) : undefined
+            viewingRecord && viewingRecord.status !== 'Discharged'
+              ? () => runAdmissionAction(() => patientsApi.discharge(viewingRecord.id))
+              : undefined
           }
+          dischargeBlockedReason={dischargeBlockedReason}
+          onObserve={
+            viewingRecord && (viewingRecord.status === 'Emergency' || viewingRecord.status === 'Outpatient')
+              ? () => runAdmissionAction(() => patientsApi.observe(viewingRecord.id))
+              : undefined
+          }
+          observeBlockedReason={observeBlockedReason}
+          onAdmit={
+            viewingRecord &&
+            (viewingRecord.status === 'Emergency' ||
+              viewingRecord.status === 'Outpatient' ||
+              viewingRecord.status === 'Observation')
+              ? () => runAdmissionAction(() => patientsApi.admit(viewingRecord.id))
+              : undefined
+          }
+          admitBlockedReason={admitBlockedReason}
+          actionBusy={actionBusy}
+          actionError={actionError}
         />
+      )}
+
+      {showAddModal && (
+        <AddPatientModal onClose={() => setShowAddModal(false)} onCreated={reload} />
       )}
     </section>
   );

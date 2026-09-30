@@ -12,6 +12,7 @@ import bgImg from '../Img/Course4Ward-Background.png';
 import stiersImg from '../Img/S-tiers.png';
 
 const RESET_TOKEN_STORAGE_KEY = 'cims_password_reset_token';
+const RESET_STATUS_POLL_INTERVAL_MS = 5000;
 
 const INCORRECT_CREDENTIALS_MESSAGE = 'Invalid credentials. Please check your user ID and password.';
 
@@ -55,18 +56,19 @@ export function Login() {
   const [showReset, setShowReset] = useState(false);
   const [resetUserId, setResetUserId] = useState('');
   const [resetMessage, setResetMessage] = useState<string | null>(null);
-  const [resetToken, setResetToken] = useState<string | null>(() =>
-    sessionStorage.getItem(RESET_TOKEN_STORAGE_KEY),
+  const [hasPendingReset, setHasPendingReset] = useState(() =>
+    Boolean(sessionStorage.getItem(RESET_TOKEN_STORAGE_KEY)),
   );
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [passwordCopied, setPasswordCopied] = useState(false);
 
   useEffect(() => {
-    if (!resetToken || temporaryPassword) return;
+    if (!hasPendingReset || temporaryPassword) return;
 
     const checkResetStatus = async () => {
       try {
-        const { data } = await authApi.passwordResetStatus(resetToken);
+        const { data } = await authApi.passwordResetStatus();
+
         if (data.status === 'APPROVED' && data.temporaryPassword) {
           setTemporaryPassword(data.temporaryPassword);
           setResetMessage('Your reset request was approved. Use this temporary password to log in.');
@@ -75,6 +77,25 @@ export function Login() {
               body: 'Your temporary password is ready on the login page.',
             });
           }
+          setHasPendingReset(false);
+          sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
+          return;
+        }
+
+        if (data.status === 'REJECTED') {
+          setResetMessage(
+            'Your password reset request was rejected by an administrator. Please submit a new request if needed.',
+          );
+          setHasPendingReset(false);
+          sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
+          return;
+        }
+
+        if (data.status === 'EXPIRED') {
+          setResetMessage('This reset request expired. Please submit a new request if needed.');
+          setHasPendingReset(false);
+          sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
+          return;
         }
       } catch {
         // Keep polling; a brief network interruption should not lose the notification.
@@ -82,9 +103,9 @@ export function Login() {
     };
 
     void checkResetStatus();
-    const intervalId = window.setInterval(checkResetStatus, 5000);
+    const intervalId = window.setInterval(checkResetStatus, RESET_STATUS_POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [resetToken, temporaryPassword]);
+  }, [hasPendingReset, temporaryPassword]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -115,11 +136,11 @@ export function Login() {
     setPasswordCopied(false);
     try {
       const { data } = await authApi.requestPasswordReset(resetUserId);
-      setResetToken(data.resetToken);
-      sessionStorage.setItem(RESET_TOKEN_STORAGE_KEY, data.resetToken);
+      setHasPendingReset(true);
+      sessionStorage.setItem(RESET_TOKEN_STORAGE_KEY, 'active');
       setShowReset(false);
       setResetMessage(
-        'Your request was submitted. Keep this login page open while an administrator reviews it.'
+        data.message || 'Your request was submitted. Keep this login page open while an administrator reviews it.',
       );
       if ('Notification' in window && Notification.permission === 'default') {
         void Notification.requestPermission();

@@ -2,64 +2,6 @@
 
 import { TEAL } from './styles';
 
-export function OverviewIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <rect
-        x="1.5"
-        y="1.5"
-        width="5.5"
-        height="5.5"
-        rx="1"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <rect
-        x="9"
-        y="1.5"
-        width="5.5"
-        height="5.5"
-        rx="1"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <rect
-        x="1.5"
-        y="9"
-        width="5.5"
-        height="5.5"
-        rx="1"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <rect
-        x="9"
-        y="9"
-        width="5.5"
-        height="5.5"
-        rx="1"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-    </svg>
-  );
-}
-export function ManageIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M3 6.5h10v6A1.5 1.5 0 0 1 11.5 14h-7A1.5 1.5 0 0 1 3 12.5v-6z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M6 6.5V5a2 2 0 0 1 4 0v1.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-    </svg>
-  );
-}
 export function HeartIcon() {
   return (
     <svg width="26" height="26" viewBox="0 0 28 28" fill="none" aria-hidden>

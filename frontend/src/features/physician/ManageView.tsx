@@ -1,25 +1,26 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { useAuthStore } from '../../store/authStore';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
-import type { PhysicianOrder } from '../../types';
-import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
+import type { CourseInWard, OrderType, PhysicianOrder } from '../../types';
+import { Button, DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
+import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
+import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
+import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
+import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
+import { ORDER_TYPE_OPTIONS, orderTypeLabel } from '../../components/orders/orderType';
 import { useTableState } from '../../hooks/useTableState';
-import documentImg from '../../Img/document.png';
-import llamaIcon from '../../Img/llama.png';
 import {
   formatDateLongFromKey,
-  formatTimeClock,
-  toDateInputValue,
-  todayValue,
+  toDateKey,
 } from '../../lib/format';
-import { overview, manage } from './styles';
+import { manage } from './styles';
 
-import { CalendarModal } from './CalendarModal';
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
 import { mapPatient } from './patient';
+import { triageQueueKey } from '../../lib/triage';
+import { mergeSummaries, summariesPerDay } from './summaries';
 import type { DashboardPatient } from './types';
 
 /** Epoch millis of an order timestamp; an unparseable timestamp sorts first. */
@@ -28,39 +29,50 @@ function orderMillis(order: PhysicianOrder) {
   return Number.isNaN(time) ? 0 : time;
 }
 
-/** `Today` / `Yesterday` — a fast anchor once the list spans several dates. */
-function relativeDayLabel(day: string): string {
-  if (day === todayValue()) return "Today";
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  return day === toDateInputValue(yesterday) ? "Yesterday" : "";
-}
+/** Header badge per summary status. */
+const SUMMARY_BADGE: Record<CourseInWard["status"], string> = {
+  DRAFT_AI: "AI Draft ready",
+  DRAFT_EDITED: "Edited draft",
+  APPROVED: "Approved",
+};
 
 export function ManageView() {
-  const user = useAuthStore((s) => s.user);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const [editingOrders, setEditingOrders] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const orderScrollRef = useRef<HTMLDivElement>(null);
-  /** Raised when an order is added, so the list follows it to the bottom. */
-  const followNewOrder = useRef(false);
   const [ordersByPatient, setOrdersByPatient] = useState<
     Record<string, PhysicianOrder[]>
   >({});
   const [draft, setDraft] = useState("");
-  const [summaryByPatient, setSummaryByPatient] = useState<
-    Record<string, string>
+  /** Kind of order the composer files; back to General after each submit. */
+  const [orderType, setOrderType] = useState<OrderType>("DEFAULT");
+  const [savingOrders, setSavingOrders] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [approvingSummary, setApprovingSummary] = useState(false);
+  /** Every Course in the Ward loaded for a patient — one summary per order day. */
+  const [summariesByPatient, setSummariesByPatient] = useState<
+    Record<string, CourseInWard[]>
   >({});
-  const [summaryIds, setSummaryIds] = useState<Record<string, string>>({});
   const [editingSummary, setEditingSummary] = useState(false);
+  /**
+   * Working copy of the day's summary while it is being edited. Keyed by day so
+   * an unfinished edit can never surface under another day's heading.
+   */
+  const [summaryDraft, setSummaryDraft] = useState<
+    { day: string; text: string } | null
+  >(null);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
+  /** A day with no Course in the Ward yet is generating its first one. */
+  const [generatingSummary, setGeneratingSummary] = useState(false);
   /** Order-date filter (`YYYY-MM-DD`); `null` means unfiltered — every order. */
   const [orderDateFilter, setOrderDateFilter] = useState<string | null>(null);
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  /**
+   * Order day the AI panel is showing (`YYYY-MM-DD`). Kept separate from the
+   * order list's filter so the summaries can be read day by day while the list
+   * stays on "all order dates".
+   */
+  const [summaryDayFilter, setSummaryDayFilter] = useState<string | null>(null);
 
   // This tab only manages patients who are currently in the ward.
   const admittedPatients = useMemo(
@@ -103,10 +115,12 @@ export function ManageView() {
     sorters: {
       name: (p) => p.name,
       admitted: (p) => p.admissionDateRaw,
+      triage: (p) => triageQueueKey(p.triageLevel, p.admittedAt),
       days: (p) => p.daysInCare,
       age: (p) => p.age ?? -1,
     },
-    initialSort: { field: "admitted", direction: "descending" },
+    // Most urgent first, longest waiting first within a level.
+    initialSort: { field: "triage", direction: "descending" },
   });
 
   // Keep the selection on a patient that still matches the active filters.
@@ -126,25 +140,22 @@ export function ManageView() {
           ...previous,
           [selected.id]: ordersResponse.data,
         }));
+        setOrderError(null);
         // Drop a date filter this patient has no orders on, so the filter state
         // never disagrees with what the list is showing.
         const loadedDays = new Set(
           ordersResponse.data.map((order) => orderDayValue(order.dateCreated)),
         );
         setOrderDateFilter((previous) =>
-          previous && !loadedDays.has(previous) ? null : previous,
+          previous && !loadedDays.has(previous) && previous !== toDateKey(new Date())
+            ? null
+            : previous,
         );
-        const latest = summariesResponse.data[0];
-        if (latest) {
-          setSummaryByPatient((previous) => ({
-            ...previous,
-            [selected.id]: latest.summaryContent,
-          }));
-          setSummaryIds((previous) => ({
-            ...previous,
-            [selected.id]: latest.id,
-          }));
-        }
+        // One Course in the Ward per order day; the panel picks the day to show.
+        setSummariesByPatient((previous) => ({
+          ...previous,
+          [selected.id]: summariesResponse.data,
+        }));
       })
       .catch(() => undefined);
   }, [selected?.id]);
@@ -173,36 +184,101 @@ export function ManageView() {
     [ordersByDay],
   );
 
-  // A filter only sticks to a date this patient actually has orders on, so the
-  // list always has something to show.
-  const activeOrderDate =
-    orderDateFilter && ordersByDay.has(orderDateFilter) ? orderDateFilter : null;
-  // No filter (the default) lists every day, oldest first — the whole list reads
-  // chronologically, day by day, then time within each day.
-  const dayGroups = useMemo(
-    () =>
-      (activeOrderDate ? [activeOrderDate] : orderDays).map((day) => ({
-        day,
-        orders: ordersByDay.get(day) ?? [],
-      })),
-    [activeOrderDate, orderDays, ordersByDay],
-  );
-  const visibleOrderCount = dayGroups.reduce(
-    (total, group) => total + group.orders.length,
-    0,
+  // Today stays pickable while the admission is open, even before its first
+  // order, so the physician can open the day and write into it. Past order-less
+  // days are still skipped: a new order is always stamped with the current time.
+  const todayKey = toDateKey(new Date());
+  const hasOpenAdmission = Boolean(
+    selected?.admissions?.some((admission) => !admission.dischargeDate),
   );
 
-  // The list reads chronologically, so a freshly added order sits at the very
-  // end — follow it there instead of leaving it below the fold.
+  // Observation, admission and discharge orders happen once per admission; the
+  // nurse then carries them out (observe / admit / discharge). Mirrors the
+  // server's rules per patient class so an unavailable kind can't be picked;
+  // the server has the final say.
+  const openAdmission = selected?.admissions?.find((admission) => !admission.dischargeDate);
+  const patientClass = openAdmission?.patientClass ?? "INPATIENT";
+  const openAdmissionOrders = allOrders.filter(
+    (order) => order.admissionId === openAdmission?.id && order.active !== false,
+  );
+  const hasOrder = (type: OrderType) => openAdmissionOrders.some((order) => order.type === type);
+  // A decision already ordered but not yet carried out by the nurse.
+  const pendingDecision = hasOrder("DISCHARGE")
+    ? "Patient already has a discharge order"
+    : hasOrder("ADMISSION")
+      ? "Admission already ordered; waiting for the nurse to admit"
+      : hasOrder("OBSERVATION") && patientClass !== "OBSERVATION"
+        ? "Observation already ordered; waiting for the nurse"
+        : undefined;
+  const orderTypeBlockedReason: Partial<Record<OrderType, string>> = {
+    OBSERVATION:
+      patientClass === "OBSERVATION"
+        ? "Patient is already under observation"
+        : patientClass === "INPATIENT"
+          ? "An admitted patient cannot be placed under observation"
+          : pendingDecision,
+    ADMISSION: patientClass === "INPATIENT" ? "Patient is already admitted" : pendingDecision,
+    DISCHARGE: hasOrder("DISCHARGE") ? "Patient already has a discharge order" : undefined,
+  };
+  const effectiveOrderType: OrderType = orderTypeBlockedReason[orderType]
+    ? "DEFAULT"
+    : orderType;
+
+  const selectableOrderDays = useMemo(
+    () =>
+      hasOpenAdmission && !ordersByDay.has(todayKey)
+        ? [...orderDays, todayKey].sort()
+        : orderDays,
+    [hasOpenAdmission, ordersByDay, orderDays, todayKey],
+  );
+
+  // A filter only sticks to a selectable date, so the list never disagrees
+  // with the calendar.
+  const activeOrderDate =
+    orderDateFilter && selectableOrderDays.includes(orderDateFilter)
+      ? orderDateFilter
+      : null;
+  const displayedOrders = activeOrderDate
+    ? allOrders.filter((order) => orderDayValue(order.dateCreated) === activeOrderDate)
+    : allOrders;
+  // --- AI summary, filed per order day -------------------------------------
+  // A patient accumulates one Course in the Ward per order day.
+  const summariesByDay = useMemo(
+    () => summariesPerDay((selected && summariesByPatient[selected.id]) || []),
+    [selected?.id, summariesByPatient],
+  );
+
+  // Which day's summary is on screen. Its own cursor, so "all order dates" can be
+  // read day by day without the list ever leaving that view; picking a day for
+  // the orders (calendar or order arrows) brings the summary along. Falls back to
+  // the most recent day carrying a summary, then the newest day with orders.
+  const daysWithSummary = orderDays.filter((day) => summariesByDay.has(day));
+  const summaryDay =
+    (summaryDayFilter && orderDays.includes(summaryDayFilter)
+      ? summaryDayFilter
+      : null) ??
+    (activeOrderDate && ordersByDay.has(activeOrderDate) ? activeOrderDate : null) ??
+    daysWithSummary[daysWithSummary.length - 1] ??
+    orderDays[orderDays.length - 1] ??
+    null;
+  const summary = summaryDay ? summariesByDay.get(summaryDay) : undefined;
+  const summaryText =
+    summaryDraft && summaryDay && summaryDraft.day === summaryDay
+      ? summaryDraft.text
+      : (summary?.summaryContent ?? "");
+
+  // An unfinished edit belongs to the day it was started on; leaving that day
+  // (or the patient) drops it and returns to a plain read.
   useEffect(() => {
-    if (!followNewOrder.current) return;
-    followNewOrder.current = false;
-    const node = orderScrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [allOrders]);
-  const summary =
-    (selected && summaryByPatient[selected.id]) ??
-    "No AI summary yet. Submit orders to generate a draft.";
+    setEditingSummary(false);
+    setSummaryDraft(null);
+  }, [selected?.id, summaryDay]);
+
+  // Choosing a day for the orders focuses the summary on it too — the calendar
+  // picker and the order arrows both land here.
+  useEffect(() => {
+    if (activeOrderDate) setSummaryDayFilter(activeOrderDate);
+  }, [activeOrderDate]);
 
   const admissionFilter = table.filters.admitted ?? "all";
   const customRange = parseCustomRange(admissionFilter);
@@ -214,73 +290,110 @@ export function ManageView() {
     return value !== undefined && value !== "" && value !== "all";
   }).length;
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpenId(null);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const openPatient = (id: string, edit = false) => {
+  const openPatient = (id: string) => {
     setSelectedId(id);
     setEditingSummary(false);
     setDraft("");
     setSubmitted(false);
-    setEditingOrders(edit);
-    setCalendarOpen(false);
-    setMenuOpenId(null);
+    setOrderError(null);
   };
 
-  const addOrder = () => {
-    const text = draft.trim();
-    if (!text) return;
-    if (!selected || !selected.admissions?.[0] || !user) return;
-    ordersApi
-      .create({
-        admissionId: selected.admissions[0].id,
-        orderedById: user.id,
-        orderContent: text,
-      })
+  /** Replace the patient's order list with the server's copy. */
+  const reloadOrders = async (patientId: string) => {
+    const { data } = await ordersApi.forPatient(patientId);
+    setOrdersByPatient((previous) => ({ ...previous, [patientId]: data }));
+  };
+
+  /** Refresh the per-patient summary list with a row the API just returned. */
+  const replaceSummary = (patientId: string, updated: CourseInWard) => {
+    setSummariesByPatient((previous) => ({
+      ...previous,
+      [patientId]: mergeSummaries(previous[patientId], [updated]),
+    }));
+  };
+
+  // Generate (or refresh) ONE order day's Course in the Ward from every order of
+  // that day. Only the AI panel's Generate button calls this -- submitting an
+  // order never summarizes on its own.
+  const generateSummaryForDay = (day: string, onDone?: () => void) => {
+    if (!selected || generatingSummary) return;
+    setGeneratingSummary(true);
+    setOrderError(null);
+    void courseInWardApi
+      .generate(selected.id, day)
       .then(({ data }) => {
-        setOrdersByPatient((prev) => ({
-          ...prev,
-          [selected.id]: [...(prev[selected.id] ?? []), data],
+        setSummariesByPatient((previous) => ({
+          ...previous,
+          [selected.id]: mergeSummaries(previous[selected.id], data),
         }));
-        setDraft("");
-        setSubmitted(false);
-        // While filtering, follow the new order to its day; either way the list
-        // scrolls down to it so it is visible right away.
-        followNewOrder.current = true;
-        if (activeOrderDate) {
-          setOrderDateFilter(orderDayValue(data.dateCreated) || todayValue());
-        }
+        setEditingSummary(false);
+        setSummaryDraft(null);
+        onDone?.();
       })
-      .catch(() => undefined);
+      .catch(() =>
+        setOrderError("The AI summary could not be generated. Try Generate again or write it manually."),
+      )
+      .finally(() => setGeneratingSummary(false));
   };
 
-  const updateOrder = (orderId: string, text: string) => {
-    if (!selected) return;
-    setOrdersByPatient((prev) => ({
-      ...prev,
-      [selected.id]: (prev[selected.id] ?? []).map((order) =>
-        order.id === orderId ? { ...order, orderContent: text } : order,
-      ),
-    }));
+  // Submit = file the order in the composer. Orders are never edited or deleted
+  // once written, and saving one does NOT summarize: the physician generates or
+  // regenerates the day's Course in the Ward from the AI panel when ready.
+  const submitOrders = async () => {
+    if (!selected || savingOrders) return;
+    const patientId = selected.id;
+    const content = draft.trim();
+    if (!content) return;
+
+    const admissionId = openAdmission?.id;
+    if (!admissionId) {
+      setOrderError("This patient has no open admission to add orders to.");
+      return;
+    }
+
+    setSavingOrders(true);
+    setOrderError(null);
     setSubmitted(false);
+    try {
+      // The backend attributes the order to the signed-in physician.
+      const { data } = await ordersApi.create({
+        admissionId,
+        orderContent: content,
+        type: effectiveOrderType,
+      });
+      setDraft("");
+      setOrderType("DEFAULT");
+      await reloadOrders(patientId);
+      const createdDay = orderDayValue(data.dateCreated);
+      // Keep the new order visible when the list is filtered to another day.
+      if (createdDay && activeOrderDate && activeOrderDate !== createdDay) {
+        setOrderDateFilter(createdDay);
+      }
+      // Point the AI panel at the order's day, ready for Generate / Regenerate.
+      setSummaryDayFilter(createdDay);
+      setSubmitted(true);
+    } catch (err: any) {
+      // The composer keeps its text so nothing typed is lost.
+      const message = err?.response?.data?.message;
+      setOrderError(
+        Array.isArray(message)
+          ? message.join(", ")
+          : message || "The order could not be saved. Please try again.",
+      );
+    } finally {
+      setSavingOrders(false);
+    }
   };
 
-  const removeOrder = (orderId: string) => {
-    if (!selected) return;
-    setOrdersByPatient((prev) => ({
-      ...prev,
-      [selected.id]: (prev[selected.id] ?? []).filter(
-        (order) => order.id !== orderId,
-      ),
-    }));
-    setSubmitted(false);
+  const approveSummary = (summaryId: string) => {
+    if (!selected || approvingSummary) return;
+    setApprovingSummary(true);
+    setOrderError(null);
+    void courseInWardApi
+      .approve(summaryId)
+      .then(({ data }) => replaceSummary(selected.id, data))
+      .catch(() => setOrderError("The summary could not be approved. Please try again."))
+      .finally(() => setApprovingSummary(false));
   };
 
   if (loading)
@@ -293,24 +406,54 @@ export function ManageView() {
   const selectedDateLabel = activeOrderDate
     ? new Date(`${activeOrderDate}T00:00:00`).toLocaleDateString("en-GB")
     : "All dates";
-  // Open the calendar on whatever the physician is looking at, defaulting to the
-  // most recent day that has orders.
-  const calendarFocusDate = new Date(
-    `${activeOrderDate ?? orderDays[orderDays.length - 1] ?? todayValue()}T00:00:00`,
-  );
-  // Order dates are the only navigable stops — order-less days are skipped, and
-  // the arrows only make sense once a single day is in focus.
+  // Order dates (plus today, see `selectableOrderDays`) are the only navigable
+  // stops — order-less past days are skipped. With "all dates" showing, the
+  // first step focuses the day at that end of the timeline (‹ the most recent,
+  // › the earliest), so day-by-day reading never needs a trip to the calendar.
   const hasPrevOrderDay =
-    !!activeOrderDate && orderDays.some((day) => day < activeOrderDate);
+    selectableOrderDays.length > 0 &&
+    (!activeOrderDate || selectableOrderDays.some((day) => day < activeOrderDate));
   const hasNextOrderDay =
-    !!activeOrderDate && orderDays.some((day) => day > activeOrderDate);
+    selectableOrderDays.length > 0 &&
+    (!activeOrderDate || selectableOrderDays.some((day) => day > activeOrderDate));
   const goToAdjacentOrderDay = (direction: -1 | 1) => {
-    if (!activeOrderDate) return;
-    const candidates = orderDays.filter((day) =>
+    if (!selectableOrderDays.length) return;
+    if (!activeOrderDate) {
+      setOrderDateFilter(
+        direction < 0
+          ? selectableOrderDays[selectableOrderDays.length - 1]
+          : selectableOrderDays[0],
+      );
+      return;
+    }
+    const candidates = selectableOrderDays.filter((day) =>
       direction < 0 ? day < activeOrderDate : day > activeOrderDate,
     );
     if (!candidates.length) return;
     setOrderDateFilter(
+      direction < 0 ? candidates[candidates.length - 1] : candidates[0],
+    );
+  };
+  const prevDayLabel = activeOrderDate
+    ? "Previous day with orders"
+    : "Focus the most recent day";
+  const nextDayLabel = activeOrderDate
+    ? "Next day with orders"
+    : "Focus the earliest day";
+
+  // The AI panel keeps its OWN day cursor, so every day's summary can be read
+  // while the order list stays on "all dates".
+  const hasPrevSummaryDay =
+    !!summaryDay && orderDays.some((day) => day < summaryDay);
+  const hasNextSummaryDay =
+    !!summaryDay && orderDays.some((day) => day > summaryDay);
+  const goToAdjacentSummaryDay = (direction: -1 | 1) => {
+    if (!summaryDay) return;
+    const candidates = orderDays.filter((day) =>
+      direction < 0 ? day < summaryDay : day > summaryDay,
+    );
+    if (!candidates.length) return;
+    setSummaryDayFilter(
       direction < 0 ? candidates[candidates.length - 1] : candidates[0],
     );
   };
@@ -321,22 +464,18 @@ export function ManageView() {
       id="physician-manage"
       style={manage.layout}
     >
-      {/* Both columns are user-resizable — drag the handle (or focus it and use
-          the arrow keys) to give the patient list or the chart more room. */}
+      {/* Both columns start the same size and stay user-resizable — drag the
+          handle (or focus it and use the arrow keys) to trade width between the
+          patient list and the chart. */}
       <Panel
         id="patients"
-        defaultSize="58"
+        defaultSize="50"
         minSize="360px"
         style={manage.panelFill}
       >
         <section style={manage.listCard}>
           <div style={manage.listHeader}>
-            <div>
-              <h2 style={manage.listTitle}>Patients List</h2>
-              <p style={manage.listHint}>
-                Showing active patients currently admitted only.
-              </p>
-            </div>
+            <h2 style={manage.listTitle}>Patients List</h2>
           </div>
 
           <DataTableToolbar
@@ -393,9 +532,9 @@ export function ManageView() {
                       : value,
                   ),
                 extra: (
-                  <div style={manage.filterRange}>
-                    <label style={manage.filterRangeField}>
-                      <span style={manage.filterRangeLabel}>From</span>
+                  <div className="ui-menu__range">
+                    <label className="ui-menu__range-field">
+                      <span className="ui-menu__range-label">From</span>
                       <input
                         type="date"
                         value={customRange.from}
@@ -405,11 +544,10 @@ export function ManageView() {
                             customRangeValue(event.target.value, customRange.to),
                           )
                         }
-                        style={manage.filterRangeInput}
                       />
                     </label>
-                    <label style={manage.filterRangeField}>
-                      <span style={manage.filterRangeLabel}>To</span>
+                    <label className="ui-menu__range-field">
+                      <span className="ui-menu__range-label">To</span>
                       <input
                         type="date"
                         value={customRange.to}
@@ -422,7 +560,6 @@ export function ManageView() {
                             ),
                           )
                         }
-                        style={manage.filterRangeInput}
                       />
                     </label>
                   </div>
@@ -430,10 +567,12 @@ export function ManageView() {
               },
             ]}
             activeFilterCount={activeFilterCount}
+            onClearFilters={table.resetFilters}
             sortProps={{
               title: "Sort patients by",
               options: [
                 { value: "admitted", label: "Admission date" },
+                { value: "triage", label: "Triage priority" },
                 { value: "days", label: "Days in care" },
                 { value: "age", label: "Age" },
                 { value: "name", label: "Patient name" },
@@ -452,17 +591,16 @@ export function ManageView() {
             ) : null}
           </DataTableToolbar>
           <div style={manage.tableScroll}>
-            <table style={overview.table}>
+            <table style={{ ...patientTableStyles.table, tableLayout: "auto" }}>
               <thead>
-                <tr>
-                  <th style={{ ...overview.th, width: 22 }} />
-                  <th style={overview.th}>Patient</th>
-                  <th style={overview.th}>Sex</th>
-                  <th style={overview.th}>Age</th>
-                  <th style={overview.th}>Admitted</th>
-                  <th style={overview.th}>Days in care</th>
-                  <th style={overview.th}>Status</th>
-                  <th style={{ ...overview.th, width: 44 }} />
+                <tr style={patientTableStyles.thRow}>
+                  <th style={patientTableStyles.th}>Patient</th>
+                  <th style={patientTableStyles.th}>Triage</th>
+                  <th style={patientTableStyles.th}>Sex</th>
+                  <th style={patientTableStyles.th}>Age</th>
+                  <th style={patientTableStyles.th}>Admitted</th>
+                  <th style={patientTableStyles.th}>Days in care</th>
+                  <th style={patientTableStyles.th}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -471,89 +609,50 @@ export function ManageView() {
                   return (
                     <tr
                       key={p.id}
-                      onClick={() => openPatient(p.id, false)}
+                      onClick={() => openPatient(p.id)}
                       style={{
-                        backgroundColor: active ? "#eef6f8" : "transparent",
+                        ...patientTableStyles.tr,
+                        backgroundColor: active ? "#f1f5f9" : "transparent",
                         cursor: "pointer",
                       }}
                     >
-                      <td style={{ ...overview.td, width: 22 }}>
-                        <span
-                          style={{ ...overview.dot, backgroundColor: p.color }}
-                        />
-                      </td>
-                      <td
-                        style={{
-                          ...overview.td,
-                          fontWeight: 600,
-                          color: "#334155",
-                        }}
-                      >
-                        {p.name}
-                      </td>
-                      <td style={{ ...overview.td, color: "#64748b" }}>
-                        {p.gender}
-                      </td>
-                      <td style={{ ...overview.td, color: "#64748b" }}>
-                        {p.age ?? "—"}
-                      </td>
-                      <td style={{ ...overview.td, color: "#64748b" }}>
-                        {p.admissionDate}
-                      </td>
-                      <td style={{ ...overview.td, color: "#64748b" }}>
-                        {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
-                      </td>
-                      <td style={overview.td}>
-                        <StatusBadge status={p.status} showDot />
-                      </td>
-                      <td
-                        style={{
-                          ...overview.td,
-                          textAlign: "right",
-                          position: "relative",
-                        }}
-                      >
+                      <td style={patientTableStyles.td}>
                         <div
-                          ref={menuOpenId === p.id ? menuRef : undefined}
                           style={{
-                            position: "relative",
-                            display: "inline-block",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
                           }}
                         >
-                          <button
-                            type="button"
-                            style={manage.dotsBtn}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setMenuOpenId((id) =>
-                                id === p.id ? null : p.id,
-                              );
+                          <span
+                            style={{
+                              ...patientTableStyles.dot,
+                              backgroundColor:
+                                p.status === "discharged"
+                                  ? "#ef4444"
+                                  : "#22c55e",
                             }}
-                          >
-                            ⋯
-                          </button>
-                          {menuOpenId === p.id && (
-                            <div
-                              style={manage.rowMenu}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <button
-                                type="button"
-                                style={manage.rowMenuItem}
-                                onClick={() => openPatient(p.id, false)}
-                              >
-                                View doctor’s order
-                              </button>
-                              <button
-                                type="button"
-                                style={manage.rowMenuItem}
-                                onClick={() => openPatient(p.id, true)}
-                              >
-                                Edit doctor’s order
-                              </button>
-                            </div>
-                          )}
+                          />
+                          <span style={patientTableStyles.name}>{p.name}</span>
                         </div>
+                      </td>
+                      <td style={patientTableStyles.td}>
+                        <TriageBadge level={p.triageLevel} compact />
+                      </td>
+                      <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                        {p.gender}
+                      </td>
+                      <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                        {p.age ?? "—"}
+                      </td>
+                      <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                        {p.admissionDate}
+                      </td>
+                      <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                        {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
+                      </td>
+                      <td style={patientTableStyles.td}>
+                        <StatusBadge status={p.status} showDot />
                       </td>
                     </tr>
                   );
@@ -561,8 +660,8 @@ export function ManageView() {
                 {!table.rows.length && (
                   <tr>
                     <td
-                      style={{ ...overview.td, color: "#94a3b8" }}
-                      colSpan={9}
+                      style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
+                      colSpan={7}
                     >
                       {admittedPatients.length === 0
                         ? "You have no admitted patients assigned to you."
@@ -574,23 +673,18 @@ export function ManageView() {
             </table>
           </div>
 
-          <div className="ui-table-footer">
-            <span className="ui-table-footer__info">
-              Showing {table.rangeStart} to {table.rangeEnd} of {table.total}{" "}
-              patients
-            </span>
-            <Pagination
-              page={table.page}
-              pageCount={table.pageCount}
-              onPageChange={table.setPage}
-            />
-          </div>
+          <PatientTablePagination
+            info={`Showing ${table.rangeStart} to ${table.rangeEnd} of ${table.total} patients`}
+            page={table.page}
+            pageCount={table.pageCount}
+            onPageChange={table.setPage}
+          />
         </section>
       </Panel>
 
       <Separator className="ui-split-separator ui-split-separator--column" />
 
-      <Panel id="chart" minSize="340px" style={manage.panelFill}>
+      <Panel id="chart" defaultSize="50" minSize="340px" style={manage.panelFill}>
         {!selected ? (
           <section style={manage.orderCard}>
             <p style={manage.listHint}>
@@ -612,197 +706,125 @@ export function ManageView() {
               minSize="260px"
               style={manage.panelFill}
             >
-              <section style={manage.orderCard}>
-                <div style={manage.orderHeader}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <img
-                      src={documentImg}
-                      alt="Doctor's order"
-                      style={{ width: 18, height: 18 }}
-                    />
-                    <h2 style={manage.panelTitle}>Doctor’s Order</h2>
-                  </div>
-                  <div style={manage.dateNavigator}>
-                    <button
-                      type="button"
-                      style={
-                        hasPrevOrderDay
-                          ? manage.dateNavBtn
-                          : manage.dateNavBtnDisabled
-                      }
-                      disabled={!hasPrevOrderDay}
-                      title="Previous day with orders"
-                      aria-label="Previous date with orders"
-                      onClick={() => goToAdjacentOrderDay(-1)}
-                    >
-                      ‹
-                    </button>
-                    <button
-                      type="button"
-                      style={manage.dateInput}
-                      onClick={() => setCalendarOpen(true)}
-                      aria-haspopup="dialog"
-                      aria-expanded={calendarOpen}
-                      aria-label={
-                        activeOrderDate
-                          ? `Filtered to orders on ${selectedDateLabel}. Open calendar`
-                          : "Showing orders from every date. Open calendar to filter by date"
-                      }
-                    >
-                      {selectedDateLabel}
-                    </button>
-                    <button
-                      type="button"
-                      style={
-                        hasNextOrderDay
-                          ? manage.dateNavBtn
-                          : manage.dateNavBtnDisabled
-                      }
-                      disabled={!hasNextOrderDay}
-                      title="Next day with orders"
-                      aria-label="Next date with orders"
-                      onClick={() => goToAdjacentOrderDay(1)}
-                    >
-                      ›
-                    </button>
-                    {activeOrderDate && (
-                      <button
-                        type="button"
-                        style={manage.dateClearBtn}
-                        title="Show orders from every date"
-                        onClick={() => setOrderDateFilter(null)}
-                      >
-                        Show all
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div style={manage.orderBox}>
-                  <div ref={orderScrollRef} style={manage.orderScroll}>
-                    {dayGroups.map(({ day, orders }) => {
-                      const relative = relativeDayLabel(day);
-                      return (
-                        <section key={day} style={manage.orderDayGroup}>
-                          {/* Each day keeps its own labelled, tinted header so
-                              orders read day by day, then by time within the
-                              day. */}
-                          <div style={manage.orderDayHeader}>
-                            <span style={manage.orderDayLabel}>
-                              <span>{formatDateLongFromKey(day)}</span>
-                              {relative ? (
-                                <span style={manage.orderDayRelative}>
-                                  {relative}
-                                </span>
-                              ) : null}
-                            </span>
-                            <span style={manage.orderDayCount}>
-                              {orders.length}{" "}
-                              {orders.length === 1 ? "order" : "orders"}
-                            </span>
-                          </div>
-                          <div style={manage.orderDayBody}>
-                            {orders.map((order, index) => (
-                              <div
-                                key={order.id}
-                                style={{
-                                  ...(editingOrders
-                                    ? manage.orderEditRow
-                                    : manage.orderRow),
-                                  // Only between rows of the same day — the card
-                                  // edge already separates one day from the next.
-                                  ...(index > 0 ? manage.orderRowDivided : {}),
-                                }}
-                              >
-                                <span style={manage.orderTime}>
-                                  {formatTimeClock(order.dateCreated)}
-                                </span>
-                                {editingOrders ? (
-                                  <>
-                                    <input
-                                      value={order.orderContent}
-                                      onChange={(e) =>
-                                        updateOrder(order.id, e.target.value)
-                                      }
-                                      style={manage.orderEditInput}
-                                    />
-                                    <button
-                                      type="button"
-                                      style={manage.removeOrderBtn}
-                                      onClick={() => removeOrder(order.id)}
-                                    >
-                                      ✕
-                                    </button>
-                                  </>
-                                ) : (
-                                  <span style={manage.orderText}>
-                                    {order.orderContent}
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-                      );
-                    })}
-                    {!visibleOrderCount && (
-                      <div style={{ ...manage.orderLine, color: "#94a3b8" }}>
-                        {selectedOrders === undefined
-                          ? "Loading doctor’s orders…"
-                          : activeOrderDate
-                            ? `No orders on ${selectedDateLabel}.`
-                            : "No doctor’s orders recorded for this patient yet."}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Add a new order"
-                  rows={2}
-                  style={manage.noteArea}
-                />
-
-                <div style={manage.orderActions}>
-                  <button
-                    type="button"
-                    style={manage.addBtn}
-                    onClick={addOrder}
-                  >
-                    Add
-                  </button>
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 10 }}
-                  >
-                    {submitted && (
-                      <span style={{ fontSize: 12, color: "#166534" }}>
-                        Orders saved
-                      </span>
-                    )}
-                    {editingOrders && (
-                      <button
-                        type="button"
-                        style={manage.cancelBtn}
-                        onClick={() => setEditingOrders(false)}
-                      >
-                        Cancel
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      style={manage.submitBtn}
-                      onClick={() => {
-                        setSubmitted(true);
-                        setEditingOrders(false);
+              <SubmittedOrdersTimeline
+                title="Submitted Physician Orders"
+                fill
+                dateValue={activeOrderDate ?? ""}
+                onDateChange={setOrderDateFilter}
+                onPrev={() => goToAdjacentOrderDay(-1)}
+                onNext={() => goToAdjacentOrderDay(1)}
+                prevDisabled={!hasPrevOrderDay}
+                nextDisabled={!hasNextOrderDay}
+                prevLabel={prevDayLabel}
+                nextLabel={nextDayLabel}
+                availableDays={selectableOrderDays}
+                onClear={() => setOrderDateFilter(null)}
+                clearLabel="Show all"
+                orders={displayedOrders.map((order) => ({
+                  id: order.id,
+                  dateCreated: order.dateCreated,
+                  doctor: order.orderedBy
+                    ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}`
+                    : "Physician",
+                  content: order.orderContent,
+                }))}
+                emptyMessage={
+                  selectedOrders === undefined
+                    ? "Loading doctor’s orders…"
+                    : activeOrderDate === todayKey
+                      ? "No orders yet today. Add one below."
+                      : activeOrderDate
+                        ? `No orders on ${selectedDateLabel}.`
+                      : "No doctor’s orders recorded for this patient yet."
+                }
+                renderContent={(entry) => {
+                  const order = allOrders.find((item) => item.id === entry.id);
+                  // Read-only: the nurse's execution status and note on this order.
+                  return (
+                    <>
+                      <div style={manage.timelineOrderText}>{entry.content}</div>
+                      {order && <OrderStatusSummary order={order} />}
+                    </>
+                  );
+                }}
+                footer={
+                  <>
+                    <textarea
+                      value={draft}
+                      onChange={(e) => {
+                        setDraft(e.target.value);
+                        setOrderError(null);
                       }}
-                    >
-                      Submit
-                    </button>
-                  </div>
-                </div>
-              </section>
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          void submitOrders();
+                        }
+                      }}
+                      placeholder="Add a new order"
+                      rows={2}
+                      maxLength={2000}
+                      disabled={savingOrders}
+                      style={manage.noteArea}
+                    />
+
+                    <div style={manage.orderActions}>
+                      <div
+                        role="radiogroup"
+                        aria-label="Order type"
+                        style={manage.orderTypeGroup}
+                      >
+                        {ORDER_TYPE_OPTIONS.map((option) => {
+                          const blocked = orderTypeBlockedReason[option.value];
+                          const active = effectiveOrderType === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              disabled={savingOrders || Boolean(blocked)}
+                              title={blocked ?? `${option.label} order`}
+                              style={{
+                                ...manage.orderTypeOption,
+                                ...(active ? manage.orderTypeOptionActive : {}),
+                                ...(blocked ? manage.orderTypeOptionDisabled : {}),
+                              }}
+                              onClick={() => {
+                                setOrderType(option.value);
+                                setOrderError(null);
+                              }}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {orderError && (
+                        <span role="alert" style={manage.orderError}>{orderError}</span>
+                      )}
+                      {submitted && !orderError && (
+                        <span style={{ fontSize: 12, color: "#166534" }}>
+                          Order saved
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        style={manage.submitBtn}
+                        disabled={savingOrders || !draft.trim()}
+                        aria-busy={savingOrders}
+                        onClick={() => void submitOrders()}
+                      >
+                        {savingOrders
+                          ? "Saving..."
+                          : effectiveOrderType === "DEFAULT"
+                            ? "Submit"
+                            : `Submit ${orderTypeLabel(effectiveOrderType)} Order`}
+                      </button>
+                    </div>
+                  </>
+                }
+              />
             </Panel>
 
             <Separator className="ui-split-separator ui-split-separator--row" />
@@ -814,107 +836,127 @@ export function ManageView() {
               minSize="160px"
               style={manage.panelFill}
             >
-              <section style={manage.aiCard}>
-                <div style={manage.aiHeader}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <img
-                      src={llamaIcon}
-                      alt=""
-                      style={{
-                        width: 16,
-                        height: 16,
-                        display: "block",
-                        objectFit: "contain",
-                      }}
-                    />
-                    <h3 style={manage.aiTitle}>AI Summarized</h3>
-                  </div>
-                  <span style={manage.aiBadge}>AI Draft ready</span>
-                </div>
-
-                <div style={manage.aiBody}>
-                  {editingSummary ? (
-                    <textarea
-                      value={summary}
-                      onChange={(e) =>
-                        setSummaryByPatient((prev) => ({
-                          ...prev,
-                          [selected?.id ?? ""]: e.target.value,
-                        }))
+              <AiSummaryCard
+                fill
+                badgeLabel={
+                  summary ? SUMMARY_BADGE[summary.status] : "No summary yet"
+                }
+                badgeMuted={!summary}
+                dayLabel={
+                  summaryDay
+                    ? formatDateLongFromKey(summaryDay)
+                    : "No order dates"
+                }
+                dayPosition={
+                  summaryDay && orderDays.length > 1
+                    ? `${orderDays.indexOf(summaryDay) + 1} of ${orderDays.length}`
+                    : undefined
+                }
+                onPrevDay={() => goToAdjacentSummaryDay(-1)}
+                onNextDay={() => goToAdjacentSummaryDay(1)}
+                prevDayDisabled={!hasPrevSummaryDay}
+                nextDayDisabled={!hasNextSummaryDay}
+                text={summaryText}
+                emptyMessage={
+                  summaryDay
+                    ? `No Course in the Ward for ${formatDateLongFromKey(
+                        summaryDay,
+                      )} yet.`
+                    : "No doctor’s orders recorded for this patient yet."
+                }
+                actions={
+                  !summary ? (
+                    <AiActionButton
+                      disabled={!summaryDay || generatingSummary}
+                      aria-busy={generatingSummary}
+                      onClick={() =>
+                        summaryDay && generateSummaryForDay(summaryDay)
                       }
-                      rows={6}
-                      style={manage.aiEditor}
-                    />
-                  ) : (
-                    <p style={manage.aiText}>{summary}</p>
-                  )}
-
-                  <div style={manage.aiActions}>
-                    <button
-                      type="button"
-                      style={manage.aiLink}
-                      onClick={() => {
-                        if (!editingSummary) {
-                          setEditingSummary(true);
-                          return;
-                        }
-                        const id = summaryIds[selected.id];
-                        if (!id) return;
-                        courseInWardApi.edit(id, summary).then(({ data }) => {
-                          setSummaryByPatient((prev) => ({
-                            ...prev,
-                            [selected.id]: data.summaryContent,
-                          }));
-                          setEditingSummary(false);
-                        });
-                      }}
                     >
-                      {editingSummary ? "Save Summary" : "Edit Summary"}
-                    </button>
-                    <button
-                      type="button"
-                      style={manage.aiLink}
-                      disabled={regeneratingSummary}
-                      aria-busy={regeneratingSummary}
-                      onClick={() => {
-                        const id = summaryIds[selected.id];
-                        if (!id || regeneratingSummary) return;
-                        setRegeneratingSummary(true);
-                        void courseInWardApi
-                          .regenerate(id)
-                          .then(({ data }) => {
-                            setSummaryByPatient((prev) => ({
-                              ...prev,
-                              [selected.id]: data.summaryContent,
-                            }));
-                            setEditingSummary(false);
-                          })
-                          .catch(() => undefined)
-                          .finally(() => setRegeneratingSummary(false));
-                      }}
-                    >
-                      {regeneratingSummary ? (
+                      {generatingSummary ? (
                         <span className="ui-btn__spinner" aria-hidden="true" />
                       ) : null}
-                      {regeneratingSummary ? "Regenerating..." : "↻ Regenerate"}
-                    </button>
-                  </div>
-                </div>
-              </section>
+                      {generatingSummary ? "Generating..." : "Generate"}
+                    </AiActionButton>
+                  ) : (
+                    <>
+                      {summary.status !== "APPROVED" && !editingSummary && (
+                        <AiActionButton
+                          disabled={approvingSummary}
+                          aria-busy={approvingSummary}
+                          onClick={() => approveSummary(summary.id)}
+                        >
+                          {approvingSummary ? "Approving..." : "✓ Approve"}
+                        </AiActionButton>
+                      )}
+                      <AiActionButton
+                        onClick={() => {
+                          if (!editingSummary) {
+                            setSummaryDraft(
+                              summaryDay
+                                ? { day: summaryDay, text: summary.summaryContent }
+                                : null,
+                            );
+                            setEditingSummary(true);
+                            return;
+                          }
+                          void courseInWardApi
+                            .edit(summary.id, summaryText)
+                            .then(({ data }) => {
+                              replaceSummary(selected.id, data);
+                              setEditingSummary(false);
+                              setSummaryDraft(null);
+                            })
+                            .catch(() => undefined);
+                        }}
+                      >
+                        {editingSummary ? "Save Summary" : "Edit Summary"}
+                      </AiActionButton>
+                      <AiActionButton
+                        disabled={regeneratingSummary}
+                        aria-busy={regeneratingSummary}
+                        onClick={() => {
+                          if (regeneratingSummary) return;
+                          setRegeneratingSummary(true);
+                          void courseInWardApi
+                            .regenerate(summary.id)
+                            .then(({ data }) => {
+                              replaceSummary(selected.id, data);
+                              setEditingSummary(false);
+                              setSummaryDraft(null);
+                            })
+                            .catch(() => undefined)
+                            .finally(() => setRegeneratingSummary(false));
+                        }}
+                      >
+                        {regeneratingSummary ? (
+                          <span className="ui-btn__spinner" aria-hidden="true" />
+                        ) : null}
+                        {regeneratingSummary
+                          ? "Regenerating..."
+                          : "↻ Regenerate"}
+                      </AiActionButton>
+                    </>
+                  )
+                }
+              >
+                {editingSummary && summary ? (
+                  <textarea
+                    value={summaryText}
+                    onChange={(e) =>
+                      setSummaryDraft(
+                        summaryDay
+                          ? { day: summaryDay, text: e.target.value }
+                          : null,
+                      )
+                    }
+                    rows={6}
+                    style={manage.aiEditor}
+                  />
+                ) : null}
+              </AiSummaryCard>
             </Panel>
           </Group>
-        )}
-
-        {calendarOpen && (
-          <CalendarModal
-            onClose={() => setCalendarOpen(false)}
-            focusDate={calendarFocusDate}
-            orderDays={orderDays}
-            onSelect={(date) => {
-              setOrderDateFilter(toDateInputValue(date));
-              setCalendarOpen(false);
-            }}
-          />
         )}
       </Panel>
     </Group>

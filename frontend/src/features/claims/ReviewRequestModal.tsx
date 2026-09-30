@@ -11,7 +11,9 @@ export function ReviewRequestModal({
 }: {
   request: SummarizationRequest;
   onClose: () => void;
-  onRequestRevisions: () => void;
+  /** Receives the message typed in the notify box; it lands on the
+   *  physician's notification bell. */
+  onRequestRevisions: (message: string) => void;
 }) {
   const [notificationMessage, setNotificationMessage] = useState('');
 
@@ -336,7 +338,11 @@ export function ReviewRequestModal({
               style={modalStyles.textarea}
             />
             <div style={modalStyles.actions}>
-              <button type="button" style={modalStyles.primaryBtn} onClick={onRequestRevisions}>
+              <button
+                type="button"
+                style={modalStyles.primaryBtn}
+                onClick={() => onRequestRevisions(notificationMessage.trim())}
+              >
                 Send Physician Reminder
               </button>
             </div>

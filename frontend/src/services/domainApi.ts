@@ -1,12 +1,30 @@
 import { api } from './api';
 import type {
+  AppNotification,
+  NotificationScope,
+  OrderStatus,
+  OrderType,
   Patient,
   PhysicianOrder,
+  PhysicianNote,
   CourseInWard,
   Claim,
   ClaimRecord,
+  EligibleSummary,
   AuthUser,
   PhysicianRequest,
+  ActivityTrend,
+  AdminUserInput,
+  AuditLogAggregate,
+  AuditLogAggregateQuery,
+  AuditLogPage,
+  AuditLogQuery,
+  ReportSummary,
+  PasswordResetApproval,
+  PasswordResetQuery,
+  PasswordResetRequestPage,
+  StaffAccount,
+  TrendBucket,
 } from '../types';
 
 // --- Auth ---
@@ -18,11 +36,9 @@ export const authApi = {
       { userId, password },
     ),
   requestPasswordReset: (userId: string) =>
-    api.post<{ message: string; resetToken: string }>('/auth/password-reset/request', { userId }),
-  passwordResetStatus: (resetToken: string) =>
-    api.get<{ status: string; temporaryPassword?: string | null }>('/auth/password-reset/status', {
-      params: { resetToken },
-    }),
+    api.post<{ message: string }>('/auth/password-reset/request', { userId }),
+  passwordResetStatus: () =>
+    api.get<{ status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED'; temporaryPassword?: string | null }>('/auth/password-reset/status'),
   confirmPasswordReset: (userId: string, resetToken: string, newPassword: string) =>
     api.post('/auth/password-reset/confirm', { userId, resetToken, newPassword }),
   changePassword: (newPassword: string) =>
@@ -34,34 +50,59 @@ export const authApi = {
 
 // --- Patients ---
 export const patientsApi = {
+  list: () => api.get<Patient[]>('/patients'),
   assignedToMe: () => api.get<Patient[]>('/patients/assigned-to-me'),
+  nurseAssigned: () => api.get<Patient[]>('/patients/nurse-assigned'),
+  listPhysicians: () =>
+    api.get<{ id: string; userId: string; firstName: string; lastName: string }[]>(
+      '/patients/physicians',
+    ),
   getOne: (id: string) => api.get<Patient>(`/patients/${id}`),
-  create: (data: Partial<Patient>) => api.post<Patient>('/patients', data),
+  create: (data: Record<string, unknown>) => api.post<Patient>('/patients', data),
   update: (id: string, data: Partial<Patient>) => api.patch<Patient>(`/patients/${id}`, data),
+  /** Nurse-only; needs an active DISCHARGE order, except to end an outpatient visit. */
+  discharge: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/discharge`),
+  /** Nurse-only: emergency / outpatient / observation → inpatient; needs an active ADMISSION order. */
+  admit: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/admit`),
+  /** Nurse-only: emergency / outpatient → observation; needs an active OBSERVATION order. */
+  observe: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/observe`),
+  addConsultingPhysician: (admissionId: string, physicianId: string) =>
+    api.post(`/patients/admissions/${admissionId}/consulting-physicians`, { physicianId }),
 };
 
 // --- Orders ---
 export const ordersApi = {
   create: (data: {
     admissionId: string;
-    orderedById: string;
+    /** Omit when a physician submits their own order. */
+    orderedById?: string;
     orderContent: string;
+    /** Defaults to `DEFAULT` (a general order). */
+    type?: OrderType;
   }) => api.post<PhysicianOrder>('/orders', data),
+  // Orders cannot be edited or deleted once written (no API for it).
+  /** Nurse-only: mark progress on an order. Omit `nurseComment` to keep the current one. */
+  updateStatus: (id: string, data: { status: OrderStatus; nurseComment?: string }) =>
+    api.patch<PhysicianOrder>(`/orders/${id}/status`, data),
   forPatient: (patientId: string) => api.get<PhysicianOrder[]>(`/orders/patient/${patientId}`),
 };
 
 // --- Notes ---
 export const notesApi = {
   create: (data: { patientId: string; content: string; reminderAt?: string }) =>
-    api.post('/notes', data),
-  forPatient: (patientId: string) => api.get(`/notes/patient/${patientId}`),
+    api.post<PhysicianNote>('/notes', data),
+  update: (id: string, data: { content?: string; reminderAt?: string | null }) =>
+    api.patch<PhysicianNote>(`/notes/${id}`, data),
+  remove: (id: string) => api.delete(`/notes/${id}`),
+  forPatient: (patientId: string) => api.get<PhysicianNote[]>(`/notes/patient/${patientId}`),
   myReminders: () => api.get('/notes/reminders/me'),
 };
 
 // --- Course in the Ward (AI summaries) ---
 export const courseInWardApi = {
-  generate: (patientId: string) =>
-    api.post<CourseInWard>('/course-in-ward/generate', { patientId }),
+  /** Summarize one order day (today when `day` is omitted); returns that day's summary rows. */
+  generate: (patientId: string, day?: string) =>
+    api.post<CourseInWard[]>('/course-in-ward/generate', day ? { patientId, day } : { patientId }),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
   regenerate: (id: string) => api.post<CourseInWard>(`/course-in-ward/${id}/regenerate`),
@@ -74,24 +115,60 @@ export const courseInWardApi = {
 export const claimsApi = {
   create: (courseInWardId: string) => api.post<Claim>('/claims', { courseInWardId }),
   findAll: () => api.get<ClaimRecord[]>('/claims'),
+  /** Summaries that do not have a claim yet. */
+  eligibleSummaries: () => api.get<EligibleSummary[]>('/claims/eligible-summaries'),
   physicianRequests: () => api.get<PhysicianRequest[]>('/claims/physician-requests'),
   approvePhysicianRequest: (id: string) => api.patch(`/claims/${id}/approve`),
-  notifyPhysician: (id: string) => api.post(`/claims/${id}/notify-physician`),
+  /** `message` is the note typed in the review modal; it lands on the
+   *  physician's notification bell. */
+  notifyPhysician: (id: string, message?: string) =>
+    api.post(`/claims/${id}/notify-physician`, { message }),
   generateCf4: (id: string) => api.post(`/claims/${id}/generate-cf4`),
+};
+
+// --- Notifications (header bell) ---
+export const notificationsApi = {
+  /** `scope: 'history'` returns the full log, cleared items included. */
+  list: (options?: { scope?: NotificationScope; take?: number }) =>
+    api.get<AppNotification[]>('/notifications', { params: options }),
+  unreadCount: () => api.get<{ count: number }>('/notifications/unread-count'),
+  /** Returns the recalculated unread count for the badge. */
+  markRead: (id: string) => api.patch<{ count: number }>(`/notifications/${id}/read`),
+  markAllRead: () => api.post<{ count: number }>('/notifications/read-all'),
+  /** Clears the inbox; the items stay in the history. */
+  clear: () => api.post<{ count: number }>('/notifications/clear'),
 };
 
 // --- Admin ---
 export const adminApi = {
-  listUsers: () => api.get('/admin/users'),
-  createUser: (data: any) => api.post('/admin/users', data),
-  updateUser: (id: string, data: any) => api.patch(`/admin/users/${id}`, data),
-  auditLogs: (params?: { skip?: number; take?: number }) =>
-    api.get('/admin/audit-logs', { params }),
+  listUsers: () => api.get<StaffAccount[]>('/admin/users'),
+  createUser: (data: AdminUserInput) => api.post('/admin/users', data),
+  updateUser: (id: string, data: AdminUserInput) => api.patch(`/admin/users/${id}`, data),
+  /** One page of activity logs, filtered server-side. */
+  auditLogs: (params?: AuditLogQuery) =>
+    api.get<AuditLogPage>('/admin/audit-logs', { params }),
+
+  auditLogAggregate: (params?: AuditLogAggregateQuery) =>
+    api.get<AuditLogAggregate>('/admin/audit-logs/aggregate', { params }),
   analyticsSummary: () => api.get('/admin/audit-logs/analytics/summary'),
   ordersAnalytics: (bucket: 'day' | 'week' | 'month' | 'year') =>
     api.get('/admin/audit-logs/analytics/orders', { params: { bucket } }),
-  getResetRequests: () =>
-    api.get('/admin/password-reset-requests'),
+  /** Current distributions + flow counts for the reporting section. */
+  reportSummary: (params?: ReportRangeParams) =>
+    api.get<ReportSummary>('/admin/reports/summary', { params }),
+  activityTrend: (params?: ReportRangeParams & { bucket?: TrendBucket }) =>
+    api.get<ActivityTrend>('/admin/reports/activity-trend', { params }),
+  /** One page of reset requests, filtered and sorted server-side. */
+  getResetRequests: (params?: PasswordResetQuery) =>
+    api.get<PasswordResetRequestPage>('/admin/password-reset-requests', { params }),
   approveResetRequest: (requestId: string) =>
-    api.post(`/admin/password-reset-requests/${requestId}/approve`),
+    api.post<PasswordResetApproval>(`/admin/password-reset-requests/${requestId}/approve`),
+  rejectResetRequest: (requestId: string) =>
+    api.post(`/admin/password-reset-requests/${requestId}/reject`),
 };
+
+/** Reporting window; date-only values cover the whole UTC day. */
+interface ReportRangeParams {
+  from?: string;
+  to?: string;
+}

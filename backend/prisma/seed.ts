@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PatientClass, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
   admissions,
@@ -83,8 +83,8 @@ async function main() {
         physicianId: must(userIds.get(a.physicianUserId), `physician '${a.physicianUserId}'`),
         admissionDate: a.admissionDate,
         dischargeDate: a.dischargeDate ?? null,
-        isOutpatient: a.isOutpatient ?? false,
-        outpatientSetAt: a.outpatientSetAt ?? null,
+        patientClass: a.patientClass ?? PatientClass.INPATIENT,
+        classSince: a.classSince ?? a.admissionDate,
         initialAssessment: a.initialAssessment ?? null,
       },
     });

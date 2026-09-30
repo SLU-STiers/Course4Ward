@@ -8,7 +8,42 @@
  * about each view.
  */
 
+import type { PatientClass, Sex } from '../types';
+
 export type AdmissionStatus = 'admitted' | 'discharged';
+
+/** Display name of each patient class. */
+export const PATIENT_CLASS_LABEL: Record<PatientClass, string> = {
+  EMERGENCY: 'Emergency',
+  OUTPATIENT: 'Outpatient',
+  OBSERVATION: 'Observation',
+  INPATIENT: 'Admitted',
+};
+
+/** Display name of each sex, in the order the registration form lists them. */
+export const SEX_LABEL: Record<Sex, string> = {
+  MALE: 'Male',
+  FEMALE: 'Female',
+  OTHER: 'Other',
+};
+
+/** Display name of a patient's sex, or `fallback` when it was never recorded. */
+export function sexLabel(sex: Sex | null | undefined, fallback = '—'): string {
+  return sex ? SEX_LABEL[sex] ?? fallback : fallback;
+}
+
+/**
+ * Observation is a short stay to decide between admitting and sending home;
+ * past this many hours the physician should make that call.
+ */
+export const OBSERVATION_LIMIT_HOURS = 24;
+
+/** Whole hours since `since` (0 when missing or in the future). */
+export function hoursSince(since?: string | null): number {
+  if (!since) return 0;
+  const ms = Date.now() - new Date(since).getTime();
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 3_600_000) : 0;
+}
 
 interface NameParts {
   firstName: string;
