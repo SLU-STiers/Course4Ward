@@ -73,6 +73,11 @@ class BatchSummaryRequest(BaseModel):
         default_factory=list,
         description="Optional RAG references (prior APPROVED summaries of similar orders) used as style guidance.",
     )
+    instructions: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Optional extra instructions from the physician, e.g. when regenerating a summary.",
+    )
 
 
 class GroupResult(BaseModel):
@@ -145,6 +150,7 @@ def generate_summary(
     temperature: float = 0.1,
     group_label: Optional[str] = None,
     references: Optional[List[dict]] = None,
+    instructions: Optional[str] = None,
 ):
     """
     Calls Ollama to generate a summary of the doctor's orders.
@@ -170,6 +176,15 @@ def generate_summary(
         else ""
     )
 
+    instructions = (instructions or "").strip()
+    instructions_block = (
+        "ADDITIONAL INSTRUCTIONS FROM THE PHYSICIAN (apply them, but never add "
+        "clinical details that are not in the orders):\n"
+        f"{instructions}\n\n"
+        if instructions
+        else ""
+    )
+
     user_content = f"""
 You are an expert clinical documentation specialist familiar with Philippine healthcare standards. Your task is to process raw doctor's orders and summarize them for the "Course in the Ward" section of PhilHealth CF4.
 
@@ -180,7 +195,7 @@ RULES (FOLLOW THESE STRICTLY):
 4. NO ADDITIONS: Do not add diagnoses, outcomes, or context not present in the orders.
 {references_rules}
 {context_block}{references_block}
-
+{instructions_block}
 CURRENT DOCTOR'S ORDERS:
 {doctor_orders}
 
@@ -357,6 +372,7 @@ async def generate_summary_batch(req: BatchSummaryRequest):
                 req.temperature,
                 group_label=label,
                 references=[r.model_dump(exclude_none=True) for r in req.references],
+                instructions=req.instructions,
             )
             error = None if summary else "Failed to generate summary (check Ollama logs)"
 
