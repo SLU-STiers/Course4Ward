@@ -105,7 +105,12 @@ export const courseInWardApi = {
     api.post<CourseInWard[]>('/course-in-ward/generate', day ? { patientId, day } : { patientId }),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
-  regenerate: (id: string) => api.post<CourseInWard>(`/course-in-ward/${id}/regenerate`),
+  /** `instructions`: optional extra prompt for the AI (blank = none). */
+  regenerate: (id: string, instructions?: string) =>
+    api.post<CourseInWard>(
+      `/course-in-ward/${id}/regenerate`,
+      instructions?.trim() ? { instructions: instructions.trim() } : {},
+    ),
   approve: (id: string) => api.patch<CourseInWard>(`/course-in-ward/${id}/approve`),
   forPatient: (patientId: string) =>
     api.get<CourseInWard[]>(`/course-in-ward/patient/${patientId}`),

@@ -64,6 +64,7 @@ export function ManageView() {
     { day: string; text: string } | null
   >(null);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
+  const [regenInstructions, setRegenInstructions] = useState("");
   /** A day with no Course in the Ward yet is generating its first one. */
   const [generatingSummary, setGeneratingSummary] = useState(false);
   /** Order-date filter (`YYYY-MM-DD`); `null` means unfiltered — every order. */
@@ -886,6 +887,24 @@ export function ManageView() {
                       </AiActionButton>
                     ) : (
                       <>
+                        {!editingSummary && (
+                          <input
+                            type="text"
+                            placeholder="Additional instructions for Regenerate (optional)"
+                            aria-label="Additional instructions for Regenerate"
+                            maxLength={1000}
+                            value={regenInstructions}
+                            disabled={regeneratingSummary}
+                            onChange={(e) => setRegenInstructions(e.target.value)}
+                            style={{
+                              flex: "1 1 100%",
+                              fontSize: 12,
+                              padding: "6px 10px",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: 6,
+                            }}
+                          />
+                        )}
                         {summary.status !== "APPROVED" && !editingSummary && (
                           <AiActionButton
                             disabled={approvingSummary}
@@ -925,11 +944,12 @@ export function ManageView() {
                             if (regeneratingSummary) return;
                             setRegeneratingSummary(true);
                             void courseInWardApi
-                              .regenerate(summary.id)
+                              .regenerate(summary.id, regenInstructions)
                               .then(({ data }) => {
                                 replaceSummary(selected.id, data);
                                 setEditingSummary(false);
                                 setSummaryDraft(null);
+                                setRegenInstructions("");
                               })
                               .catch(() => undefined)
                               .finally(() => setRegeneratingSummary(false));
