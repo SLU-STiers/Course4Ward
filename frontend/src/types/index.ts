@@ -34,12 +34,25 @@ export interface AuthUser {
 /** Backend `Sex`; `null` on records registered before it was required. */
 export type Sex = 'MALE' | 'FEMALE' | 'OTHER';
 
+/** Backend `InsuranceType`: how the patient's care is covered. */
+export type InsuranceType = 'PHILHEALTH' | 'HMO' | 'PRIVATE' | 'NONE' | 'OTHER';
+
 export interface Patient {
   id: string;
   firstName: string;
   lastName: string;
   gender: Sex | null;
   dateOfBirth: string;
+  /** The patient's own contact / mobile number. */
+  contactNumber?: string | null;
+  address?: string | null;
+  insurance?: InsuranceType | null;
+  /** The specific insurance when `insurance` is OTHER. */
+  insuranceOther?: string | null;
+  religion?: string | null;
+  contactPersonName?: string | null;
+  contactPersonNumber?: string | null;
+  contactPersonAddress?: string | null;
   admissionDate?: string | null;
   dischargeDate?: string | null;
   initialAssessment?: string | null;
@@ -65,6 +78,16 @@ export interface PatientAdmission {
   additionalPhysicians?: { physician: { id: string; firstName: string; lastName: string } }[];
   /** Full triage row for nurses and physicians; claims payloads include it on the order's admission. */
   triage?: AdmissionTriage | null;
+  /** Ward room of an admitted patient. */
+  room?: { id: string; number: string } | null;
+}
+
+/** A ward room, occupied while an undischarged admission holds it. */
+export interface WardRoom {
+  id: string;
+  number: string;
+  occupied: boolean;
+  occupiedByAdmissionId: string | null;
 }
 
 /** 5-level triage priority, 1 (Resuscitation) to 5 (Non-Urgent). */

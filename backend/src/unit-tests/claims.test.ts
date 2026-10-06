@@ -7,6 +7,17 @@ import { AuditLogService } from "../audit-log/audit-log.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationType, PhilHealthCF4Status, Sex, SummaryStatus } from "@prisma/client";
 
+const emptyContactDetails = {
+  contactNumber: null,
+  address: null,
+  insurance: null,
+  insuranceOther: null,
+  religion: null,
+  contactPersonName: null,
+  contactPersonNumber: null,
+  contactPersonAddress: null,
+};
+
 const mockPrismaService = {
   courseInWard: {
     findUnique: jest.fn(),
@@ -49,6 +60,7 @@ describe("Claims Module", () => {
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
+    ...emptyContactDetails,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

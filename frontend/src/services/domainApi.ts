@@ -25,6 +25,7 @@ import type {
   PasswordResetRequestPage,
   StaffAccount,
   TrendBucket,
+  WardRoom,
 } from '../types';
 
 // --- Auth ---
@@ -68,6 +69,14 @@ export const patientsApi = {
   observe: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/observe`),
   addConsultingPhysician: (admissionId: string, physicianId: string) =>
     api.post(`/patients/admissions/${admissionId}/consulting-physicians`, { physicianId }),
+  /** Nurse-only: active ward rooms with their occupancy. */
+  listRooms: () => api.get<WardRoom[]>('/patients/rooms'),
+  /** Nurse-only: puts an admitted patient in a free room, or clears it with `null`. */
+  assignRoom: (admissionId: string, roomNumber: string | null) =>
+    api.patch<{ id: string; room: { id: string; number: string } | null }>(
+      `/patients/admissions/${admissionId}/room`,
+      { roomNumber },
+    ),
 };
 
 // --- Orders ---

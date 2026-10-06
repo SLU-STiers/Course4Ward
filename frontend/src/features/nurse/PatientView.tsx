@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
+import { formatDateNumeric, toDateInputValue } from '../../lib/format';
 import { sexLabel, statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
+import { contactDetailsOf } from './PatientModalParts';
 import { triageForDisplay } from '../../lib/triage';
 import type { AdmissionRecord } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
@@ -19,9 +21,10 @@ function toRecord(patient: Patient): AdmissionRecord {
   return {
     id: admission?.id ?? patient.id,
     name: `${patient.firstName} ${patient.lastName}`,
-    admittedOn: admission ? new Date(admission.admissionDate).toLocaleDateString('en-GB') : '—',
+    admittedOn: admission ? formatDateNumeric(admission.admissionDate) : '—',
+    admittedOnRaw: admission ? toDateInputValue(new Date(admission.admissionDate)) : '',
     dischargedOn: admission?.dischargeDate
-      ? new Date(admission.dischargeDate).toLocaleDateString('en-GB')
+      ? formatDateNumeric(admission.dischargeDate)
       : null,
     status: admissionStatusOf(admission),
   };
@@ -68,7 +71,9 @@ export function PatientView() {
     sorters: {
       id: (record) => record.id,
       name: (record) => record.name,
-      admittedOn: (record) => record.admittedOn,
+      /* Raw ISO key: sorting the DD/MM/YYYY display string orders by
+         day-of-month first, so today's admissions never reached the top. */
+      admittedOn: (record) => record.admittedOnRaw,
     },
     initialSort: { field: 'admittedOn', direction: 'descending' },
   });
@@ -97,6 +102,8 @@ export function PatientView() {
           ),
         ],
         triage: triageForDisplay(viewingAdmission),
+        contact: contactDetailsOf(viewingPatient),
+        room: viewingAdmission?.room?.number,
         classSince: viewingAdmission?.classSince,
       }
     : null;
@@ -284,6 +291,7 @@ export function PatientView() {
           onClose={() => setViewingName(null)}
           status={viewingRecord?.status}
           onCareTeamChanged={reload}
+          onRoomChanged={reload}
           onDischarge={
             viewingRecord && viewingRecord.status !== 'Discharged'
               ? () => runAdmissionAction(() => patientsApi.discharge(viewingRecord.id))

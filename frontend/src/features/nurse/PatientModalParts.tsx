@@ -5,6 +5,9 @@ import patientInfoIcon from '../../Img/patient-information.png';
 import assessmentIcon from '../../Img/assesment.png';
 import careTeamIcon from '../../Img/care-team.png';
 import { addPatient as s } from './styles';
+import { INSURANCE_LABEL } from '../../lib/patient';
+import type { PatientContactDetails } from './types';
+import type { Patient } from '../../types';
 
 export const SECTION_ICONS = {
   patientInfo: patientInfoIcon,
@@ -83,4 +86,22 @@ export function DoctorCard({
       {action}
     </div>
   );
+}
+
+/** Reads a patient's registration contact and background details for display. */
+export function contactDetailsOf(patient: Patient): PatientContactDetails {
+  return {
+    contactNumber: patient.contactNumber ?? '',
+    address: patient.address ?? '',
+    insurance:
+      patient.insurance === 'OTHER' && patient.insuranceOther
+        ? `Other — ${patient.insuranceOther}`
+        : patient.insurance
+          ? INSURANCE_LABEL[patient.insurance]
+          : '',
+    religion: patient.religion ?? '',
+    contactPersonName: patient.contactPersonName ?? '',
+    contactPersonNumber: patient.contactPersonNumber ?? '',
+    contactPersonAddress: patient.contactPersonAddress ?? '',
+  };
 }

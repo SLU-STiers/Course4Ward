@@ -27,6 +27,19 @@ export type NursePatient = {
   classSince?: string;
   assignedDoctor?: string | null;
   additionalDoctors?: string[];
+  contact?: PatientContactDetails;
+  /** Ward room number of an admitted patient. */
+  room?: string;
+};
+/** Registration contact and background details, as display strings ('' when not recorded). */
+export type PatientContactDetails = {
+  contactNumber: string;
+  address: string;
+  insurance: string;
+  religion: string;
+  contactPersonName: string;
+  contactPersonNumber: string;
+  contactPersonAddress: string;
 };
 /** A triage row formatted for display — see `triageForDisplay`. */
 export type TriageAssessment = TriageDisplay;
@@ -39,6 +52,9 @@ export type PatientChart = {
   triage: TriageAssessment;
   /** First entry is the attending physician; the rest are consulting physicians. */
   assignedDoctors: string[];
+  contact?: PatientContactDetails;
+  /** Ward room number of an admitted patient. */
+  room?: string;
 };
 export type OrderSet = {
   dateKey: string;
@@ -54,7 +70,14 @@ export type AdmissionStatus = 'Emergency' | 'Outpatient' | 'Observation' | 'Admi
 export type AdmissionRecord = {
   id: string;
   name: string;
+  /** Display date, `DD/MM/YYYY`. */
   admittedOn: string;
+  /**
+   * `YYYY-MM-DD`, the sort key. `DD/MM/YYYY` collates by day-of-month first, so
+   * sorting on the display string pins 31/08 above 30/09 — a patient admitted
+   * today could never reach the top. Sort on this, never on `admittedOn`.
+   */
+  admittedOnRaw: string;
   dischargedOn: string | null;
   status: AdmissionStatus;
 };

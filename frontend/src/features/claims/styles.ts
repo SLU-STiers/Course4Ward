@@ -563,6 +563,78 @@ export const styles: Record<string, CSSProperties> = {
     maxHeight: '360px',
     flex: 1,
   },
+  /** Segmented JSON / PDF switch that sits in the summary panel header. */
+  summaryPanelTabs: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '2px',
+    borderRadius: '8px',
+    backgroundColor: '#e2e8f0',
+  },
+  summaryTab: {
+    border: 'none',
+    /* `backgroundColor`, never the `background` shorthand — it is merged with
+       `summaryTabActive`, and mixing the two warns on every rerender. */
+    backgroundColor: 'transparent',
+    borderRadius: '6px',
+    /* Explicit padding — index.css has a global `button { padding: 8px 12px }`. */
+    padding: '5px 10px',
+    fontSize: '11px',
+    fontWeight: 700,
+    color: '#475569',
+    cursor: 'pointer',
+  },
+  summaryTabActive: {
+    backgroundColor: '#ffffff',
+    color: '#0f172a',
+    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.12)',
+  },
+  /** Wrapper that lets a click-catching button sit over the PDF iframe. */
+  pdfPreviewShell: {
+    position: 'relative',
+    display: 'flex',
+    flex: 1,
+    minHeight: 0,
+  },
+  /** Embedded PDF viewer. Needs a definite height — unlike the <pre>, an iframe
+   *  has no intrinsic size, and `maxHeight: 360px` would collapse it. */
+  pdfPreviewFrame: {
+    width: '100%',
+    height: '360px',
+    border: 'none',
+    backgroundColor: '#f8fafc',
+    /* Clicks must reach `pdfPreviewHitArea`, not the viewer's own toolbar. */
+    pointerEvents: 'none',
+  },
+  /** Transparent overlay that opens the enlarged viewer. */
+  pdfPreviewHitArea: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    padding: '0 0 12px',
+    border: 'none',
+    backgroundColor: 'transparent',
+    cursor: 'zoom-in',
+  },
+  pdfPreviewHint: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '5px 12px',
+    borderRadius: '9999px',
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+    color: '#ffffff',
+    fontSize: '11px',
+    fontWeight: 700,
+    pointerEvents: 'none',
+  },
+  pdfPreviewEmpty: {
+    padding: '16px',
+    fontSize: '12px',
+    color: '#94a3b8',
+  },
   summaryFooterRow: {
     display: 'flex',
     justifyContent: 'flex-end',
