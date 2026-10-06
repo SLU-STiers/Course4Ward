@@ -14,7 +14,11 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CourseInWardService } from './course-in-ward.service';
-import { GenerateSummaryDto, EditSummaryDto } from './dto/course-in-ward.dto';
+import {
+  GenerateSummaryDto,
+  EditSummaryDto,
+  RegenerateSummaryDto,
+} from './dto/course-in-ward.dto';
 
 @ApiTags('course-in-ward')
 @ApiBearerAuth()
@@ -38,8 +42,12 @@ export class CourseInWardController {
 
   @Post(':id/regenerate')
   @Roles(Role.PHYSICIAN)
-  regenerate(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.courseInWardService.regenerateSummary(id, user.id);
+  regenerate(
+    @Param('id') id: string,
+    @Body() dto: RegenerateSummaryDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.courseInWardService.regenerateSummary(id, user.id, dto.instructions);
   }
 
   @Patch(':id/approve')

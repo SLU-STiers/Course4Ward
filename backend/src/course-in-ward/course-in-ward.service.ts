@@ -82,7 +82,10 @@ export class CourseInWardService {
   // The AI summarizes per admission PER DAY, so a batch spanning several days
   // comes back as one group per (admission, calendar day). Each group keeps the
   // orders it was built from, which is how the caller files it under a day.
-  private async callAiSummarizer(orders: any[]): Promise<DaySummaryGroup[]> {
+  private async callAiSummarizer(
+    orders: any[],
+    instructions?: string,
+  ): Promise<DaySummaryGroup[]> {
     if (!orders || orders.length === 0) {
       this.logger.warn('[ai] callAiSummarizer received no orders');
       throw new BadRequestException('No orders found to summarize');
@@ -134,6 +137,7 @@ export class CourseInWardService {
       const response = await this.ollamaClient.summarizeBatch(admissions, {
         temperature: 0.1,
         references,
+        instructions,
       });
 
       if (response.failed > 0 || response.results.some((result) => !result.success)) {
@@ -358,8 +362,9 @@ export class CourseInWardService {
     return updated;
   }
 
-  // "Resummarized Physician's Orders" -- option 2: regenerate via AI
-  async regenerateSummary(id: string, physicianId: string) {
+  // "Resummarized Physician's Orders" -- option 2: regenerate via AI, optionally
+  // steered by the physician's extra prompt instructions.
+  async regenerateSummary(id: string, physicianId: string, instructions?: string) {
     const existing = await this.findOne(id);
 
     const sourceOrders = await this.findSummarySourceOrders(existing);
@@ -370,7 +375,7 @@ export class CourseInWardService {
     // Keep the summary filed under the day it already covers: when the source
     // orders span more than one day, take that day's group.
     const summaryDay = dayKeyOf(existing.summaryDate);
-    const groups = await this.callAiSummarizer(sourceOrders);
+    const groups = await this.callAiSummarizer(sourceOrders, instructions);
     const group = groups.find((candidate) => candidate.day === summaryDay) ?? groups[0];
     if (!group?.summary) {
       throw new BadRequestException('No orders found to regenerate this summary');

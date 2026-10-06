@@ -581,6 +581,22 @@ describe('CourseInWardService', () => {
       expect(result).toEqual(mockUpdatedSummary);
     });
 
+    it('should pass the physician instructions to the AI service', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockAuditLogService.record.mockResolvedValue({});
+      mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.regenerateSummary(mockSummaryId, mockPhysicianId, 'Mention the antibiotic first.');
+
+      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({ instructions: 'Mention the antibiotic first.' }),
+      );
+    });
+
     it('should fall back to the linked orders when the summary day has none', async () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
