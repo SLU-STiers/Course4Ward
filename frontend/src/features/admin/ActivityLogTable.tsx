@@ -149,7 +149,7 @@ export function ActivityLogTable() {
           searchProps={{
             value: searchInput,
             onChange: handleSearchChange,
-            placeholder: 'Search by name, login id or action...',
+            placeholder: 'Search by log ID, name, login ID, role or action...',
             ariaLabel: 'Search activity logs',
           }}
           filters={[
