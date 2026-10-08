@@ -1,7 +1,7 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
 import { useCallback, useEffect, useState } from 'react';
-import { DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
+import { Button, DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
@@ -12,6 +12,7 @@ import { triageForDisplay, triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
+import { OnBehalfOrderModal } from './OnBehalfOrderModal';
 import { contactDetailsOf } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
@@ -29,6 +30,7 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     id: patient.id,
     name,
     patientId: patient.id,
+    admissionId: admission?.id,
     recordId: admission?.id ?? patient.id,
     admissionDate: admissionDate ? formatDateNumeric(admissionDate) : '—',
     admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : '',
@@ -92,6 +94,7 @@ export function ManagementPortalView() {
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [detailName, setDetailName] = useState<string | null>(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
   const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
 
   /* Refetched every time a patient is opened, so a summary the physician
@@ -190,6 +193,18 @@ export function ManagementPortalView() {
       }
       return next;
     });
+  };
+
+  const addOrder = (patientId: string, saved: PhysicianOrder) => {
+    const mapped = mapOrder(saved);
+    setOrdersByPatient((previous) => ({
+      ...previous,
+      [patientId]: [
+        mapped,
+        ...(previous[patientId] ?? []).filter((item) => item.order?.id !== saved.id),
+      ],
+    }));
+    setSelectedDate(mapped.dateKey);
   };
   const ordersById = new Map(
     ordersForDisplay.flatMap((set) => (set.order ? [[set.order.id, set.order] as const] : [])),
@@ -379,6 +394,13 @@ export function ManagementPortalView() {
                   </>
                 );
               }}
+              footer={
+                selected.admissionId && selected.status !== 'discharged' ? (
+                  <Button variant="primary" onClick={() => setShowOrderModal(true)}>
+                    Enter Order on Behalf of Physician
+                  </Button>
+                ) : undefined
+              }
               emptyMessage={
                 activeDate
                   ? `No physician orders for ${formatDateLongFromKey(activeDate)}. Choose another date to view previous orders.`
@@ -423,6 +445,20 @@ export function ManagementPortalView() {
             loadPatients().catch(() => undefined);
           }}
           onClose={() => setDetailName(null)}
+        />
+      )}
+
+      {selected?.admissionId && showOrderModal && (
+        <OnBehalfOrderModal
+          open
+          admissionId={selected.admissionId}
+          patientName={selected.name}
+          careTeamNames={[
+            ...(selected.assignedDoctor ? [selected.assignedDoctor] : []),
+            ...(selected.additionalDoctors ?? []),
+          ]}
+          onClose={() => setShowOrderModal(false)}
+          onSaved={(saved) => addOrder(selected.id, saved)}
         />
       )}
     </div>
