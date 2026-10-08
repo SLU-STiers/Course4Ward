@@ -9,6 +9,8 @@ export type NursePatient = {
   id: string;
   name: string;
   patientId: string;
+  /** Active admission id required when creating physician orders. */
+  admissionId?: string;
   recordId: string;
   admissionDate: string;
   /** `YYYY-MM-DD` for sorting / date inputs; `admissionDate` is for display. */
