@@ -142,6 +142,69 @@ describe('AuthService', () => {
         temporaryPassword: null,
       });
     });
+
+    it('should return the same temporary password on every call until it expires', async () => {
+      const expiresAt = new Date(Date.now() + 60_000);
+      (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue({
+        status: 'APPROVED',
+        expiresAt,
+        temporaryPassword: 'temp-pass-123',
+      });
+
+      const first = await service.getPasswordResetStatus('approved-token');
+      const second = await service.getPasswordResetStatus('approved-token');
+
+      expect(first).toEqual({ status: 'APPROVED', temporaryPassword: 'temp-pass-123', expiresAt });
+      expect(second).toEqual(first);
+      expect(prismaService.passwordResetRequest.update).not.toHaveBeenCalled();
+      expect(prismaService.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should return EXPIRED once the temporary password has been used', async () => {
+      (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue({
+        status: 'APPROVED',
+        expiresAt: new Date(Date.now() + 60_000),
+        temporaryPassword: null,
+      });
+
+      await expect(service.getPasswordResetStatus('used-token')).resolves.toEqual({ status: 'EXPIRED' });
+    });
+  });
+
+  describe('approvePasswordReset', () => {
+    it('should restart the retrieval window from the moment of approval', async () => {
+      const request = {
+        id: 'req-123',
+        userId: 'user-123',
+        status: 'PENDING',
+        expiresAt: new Date(Date.now() + 60_000),
+        user: { userId: 'DRJ-0231', firstName: 'John', lastName: 'Doe' },
+      };
+      (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue(request);
+      (prismaService.$transaction as jest.Mock).mockResolvedValue([]);
+      jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed' as never);
+
+      const before = Date.now();
+      await service.approvePasswordReset('req-123', 'admin-456');
+
+      const { data } = (prismaService.passwordResetRequest.update as jest.Mock).mock.calls[0][0];
+      expect(data.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 60 * 60 * 1000);
+    });
+  });
+
+  describe('changePassword', () => {
+    it('should discard any temporary password still held for the user', async () => {
+      (prismaService.user.update as jest.Mock).mockResolvedValue({ ...mockUser, sessionVersion: 2 });
+      (prismaService.passwordResetRequest.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed' as never);
+
+      await service.changePassword('user-123', 'new-password-123');
+
+      expect(prismaService.passwordResetRequest.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-123', temporaryPassword: { not: null } },
+        data: { temporaryPassword: null },
+      });
+    });
   });
 
   describe('rejectPasswordReset', () => {

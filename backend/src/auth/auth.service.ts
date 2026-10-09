@@ -31,6 +31,9 @@ export interface PasswordResetQuery {
 
 const DEFAULT_RESET_REQUEST_PAGE_SIZE = 10;
 
+/** How long a reset request (and, once approved, its temporary password) stays retrievable. */
+export const RESET_REQUEST_TTL_MS = 60 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -134,7 +137,7 @@ export class AuthService {
         userId: user.id,
         ipAddress,
         token: resetToken,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + RESET_REQUEST_TTL_MS),
       },
     });
 
@@ -167,10 +170,21 @@ export class AuthService {
       return { status: 'EXPIRED' as const };
     }
 
-    return {
-      status: request.status,
-      temporaryPassword: request.status === 'APPROVED' ? request.temporaryPassword : null,
-    };
+    if (request.status === 'APPROVED') {
+      // Cleared once the user sets a new password, so a used one is never re-served.
+      if (!request.temporaryPassword) return { status: 'EXPIRED' as const };
+
+      // Read-only on purpose: a page refresh gets back the password issued at
+      // approval instead of a new one. `expiresAt` lets the controller keep the
+      // cookie alive for the same window.
+      return {
+        status: 'APPROVED' as const,
+        temporaryPassword: request.temporaryPassword,
+        expiresAt: request.expiresAt,
+      };
+    }
+
+    return { status: request.status, temporaryPassword: null };
   }
 
   /**
@@ -264,6 +278,9 @@ export class AuthService {
           status: 'APPROVED',
           temporaryPassword,
           resolvedAt: new Date(),
+          // Restart the window so a late approval still leaves the user time
+          // to retrieve the password (e.g. after refreshing the login page).
+          expiresAt: new Date(Date.now() + RESET_REQUEST_TTL_MS),
         },
       }),
     ]);
@@ -343,6 +360,7 @@ export class AuthService {
       where: { id: request.id },
       data: { resolvedAt: new Date() },
     });
+    await this.discardTemporaryPasswords(request.userId);
 
     await this.auditLog.record({
       userId: request.userId,
@@ -358,6 +376,7 @@ export class AuthService {
       where: { id: userId },
       data: { passwordHash, mustResetPassword: false, sessionVersion: { increment: 1 } },
     });
+    await this.discardTemporaryPasswords(userId);
 
     await this.auditLog.record({ userId, action: 'PASSWORD_RESET' });
     return {
@@ -372,5 +391,13 @@ export class AuthService {
         mustResetPassword: user.mustResetPassword,
       },
     };
+  }
+
+  /** Once the user has picked their own password, the temporary one must not be retrievable. */
+  private async discardTemporaryPasswords(userId: string) {
+    await this.prisma.passwordResetRequest.updateMany({
+      where: { userId, temporaryPassword: { not: null } },
+      data: { temporaryPassword: null },
+    });
   }
 }
