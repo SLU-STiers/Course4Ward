@@ -120,7 +120,7 @@ export class AuthService {
     });
 
     if (!user) {
-      return null;
+      throw new NotFoundException('User ID not found');
     }
 
     await this.prisma.passwordResetRequest.updateMany({
@@ -142,14 +142,7 @@ export class AuthService {
   }
 
   async requestPasswordReset(dto: RequestPasswordResetDto, ipAddress?: string) {
-    const resetToken = await this.createPasswordResetRequest(dto.userId, ipAddress);
-
-    if (!resetToken) {
-      return {
-        message:
-          'If the user ID exists, a reset request has been submitted for administrator approval.',
-      };
-    }
+    await this.createPasswordResetRequest(dto.userId, ipAddress);
 
     return {
       message: 'Reset request submitted for administrator approval.',

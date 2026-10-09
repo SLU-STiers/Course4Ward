@@ -91,12 +91,12 @@ describe('AuthService', () => {
   });
 
   describe('requestPasswordReset', () => {
-    it('should not reveal whether a user ID exists', async () => {
+    it('should reject a user ID that does not exist', async () => {
       (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.requestPasswordReset({ userId: 'INVALID-USER' })).resolves.toEqual({
-        message: 'If the user ID exists, a reset request has been submitted for administrator approval.',
-      });
+      await expect(service.requestPasswordReset({ userId: 'INVALID-USER' })).rejects.toThrow(
+        'User ID not found',
+      );
 
       expect(prismaService.passwordResetRequest.updateMany).not.toHaveBeenCalled();
       expect(prismaService.passwordResetRequest.create).not.toHaveBeenCalled();

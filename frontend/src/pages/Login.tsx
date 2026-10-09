@@ -56,6 +56,7 @@ export function Login() {
   const [showReset, setShowReset] = useState(false);
   const [resetUserId, setResetUserId] = useState('');
   const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
   const [hasPendingReset, setHasPendingReset] = useState(() =>
     Boolean(sessionStorage.getItem(RESET_TOKEN_STORAGE_KEY)),
   );
@@ -132,6 +133,7 @@ export function Login() {
   async function handleResetRequest(e: React.FormEvent) {
     e.preventDefault();
     setResetMessage(null);
+    setResetError(null);
     setTemporaryPassword(null);
     setPasswordCopied(false);
     try {
@@ -147,7 +149,7 @@ export function Login() {
       }
     } catch (err: any) {
       const backendMessage = err?.response?.data?.message;
-      setResetMessage(
+      setResetError(
         backendMessage || 'Something went wrong. Please contact the IT desk.'
       );
     }
@@ -253,10 +255,14 @@ export function Login() {
               <input
                 className="auth-input"
                 value={resetUserId}
-                onChange={(e) => setResetUserId(e.target.value)}
+                onChange={(e) => {
+                  setResetUserId(e.target.value);
+                  setResetError(null);
+                }}
                 placeholder="Enter User ID..."
                 required
               />
+              {resetError && <p className="auth-error" role="alert">{resetError}</p>}
             </div>
 
             {resetMessage && <p className="auth-info">{resetMessage}</p>}
@@ -267,7 +273,7 @@ export function Login() {
               </ActionButton>
             )}
 
-            <button type="button" className="auth-link-center" onClick={() => setShowReset(false)}>
+            <button type="button" className="auth-link-center" onClick={() => { setShowReset(false); setResetError(null); }}>
               Back to login
             </button>
           </form>

@@ -51,21 +51,14 @@ export class AuthController {
   ) {
     const resetToken = await this.authService.createPasswordResetRequest(dto.userId, req.ip);
 
-    if (resetToken) {
-      res.cookie('resetToken', resetToken, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 1000,
-      });
-    }
+    res.cookie('resetToken', resetToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 1000,
+    });
 
-    return resetToken
-      ? { message: 'Reset request submitted for administrator approval.' }
-      : {
-          message:
-            'If the user ID exists, a reset request has been submitted for administrator approval.',
-        };
+    return { message: 'Reset request submitted for administrator approval.' };
   }
 
   @Get('password-reset/status')
