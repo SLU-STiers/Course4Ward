@@ -50,6 +50,22 @@ export class CourseInWardController {
     return this.courseInWardService.regenerateSummary(id, user.id, dto.instructions);
   }
 
+  @Get(':id/versions')
+  @Roles(Role.PHYSICIAN)
+  versions(@Param('id') id: string) {
+    return this.courseInWardService.listVersions(id);
+  }
+
+  @Post(':id/versions/:versionId/restore')
+  @Roles(Role.PHYSICIAN)
+  restore(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.courseInWardService.restoreVersion(id, versionId, user.id);
+  }
+
   @Patch(':id/approve')
   @Roles(Role.PHYSICIAN)
   approve(@Param('id') id: string, @CurrentUser() user: any) {

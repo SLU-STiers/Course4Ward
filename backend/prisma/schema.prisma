@@ -334,8 +334,26 @@ model CourseInWard {
   approvedBy User?                    @relation("ApprovedBy", fields: [validatorId], references: [id])
   orders     PhysicianOrder[]
   requests   SummaryApprovalRequest[]
+  versions   SummaryVersion[]
 
   @@map("courses_in_ward")
+}
+
+/// Earlier text of a Course in the Ward, kept when it is regenerated or edited
+/// so the physician can restore it. Capped per summary; cleared on approval.
+model SummaryVersion {
+  id        String        @id @default(uuid())
+  summaryId String
+  content   String
+  /// The status the text had (DRAFT_AI, DRAFT_EDITED or APPROVED).
+  source    SummaryStatus
+  /// When this text was replaced.
+  createdAt DateTime      @default(now())
+
+  summary CourseInWard @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@index([summaryId, createdAt])
+  @@map("summary_versions")
 }
 
 model SummaryApprovalRequest {
