@@ -1,6 +1,7 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
 import { useEffect, useMemo, useState } from 'react';
+import { Check, History, Pencil, RefreshCw } from 'lucide-react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, OrderType, PhysicianOrder } from '../../types';
@@ -67,6 +68,7 @@ export function ManageView() {
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
   const [regenInstructions, setRegenInstructions] = useState("");
   const [showingHistory, setShowingHistory] = useState(false);
+  const [savingSummaryEdit, setSavingSummaryEdit] = useState(false);
   /** A day with no Course in the Ward yet is generating its first one. */
   const [generatingSummary, setGeneratingSummary] = useState(false);
   /** Order-date filter (`YYYY-MM-DD`); `null` means unfiltered — every order. */
@@ -399,6 +401,39 @@ export function ManageView() {
       .then(({ data }) => replaceSummary(selected.id, data))
       .catch(() => setOrderError("The summary could not be approved. Please try again."))
       .finally(() => setApprovingSummary(false));
+  };
+
+  const regenerateSummary = (summaryId: string) => {
+    if (!selected || regeneratingSummary) return;
+    setRegeneratingSummary(true);
+    setOrderError(null);
+    void courseInWardApi
+      .regenerate(summaryId, regenInstructions)
+      .then(({ data }) => {
+        replaceSummary(selected.id, data);
+        setEditingSummary(false);
+        setSummaryDraft(null);
+        setRegenInstructions("");
+        // Open the comparison so the new text sits beside the old ones.
+        setShowingHistory(true);
+      })
+      .catch(() => setOrderError("The summary could not be regenerated. Please try again."))
+      .finally(() => setRegeneratingSummary(false));
+  };
+
+  const saveSummaryEdit = (summaryId: string) => {
+    if (!selected || savingSummaryEdit) return;
+    setSavingSummaryEdit(true);
+    setOrderError(null);
+    void courseInWardApi
+      .edit(summaryId, summaryText)
+      .then(({ data }) => {
+        replaceSummary(selected.id, data);
+        setEditingSummary(false);
+        setSummaryDraft(null);
+      })
+      .catch(() => setOrderError("The edited summary could not be saved. Please try again."))
+      .finally(() => setSavingSummaryEdit(false));
   };
 
   if (loading)
@@ -891,91 +926,97 @@ export function ManageView() {
                     ) : (
                       <>
                         {!editingSummary && (
-                          <input
-                            type="text"
-                            placeholder="Additional instructions for Regenerate (optional)"
-                            aria-label="Additional instructions for Regenerate"
-                            maxLength={1000}
-                            value={regenInstructions}
-                            disabled={regeneratingSummary}
-                            onChange={(e) => setRegenInstructions(e.target.value)}
-                            style={{
-                              flex: "1 1 100%",
-                              fontSize: 12,
-                              padding: "6px 10px",
-                              border: "1px solid #cbd5e1",
-                              borderRadius: 6,
-                            }}
-                          />
+                          // The instructions only steer Regenerate, so they share a row.
+                          <div style={manage.aiRegenRow}>
+                            <input
+                              type="text"
+                              placeholder="Optional instructions, e.g. mention the IV fluids first"
+                              aria-label="Instructions for Regenerate (optional)"
+                              maxLength={1000}
+                              value={regenInstructions}
+                              disabled={regeneratingSummary}
+                              onChange={(e) => setRegenInstructions(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") regenerateSummary(summary.id);
+                              }}
+                              style={manage.aiRegenInput}
+                            />
+                            <AiActionButton
+                              disabled={regeneratingSummary}
+                              aria-busy={regeneratingSummary}
+                              onClick={() => regenerateSummary(summary.id)}
+                            >
+                              {regeneratingSummary ? (
+                                <span className="ui-btn__spinner" aria-hidden="true" />
+                              ) : (
+                                <RefreshCw size={14} aria-hidden="true" />
+                              )}
+                              {regeneratingSummary ? "Regenerating..." : "Regenerate"}
+                            </AiActionButton>
+                          </div>
                         )}
-                        {summary.status !== "APPROVED" && !editingSummary && (
-                          <AiActionButton
-                            disabled={approvingSummary}
-                            aria-busy={approvingSummary}
-                            onClick={() => approveSummary(summary.id)}
-                          >
-                            {approvingSummary ? "Approving..." : "✓ Approve"}
-                          </AiActionButton>
-                        )}
-                        {!editingSummary && (
-                          <AiActionButton
-                            aria-pressed={showingHistory}
-                            onClick={() => setShowingHistory((open) => !open)}
-                          >
-                            {showingHistory ? "Hide Versions" : "Compare Versions"}
-                          </AiActionButton>
-                        )}
-                        <AiActionButton
-                          onClick={() => {
-                            if (!editingSummary) {
-                              setShowingHistory(false);
-                              setSummaryDraft(
-                                summaryDay
-                                  ? { day: summaryDay, text: summary.summaryContent }
-                                  : null,
-                              );
-                              setEditingSummary(true);
-                              return;
-                            }
-                            void courseInWardApi
-                              .edit(summary.id, summaryText)
-                              .then(({ data }) => {
-                                replaceSummary(selected.id, data);
-                                setEditingSummary(false);
-                                setSummaryDraft(null);
-                              })
-                              .catch(() => undefined);
-                          }}
-                        >
-                          {editingSummary ? "Save Summary" : "Edit Summary"}
-                        </AiActionButton>
-                        <AiActionButton
-                          disabled={regeneratingSummary}
-                          aria-busy={regeneratingSummary}
-                          onClick={() => {
-                            if (regeneratingSummary) return;
-                            setRegeneratingSummary(true);
-                            void courseInWardApi
-                              .regenerate(summary.id, regenInstructions)
-                              .then(({ data }) => {
-                                replaceSummary(selected.id, data);
-                                setEditingSummary(false);
-                                setSummaryDraft(null);
-                                setRegenInstructions("");
-                                // Open the comparison so the new text sits beside the old ones.
-                                setShowingHistory(true);
-                              })
-                              .catch(() => undefined)
-                              .finally(() => setRegeneratingSummary(false));
-                          }}
-                        >
-                          {regeneratingSummary ? (
-                            <span className="ui-btn__spinner" aria-hidden="true" />
-                          ) : null}
-                          {regeneratingSummary
-                            ? "Regenerating..."
-                            : "↻ Regenerate"}
-                        </AiActionButton>
+                        <div style={manage.aiActionRow}>
+                          {editingSummary ? (
+                            <>
+                              <span style={manage.aiActionSpacer} />
+                              <AiActionButton
+                                disabled={savingSummaryEdit}
+                                onClick={() => {
+                                  setEditingSummary(false);
+                                  setSummaryDraft(null);
+                                }}
+                              >
+                                Cancel
+                              </AiActionButton>
+                              <AiActionButton
+                                className="ui-ai-btn--primary"
+                                disabled={savingSummaryEdit || !summaryText.trim()}
+                                aria-busy={savingSummaryEdit}
+                                onClick={() => saveSummaryEdit(summary.id)}
+                              >
+                                <Check size={14} aria-hidden="true" />
+                                {savingSummaryEdit ? "Saving..." : "Save Summary"}
+                              </AiActionButton>
+                            </>
+                          ) : (
+                            <>
+                              <AiActionButton
+                                disabled={regeneratingSummary}
+                                onClick={() => {
+                                  setShowingHistory(false);
+                                  setSummaryDraft(
+                                    summaryDay
+                                      ? { day: summaryDay, text: summary.summaryContent }
+                                      : null,
+                                  );
+                                  setEditingSummary(true);
+                                }}
+                              >
+                                <Pencil size={14} aria-hidden="true" />
+                                Edit
+                              </AiActionButton>
+                              <AiActionButton
+                                aria-pressed={showingHistory}
+                                onClick={() => setShowingHistory((open) => !open)}
+                              >
+                                <History size={14} aria-hidden="true" />
+                                {showingHistory ? "Hide Versions" : "Compare Versions"}
+                              </AiActionButton>
+                              <span style={manage.aiActionSpacer} />
+                              {summary.status !== "APPROVED" && (
+                                <AiActionButton
+                                  className="ui-ai-btn--primary"
+                                  disabled={approvingSummary || regeneratingSummary}
+                                  aria-busy={approvingSummary}
+                                  onClick={() => approveSummary(summary.id)}
+                                >
+                                  <Check size={14} aria-hidden="true" />
+                                  {approvingSummary ? "Approving..." : "Approve"}
+                                </AiActionButton>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </>
                     )
                   }

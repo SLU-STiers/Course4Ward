@@ -1437,6 +1437,17 @@ td {
   background: #f0f7ff;
 }
 
+.ui-ai-btn--primary {
+  border-color: #0066cc;
+  background: #0066cc;
+  color: #ffffff;
+}
+
+.ui-ai-btn--primary:hover:not(:disabled) {
+  border-color: #0052a3;
+  background: #0052a3;
+}
+
 .ui-ai-btn:disabled {
   opacity: 0.6;
   cursor: default;

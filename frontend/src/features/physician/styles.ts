@@ -578,6 +578,19 @@ export const manage: Record<string, CSSProperties> = {
     flex: "1 1 auto",
     minHeight: 0,
   },
+  /** AI card footer: instructions + Regenerate on one row, the other actions below. */
+  aiRegenRow: { display: "flex", gap: 8, width: "100%" },
+  aiRegenInput: {
+    flex: "1 1 auto",
+    minWidth: 0,
+    fontSize: 12,
+    padding: "6px 10px",
+    border: "1px solid #cbd5e1",
+    borderRadius: 6,
+  },
+  aiActionRow: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, width: "100%" },
+  /** Pushes the primary action (Approve / Save) to the right edge. */
+  aiActionSpacer: { flex: "1 1 auto" },
   /** Right-hand "Compare versions" panel (SummaryHistory). */
   historyCard: {
     backgroundColor: "#ffffff",
