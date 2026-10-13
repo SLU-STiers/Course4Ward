@@ -559,16 +559,6 @@ export const addPatient: Record<string, CSSProperties> = {
 
 /* Per-order execution status + nurse comment, inside the orders timeline. */
 export const orderExec: Record<string, CSSProperties> = {
-  updateBtn: {
-    border: 'none',
-    background: 'none',
-    color: '#0284c7',
-    fontSize: 12,
-    fontWeight: 700,
-    cursor: 'pointer',
-    padding: 0,
-    fontFamily: 'inherit',
-  },
   editor: {
     marginTop: 10,
     display: 'flex',
