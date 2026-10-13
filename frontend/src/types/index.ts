@@ -160,6 +160,17 @@ export interface CourseInWard {
   version?: number;
 }
 
+/** An earlier text of a Course in the Ward, kept when it was regenerated or edited. */
+export interface SummaryVersion {
+  id: string;
+  summaryId: string;
+  content: string;
+  /** The status the text had before it was replaced. */
+  source: SummaryStatus;
+  /** When the text was replaced. */
+  createdAt: string;
+}
+
 export interface PhysicianRequest {
   id: string;
   requestedAt: string;

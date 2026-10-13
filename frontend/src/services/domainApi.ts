@@ -26,6 +26,7 @@ import type {
   StaffAccount,
   TrendBucket,
   WardRoom,
+  SummaryVersion,
 } from '../types';
 
 // --- Auth ---
@@ -121,6 +122,11 @@ export const courseInWardApi = {
       instructions?.trim() ? { instructions: instructions.trim() } : {},
     ),
   approve: (id: string) => api.patch<CourseInWard>(`/course-in-ward/${id}/approve`),
+  /** Earlier texts of a summary, newest first (the last 3 are kept). */
+  versions: (id: string) => api.get<SummaryVersion[]>(`/course-in-ward/${id}/versions`),
+  /** Makes an earlier text current again; the replaced text becomes a version. */
+  restoreVersion: (id: string, versionId: string) =>
+    api.post<CourseInWard>(`/course-in-ward/${id}/versions/${versionId}/restore`),
   forPatient: (patientId: string) =>
     api.get<CourseInWard[]>(`/course-in-ward/patient/${patientId}`),
 };

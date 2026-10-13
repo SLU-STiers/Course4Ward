@@ -20,6 +20,7 @@ import { manage } from './styles';
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
 import { mapPatient } from './patient';
 import { TriageSummaryBar } from './TriageSummaryBar';
+import { SummaryHistory } from './SummaryHistory';
 import { triageQueueKey } from '../../lib/triage';
 import { mergeSummaries, summariesPerDay } from './summaries';
 import type { DashboardPatient } from './types';
@@ -65,6 +66,7 @@ export function ManageView() {
   >(null);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
   const [regenInstructions, setRegenInstructions] = useState("");
+  const [showingHistory, setShowingHistory] = useState(false);
   /** A day with no Course in the Ward yet is generating its first one. */
   const [generatingSummary, setGeneratingSummary] = useState(false);
   /** Order-date filter (`YYYY-MM-DD`); `null` means unfiltered — every order. */
@@ -274,6 +276,7 @@ export function ManageView() {
   useEffect(() => {
     setEditingSummary(false);
     setSummaryDraft(null);
+    setShowingHistory(false);
   }, [selected?.id, summaryDay]);
 
   // Choosing a day for the orders focuses the summary on it too — the calendar
@@ -914,9 +917,18 @@ export function ManageView() {
                             {approvingSummary ? "Approving..." : "✓ Approve"}
                           </AiActionButton>
                         )}
+                        {!editingSummary && (
+                          <AiActionButton
+                            aria-pressed={showingHistory}
+                            onClick={() => setShowingHistory((open) => !open)}
+                          >
+                            {showingHistory ? "Hide Versions" : "Compare Versions"}
+                          </AiActionButton>
+                        )}
                         <AiActionButton
                           onClick={() => {
                             if (!editingSummary) {
+                              setShowingHistory(false);
                               setSummaryDraft(
                                 summaryDay
                                   ? { day: summaryDay, text: summary.summaryContent }
@@ -950,6 +962,8 @@ export function ManageView() {
                                 setEditingSummary(false);
                                 setSummaryDraft(null);
                                 setRegenInstructions("");
+                                // Open the comparison so the new text sits beside the old ones.
+                                setShowingHistory(true);
                               })
                               .catch(() => undefined)
                               .finally(() => setRegeneratingSummary(false));
@@ -986,6 +1000,19 @@ export function ManageView() {
           </div>
         )}
       </Panel>
+
+      {showingHistory && selected && summary ? (
+        <>
+          <Separator className="ui-split-separator ui-split-separator--column" />
+          <Panel id="history" defaultSize="34" minSize="280px" style={manage.panelFill}>
+            <SummaryHistory
+              summary={summary}
+              onRestored={(updated) => replaceSummary(selected.id, updated)}
+              onClose={() => setShowingHistory(false)}
+            />
+          </Panel>
+        </>
+      ) : null}
     </Group>
   );
 }
