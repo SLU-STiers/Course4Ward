@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import patientInfoIcon from '../../Img/patient-information.png';
 import assessmentIcon from '../../Img/assesment.png';
 import careTeamIcon from '../../Img/care-team.png';
+import padlockIcon from '../../Img/padlock.png';
 import { addPatient as s } from './styles';
 import { INSURANCE_LABEL } from '../../lib/patient';
 import type { PatientContactDetails } from './types';
@@ -104,4 +105,25 @@ export function contactDetailsOf(patient: Patient): PatientContactDetails {
     contactPersonNumber: patient.contactPersonNumber ?? '',
     contactPersonAddress: patient.contactPersonAddress ?? '',
   };
+}
+
+/** Row action for a patient outside the nurse's wards: their details cannot be opened. */
+export function OtherWardLabel() {
+  return (
+    <span
+      title="This patient is not in your assigned ward"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        fontSize: 12,
+        fontWeight: 600,
+        color: '#64748b',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <img src={padlockIcon} alt="" aria-hidden="true" style={{ width: 12, height: 12, objectFit: 'contain' }} />
+      Other ward
+    </span>
+  );
 }

@@ -983,3 +983,28 @@ export const passwordResets: SeedPasswordReset[] = [
   { id: uid(813), userLoginId: 'CLM003', token: 'reset-token-0013', requestedAt: daysAgo(2, 11), expiresAt: daysAgo(1, 11), resolvedAt: daysAgo(1, 12), status: ResetStatus.APPROVED, ipAddress: '10.0.0.7' },
   { id: uid(814), userLoginId: 'DOC005', token: 'reset-token-0014', requestedAt: daysAgo(1, 10), expiresAt: daysFromNow(1, 10), status: ResetStatus.PENDING, ipAddress: '192.168.1.14' },
 ];
+// ---------- Wards ----------
+// Ward ids come from migration 20261014022553_add_wards. Emergency holds every
+// patient without a room; the others own starter rooms (Coronary 101-103,
+// OBDR 104-106, Neonatal ICU 107-108, Pedia ICU 109-110, Medical ICU 201-205,
+// Surgery 206-210).
+export const nurseWards: { userId: string; wardIds: string[] }[] = [
+  { userId: 'NRS001', wardIds: ['ward-emergency', 'ward-micu'] },
+  { userId: 'NRS002', wardIds: ['ward-surgery'] },
+  { userId: 'NRS003', wardIds: ['ward-coronary'] },
+  { userId: 'NRS004', wardIds: ['ward-emergency'] },
+  { userId: 'NRS005', wardIds: ['ward-obdr', 'ward-nicu', 'ward-picu'] },
+];
+
+/** Rooms for some current inpatients, so the ward split shows; the rest stay in Emergency. */
+export const admissionRooms: Record<string, string> = {
+  adm8: '101', // hypertensive urgency -> Coronary
+  adm10: '102', // heart failure -> Coronary
+  adm14: '103', // NSTEMI -> Coronary
+  adm1: '201', // pneumonia -> Medical ICU
+  adm2: '202', // pyelonephritis -> Medical ICU
+  adm11: '203', // severe anemia -> Medical ICU
+  adm20: '204', // pancreatitis -> Medical ICU
+  adm4: '206', // appendectomy -> Surgery
+  adm26: '207', // post-op hernia repair -> Surgery
+};

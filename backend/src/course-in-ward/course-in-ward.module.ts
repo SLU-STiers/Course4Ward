@@ -3,9 +3,10 @@ import { CourseInWardService } from './course-in-ward.service';
 import { CourseInWardController } from './course-in-ward.controller';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { OrdersModule } from '../orders/orders.module';
+import { WardsModule } from '../wards/wards.module';
 
 @Module({
-  imports: [AuditLogModule, OrdersModule],
+  imports: [AuditLogModule, OrdersModule, WardsModule],
   controllers: [CourseInWardController],
   providers: [CourseInWardService],
   exports: [CourseInWardService],

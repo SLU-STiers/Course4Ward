@@ -57,6 +57,14 @@ export interface Patient {
   dischargeDate?: string | null;
   initialAssessment?: string | null;
   admissions?: PatientAdmission[];
+  /**
+   * Nurse lists only: the patient is outside the nurse's wards, so the server
+   * sent just the name and where they are. Nurse lists carry `wardName` /
+   * `roomNumber` on every row.
+   */
+  restricted?: boolean;
+  wardName?: string | null;
+  roomNumber?: string | null;
 }
 
 /**
@@ -79,7 +87,7 @@ export interface PatientAdmission {
   /** Full triage row for nurses and physicians; claims payloads include it on the order's admission. */
   triage?: AdmissionTriage | null;
   /** Ward room of an admitted patient. */
-  room?: { id: string; number: string } | null;
+  room?: { id: string; number: string; ward?: { id: string; name: string } | null } | null;
 }
 
 /** A ward room, occupied while an undischarged admission holds it. */
@@ -385,6 +393,15 @@ export interface AdminUserInput {
   role?: string;
   temporaryPassword?: string;
   isActive?: boolean;
+  /** Nurses only: the wards they work in (replaces the current set). */
+  wardIds?: string[];
+}
+
+/** A nursing unit (`GET /admin/wards`); `holdsUnroomed` = patients without a room belong here. */
+export interface Ward {
+  id: string;
+  name: string;
+  holdsUnroomed: boolean;
 }
 
 /** Lifecycle of a password reset request (`ResetStatus` on the backend). */
@@ -400,6 +417,8 @@ export interface StaffAccount {
   isActive: boolean;
   mustResetPassword: boolean;
   createdAt: string;
+  /** Nurses: the wards they work in. */
+  wards?: { ward: { id: string; name: string } }[];
 }
 
 /** Row returned by `GET /admin/password-reset-requests`, with its requester. */

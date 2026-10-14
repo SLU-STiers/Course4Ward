@@ -14,6 +14,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CourseInWardService } from './course-in-ward.service';
+import { WardAccessService } from '../wards/ward-access.service';
 import {
   GenerateSummaryDto,
   EditSummaryDto,
@@ -25,7 +26,10 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('course-in-ward')
 export class CourseInWardController {
-  constructor(private courseInWardService: CourseInWardService) {}
+  constructor(
+    private courseInWardService: CourseInWardService,
+    private wardAccess: WardAccessService,
+  ) {}
 
   @Post('generate')
   @Roles(Role.PHYSICIAN)
@@ -74,7 +78,8 @@ export class CourseInWardController {
 
   @Get('patient/:patientId')
   @Roles(Role.PHYSICIAN, Role.NURSE, Role.CLAIMS_PROCESSOR)
-  findForPatient(@Param('patientId') patientId: string) {
+  async findForPatient(@Param('patientId') patientId: string, @CurrentUser() user: any) {
+    await this.wardAccess.assertPatient(user, patientId);
     return this.courseInWardService.findForPatient(patientId);
   }
 }

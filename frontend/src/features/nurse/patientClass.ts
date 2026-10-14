@@ -2,7 +2,7 @@
 
 import type { StatusValue } from '../../components/ui';
 import { PATIENT_CLASS_LABEL } from '../../lib/patient';
-import type { PatientAdmission } from '../../types';
+import type { Patient, PatientAdmission } from '../../types';
 import type { AdmissionStatus } from './types';
 
 /** Every status a nurse list can show, in filter order. */
@@ -13,6 +13,13 @@ export const ADMISSION_STATUSES: AdmissionStatus[] = [
   'Admitted',
   'Discharged',
 ];
+
+/** "Surgery · Room 206" — all a nurse is told about a patient outside their wards. */
+export function wardLocation(patient: Pick<Patient, 'wardName' | 'roomNumber'>) {
+  return [patient.wardName ?? 'Another ward', patient.roomNumber && `Room ${patient.roomNumber}`]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 /** Status of an admission: discharged, else its patient class. */
 export function admissionStatusOf(

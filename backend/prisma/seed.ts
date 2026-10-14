@@ -1,12 +1,14 @@
 import { PatientClass, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
+  admissionRooms,
   admissions,
   approvalRequests,
   auditLogs,
   coursesInWard,
   DEMO_PASSWORD,
   notes,
+  nurseWards,
   orders,
   patients,
   users,
@@ -189,7 +191,28 @@ async function main() {
     });
   }
 
-  // 9) Report.
+  // 9) Wards: nurse assignments, and rooms for some current inpatients. Only
+  // fills gaps (no room yet, room free), so it never moves a real patient.
+  for (const { userId, wardIds } of nurseWards) {
+    const nurseId = must(userIds.get(userId), `nurse '${userId}'`);
+    await prisma.nurseWard.createMany({
+      data: wardIds.map((wardId) => ({ nurseId, wardId })),
+      skipDuplicates: true,
+    });
+  }
+  for (const [key, number] of Object.entries(admissionRooms)) {
+    const room = await prisma.room.findUnique({
+      where: { number },
+      select: { id: true, admissions: { where: { dischargeDate: null }, take: 1, select: { id: true } } },
+    });
+    if (!room || room.admissions.length) continue;
+    await prisma.patientAdmission.updateMany({
+      where: { id: must(admissionIds.get(key), `admission '${key}'`), roomId: null, dischargeDate: null },
+      data: { roomId: room.id },
+    });
+  }
+
+  // 10) Report.
   const width = Math.max(...users.map((u) => u.role.length), 0) + 2;
   console.log('\nMock data seeded (idempotent — safe to re-run):');
   console.log(`  users=${users.length} patients=${patients.length} admissions=${admissions.length}`);

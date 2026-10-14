@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,9 +22,24 @@ export class UsersService {
     isActive: true,
     mustResetPassword: true,
     createdAt: true,
+    wards: { select: { ward: { select: { id: true, name: true } } } },
   };
 
+  /** Ward ids to store for a user: only nurses have wards, and every id must exist. */
+  private async wardIdsFor(role: Role, wardIds: string[] | undefined) {
+    if (role !== Role.NURSE) {
+      if (wardIds?.length) throw new BadRequestException('Only nurses are assigned to wards');
+      return [];
+    }
+    const ids = [...new Set(wardIds ?? [])];
+    if (!ids.length) return ids;
+    const found = await this.prisma.ward.count({ where: { id: { in: ids } } });
+    if (found !== ids.length) throw new BadRequestException('One or more wards do not exist');
+    return ids;
+  }
+
   async create(dto: CreateUserDto, actingAdminId: string) {
+    const wardIds = await this.wardIdsFor(dto.role, dto.wardIds);
     const passwordHash = await bcrypt.hash(dto.temporaryPassword, 12);
     const prefixes: Record<Role, string> = {
       ADMIN: 'ADM',
@@ -67,6 +82,9 @@ export class UsersService {
           role: dto.role,
           passwordHash,
           mustResetPassword: true,
+          wards: wardIds.length
+            ? { create: wardIds.map((wardId) => ({ wardId })) }
+            : undefined,
         },
         select: this.safeSelect,
       });
@@ -93,15 +111,26 @@ export class UsersService {
   async update(id: string, dto: UpdateUserDto, actingAdminId: string) {
     const existing = await this.prisma.user.findUnique({
       where: { id },
-      select: { isActive: true },
+      select: { isActive: true, role: true },
     });
     if (!existing) throw new NotFoundException('User not found');
+
+    const { wardIds: requestedWardIds, ...fields } = dto;
+    const role = dto.role ?? existing.role;
+    // Replace the ward set when it is sent, and drop it when a nurse becomes another role.
+    const wardIds =
+      requestedWardIds !== undefined || role !== existing.role
+        ? await this.wardIdsFor(role, requestedWardIds)
+        : null;
 
     const statusChanged = dto.isActive !== undefined && dto.isActive !== existing.isActive;
     const user = await this.prisma.user.update({
       where: { id },
       data: {
-        ...dto,
+        ...fields,
+        ...(wardIds
+          ? { wards: { deleteMany: {}, create: wardIds.map((wardId) => ({ wardId })) } }
+          : {}),
         ...(statusChanged ? { sessionVersion: { increment: 1 } } : {}),
       },
       select: this.safeSelect,
