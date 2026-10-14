@@ -1,12 +1,16 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useTableState } from '../../hooks/useTableState';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
+
+/** The patient list changes less often than an open patient's orders. */
+const PATIENT_POLL_MS = 15000;
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
 import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
 import { triageForDisplay, triageUrgency } from '../../lib/triage';
@@ -135,16 +139,45 @@ export function ManagementPortalView() {
     loadPatients().catch(() => setPatients([]));
   }, [loadPatients]);
 
+  /** Newest order day last seen per patient, to notice a day that just got its first order. */
+  const newestDayRef = useRef<Record<string, string>>({});
+
+  const loadOrders = useCallback((patientId: string) => {
+    return ordersApi.forPatient(patientId).then(({ data }) => {
+      const mapped = data.filter((order) => order.active).map(mapOrder);
+      setOrdersByPatient((previous) => ({ ...previous, [patientId]: mapped }));
+      const newest = [...new Set(mapped.map((order) => order.dateKey))].sort().reverse()[0] ?? '';
+      const previousNewest = newestDayRef.current[patientId];
+      newestDayRef.current[patientId] = newest;
+      // Someone reading the newest day follows it onto a newer one.
+      setSelectedDate((current) =>
+        !current || (previousNewest && current === previousNewest && newest !== previousNewest)
+          ? newest
+          : current,
+      );
+    });
+  }, []);
+
   useEffect(() => {
     if (!selectedId) return;
-    ordersApi.forPatient(selectedId).then(({ data }) => {
-      const mapped = data.filter((order) => order.active).map(mapOrder);
-      setOrdersByPatient((previous) => ({ ...previous, [selectedId]: mapped }));
-      const days = [...new Set(mapped.map((order) => order.dateKey))].sort().reverse();
-      setSelectedDate((current) => current || days[0] || '');
-    }).catch(() => setOrdersByPatient((previous) => ({ ...previous, [selectedId]: [] })));
+    loadOrders(selectedId).catch(() => setOrdersByPatient((previous) => ({ ...previous, [selectedId]: [] })));
     loadSummaries(selectedId);
-  }, [selectedId, loadSummaries]);
+  }, [selectedId, loadOrders, loadSummaries]);
+
+  // Physicians write orders and approve summaries from their own screen; pick
+  // those up live while a patient is open, and keep the list's statuses fresh.
+  usePolling(
+    () => {
+      if (!selectedId) return;
+      loadOrders(selectedId).catch(() => undefined);
+      loadSummaries(selectedId);
+    },
+    ORDER_POLL_MS,
+    Boolean(selectedId),
+  );
+  usePolling(() => {
+    loadPatients().catch(() => undefined);
+  }, PATIENT_POLL_MS);
 
   const table = useTableState<NursePatient>({
     items: patients,

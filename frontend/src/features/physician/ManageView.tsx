@@ -12,6 +12,7 @@ import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrders
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { ORDER_TYPE_OPTIONS, orderTypeLabel } from '../../components/orders/orderType';
 import { useTableState } from '../../hooks/useTableState';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import {
   formatDateLongFromKey,
   toDateKey,
@@ -310,6 +311,15 @@ export function ManageView() {
     const { data } = await ordersApi.forPatient(patientId);
     setOrdersByPatient((previous) => ({ ...previous, [patientId]: data }));
   };
+
+  // Nurses update order statuses from their own screen; pick those up live.
+  usePolling(
+    () => {
+      if (selected) reloadOrders(selected.id).catch(() => undefined);
+    },
+    ORDER_POLL_MS,
+    Boolean(selected),
+  );
 
   /** Refresh the per-patient summary list with a row the API just returned. */
   const replaceSummary = (patientId: string, updated: CourseInWard) => {
