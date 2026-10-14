@@ -613,8 +613,8 @@ export function AddPatientModal({
 
           <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Priority level and initial vital signs — leave blank if not taken">
             <div style={{ marginBottom: 14 }}>
-              <span style={s.label}>Triage Level</span>
-              <div style={s.triageLevels} role="radiogroup" aria-label="Triage level">
+              <span style={s.label}>Emergency Severity Index (ESI)</span>
+              <div style={s.triageLevels} role="radiogroup" aria-label="Emergency Severity Index (ESI)">
                 {TRIAGE_LEVELS.map((info) => {
                   const active = form.triageLevel === info.level;
                   return (

@@ -13,7 +13,7 @@ export function TriageAssessmentPanel({ triage }: { triage: TriageDisplay }) {
   return (
     <div>
       <div style={styles.levelRow}>
-        <span style={styles.label}>Triage Level</span>
+        <span style={styles.label}>Emergency Severity Index (ESI)</span>
         <TriageBadge level={triage.level} />
         {info && (
           <span style={styles.levelHint}>
