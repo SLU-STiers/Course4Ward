@@ -59,7 +59,12 @@ describe("WardAccessService", () => {
       patient("c", null),
     ])) as any[];
 
-    expect(own).toMatchObject({ restricted: false, contactNumber: "0917" });
+    expect(own).toMatchObject({
+      restricted: false,
+      contactNumber: "0917",
+      wardName: "Medical ICU",
+      roomNumber: "101",
+    });
     expect(other).toEqual({
       id: "b",
       firstName: "Juan",

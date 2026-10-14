@@ -61,6 +61,7 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     triage: triageForDisplay(admission),
     contact: contactDetailsOf(patient),
     room: admission?.room?.number,
+    location: wardLocation(patient),
     patientClass: admission?.patientClass,
     classSince: admission?.classSince,
     assignedDoctor: admission?.physician
@@ -299,6 +300,7 @@ export function ManagementPortalView() {
           <thead>
             <tr style={patientTableStyles.thRow}>
               <th style={patientTableStyles.th}>Patient</th>
+              <th style={patientTableStyles.th}>Ward</th>
               <th style={patientTableStyles.th}>Triage</th>
               <th style={patientTableStyles.th}>Sex</th>
               <th style={patientTableStyles.th}>Age</th>
@@ -317,10 +319,8 @@ export function ManagementPortalView() {
                     <td style={patientTableStyles.td}>
                       <span style={patientTableStyles.name}>{p.name}</span>
                     </td>
-                    <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }} colSpan={5}>
-                      {p.location}
-                    </td>
-                    <td style={patientTableStyles.td} />
+                    <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.location}</td>
+                    <td style={patientTableStyles.td} colSpan={6} />
                     <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
                       <OtherWardLabel />
                     </td>
@@ -343,6 +343,7 @@ export function ManagementPortalView() {
                       <span style={patientTableStyles.name}>{p.name}</span>
                     </div>
                   </td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.location}</td>
                   <td style={patientTableStyles.td}>
                     <TriageBadge level={p.triage?.level} compact />
                   </td>
@@ -379,7 +380,7 @@ export function ManagementPortalView() {
               <tr>
                 <td
                   style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                  colSpan={8}
+                  colSpan={9}
                 >
                   {patients.length === 0
                     ? 'No patients are currently admitted.'

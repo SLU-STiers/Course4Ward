@@ -59,7 +59,8 @@ export interface Patient {
   admissions?: PatientAdmission[];
   /**
    * Nurse lists only: the patient is outside the nurse's wards, so the server
-   * sent just the name and where they are (`wardName`, `roomNumber`).
+   * sent just the name and where they are. Nurse lists carry `wardName` /
+   * `roomNumber` on every row.
    */
   restricted?: boolean;
   wardName?: string | null;

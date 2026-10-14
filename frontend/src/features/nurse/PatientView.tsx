@@ -39,6 +39,7 @@ function toRecord(patient: Patient): AdmissionRecord {
       ? formatDateNumeric(admission.dischargeDate)
       : null,
     status: admissionStatusOf(admission),
+    location: wardLocation(patient),
   };
 }
 
@@ -75,7 +76,7 @@ export function PatientView() {
   const table = useTableState<AdmissionRecord>({
     items: records,
     pageSize: 8,
-    searchFields: (record) => [record.id, record.name],
+    searchFields: (record) => [record.id, record.name, record.location],
     filterPredicates: {
       status: (record, value) => value === 'all' || (!record.restricted && record.status === value),
     },
@@ -229,6 +230,7 @@ export function PatientView() {
           <thead>
             <tr style={patientTableStyles.thRow}>
               <th style={patientTableStyles.th}>Full Name</th>
+              <th style={patientTableStyles.th}>Ward</th>
               <th style={patientTableStyles.th}>Admission Date</th>
               <th style={patientTableStyles.th}>Discharge Date</th>
               <th style={patientTableStyles.th}>Status</th>
@@ -255,13 +257,14 @@ export function PatientView() {
                     <span style={patientTableStyles.name}>{r.name}</span>
                   </div>
                 </td>
+                <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.location}</td>
                 <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.admittedOn}</td>
                 <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
                   {r.dischargedOn ?? '—'}
                 </td>
                 <td style={patientTableStyles.td}>
                   {r.restricted ? (
-                    <span style={patientTableStyles.cell}>{r.location}</span>
+                    <span style={patientTableStyles.cell}>—</span>
                   ) : (
                     <StatusBadge showDot status={STATUS_TONE[r.status]} label={r.status} />
                   )}
@@ -288,7 +291,7 @@ export function PatientView() {
               <tr>
                 <td
                   style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                  colSpan={5}
+                  colSpan={6}
                 >
                   No admissions match the current filters.
                 </td>

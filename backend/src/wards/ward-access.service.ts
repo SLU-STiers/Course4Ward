@@ -40,7 +40,8 @@ export class WardAccessService {
 
   /**
    * Keeps nurse patient lists to names (+ where the patient is) outside the
-   * nurse's wards. `admissions` must be newest first, each with its `room.ward`.
+   * nurse's wards; every row gets `wardName` / `roomNumber`. `admissions` must
+   * be newest first, each with its `room.ward`.
    */
   async redactPatients<
     P extends { id: string; firstName: string; lastName: string; admissions: { room?: RoomRef }[] },
@@ -55,14 +56,17 @@ export class WardAccessService {
         | { number: string; ward?: { id: string; name: string } | null }
         | null
         | undefined;
-      if (inNurseWard(wards, room)) return { ...patient, restricted: false };
+      const location = {
+        wardName: room ? room.ward?.name ?? null : unroomedWard?.name ?? null,
+        roomNumber: room?.number ?? null,
+      };
+      if (inNurseWard(wards, room)) return { ...patient, ...location, restricted: false };
       return {
         id: patient.id,
         firstName: patient.firstName,
         lastName: patient.lastName,
         restricted: true,
-        wardName: room ? room.ward?.name ?? null : unroomedWard?.name ?? null,
-        roomNumber: room?.number ?? null,
+        ...location,
         admissions: [],
       };
     });
