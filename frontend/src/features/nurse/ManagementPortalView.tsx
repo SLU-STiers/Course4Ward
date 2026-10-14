@@ -113,8 +113,6 @@ export function ManagementPortalView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
-  /** The submitted order whose status editor is open in the modal. */
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
 
   /* Refetched every time a patient is opened, so a summary the physician
@@ -192,7 +190,6 @@ export function ManagementPortalView() {
 
   const openPatient = (id: string) => {
     setSelectedId(id);
-    setSelectedOrderId(null);
     if (id === selectedId) loadSummaries(id);
     const sets = ordersByPatient[id] ?? [];
     const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '';
@@ -288,45 +285,15 @@ export function ManagementPortalView() {
         })))}
         renderContent={(entry) => {
           const order = ordersById.get(entry.id);
-          const editing = Boolean(order && canEnterOrders && order.id === selectedOrderId);
           return (
             <>
               <div style={{ ...ui.orderContent, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
-              {order && editing && (
-                <>
-                  <OrderExecutionPanel
-                    key={order.id}
-                    order={order}
-                    onSaved={(saved) => {
-                      replaceOrder(saved);
-                      setSelectedOrderId(null);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    style={{ ...ui.orderPick, marginTop: 8 }}
-                    onClick={() => setSelectedOrderId(null)}
-                  >
-                    Close
-                  </button>
-                </>
-              )}
-              {order && !editing && (
-                <OrderStatusSummary
-                  order={order}
-                  action={
-                    canEnterOrders ? (
-                      <button
-                        type="button"
-                        style={ui.orderPick}
-                        onClick={() => setSelectedOrderId(order.id)}
-                      >
-                        Update status
-                      </button>
-                    ) : undefined
-                  }
-                />
-              )}
+              {order &&
+                (canEnterOrders ? (
+                  <OrderExecutionPanel key={order.id} order={order} onSaved={replaceOrder} />
+                ) : (
+                  <OrderStatusSummary order={order} />
+                ))}
             </>
           );
         }}
