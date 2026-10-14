@@ -984,25 +984,27 @@ export const passwordResets: SeedPasswordReset[] = [
   { id: uid(814), userLoginId: 'DOC005', token: 'reset-token-0014', requestedAt: daysAgo(1, 10), expiresAt: daysFromNow(1, 10), status: ResetStatus.PENDING, ipAddress: '192.168.1.14' },
 ];
 // ---------- Wards ----------
-// Ward ids come from migration 20261014022553_add_wards: ER / OPD holds every
-// patient without a room; Medical = rooms 1xx, Surgical = rooms 2xx.
+// Ward ids come from migration 20261014022553_add_wards. Emergency holds every
+// patient without a room; the others own starter rooms (Coronary 101-103,
+// OBDR 104-106, Neonatal ICU 107-108, Pedia ICU 109-110, Medical ICU 201-205,
+// Surgery 206-210).
 export const nurseWards: { userId: string; wardIds: string[] }[] = [
-  { userId: 'NRS001', wardIds: ['ward-er-opd', 'ward-medical'] },
-  { userId: 'NRS002', wardIds: ['ward-surgical'] },
-  { userId: 'NRS003', wardIds: ['ward-medical'] },
-  { userId: 'NRS004', wardIds: ['ward-er-opd'] },
-  { userId: 'NRS005', wardIds: ['ward-medical', 'ward-surgical'] },
+  { userId: 'NRS001', wardIds: ['ward-emergency', 'ward-micu'] },
+  { userId: 'NRS002', wardIds: ['ward-surgery'] },
+  { userId: 'NRS003', wardIds: ['ward-coronary'] },
+  { userId: 'NRS004', wardIds: ['ward-emergency'] },
+  { userId: 'NRS005', wardIds: ['ward-obdr', 'ward-nicu', 'ward-picu'] },
 ];
 
-/** Rooms for some current inpatients, so the ward split shows; the rest stay in ER / OPD. */
+/** Rooms for some current inpatients, so the ward split shows; the rest stay in Emergency. */
 export const admissionRooms: Record<string, string> = {
-  adm1: '101',
-  adm2: '102',
-  adm8: '103',
-  adm10: '104',
-  adm11: '105',
-  adm4: '201',
-  adm14: '202',
-  adm20: '203',
-  adm26: '204',
+  adm8: '101', // hypertensive urgency -> Coronary
+  adm10: '102', // heart failure -> Coronary
+  adm14: '103', // NSTEMI -> Coronary
+  adm1: '201', // pneumonia -> Medical ICU
+  adm2: '202', // pyelonephritis -> Medical ICU
+  adm11: '203', // severe anemia -> Medical ICU
+  adm20: '204', // pancreatitis -> Medical ICU
+  adm4: '206', // appendectomy -> Surgery
+  adm26: '207', // post-op hernia repair -> Surgery
 };

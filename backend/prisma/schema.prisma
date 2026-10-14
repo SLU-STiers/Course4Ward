@@ -240,7 +240,7 @@ model Room {
 
 /// A nursing unit. A patient is in the ward of their room; a patient without
 /// a room (outpatient, observation, not yet roomed) is in the one ward with
-/// `holdsUnroomed` (ER / OPD) — at most one, enforced by a partial unique index.
+/// `holdsUnroomed` (Emergency) — at most one, enforced by a partial unique index.
 model Ward {
   id            String   @id @default(uuid())
   name          String   @unique

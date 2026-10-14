@@ -37,15 +37,28 @@ ALTER TABLE "nurse_wards" ADD CONSTRAINT "nurse_wards_nurseId_fkey" FOREIGN KEY 
 -- AddForeignKey
 ALTER TABLE "nurse_wards" ADD CONSTRAINT "nurse_wards_wardId_fkey" FOREIGN KEY ("wardId") REFERENCES "wards"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- At most one ward holds patients without a room (ER / OPD).
+-- At most one ward holds patients without a room (Emergency).
 CREATE UNIQUE INDEX "wards_one_holds_unroomed" ON "wards"("holdsUnroomed") WHERE "holdsUnroomed";
 
--- Starter wards: ER / OPD for patients without a room, and one ward per floor of starter rooms.
+-- Starter wards. Emergency holds every patient without a room; the starter
+-- rooms (101-110, 201-210) are split across the others until an admin re-maps them.
 INSERT INTO "wards" ("id", "name", "holdsUnroomed") VALUES
-    ('ward-er-opd', 'ER / OPD', true),
-    ('ward-medical', 'Medical Ward', false),
-    ('ward-surgical', 'Surgical Ward', false)
+    ('ward-emergency', 'Emergency', true),
+    ('ward-coronary', 'Coronary', false),
+    ('ward-obdr', 'OBDR', false),
+    ('ward-nicu', 'Neonatal ICU', false),
+    ('ward-picu', 'Pedia ICU', false),
+    ('ward-micu', 'Medical ICU', false),
+    ('ward-surgery', 'Surgery', false)
 ON CONFLICT ("name") DO NOTHING;
 
-UPDATE "rooms" SET "wardId" = 'ward-medical' WHERE "wardId" IS NULL AND "number" ~ '^1[0-9]{2}$';
-UPDATE "rooms" SET "wardId" = 'ward-surgical' WHERE "wardId" IS NULL AND "number" ~ '^2[0-9]{2}$';
+UPDATE "rooms" r SET "wardId" = w."wardId"
+FROM (VALUES
+    ('101', 'ward-coronary'), ('102', 'ward-coronary'), ('103', 'ward-coronary'),
+    ('104', 'ward-obdr'), ('105', 'ward-obdr'), ('106', 'ward-obdr'),
+    ('107', 'ward-nicu'), ('108', 'ward-nicu'),
+    ('109', 'ward-picu'), ('110', 'ward-picu'),
+    ('201', 'ward-micu'), ('202', 'ward-micu'), ('203', 'ward-micu'), ('204', 'ward-micu'), ('205', 'ward-micu'),
+    ('206', 'ward-surgery'), ('207', 'ward-surgery'), ('208', 'ward-surgery'), ('209', 'ward-surgery'), ('210', 'ward-surgery')
+) AS w("number", "wardId")
+WHERE r."number" = w."number" AND r."wardId" IS NULL;
