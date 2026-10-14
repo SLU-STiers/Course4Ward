@@ -50,6 +50,33 @@ const ORDER_CHANNELS: [OrderChannel, string][] = [
   ['OTHER', 'Other'],
 ];
 
+/** General complaints offered in the Chief Complaint dropdowns. */
+const CHIEF_COMPLAINTS = [
+  'Abdominal pain (tummy ache)',
+  'Allergic reaction',
+  'Back pain',
+  'Body weakness / fatigue',
+  'Chest pain',
+  'Colds / runny nose',
+  'Cough',
+  'Diarrhea',
+  'Dizziness',
+  'Ear pain',
+  'Eye pain / redness',
+  'Fever',
+  'Headache',
+  'Joint pain',
+  'Loss of appetite',
+  'Nausea / vomiting',
+  'Painful urination',
+  'Shortness of breath',
+  'Skin rash / itching',
+  'Sore throat',
+  'Toothache',
+  'Wound / injury',
+];
+const COMPLAINT_SLOTS = 5;
+
 export type AddPatientFormResult = {
   firstName: string;
   lastName: string;
@@ -87,6 +114,8 @@ export type AddPatientFormResult = {
   bp: string;
   temp: string;
   pain: string;
+  /** One entry per dropdown ('' = none picked); the first is required. */
+  chiefComplaints: string[];
   notes: string;
 };
 const emptyForm = (): AddPatientFormResult => ({
@@ -115,6 +144,7 @@ const emptyForm = (): AddPatientFormResult => ({
   bp: '',
   temp: '',
   pain: '',
+  chiefComplaints: Array(COMPLAINT_SLOTS).fill(''),
   notes: '',
 });
 
@@ -167,6 +197,10 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       gender: toSex(draft.form?.gender),
       insurance: toInsurance(draft.form?.insurance),
       triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
+      chiefComplaints: Array.from({ length: COMPLAINT_SLOTS }, (_, i) => {
+        const value = draft.form?.chiefComplaints?.[i];
+        return typeof value === 'string' && CHIEF_COMPLAINTS.includes(value) ? value : '';
+      }),
     };
     // A draft may hold a class the form no longer offers (e.g. Emergency).
     if (!CLASS_OPTIONS.some((option) => option.value === form.patientClass)) {
@@ -315,6 +349,11 @@ export function AddPatientModal({
       setError('Please select the patient’s sex.');
       return;
     }
+    const complaints = form.chiefComplaints.filter(Boolean);
+    if (!complaints.length) {
+      setError('Please select the chief complaint.');
+      return;
+    }
     const missing = REQUIRED_TEXT.find(([key]) => !String(form[key]).trim());
     if (missing) {
       setError(`Please enter the ${missing[1]}.`);
@@ -378,7 +417,8 @@ export function AddPatientModal({
         bp: form.bp.replace(/\s+/g, '') || undefined,
         temp: toNumber(form.temp),
         pain: toNumber(form.pain),
-        notes: form.notes || undefined,
+        // No chief-complaint column: it leads the initial assessment text.
+        notes: `Chief complaint: ${complaints.join(', ')}.\n\n${form.notes.trim()}`,
       });
       saveDraft(null);
       onCreated();
@@ -682,12 +722,43 @@ export function AddPatientModal({
               <Vital label="Pain" unit="/10" type="number" min={0} max={10} value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" required />
             </div>
             <div style={{ marginTop: 14 }}>
+              <span style={s.label}>
+                Chief Complaint<span style={s.required}>*</span>
+              </span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+                {form.chiefComplaints.map((value, slot) => (
+                  <select
+                    key={slot}
+                    style={s.select}
+                    value={value}
+                    aria-label={`Chief complaint ${slot + 1}`}
+                    required={slot === 0}
+                    onChange={(e) =>
+                      setField(
+                        'chiefComplaints',
+                        form.chiefComplaints.map((other, i) => (i === slot ? e.target.value : other)),
+                      )
+                    }
+                  >
+                    <option value="">{slot === 0 ? 'Select complaint' : 'None'}</option>
+                    {CHIEF_COMPLAINTS.filter(
+                      (complaint) => complaint === value || !form.chiefComplaints.includes(complaint),
+                    ).map((complaint) => (
+                      <option key={complaint} value={complaint}>
+                        {complaint}
+                      </option>
+                    ))}
+                  </select>
+                ))}
+              </div>
+            </div>
+            <div style={{ marginTop: 14 }}>
               <Field label="Notes" required>
                 <textarea
                   style={s.textarea}
                   value={form.notes}
                   onChange={(e) => setField('notes', e.target.value)}
-                  placeholder="Chief complaint, initial assessment, clinical notes..."
+                  placeholder="Initial assessment, clinical notes..."
                   required
                 />
               </Field>
