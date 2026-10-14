@@ -102,7 +102,7 @@ export function RoomPicker({
     <div>
       <div style={styles.row}>
         <select
-          style={{ ...s.input, width: 150, flexShrink: 0 }}
+          style={{ ...s.select, width: 'auto', flex: '0 1 140px', minWidth: 116 }}
           value={floor}
           onChange={(e) => setFloor(e.target.value)}
           aria-label="Filter rooms by floor"

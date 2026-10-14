@@ -22,6 +22,18 @@ export const ui: Record<string, CSSProperties> = {
   detailCol: { display: 'flex', flexDirection: 'column', gap: 24 },
   /* Matches the timeline's default order text when a custom renderer is used. */
   orderContent: { fontSize: 12, color: '#334155', lineHeight: '1.4' },
+  /* "Update status" / "Close" on a submitted order: toggles its status editor. */
+  orderPick: {
+    border: '1px solid #cbd5e1',
+    borderRadius: 999,
+    background: '#ffffff',
+    color: '#0f172a',
+    fontSize: 11,
+    fontWeight: 700,
+    padding: '3px 10px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
   primaryBtn: {
     border: 'none',
     backgroundColor: TEAL,
