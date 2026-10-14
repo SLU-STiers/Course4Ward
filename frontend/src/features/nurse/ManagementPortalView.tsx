@@ -1,19 +1,24 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useCallback, useEffect, useState } from 'react';
-import { Button, DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
+import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { useTableState } from '../../hooks/useTableState';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
+
+/** The patient list changes less often than an open patient's orders. */
+const PATIENT_POLL_MS = 15000;
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
 import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
 import { triageForDisplay, triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
-import { OnBehalfOrderModal } from './OnBehalfOrderModal';
-import { OtherWardLabel, contactDetailsOf } from './PatientModalParts';
+import { OnBehalfOrderForm } from './OnBehalfOrderForm';
+import { OtherWardLabel, SECTION_ICONS, Section, contactDetailsOf } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
 import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf, wardLocation } from './patientClass';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
@@ -108,11 +113,10 @@ function summaryDayKey(summary: CourseInWard): string {
 
 export function ManagementPortalView() {
   const [patients, setPatients] = useState<NursePatient[]>([]);
+  /** The patient open in the View modal. */
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
-  const [detailName, setDetailName] = useState<string | null>(null);
-  const [showOrderModal, setShowOrderModal] = useState(false);
   const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
 
   /* Refetched every time a patient is opened, so a summary the physician
@@ -132,24 +136,48 @@ export function ManagementPortalView() {
   }, []);
 
   useEffect(() => {
-    loadPatients()
-      .then((mapped) => {
-        const first = mapped.find((patient) => !patient.restricted);
-        if (first) setSelectedId((current) => current ?? first.id);
-      })
-      .catch(() => setPatients([]));
+    loadPatients().catch(() => setPatients([]));
   }, [loadPatients]);
+
+  /** Newest order day last seen per patient, to notice a day that just got its first order. */
+  const newestDayRef = useRef<Record<string, string>>({});
+
+  const loadOrders = useCallback((patientId: string) => {
+    return ordersApi.forPatient(patientId).then(({ data }) => {
+      const mapped = data.filter((order) => order.active).map(mapOrder);
+      setOrdersByPatient((previous) => ({ ...previous, [patientId]: mapped }));
+      const newest = [...new Set(mapped.map((order) => order.dateKey))].sort().reverse()[0] ?? '';
+      const previousNewest = newestDayRef.current[patientId];
+      newestDayRef.current[patientId] = newest;
+      // Someone reading the newest day follows it onto a newer one.
+      setSelectedDate((current) =>
+        !current || (previousNewest && current === previousNewest && newest !== previousNewest)
+          ? newest
+          : current,
+      );
+    });
+  }, []);
 
   useEffect(() => {
     if (!selectedId) return;
-    ordersApi.forPatient(selectedId).then(({ data }) => {
-      const mapped = data.filter((order) => order.active).map(mapOrder);
-      setOrdersByPatient((previous) => ({ ...previous, [selectedId]: mapped }));
-      const days = [...new Set(mapped.map((order) => order.dateKey))].sort().reverse();
-      setSelectedDate((current) => current || days[0] || '');
-    }).catch(() => setOrdersByPatient((previous) => ({ ...previous, [selectedId]: [] })));
+    loadOrders(selectedId).catch(() => setOrdersByPatient((previous) => ({ ...previous, [selectedId]: [] })));
     loadSummaries(selectedId);
-  }, [selectedId, loadSummaries]);
+  }, [selectedId, loadOrders, loadSummaries]);
+
+  // Physicians write orders and approve summaries from their own screen; pick
+  // those up live while a patient is open, and keep the list's statuses fresh.
+  usePolling(
+    () => {
+      if (!selectedId) return;
+      loadOrders(selectedId).catch(() => undefined);
+      loadSummaries(selectedId);
+    },
+    ORDER_POLL_MS,
+    Boolean(selectedId),
+  );
+  usePolling(() => {
+    loadPatients().catch(() => undefined);
+  }, PATIENT_POLL_MS);
 
   const table = useTableState<NursePatient>({
     items: patients,
@@ -240,7 +268,7 @@ export function ManagementPortalView() {
     if (next) setSelectedDate(next);
   };
 
-  const detailPatient = detailName ? patients.find((patient) => patient.name === detailName) : null;
+  const detailPatient = selected && !selected.restricted ? selected : null;
   const detailChart = detailPatient ? {
     name: detailPatient.name,
     age: detailPatient.age,
@@ -259,9 +287,98 @@ export function ManagementPortalView() {
   const detailStatus: AdmissionStatus | undefined = detailPatient
     ? displayStatus(detailPatient)
     : undefined;
+  const careTeamNames = detailPatient
+    ? [
+        ...(detailPatient.assignedDoctor ? [detailPatient.assignedDoctor] : []),
+        ...(detailPatient.additionalDoctors ?? []),
+      ]
+    : [];
+  const canEnterOrders = Boolean(detailPatient?.admissionId) && detailPatient?.status !== 'discharged';
+
+  const ordersColumn = detailPatient && (
+    <>
+      <SubmittedOrdersTimeline
+        title="Order Timeline"
+        dateValue={activeDate}
+        onDateChange={setSelectedDate}
+        onPrev={() => shiftDate(1)}
+        onNext={() => shiftDate(-1)}
+        prevDisabled={!hasPrevDate}
+        nextDisabled={!hasNextDate}
+        availableDays={datesWithOrders}
+        onClear={() => setSelectedDate('')}
+        clearLabel="Show all"
+        orders={ordersForDisplay.flatMap((set) => set.orders.map((content, index) => ({
+          id: set.order?.id ?? `${set.dateKey}-${set.time}-${index}`,
+          dateCreated: `${set.dateKey}T00:00:00`,
+          dateLabel: set.dateLabel,
+          timeLabel: set.time,
+          doctor: set.doctor,
+          content,
+        })))}
+        renderContent={(entry) => {
+          const order = ordersById.get(entry.id);
+          return (
+            <>
+              <div style={{ ...ui.orderContent, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
+              {order &&
+                (canEnterOrders ? (
+                  <OrderExecutionPanel key={order.id} order={order} onSaved={replaceOrder} />
+                ) : (
+                  <OrderStatusSummary order={order} />
+                ))}
+            </>
+          );
+        }}
+        emptyMessage={
+          activeDate
+            ? `No physician orders for ${formatDateLongFromKey(activeDate)}. Choose another date to view previous orders.`
+            : 'No physician orders recorded for this patient yet.'
+        }
+      />
+
+      <AiSummaryCard
+        badgeLabel={approvedSummary ? 'Approved' : pendingSummary ? 'Awaiting approval' : 'No summary yet'}
+        badgeMuted={!approvedSummary}
+        dayLabel={cardDay ? formatDateLongFromKey(cardDay) : 'No order dates'}
+        dayPosition={
+          datesWithOrders.length > 1 && cardDay
+            ? `${datesWithOrders.indexOf(cardDay) + 1} of ${datesWithOrders.length}`
+            : undefined
+        }
+        onPrevDay={() => shiftDate(1)}
+        onNextDay={() => shiftDate(-1)}
+        prevDayDisabled={!hasPrevDate}
+        nextDayDisabled={!hasNextDate}
+        text={approvedSummary?.summaryContent}
+        emptyMessage={
+          pendingSummary
+            ? `The Course in the Ward for ${cardDayLabel} is waiting for the physician's approval.`
+            : `No Course in the Ward for ${cardDayLabel} yet. Physician summaries are written in the physician workflow.`
+        }
+      />
+    </>
+  );
+
+  const orderActionsColumn = detailPatient && (
+    <>
+      {canEnterOrders && detailPatient.admissionId ? (
+        <Section icon={SECTION_ICONS.triage} title="Doctor's Order" hint="Type an order received from the physician">
+          <OnBehalfOrderForm
+            key={detailPatient.admissionId}
+            admissionId={detailPatient.admissionId}
+            careTeamNames={careTeamNames}
+            onSaved={(saved) => addOrder(detailPatient.id, saved)}
+          />
+        </Section>
+      ) : (
+        <p style={ui.muted}>This patient is discharged; no new orders can be entered.</p>
+      )}
+    </>
+  );
 
   return (
-    <div style={ui.layout}>
+    <div>
       <section style={patientTableStyles.card}>
         <h2 style={patientTableStyles.cardTitle}>Patient Overview</h2>
         <DataTableToolbar
@@ -312,7 +429,6 @@ export function ManagementPortalView() {
           </thead>
           <tbody>
             {table.rows.map((p) => {
-              const active = p.id === selectedId;
               if (p.restricted) {
                 return (
                   <tr key={p.id} style={patientTableStyles.tr}>
@@ -331,11 +447,7 @@ export function ManagementPortalView() {
                 <tr
                   key={p.id}
                   onClick={() => openPatient(p.id)}
-                  style={{
-                    ...patientTableStyles.tr,
-                    backgroundColor: active ? '#f1f5f9' : 'transparent',
-                    cursor: 'pointer',
-                  }}
+                  style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
                 >
                   <td style={patientTableStyles.td}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -367,7 +479,6 @@ export function ManagementPortalView() {
                       onClick={(e) => {
                         e.stopPropagation();
                         openPatient(p.id);
-                        setDetailName(p.name);
                       }}
                     >
                       View
@@ -399,76 +510,6 @@ export function ManagementPortalView() {
         />
       </section>
 
-      <section style={ui.detailCol}>
-        {selected ? (
-          <>
-            <SubmittedOrdersTimeline
-              dateValue={activeDate}
-              onDateChange={setSelectedDate}
-              onPrev={() => shiftDate(1)}
-              onNext={() => shiftDate(-1)}
-              prevDisabled={!hasPrevDate}
-              nextDisabled={!hasNextDate}
-              availableDays={datesWithOrders}
-              onClear={() => setSelectedDate('')}
-              clearLabel="Show all"
-              orders={ordersForDisplay.flatMap((set) => set.orders.map((content, index) => ({
-                id: set.order?.id ?? `${set.dateKey}-${set.time}-${index}`,
-                dateCreated: `${set.dateKey}T00:00:00`,
-                dateLabel: set.dateLabel,
-                timeLabel: set.time,
-                doctor: set.doctor,
-                content,
-              })))}
-              renderContent={(entry) => {
-                const order = ordersById.get(entry.id);
-                return (
-                  <>
-                    <div style={ui.orderContent}>{entry.content}</div>
-                    {order && <OrderExecutionPanel key={order.id} order={order} onSaved={replaceOrder} />}
-                  </>
-                );
-              }}
-              footer={
-                selected.admissionId && selected.status !== 'discharged' ? (
-                  <Button variant="primary" onClick={() => setShowOrderModal(true)}>
-                    Enter Order on Behalf of Physician
-                  </Button>
-                ) : undefined
-              }
-              emptyMessage={
-                activeDate
-                  ? `No physician orders for ${formatDateLongFromKey(activeDate)}. Choose another date to view previous orders.`
-                  : 'No physician orders recorded for this patient yet.'
-              }
-            />
-
-            <AiSummaryCard
-              badgeLabel={approvedSummary ? 'Approved' : pendingSummary ? 'Awaiting approval' : 'No summary yet'}
-              badgeMuted={!approvedSummary}
-              dayLabel={cardDay ? formatDateLongFromKey(cardDay) : 'No order dates'}
-              dayPosition={
-                datesWithOrders.length > 1 && cardDay
-                  ? `${datesWithOrders.indexOf(cardDay) + 1} of ${datesWithOrders.length}`
-                  : undefined
-              }
-              onPrevDay={() => shiftDate(1)}
-              onNextDay={() => shiftDate(-1)}
-              prevDayDisabled={!hasPrevDate}
-              nextDayDisabled={!hasNextDate}
-              text={approvedSummary?.summaryContent}
-              emptyMessage={
-                pendingSummary
-                  ? `The Course in the Ward for ${cardDayLabel} is waiting for the physician's approval.`
-                  : `No Course in the Ward for ${cardDayLabel} yet. Physician summaries are written in the physician workflow.`
-              }
-            />
-          </>
-        ) : (
-          <p style={ui.muted}>Select a patient to view physician orders.</p>
-        )}
-      </section>
-
       {detailChart && (
         <PatientDetailModal
           chart={detailChart}
@@ -479,21 +520,9 @@ export function ManagementPortalView() {
           onRoomChanged={() => {
             loadPatients().catch(() => undefined);
           }}
-          onClose={() => setDetailName(null)}
-        />
-      )}
-
-      {selected?.admissionId && showOrderModal && (
-        <OnBehalfOrderModal
-          open
-          admissionId={selected.admissionId}
-          patientName={selected.name}
-          careTeamNames={[
-            ...(selected.assignedDoctor ? [selected.assignedDoctor] : []),
-            ...(selected.additionalDoctors ?? []),
-          ]}
-          onClose={() => setShowOrderModal(false)}
-          onSaved={(saved) => addOrder(selected.id, saved)}
+          onClose={() => setSelectedId(null)}
+          ordersColumn={ordersColumn}
+          orderActionsColumn={orderActionsColumn}
         />
       )}
     </div>
