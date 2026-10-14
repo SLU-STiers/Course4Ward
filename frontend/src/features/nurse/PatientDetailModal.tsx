@@ -250,27 +250,17 @@ export function PatientDetailModal({
               </div>
 
               {canAddConsulting && (
-<<<<<<< HEAD
                 <div style={layout.addPanel}>
-                  <label htmlFor="add-consulting-physician" style={{ ...s.label, marginBottom: 0 }}>
-                    Add Consulting Physician
-                  </label>
-                  <select
-                    id="add-consulting-physician"
-                    style={{ ...s.select, width: '100%', fontSize: 14, color: pendingDoctorId ? '#0f172a' : '#64748b' }}
+                  <span style={{ ...s.label, marginBottom: 0 }}>Add Consulting Physician</span>
+                  <PhysicianWardSelect
+                    physicians={availableToAdd}
                     value={pendingDoctorId}
-                    onChange={(e) => setPendingDoctorId(e.target.value)}
+                    onChange={setPendingDoctorId}
+                    selectStyle={{ ...s.select, width: '100%', fontSize: 14 }}
                     disabled={adding || !availableToAdd.length}
-                  >
-                    <option value="">
-                      {availableToAdd.length ? 'Select a physician' : 'No other physicians available'}
-                    </option>
-                    {availableToAdd.map((doctor) => (
-                      <option key={doctor.id} value={doctor.id} style={{ color: '#0f172a' }}>
-                        Dr. {doctor.firstName} {doctor.lastName} · {doctor.userId}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder={availableToAdd.length ? 'Select a physician' : 'No other physicians available'}
+                    ariaLabel="Consulting physician to add"
+                  />
                   {addError && (
                     <div style={s.error} role="alert">
                       <span aria-hidden="true">⚠</span>
@@ -278,23 +268,6 @@ export function PatientDetailModal({
                     </div>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-=======
-                <>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <PhysicianWardSelect
-                      physicians={availableToAdd}
-                      value={pendingDoctorId}
-                      onChange={setPendingDoctorId}
-                      selectStyle={{ ...s.select, flex: 1 }}
-                      disabled={adding || !availableToAdd.length}
-                      placeholder={
-                        availableToAdd.length
-                          ? 'Select a consulting physician'
-                          : 'No other physicians available'
-                      }
-                      ariaLabel="Consulting physician to add"
-                    />
->>>>>>> 07390b50a9be29c369347424cefaa625dc99df01
                     <button
                       type="button"
                       style={{
