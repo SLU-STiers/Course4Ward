@@ -94,6 +94,7 @@ export interface PatientAdmission {
 export interface WardRoom {
   id: string;
   number: string;
+  ward: { id: string; name: string } | null;
   occupied: boolean;
   occupiedByAdmissionId: string | null;
 }
