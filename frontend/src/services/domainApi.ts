@@ -28,6 +28,7 @@ import type {
   Ward,
   WardRoom,
   SummaryVersion,
+  PhysicianOption,
 } from '../types';
 
 // --- Auth ---
@@ -57,9 +58,7 @@ export const patientsApi = {
   assignedToMe: () => api.get<Patient[]>('/patients/assigned-to-me'),
   nurseAssigned: () => api.get<Patient[]>('/patients/nurse-assigned'),
   listPhysicians: () =>
-    api.get<{ id: string; userId: string; firstName: string; lastName: string }[]>(
-      '/patients/physicians',
-    ),
+    api.get<PhysicianOption[]>('/patients/physicians'),
   getOne: (id: string) => api.get<Patient>(`/patients/${id}`),
   create: (data: Record<string, unknown>) => api.post<Patient>('/patients', data),
   update: (id: string, data: Partial<Patient>) => api.patch<Patient>(`/patients/${id}`, data),

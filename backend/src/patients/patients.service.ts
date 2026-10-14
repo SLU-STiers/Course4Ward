@@ -103,13 +103,23 @@ export class PatientsService {
     private auditLog: AuditLogService,
   ) {}
 
-  /** Physicians available for nurse assignment when registering a patient. */
-  listPhysicians() {
-    return this.prisma.user.findMany({
+  /** Physicians available for nurse assignment, including their ward specialties. */
+  async listPhysicians() {
+    const physicians = await this.prisma.user.findMany({
       where: { role: Role.PHYSICIAN, isActive: true },
-      select: { id: true, userId: true, firstName: true, lastName: true },
+      select: {
+        id: true,
+        userId: true,
+        firstName: true,
+        lastName: true,
+        physicianWards: { select: { ward: { select: { id: true, name: true } } } },
+      },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
+    return physicians.map(({ physicianWards, ...physician }) => ({
+      ...physician,
+      wards: physicianWards,
+    }));
   }
 
   // Nurse patient management: demographics + admission. New patients default

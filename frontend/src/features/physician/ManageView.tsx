@@ -996,11 +996,10 @@ export function ManageView() {
                                 Edit
                               </AiActionButton>
                               <AiActionButton
-                                aria-pressed={showingHistory}
-                                onClick={() => setShowingHistory((open) => !open)}
+                                onClick={() => setShowingHistory(true)}
                               >
                                 <History size={14} aria-hidden="true" />
-                                {showingHistory ? "Hide Versions" : "Compare Versions"}
+                                Compare Versions
                               </AiActionButton>
                               <span style={manage.aiActionSpacer} />
                               {summary.status !== "APPROVED" && (
@@ -1042,17 +1041,13 @@ export function ManageView() {
         )}
       </Panel>
 
+      {/* A portal popup, so it does not take a panel slot. */}
       {showingHistory && selected && summary ? (
-        <>
-          <Separator className="ui-split-separator ui-split-separator--column" />
-          <Panel id="history" defaultSize="34" minSize="280px" style={manage.panelFill}>
-            <SummaryHistory
-              summary={summary}
-              onRestored={(updated) => replaceSummary(selected.id, updated)}
-              onClose={() => setShowingHistory(false)}
-            />
-          </Panel>
-        </>
+        <SummaryHistory
+          summary={summary}
+          onRestored={(updated) => replaceSummary(selected.id, updated)}
+          onClose={() => setShowingHistory(false)}
+        />
       ) : null}
     </Group>
   );

@@ -43,6 +43,7 @@ const mockPrismaService = {
   user: {
     count: jest.fn(),
     findFirst: jest.fn(),
+    findMany: jest.fn(),
   },
   patientAdmission: {
     findUnique: jest.fn(),
@@ -244,6 +245,30 @@ describe("Patients Module", () => {
 
   // ============ SERVICE TESTS ============
   describe("PatientsService", () => {
+    describe("listPhysicians", () => {
+      it("returns physicians with their assigned ward specialties", async () => {
+        (prismaService.user.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: "physician-123",
+            userId: "DOC001",
+            firstName: "Jane",
+            lastName: "Doe",
+            physicianWards: [{ ward: { id: "ward-obdr", name: "OBDR" } }],
+          },
+        ]);
+
+        await expect(service.listPhysicians()).resolves.toEqual([
+          {
+            id: "physician-123",
+            userId: "DOC001",
+            firstName: "Jane",
+            lastName: "Doe",
+            wards: [{ ward: { id: "ward-obdr", name: "OBDR" } }],
+          },
+        ]);
+      });
+    });
+
     describe("create", () => {
       it("should create a new patient with an admission", async () => {
         (prismaService.patient.create as jest.Mock).mockResolvedValue(

@@ -164,6 +164,8 @@ model User {
   summaryRequestsAsProcessor SummaryApprovalRequest[] @relation("RequestedProcessor")
   /// Wards a nurse works in; a nurse sees full patient details only there.
   wards                      NurseWard[]
+  /// Wards / specialties a physician is assigned to.
+  physicianWards              PhysicianWard[]
 
   @@map("users")
 }
@@ -249,8 +251,20 @@ model Ward {
 
   rooms  Room[]
   nurses NurseWard[]
+  physicians PhysicianWard[]
 
   @@map("wards")
+}
+
+model PhysicianWard {
+  physicianId String
+  wardId      String
+  physician   User @relation(fields: [physicianId], references: [id], onDelete: Cascade)
+  ward        Ward @relation(fields: [wardId], references: [id], onDelete: Cascade)
+
+  @@id([physicianId, wardId])
+  @@index([wardId])
+  @@map("physician_wards")
 }
 
 model NurseWard {

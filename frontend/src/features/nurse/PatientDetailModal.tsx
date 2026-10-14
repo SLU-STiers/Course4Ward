@@ -8,10 +8,10 @@ import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { OBSERVATION_LIMIT_HOURS, hoursSince } from '../../lib/patient';
+import { PhysicianWardSelect } from './PhysicianWardSelect';
 
 import type { AdmissionStatus, PatientChart } from './types';
-
-type PhysicianOption = { id: string; userId: string; firstName: string; lastName: string };
+import type { PhysicianOption } from '../../types';
 
 export function PatientDetailModal({
   chart,
@@ -250,6 +250,7 @@ export function PatientDetailModal({
               </div>
 
               {canAddConsulting && (
+<<<<<<< HEAD
                 <div style={layout.addPanel}>
                   <label htmlFor="add-consulting-physician" style={{ ...s.label, marginBottom: 0 }}>
                     Add Consulting Physician
@@ -277,6 +278,23 @@ export function PatientDetailModal({
                     </div>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+=======
+                <>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <PhysicianWardSelect
+                      physicians={availableToAdd}
+                      value={pendingDoctorId}
+                      onChange={setPendingDoctorId}
+                      selectStyle={{ ...s.select, flex: 1 }}
+                      disabled={adding || !availableToAdd.length}
+                      placeholder={
+                        availableToAdd.length
+                          ? 'Select a consulting physician'
+                          : 'No other physicians available'
+                      }
+                      ariaLabel="Consulting physician to add"
+                    />
+>>>>>>> 07390b50a9be29c369347424cefaa625dc99df01
                     <button
                       type="button"
                       style={{

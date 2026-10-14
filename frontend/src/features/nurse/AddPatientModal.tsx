@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import type { InsuranceType, PatientClass, Sex, TriageLevel } from '../../types';
+import type { InsuranceType, PatientClass, PhysicianOption, Sex, TriageLevel } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { formatDateMedium } from '../../lib/format';
 import { INSURANCE_LABEL, SEX_LABEL } from '../../lib/patient';
@@ -11,13 +11,7 @@ import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { TimePickerField } from './TimePickerField';
-
-type PhysicianOption = {
-  id: string;
-  userId: string;
-  firstName: string;
-  lastName: string;
-};
+import { PhysicianWardSelect } from './PhysicianWardSelect';
 
 /** How the physician gave the order; '' = written / signed order. */
 type OrderChannel = '' | 'VERBAL' | 'CALL' | 'SMS' | 'OTHER';
@@ -246,7 +240,6 @@ const toInsurance = (value: unknown): InsuranceType | '' =>
 const toNumber = (value: string) => (value.trim() === '' ? undefined : Number(value));
 
 const doctorName = (doctor: PhysicianOption) => `Dr. ${doctor.firstName} ${doctor.lastName}`;
-const doctorLabel = (doctor: PhysicianOption) => `${doctorName(doctor)} (${doctor.userId})`;
 
 export function AddPatientModal({
   onClose,
@@ -767,21 +760,15 @@ export function AddPatientModal({
 
           <Section icon={SECTION_ICONS.careTeam} title="Care Team" hint="Attending physician leads care; consultants advise">
             <Field label="Attending Physician" required>
-              <select
-                style={s.select}
+              <PhysicianWardSelect
+                physicians={physicians}
                 value={form.physicianId}
-                onChange={(e) => setAttending(e.target.value)}
+                onChange={setAttending}
+                selectStyle={s.select}
+                placeholder="Select attending physician"
+                ariaLabel="Attending physician"
                 required
-              >
-                <option value="" disabled>
-                  Select attending physician
-                </option>
-                {physicians.map((doctor) => (
-                  <option key={doctor.id} value={doctor.id}>
-                    {doctorLabel(doctor)}
-                  </option>
-                ))}
-              </select>
+              />
             </Field>
 
             <div style={{ marginTop: 16 }}>
@@ -815,21 +802,15 @@ export function AddPatientModal({
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <select
-                  style={{ ...s.select, flex: 1 }}
+                <PhysicianWardSelect
+                  physicians={availableToAdd}
                   value={pendingDoctorId}
-                  onChange={(e) => setPendingDoctorId(e.target.value)}
+                  onChange={setPendingDoctorId}
+                  selectStyle={{ ...s.select, flex: 1 }}
                   disabled={!availableToAdd.length}
-                >
-                  <option value="">
-                    {availableToAdd.length ? 'Select a consulting physician' : 'No other physicians available'}
-                  </option>
-                  {availableToAdd.map((doctor) => (
-                    <option key={doctor.id} value={doctor.id}>
-                      {doctorLabel(doctor)}
-                    </option>
-                  ))}
-                </select>
+                  placeholder={availableToAdd.length ? 'Select a consulting physician' : 'No other physicians available'}
+                  ariaLabel="Consulting physician to add"
+                />
                 <button
                   type="button"
                   style={{
