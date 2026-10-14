@@ -89,7 +89,7 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
       onClose={onClose}
       size="xl"
       title="Compare versions"
-      description="The first card is the version in use. Earlier versions are not in use — highlighted words are where they differ from it. The last 3 are kept."
+      description="The first card is the version in use. Highlighted words are where they differ. The last 3 are kept."
     >
       <div style={manage.historyGrid}>
         <article
