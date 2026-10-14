@@ -89,11 +89,17 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
       onClose={onClose}
       size="xl"
       title="Compare versions"
-      description="Highlighted words differ from the current text. The last 3 earlier versions are kept."
+      description="The first card is the version in use. Earlier versions are not in use — highlighted words are where they differ from it. The last 3 are kept."
     >
       <div style={manage.historyGrid}>
-        <article style={{ ...manage.historyItem, ...manage.historyItemCurrent }}>
-          <div style={manage.historyMeta}>Current · {SOURCE_LABEL[summary.status]}</div>
+        <article
+          style={{ ...manage.historyItem, ...manage.historyItemCurrent }}
+          aria-label="Version in use"
+        >
+          <div style={manage.historyMeta}>
+            <span style={manage.historyInUse}>✓ In use</span>
+            Current version · {SOURCE_LABEL[summary.status]}
+          </div>
           <p style={manage.historyText}>{summary.summaryContent}</p>
         </article>
 
@@ -106,14 +112,18 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
             No earlier versions yet. Regenerating or editing keeps the replaced text here.
           </p>
         ) : (
-          versions.map((version) => (
+          versions.map((version, index) => (
             <article key={version.id} style={manage.historyItem}>
               <div style={manage.historyMeta}>
-                {SOURCE_LABEL[version.source]} · replaced{' '}
-                {new Date(version.createdAt).toLocaleString('en-GB', {
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                })}
+                Earlier version {index + 1}
+                {index === 0 ? ' (most recent)' : ''} · {SOURCE_LABEL[version.source]}
+                <div style={manage.historyReplaced}>
+                  Not in use · replaced{' '}
+                  {new Date(version.createdAt).toLocaleString('en-GB', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  })}
+                </div>
               </div>
               <p style={manage.historyText}>
                 {diffWords(summary.summaryContent, version.content).map(({ token, changed }, i) =>
@@ -131,7 +141,7 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
                 aria-busy={restoringId === version.id}
                 onClick={() => restore(version.id)}
               >
-                {restoringId === version.id ? 'Restoring...' : 'Use this version'}
+                {restoringId === version.id ? 'Restoring...' : 'Switch to this version'}
               </AiActionButton>
             </article>
           ))
