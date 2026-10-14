@@ -118,6 +118,24 @@ const emptyForm = (): AddPatientFormResult => ({
   notes: '',
 });
 
+/** Text fields that must hold more than whitespace (the inputs' `required` lets "  " through). */
+const REQUIRED_TEXT: [keyof AddPatientFormResult, string][] = [
+  ['contactNumber', 'personal number'],
+  ['religion', 'religion'],
+  ['address', 'address'],
+  ['contactPersonName', 'contact person'],
+  ['contactPersonNumber', 'contact person’s number'],
+  ['contactPersonAddress', 'contact person’s address'],
+  ['triageTime', 'triage time'],
+  ['heartRate', 'heart rate'],
+  ['respRate', 'respiratory rate'],
+  ['spo2', 'SpO₂'],
+  ['bp', 'blood pressure'],
+  ['temp', 'temperature'],
+  ['pain', 'pain score'],
+  ['notes', 'notes'],
+];
+
 const MAX_AGE = 130;
 
 /** Returns the message to show under the Age field, or null when the value is valid. */
@@ -295,6 +313,11 @@ export function AddPatientModal({
     }
     if (!form.gender) {
       setError('Please select the patient’s sex.');
+      return;
+    }
+    const missing = REQUIRED_TEXT.find(([key]) => !String(form[key]).trim());
+    if (missing) {
+      setError(`Please enter the ${missing[1]}.`);
       return;
     }
     const insuranceOther = form.insuranceOther.trim();
@@ -480,7 +503,7 @@ export function AddPatientModal({
                   title="Patients are triaged with today's date"
                 />
               </Field>
-              <Field label="Personal Number">
+              <Field label="Personal Number" required>
                 <PhoneInput
                   value={form.contactNumber}
                   onChange={(v) => setField('contactNumber', v)}
@@ -512,23 +535,25 @@ export function AddPatientModal({
                   />
                 )}
               </Field>
-              <Field label="Religion">
+              <Field label="Religion" required>
                 <input
                   style={s.input}
                   value={form.religion}
                   onChange={(e) => setField('religion', e.target.value)}
                   placeholder="e.g. Roman Catholic"
                   maxLength={100}
+                  required
                 />
               </Field>
               <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Address">
+                <Field label="Address" required>
                   <input
                     style={s.input}
                     value={form.address}
                     onChange={(e) => setField('address', e.target.value)}
                     placeholder="House no., street, barangay, city / municipality, province"
                     maxLength={300}
+                    required
                   />
                 </Field>
               </div>
@@ -566,16 +591,17 @@ export function AddPatientModal({
 
             <h5 style={s.subsectionTitle}>Contact Person</h5>
             <div style={s.grid2}>
-              <Field label="Contact Person">
+              <Field label="Contact Person" required>
                 <input
                   style={s.input}
                   value={form.contactPersonName}
                   onChange={(e) => setField('contactPersonName', e.target.value)}
                   placeholder="e.g. Maria Dela Cruz"
                   maxLength={150}
+                  required
                 />
               </Field>
-              <Field label="Contact Number">
+              <Field label="Contact Number" required>
                 <PhoneInput
                   value={form.contactPersonNumber}
                   onChange={(v) => setField('contactPersonNumber', v)}
@@ -583,13 +609,14 @@ export function AddPatientModal({
                 />
               </Field>
               <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Contact Person Address">
+                <Field label="Contact Person Address" required>
                   <input
                     style={s.input}
                     value={form.contactPersonAddress}
                     onChange={(e) => setField('contactPersonAddress', e.target.value)}
                     placeholder="House no., street, barangay, city / municipality, province"
                     maxLength={300}
+                    required
                   />
                 </Field>
               </div>
@@ -611,7 +638,7 @@ export function AddPatientModal({
             </Section>
           )}
 
-          <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Priority level and initial vital signs — leave blank if not taken">
+          <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Priority level and initial vital signs">
             <div style={{ marginBottom: 14 }}>
               <span style={s.label}>Emergency Severity Index (ESI)</span>
               <div style={s.triageLevels} role="radiogroup" aria-label="Emergency Severity Index (ESI)">
@@ -646,21 +673,22 @@ export function AddPatientModal({
               </p>
             </div>
             <div style={s.grid4}>
-              <TimePickerField value={form.triageTime} onChange={(v) => setField('triageTime', v)} />
-              <Vital label="Heart Rate" unit="bpm" type="number" min={20} max={300} value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" />
-              <Vital label="Resp. Rate" unit="/min" type="number" min={1} max={80} value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="—" />
-              <Vital label="SpO₂" unit="%" type="number" min={50} max={100} value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="—" />
-              <Vital label="Blood Pressure" unit="mmHg" value={form.bp} onChange={(v) => setField('bp', v)} placeholder="120/80" pattern="\d{2,3}\s*/\s*\d{2,3}" title="Systolic/diastolic, e.g. 120/80" />
-              <Vital label="Temp" unit="°C" type="number" min={30} max={45} step={0.1} value={form.temp} onChange={(v) => setField('temp', v)} placeholder="—" />
-              <Vital label="Pain" unit="/10" type="number" min={0} max={10} value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" />
+              <TimePickerField value={form.triageTime} onChange={(v) => setField('triageTime', v)} required />
+              <Vital label="Heart Rate" unit="bpm" type="number" min={20} max={300} value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" required />
+              <Vital label="Resp. Rate" unit="/min" type="number" min={1} max={80} value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="—" required />
+              <Vital label="SpO₂" unit="%" type="number" min={50} max={100} value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="—" required />
+              <Vital label="Blood Pressure" unit="mmHg" value={form.bp} onChange={(v) => setField('bp', v)} placeholder="120/80" pattern="\d{2,3}\s*/\s*\d{2,3}" title="Systolic/diastolic, e.g. 120/80" required />
+              <Vital label="Temp" unit="°C" type="number" min={30} max={45} step={0.1} value={form.temp} onChange={(v) => setField('temp', v)} placeholder="—" required />
+              <Vital label="Pain" unit="/10" type="number" min={0} max={10} value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" required />
             </div>
             <div style={{ marginTop: 14 }}>
-              <Field label="Notes">
+              <Field label="Notes" required>
                 <textarea
                   style={s.textarea}
                   value={form.notes}
                   onChange={(e) => setField('notes', e.target.value)}
                   placeholder="Chief complaint, initial assessment, clinical notes..."
+                  required
                 />
               </Field>
             </div>
@@ -860,6 +888,7 @@ function PhoneInput({
       onChange={(e) => onChange(e.target.value.replace(/[^0-9+()\-\s]/g, ''))}
       placeholder={placeholder}
       maxLength={20}
+      required
       pattern="\+?[0-9\s\-\(\)]{7,20}"
       title="7–20 digits; spaces, +, - and parentheses are allowed"
     />
@@ -880,7 +909,10 @@ function Vital({
 } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'style'>) {
   return (
     <label style={s.vital}>
-      <span style={s.vitalLabel}>{label}</span>
+      <span style={s.vitalLabel}>
+        {label}
+        {inputProps.required && <span style={s.required}>*</span>}
+      </span>
       <span style={s.vitalRow}>
         <input
           {...inputProps}

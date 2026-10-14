@@ -34,8 +34,10 @@ export function TimePickerField({
   label = 'Time',
   value,
   onChange,
+  required = false,
 }: {
   label?: string;
+  required?: boolean;
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -66,7 +68,10 @@ export function TimePickerField({
             boxShadow: open ? '0 0 0 3px rgba(37, 99, 235, 0.15)' : 'none',
           }}
         >
-          <span style={s.vitalLabel}>{label}</span>
+          <span style={s.vitalLabel}>
+            {label}
+            {required && <span style={s.required}>*</span>}
+          </span>
           <span style={{ ...s.vitalRow, alignItems: 'center' }}>
             <span style={{ ...s.vitalValue, color: parts ? '#0f172a' : '#94a3b8' }}>
               {parts ? `${parts.hour}:${pad(parts.minute)}` : '—'}
