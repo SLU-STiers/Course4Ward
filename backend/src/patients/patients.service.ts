@@ -41,7 +41,9 @@ export const triageSelect = {
   },
 };
 
-const roomSelect = { select: { id: true, number: true } };
+const roomSelect = {
+  select: { id: true, number: true, ward: { select: { id: true, name: true } } },
+};
 
 /** Room checks and writes run serializably so two nurses cannot take the same room at once. */
 const ROOM_TX = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable };
@@ -309,6 +311,7 @@ export class PatientsService {
       select: {
         id: true,
         number: true,
+        ward: { select: { id: true, name: true } },
         admissions: { where: { dischargeDate: null }, select: { id: true }, take: 1 },
       },
     });

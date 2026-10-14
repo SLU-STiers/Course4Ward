@@ -8,6 +8,7 @@ import { PatientsController } from "../patients/patients.controller";
 import { PatientsService } from "../patients/patients.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import { WardAccessService } from "../wards/ward-access.service";
 import {
   CommunicationChannel,
   OrderEnteredBy,
@@ -218,6 +219,16 @@ describe("Patients Module", () => {
         PatientsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        // Ward limits have their own tests (ward-access.test.ts); pass everything through here.
+        {
+          provide: WardAccessService,
+          useValue: {
+            redactPatients: async (_user: unknown, patients: unknown[]) => patients,
+            assertPatient: jest.fn(),
+            assertAdmission: jest.fn(),
+            assertOrder: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -960,7 +971,7 @@ describe("Patients Module", () => {
                     recordedBy: { select: { firstName: true, lastName: true } },
                   }),
                 }),
-                room: { select: { id: true, number: true } },
+                room: { select: { id: true, number: true, ward: { select: { id: true, name: true } } } },
               },
             },
           },
@@ -1006,7 +1017,7 @@ describe("Patients Module", () => {
                 triage: expect.objectContaining({
                   select: expect.objectContaining({ heartRate: true, bpSystolic: true }),
                 }),
-                room: { select: { id: true, number: true } },
+                room: { select: { id: true, number: true, ward: { select: { id: true, name: true } } } },
               },
             },
           },
@@ -1193,7 +1204,7 @@ describe("Patients Module", () => {
       it("should call service.findOne with patient id", async () => {
         jest.spyOn(service, "findOne").mockResolvedValue(mockPatient);
 
-        const result = await controller.findOne(mockPatientId);
+        const result = await controller.findOne(mockPatientId, mockUser);
 
         expect(service.findOne).toHaveBeenCalledWith(mockPatientId);
         expect(result).toEqual(mockPatient);
