@@ -290,9 +290,22 @@ function WardChecklist({
   onChange: (wardIds: string[]) => void;
   legend: string;
 }) {
+  const allSelected = wards.length > 0 && wards.every((ward) => value.includes(ward.id));
+
   return (
     <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: '8px 12px', margin: 0 }}>
       <legend style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', padding: '0 4px' }}>{legend}</legend>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '2px 0 5px', fontWeight: 600 }}>
+        <input
+          type="checkbox"
+          checked={allSelected}
+          disabled={!wards.length}
+          onChange={(event) =>
+            onChange(event.target.checked ? wards.map((ward) => ward.id) : [])
+          }
+        />
+        Select all wards
+      </label>
       {wards.map((ward) => (
         <label key={ward.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '2px 0' }}>
           <input
