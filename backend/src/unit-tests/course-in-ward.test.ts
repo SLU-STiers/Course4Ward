@@ -1,7 +1,7 @@
 // unit-tests/course-in-ward.test.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { CourseInWardService } from '../course-in-ward/course-in-ward.service';
+import { CourseInWardService, MAX_SUMMARY_VERSIONS } from '../course-in-ward/course-in-ward.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
@@ -44,6 +44,13 @@ const mockPrismaService = {
   },
   summaryApprovalRequest: {
     updateMany: jest.fn(),
+  },
+  summaryVersion: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
   },
 };
 
@@ -473,6 +480,37 @@ describe('CourseInWardService', () => {
       expect(result).toEqual(mockUpdatedSummary);
     });
 
+    it('should keep the replaced text as a version and trim to the cap', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockPrismaService.summaryVersion.findMany.mockResolvedValueOnce([{ id: 'oldest' }]);
+
+      await service.editSummary(mockSummaryId, mockEditedText, mockPhysicianId);
+
+      expect(mockPrismaService.summaryVersion.create).toHaveBeenCalledWith({
+        data: {
+          summaryId: mockSummaryId,
+          content: 'Original AI summary',
+          source: SummaryStatus.DRAFT_AI,
+        },
+      });
+      expect(mockPrismaService.summaryVersion.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: MAX_SUMMARY_VERSIONS }),
+      );
+      expect(mockPrismaService.summaryVersion.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['oldest'] } },
+      });
+    });
+
+    it('should not keep a version when the text is unchanged', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockExistingSummary);
+
+      await service.editSummary(mockSummaryId, 'Original AI summary', mockPhysicianId);
+
+      expect(mockPrismaService.summaryVersion.create).not.toHaveBeenCalled();
+    });
+
     it('should throw NotFoundException if summary does not exist', async () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(null);
@@ -484,6 +522,56 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.findUnique).toHaveBeenCalledWith({
         where: { id: mockSummaryId },
       });
+      expect(mockPrismaService.courseInWard.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreVersion', () => {
+    const current = {
+      id: 'summary-789',
+      patientId: 'patient-123',
+      summaryContent: 'Current text',
+      status: SummaryStatus.APPROVED,
+      summaryDate: new Date(),
+    };
+
+    it('should swap the version in and keep the current text as a version', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(current);
+      mockPrismaService.summaryVersion.findFirst.mockResolvedValue({
+        id: 'v1',
+        summaryId: current.id,
+        content: 'Older text',
+        source: SummaryStatus.DRAFT_AI,
+      });
+      mockPrismaService.courseInWard.update.mockResolvedValue({});
+
+      await service.restoreVersion(current.id, 'v1', 'physician-456');
+
+      expect(mockPrismaService.summaryVersion.delete).toHaveBeenCalledWith({ where: { id: 'v1' } });
+      expect(mockPrismaService.summaryVersion.create).toHaveBeenCalledWith({
+        data: { summaryId: current.id, content: 'Current text', source: SummaryStatus.APPROVED },
+      });
+      // Deleted before the cap runs, so restoring the oldest version cannot prune it.
+      expect(mockPrismaService.summaryVersion.delete.mock.invocationCallOrder[0]).toBeLessThan(
+        mockPrismaService.summaryVersion.create.mock.invocationCallOrder[0],
+      );
+      expect(mockPrismaService.courseInWard.update).toHaveBeenCalledWith({
+        where: { id: current.id },
+        data: { summaryContent: 'Older text', status: SummaryStatus.DRAFT_AI },
+      });
+      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+        userId: 'physician-456',
+        action: 'SUMMARY_VERSION_RESTORED',
+      });
+    });
+
+    it('should reject a version of another summary', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(current);
+      mockPrismaService.summaryVersion.findFirst.mockResolvedValue(null);
+
+      await expect(service.restoreVersion(current.id, 'v-other', 'physician-456')).rejects.toThrow(
+        NotFoundException,
+      );
       expect(mockPrismaService.courseInWard.update).not.toHaveBeenCalled();
     });
   });
@@ -579,6 +667,22 @@ describe('CourseInWardService', () => {
         action: 'SUMMARY_REGENERATED_AI',
       });
       expect(result).toEqual(mockUpdatedSummary);
+    });
+
+    it('should pass the physician instructions to the AI service', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockAuditLogService.record.mockResolvedValue({});
+      mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.regenerateSummary(mockSummaryId, mockPhysicianId, 'Mention the antibiotic first.');
+
+      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({ instructions: 'Mention the antibiotic first.' }),
+      );
     });
 
     it('should fall back to the linked orders when the summary day has none', async () => {

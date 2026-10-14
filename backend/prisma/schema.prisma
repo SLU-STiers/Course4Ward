@@ -162,6 +162,8 @@ model User {
   notifications              Notification[]
   summaryRequestsAsPhysician SummaryApprovalRequest[] @relation("RequestedPhysician")
   summaryRequestsAsProcessor SummaryApprovalRequest[] @relation("RequestedProcessor")
+  /// Wards a nurse works in; a nurse sees full patient details only there.
+  wards                      NurseWard[]
 
   @@map("users")
 }
@@ -227,10 +229,39 @@ model Room {
   number     String   @unique
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
+  wardId     String?
+  ward       Ward?    @relation(fields: [wardId], references: [id])
 
   admissions PatientAdmission[]
 
+  @@index([wardId])
   @@map("rooms")
+}
+
+/// A nursing unit. A patient is in the ward of their room; a patient without
+/// a room (outpatient, observation, not yet roomed) is in the one ward with
+/// `holdsUnroomed` (Emergency) — at most one, enforced by a partial unique index.
+model Ward {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  holdsUnroomed Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  rooms  Room[]
+  nurses NurseWard[]
+
+  @@map("wards")
+}
+
+model NurseWard {
+  nurseId String
+  wardId  String
+  nurse   User @relation(fields: [nurseId], references: [id], onDelete: Cascade)
+  ward    Ward @relation(fields: [wardId], references: [id], onDelete: Cascade)
+
+  @@id([nurseId, wardId])
+  @@index([wardId])
+  @@map("nurse_wards")
 }
 
 model TriageAssessment {
@@ -334,8 +365,26 @@ model CourseInWard {
   approvedBy User?                    @relation("ApprovedBy", fields: [validatorId], references: [id])
   orders     PhysicianOrder[]
   requests   SummaryApprovalRequest[]
+  versions   SummaryVersion[]
 
   @@map("courses_in_ward")
+}
+
+/// Earlier text of a Course in the Ward, kept when it is regenerated or edited
+/// so the physician can restore it. Capped per summary; cleared on approval.
+model SummaryVersion {
+  id        String        @id @default(uuid())
+  summaryId String
+  content   String
+  /// The status the text had (DRAFT_AI, DRAFT_EDITED or APPROVED).
+  source    SummaryStatus
+  /// When this text was replaced.
+  createdAt DateTime      @default(now())
+
+  summary CourseInWard @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@index([summaryId, createdAt])
+  @@map("summary_versions")
 }
 
 model SummaryApprovalRequest {

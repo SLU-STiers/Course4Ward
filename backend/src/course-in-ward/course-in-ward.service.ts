@@ -9,6 +9,9 @@ import { OllamaClient, OllamaReference } from './ollama-client';
 /** Vector dimension produced by the ai-service embedding model (Qwen3-Embedding-0.6B). */
 const EMBEDDING_DIM = 1024;
 
+/** Earlier texts kept per summary; the oldest is dropped when a new one is saved. */
+export const MAX_SUMMARY_VERSIONS = 3;
+
 interface SimilarReferenceRow {
   summaryId: string;
   orderContent: string;
@@ -82,7 +85,10 @@ export class CourseInWardService {
   // The AI summarizes per admission PER DAY, so a batch spanning several days
   // comes back as one group per (admission, calendar day). Each group keeps the
   // orders it was built from, which is how the caller files it under a day.
-  private async callAiSummarizer(orders: any[]): Promise<DaySummaryGroup[]> {
+  private async callAiSummarizer(
+    orders: any[],
+    instructions?: string,
+  ): Promise<DaySummaryGroup[]> {
     if (!orders || orders.length === 0) {
       this.logger.warn('[ai] callAiSummarizer received no orders');
       throw new BadRequestException('No orders found to summarize');
@@ -134,6 +140,7 @@ export class CourseInWardService {
       const response = await this.ollamaClient.summarizeBatch(admissions, {
         temperature: 0.1,
         references,
+        instructions,
       });
 
       if (response.failed > 0 || response.results.some((result) => !result.success)) {
@@ -304,6 +311,7 @@ export class CourseInWardService {
     });
 
     if (existingDraft) {
+      await this.saveVersion(existingDraft, content);
       return this.prisma.courseInWard.update({
         where: { id: existingDraft.id },
         data: { summaryContent: content, status: SummaryStatus.DRAFT_AI },
@@ -342,6 +350,7 @@ export class CourseInWardService {
   // "Resummarized Physician's Orders" -- option 1: physician manually edits
   async editSummary(id: string, editedText: string, physicianId: string) {
     const existing = await this.findOne(id);
+    await this.saveVersion(existing, editedText);
     const updated = await this.prisma.courseInWard.update({
       where: { id },
       data: {
@@ -358,8 +367,9 @@ export class CourseInWardService {
     return updated;
   }
 
-  // "Resummarized Physician's Orders" -- option 2: regenerate via AI
-  async regenerateSummary(id: string, physicianId: string) {
+  // "Resummarized Physician's Orders" -- option 2: regenerate via AI, optionally
+  // steered by the physician's extra prompt instructions.
+  async regenerateSummary(id: string, physicianId: string, instructions?: string) {
     const existing = await this.findOne(id);
 
     const sourceOrders = await this.findSummarySourceOrders(existing);
@@ -370,12 +380,13 @@ export class CourseInWardService {
     // Keep the summary filed under the day it already covers: when the source
     // orders span more than one day, take that day's group.
     const summaryDay = dayKeyOf(existing.summaryDate);
-    const groups = await this.callAiSummarizer(sourceOrders);
+    const groups = await this.callAiSummarizer(sourceOrders, instructions);
     const group = groups.find((candidate) => candidate.day === summaryDay) ?? groups[0];
     if (!group?.summary) {
       throw new BadRequestException('No orders found to regenerate this summary');
     }
 
+    await this.saveVersion(existing, group.summary);
     const updated = await this.prisma.courseInWard.update({
       where: { id },
       data: {
@@ -443,12 +454,84 @@ export class CourseInWardService {
       data: { status: 'VALIDATED' },
     });
 
+    // The approved text is final, so the drafts before it are no longer needed.
+    await this.prisma.summaryVersion.deleteMany({ where: { summaryId: id } });
+
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_APPROVED',
     });
 
     return approved;
+  }
+
+  /** Earlier texts of a summary, newest first (at most `MAX_SUMMARY_VERSIONS`). */
+  async listVersions(id: string) {
+    await this.findOne(id);
+    return this.prisma.summaryVersion.findMany({
+      where: { summaryId: id },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Bring an earlier text back as the current summary. The text it replaces
+   * becomes a version itself, so a restore can be undone the same way.
+   */
+  async restoreVersion(id: string, versionId: string, physicianId: string) {
+    const existing = await this.findOne(id);
+    const version = await this.prisma.summaryVersion.findFirst({
+      where: { id: versionId, summaryId: id },
+    });
+    if (!version) throw new NotFoundException('Summary version not found');
+
+    // Drop it before saving the current text, or the cap could prune it first.
+    await this.prisma.summaryVersion.delete({ where: { id: versionId } });
+    await this.saveVersion(existing, version.content);
+    const updated = await this.prisma.courseInWard.update({
+      where: { id },
+      data: {
+        summaryContent: version.content,
+        // A restored text needs approving again, even if it once was.
+        status:
+          version.source === SummaryStatus.DRAFT_AI
+            ? SummaryStatus.DRAFT_AI
+            : SummaryStatus.DRAFT_EDITED,
+      },
+    });
+
+    await this.auditLog.record({
+      userId: physicianId,
+      action: 'SUMMARY_VERSION_RESTORED',
+    });
+
+    return updated;
+  }
+
+  /**
+   * Keep the text a summary is about to lose as a version, then trim its
+   * history to the newest `MAX_SUMMARY_VERSIONS`. Unchanged or empty text
+   * is not kept.
+   */
+  private async saveVersion(
+    summary: { id: string; summaryContent: string; status: SummaryStatus },
+    nextContent: string,
+  ) {
+    if (!summary.summaryContent || summary.summaryContent === nextContent) return;
+    await this.prisma.summaryVersion.create({
+      data: { summaryId: summary.id, content: summary.summaryContent, source: summary.status },
+    });
+    const stale = await this.prisma.summaryVersion.findMany({
+      where: { summaryId: summary.id },
+      orderBy: { createdAt: 'desc' },
+      skip: MAX_SUMMARY_VERSIONS,
+      select: { id: true },
+    });
+    if (stale.length) {
+      await this.prisma.summaryVersion.deleteMany({
+        where: { id: { in: stale.map((row) => row.id) } },
+      });
+    }
   }
 
   async findOne(id: string) {

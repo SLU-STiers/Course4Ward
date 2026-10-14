@@ -22,6 +22,8 @@ export interface OllamaReference {
 export interface SummarizeBatchOptions {
   temperature?: number;
   references?: OllamaReference[];
+  /** Physician's extra prompt instructions (regeneration). */
+  instructions?: string;
 }
 
 export interface OllamaSummaryResult {
@@ -80,6 +82,9 @@ export class OllamaClient {
         temperature: options.temperature ?? 0.1,
         ...(options.references && options.references.length
           ? { references: options.references }
+          : {}),
+        ...(options.instructions?.trim()
+          ? { instructions: options.instructions.trim() }
           : {}),
       },
     );

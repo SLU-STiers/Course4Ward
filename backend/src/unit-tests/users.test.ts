@@ -20,6 +20,9 @@ describe('UsersService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    ward: {
+      count: jest.fn(),
+    },
   };
 
   const mockAuditLogService = {
@@ -90,6 +93,48 @@ describe('UsersService', () => {
     expect(mockAuditLogService.record).toHaveBeenCalledWith({
       userId: 'admin-1',
       action: 'USER_CREATED',
+    });
+  });
+
+  describe('ward assignment', () => {
+    const input = (role: Role, wardIds: string[]) => ({
+      firstName: 'Jane',
+      lastName: 'Doe',
+      role,
+      temporaryPassword: 'StrongPass123',
+      wardIds,
+    });
+
+    it('refuses wards for anyone but a nurse', async () => {
+      await expect(service.create(input(Role.PHYSICIAN, ['ward-surgery']), 'admin-1')).rejects.toThrow(
+        'Only nurses are assigned to wards',
+      );
+    });
+
+    it('refuses a ward that does not exist', async () => {
+      mockPrismaService.ward.count.mockResolvedValue(1);
+      await expect(
+        service.create(input(Role.NURSE, ['ward-surgery', 'ward-missing']), 'admin-1'),
+      ).rejects.toThrow('One or more wards do not exist');
+    });
+
+    it('replaces the wards of a nurse on update', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({ isActive: true, role: Role.NURSE });
+      mockPrismaService.ward.count.mockResolvedValue(2);
+      mockPrismaService.user.update.mockResolvedValue({});
+
+      await service.update('user-1', { wardIds: ['ward-micu', 'ward-surgery'] }, 'admin-1');
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            wards: {
+              deleteMany: {},
+              create: [{ wardId: 'ward-micu' }, { wardId: 'ward-surgery' }],
+            },
+          }),
+        }),
+      );
     });
   });
 });

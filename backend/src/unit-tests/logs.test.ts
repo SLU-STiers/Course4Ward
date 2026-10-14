@@ -337,7 +337,7 @@ describe('AuditLogService', () => {
       });
     });
 
-    it('should match free text against both the actor and the action name', async () => {
+    it('should match free text against every visible column', async () => {
       // Arrange
       mockPrismaService.auditLog.findMany.mockResolvedValue([]);
       mockPrismaService.auditLog.count.mockResolvedValue(0);
@@ -348,18 +348,57 @@ describe('AuditLogService', () => {
       // Assert
       const [call] = mockPrismaService.auditLog.findMany.mock.calls;
       const where = call[0].where as { AND: Array<Record<string, unknown>> };
-      expect(where.AND[0]).toEqual({ OR: expect.any(Array) });
-      const [actionClause, userClause] = where.AND[0].OR as Array<Record<string, unknown>>;
-      expect(actionClause).toEqual({ action: { in: [ActionType.APPROVE_SUMMARY] } });
-      expect(userClause).toEqual({
-        user: {
-          OR: [
-            { firstName: { contains: 'approve summary', mode: 'insensitive' } },
-            { lastName: { contains: 'approve summary', mode: 'insensitive' } },
-            { userId: { contains: 'approve summary', mode: 'insensitive' } },
-          ],
-        },
+      const contains = (value: string) => ({ contains: value, mode: 'insensitive' });
+      expect(where.AND[0]).toEqual({
+        OR: [
+          { id: contains('approve summary') },
+          { user: { userId: contains('approve summary') } },
+          {
+            user: {
+              AND: [
+                { OR: [{ firstName: contains('approve') }, { lastName: contains('approve') }] },
+                { OR: [{ firstName: contains('summary') }, { lastName: contains('summary') }] },
+              ],
+            },
+          },
+          { action: { in: [ActionType.APPROVE_SUMMARY] } },
+        ],
       });
+    });
+
+    it.each([
+      ['Signed in', [ActionType.LOGIN]],
+      ['Account updated', [ActionType.EDIT_ACCOUNT]],
+      ['account', [ActionType.ADD_ACCOUNT, ActionType.EDIT_ACCOUNT, ActionType.DELETE_ACCOUNT]],
+      [
+        'created',
+        [ActionType.CREATE_ORDER, ActionType.CLAIM_CREATED, ActionType.ADD_ACCOUNT],
+      ],
+    ])('should match the action label shown in the table: "%s"', async (search, expected) => {
+      // Arrange
+      mockPrismaService.auditLog.findMany.mockResolvedValue([]);
+      mockPrismaService.auditLog.count.mockResolvedValue(0);
+
+      // Act
+      await service.findAll({ search });
+
+      // Assert
+      const where = mockPrismaService.auditLog.findMany.mock.calls[0][0].where;
+      const actionClause = where.AND[0].OR.find((clause: Record<string, unknown>) => 'action' in clause);
+      expect([...actionClause.action.in].sort()).toEqual([...expected].sort());
+    });
+
+    it('should match the role label shown in the table', async () => {
+      // Arrange
+      mockPrismaService.auditLog.findMany.mockResolvedValue([]);
+      mockPrismaService.auditLog.count.mockResolvedValue(0);
+
+      // Act
+      await service.findAll({ search: 'claims processor' });
+
+      // Assert
+      const where = mockPrismaService.auditLog.findMany.mock.calls[0][0].where;
+      expect(where.AND[0].OR).toContainEqual({ user: { role: { in: [Role.CLAIMS_PROCESSOR] } } });
     });
 
     it('should return audit logs with custom skip and take values', async () => {
@@ -545,7 +584,8 @@ describe('AuditLogService', () => {
       );
 
       // Assert — the raw-SQL mirror of `buildWhere` must bind the same inputs.
-      // The search term is bound once per ILIKE column, and the bucket cap is
+      // The search term is bound once per ILIKE column (each name word twice),
+      // and the bucket cap is
       // bound too rather than inlined.
       const [statement] = mockPrismaService.$queryRaw.mock.calls[0];
       expect(statement.values).toEqual([
@@ -554,10 +594,13 @@ describe('AuditLogService', () => {
         'CLM001',
         from,
         to,
+        '%approve summary%',
+        '%approve summary%',
+        '%approve%',
+        '%approve%',
+        '%summary%',
+        '%summary%',
         ActionType.APPROVE_SUMMARY,
-        '%approve summary%',
-        '%approve summary%',
-        '%approve summary%',
         400,
       ]);
       expect(statement.sql).toContain('a."action" = ?::"ActionType"');

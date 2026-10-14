@@ -1437,6 +1437,17 @@ td {
   background: #f0f7ff;
 }
 
+.ui-ai-btn--primary {
+  border-color: #0066cc;
+  background: #0066cc;
+  color: #ffffff;
+}
+
+.ui-ai-btn--primary:hover:not(:disabled) {
+  border-color: #0052a3;
+  background: #0052a3;
+}
+
 .ui-ai-btn:disabled {
   opacity: 0.6;
   cursor: default;
@@ -1555,6 +1566,26 @@ td {
   gap: var(--c4w-space-xs, 0.5rem);
   padding: var(--c4w-space-md, 1rem) var(--c4w-space-lg, 1.5rem);
   border-top: 1px solid var(--c4w-color-border, #e2e8f0);
+  background: var(--c4w-color-surface-muted, #f1f5f9);
+}
+
+/* Widened variant of the shared modal for viewing a whole document. The
+   doubled class outranks `.ui-modal--xl`'s max-width. */
+.ui-modal.ui-modal--pdf {
+  width: min(1120px, 94vw);
+  max-width: none;
+  height: min(900px, 92vh);
+}
+.ui-modal--pdf .ui-modal__body {
+  display: flex;
+  padding: 0;
+  /* The PDF viewer scrolls itself; the body must not add a second scrollbar. */
+  overflow: hidden;
+}
+.ui-modal__pdf-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
   background: var(--c4w-color-surface-muted, #f1f5f9);
 }
 

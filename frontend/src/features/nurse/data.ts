@@ -1,6 +1,7 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
 import type { AdmissionRecord, NursePatient, OrderSet, PatientChart, TriageAssessment } from './types';
+import { toDateInputValue } from '../../lib/format';
 
 export const MOCK_PATIENTS: NursePatient[] = [
   { id: '1', name: 'Sarah Brown', patientId: '1123', recordId: 'SH-2024-0123', admissionDate: '15/04/2026', admissionDateRaw: '2026-04-15', daysInCare: 2, color: '#ef4444', age: 28, gender: 'Female', initials: 'SB' },
@@ -85,7 +86,16 @@ export const INITIAL_CHARTS: Record<string, PatientChart> = {
     },
   }),
 };
-export const INITIAL_ADMISSIONS: AdmissionRecord[] = [
+/** `15 Apr 2026` -> `2026-04-15`, the sort key `AdmissionRecord` requires. */
+const asAdmissionRecords = (
+  rows: Array<Omit<AdmissionRecord, 'admittedOnRaw'>>,
+): AdmissionRecord[] =>
+  rows.map((row) => ({
+    ...row,
+    admittedOnRaw: toDateInputValue(new Date(row.admittedOn)),
+  }));
+
+export const INITIAL_ADMISSIONS = asAdmissionRecords([
   { id: 'ADM-0001', name: 'Sarah Brown', admittedOn: '15 Apr 2026', dischargedOn: null, status: 'Admitted' },
   { id: 'ADM-0002', name: 'Michael Owen', admittedOn: '15 Apr 2026', dischargedOn: null, status: 'Admitted' },
   { id: 'ADM-0003', name: 'Mary Jane', admittedOn: '14 Apr 2026', dischargedOn: '20 Apr 2026', status: 'Discharged' },
@@ -114,7 +124,7 @@ export const INITIAL_ADMISSIONS: AdmissionRecord[] = [
   { id: 'ADM-0026', name: 'Oscar Bautista', admittedOn: '22 Apr 2026', dischargedOn: '30 Apr 2026', status: 'Discharged' },
   { id: 'ADM-0027', name: 'Pia Gonzales', admittedOn: '23 Apr 2026', dischargedOn: null, status: 'Admitted' },
   { id: 'ADM-0028', name: 'Quinn Herrera', admittedOn: '23 Apr 2026', dischargedOn: '01 May 2026', status: 'Discharged' },
-];
+]);
 export const DEFAULT_ORDER_SETS: Record<string, OrderSet[]> = {
   '1': [
     {

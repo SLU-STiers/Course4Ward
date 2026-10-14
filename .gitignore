@@ -40,7 +40,12 @@ __pycache__/
 
 .reasonix/
 
+# /brag launch-video output (renders, frames, scripts)
+brag-output*/
+
 # Settings
 {
     "python-envs.defaultEnvManager": "ms-python.python:venv"
 }
+# Raw fine-tuning source spreadsheet (derived JSONL files are committed)
+fine_tuning_data/*.xlsx

@@ -4,27 +4,42 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
+import { formatDateNumeric, toDateInputValue } from '../../lib/format';
 import { sexLabel, statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
-import { contactDetailsOf } from './PatientModalParts';
+import { OtherWardLabel, contactDetailsOf } from './PatientModalParts';
 import { triageForDisplay } from '../../lib/triage';
 import type { AdmissionRecord } from './types';
-import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
+import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf, wardLocation } from './patientClass';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { Patient, PhysicianOrder } from '../../types';
 
 function toRecord(patient: Patient): AdmissionRecord {
+  if (patient.restricted) {
+    return {
+      id: patient.id,
+      name: `${patient.firstName} ${patient.lastName}`,
+      admittedOn: '—',
+      admittedOnRaw: '',
+      dischargedOn: null,
+      status: 'Admitted', // unknown; never shown or filtered on (see `restricted`)
+      restricted: true,
+      location: wardLocation(patient),
+    };
+  }
   const admission = patient.admissions?.[0];
   return {
     id: admission?.id ?? patient.id,
     name: `${patient.firstName} ${patient.lastName}`,
-    admittedOn: admission ? new Date(admission.admissionDate).toLocaleDateString('en-GB') : '—',
+    admittedOn: admission ? formatDateNumeric(admission.admissionDate) : '—',
+    admittedOnRaw: admission ? toDateInputValue(new Date(admission.admissionDate)) : '',
     dischargedOn: admission?.dischargeDate
-      ? new Date(admission.dischargeDate).toLocaleDateString('en-GB')
+      ? formatDateNumeric(admission.dischargeDate)
       : null,
     status: admissionStatusOf(admission),
+    location: wardLocation(patient),
   };
 }
 
@@ -61,15 +76,17 @@ export function PatientView() {
   const table = useTableState<AdmissionRecord>({
     items: records,
     pageSize: 8,
-    searchFields: (record) => [record.id, record.name],
+    searchFields: (record) => [record.id, record.name, record.location],
     filterPredicates: {
-      status: (record, value) => value === 'all' || record.status === value,
+      status: (record, value) => value === 'all' || (!record.restricted && record.status === value),
     },
     initialFilters: { status: 'all' },
     sorters: {
       id: (record) => record.id,
       name: (record) => record.name,
-      admittedOn: (record) => record.admittedOn,
+      /* Raw ISO key: sorting the DD/MM/YYYY display string orders by
+         day-of-month first, so today's admissions never reached the top. */
+      admittedOn: (record) => record.admittedOnRaw,
     },
     initialSort: { field: 'admittedOn', direction: 'descending' },
   });
@@ -213,6 +230,7 @@ export function PatientView() {
           <thead>
             <tr style={patientTableStyles.thRow}>
               <th style={patientTableStyles.th}>Full Name</th>
+              <th style={patientTableStyles.th}>Ward</th>
               <th style={patientTableStyles.th}>Admission Date</th>
               <th style={patientTableStyles.th}>Discharge Date</th>
               <th style={patientTableStyles.th}>Status</th>
@@ -223,8 +241,8 @@ export function PatientView() {
             {table.rows.map((r) => (
               <tr
                 key={r.id}
-                onClick={() => openViewing(r.name)}
-                style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
+                onClick={r.restricted ? undefined : () => openViewing(r.name)}
+                style={{ ...patientTableStyles.tr, cursor: r.restricted ? 'default' : 'pointer' }}
               >
                 <td style={patientTableStyles.td}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -239,14 +257,22 @@ export function PatientView() {
                     <span style={patientTableStyles.name}>{r.name}</span>
                   </div>
                 </td>
+                <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.location}</td>
                 <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{r.admittedOn}</td>
                 <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
                   {r.dischargedOn ?? '—'}
                 </td>
                 <td style={patientTableStyles.td}>
-                  <StatusBadge showDot status={STATUS_TONE[r.status]} label={r.status} />
+                  {r.restricted ? (
+                    <span style={patientTableStyles.cell}>—</span>
+                  ) : (
+                    <StatusBadge showDot status={STATUS_TONE[r.status]} label={r.status} />
+                  )}
                 </td>
                 <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
+                  {r.restricted ? (
+                    <OtherWardLabel />
+                  ) : (
                   <button
                     type="button"
                     style={patientTableStyles.viewBtn}
@@ -257,6 +283,7 @@ export function PatientView() {
                   >
                     View
                   </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -264,7 +291,7 @@ export function PatientView() {
               <tr>
                 <td
                   style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                  colSpan={5}
+                  colSpan={6}
                 >
                   No admissions match the current filters.
                 </td>

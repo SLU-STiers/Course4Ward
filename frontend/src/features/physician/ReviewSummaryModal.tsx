@@ -62,6 +62,7 @@ export function ReviewSummaryModal({
   const [draft, setDraft] = useState<{ day: string; text: string } | null>(null);
   const [busy, setBusy] = useState<'saving' | 'generating' | 'approving' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [regenInstructions, setRegenInstructions] = useState('');
 
   // State starts fresh per request: RequestsView keys this modal by request id.
   useEffect(() => {
@@ -133,13 +134,14 @@ export function ReviewSummaryModal({
     setError(null);
     const call = daySummary
       ? courseInWardApi
-          .regenerate(daySummary.id)
+          .regenerate(daySummary.id, regenInstructions)
           .then(({ data }) => [{ ...daySummary, ...data }])
       : courseInWardApi.generate(patientId, activeDay).then(({ data }) => data);
     void call
       .then((updated) => {
         replaceSummary(updated);
         setDraft(null);
+        setRegenInstructions('');
       })
       .catch(() =>
         setError('The AI summary could not be generated for this day. Try again or edit it manually.'),
@@ -350,6 +352,19 @@ export function ReviewSummaryModal({
             )}
 
             {error && <div style={review.errorText}>{error}</div>}
+
+            {daySummary && !editing && (
+              <input
+                type="text"
+                placeholder="Additional instructions for Regenerate (optional)"
+                aria-label="Additional instructions for Regenerate"
+                maxLength={1000}
+                value={regenInstructions}
+                disabled={busy !== null}
+                onChange={(e) => setRegenInstructions(e.target.value)}
+                style={{ ...review.fieldInput, width: '100%', marginTop: 10, boxSizing: 'border-box' }}
+              />
+            )}
 
             <div style={review.aiActions}>
               {daySummary && (

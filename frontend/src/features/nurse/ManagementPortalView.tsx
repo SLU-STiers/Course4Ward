@@ -1,7 +1,7 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
 import { useCallback, useEffect, useState } from 'react';
-import { DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
+import { Button, DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
@@ -12,9 +12,10 @@ import { triageForDisplay, triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
 import { PatientDetailModal } from './PatientDetailModal';
 import { OrderExecutionPanel } from './OrderExecutionPanel';
-import { contactDetailsOf } from './PatientModalParts';
+import { OnBehalfOrderModal } from './OnBehalfOrderModal';
+import { OtherWardLabel, contactDetailsOf } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
-import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
+import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf, wardLocation } from './patientClass';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, Patient, PhysicianOrder } from '../../types';
 
@@ -23,12 +24,30 @@ const colors = ['#ef4444', '#22c55e', '#84cc16', '#6366f1', '#eab308', '#06b6d4'
 function mapPatient(patient: Patient, index: number): NursePatient {
   const admission = patient.admissions?.[0];
   const name = `${patient.firstName} ${patient.lastName}`;
+  if (patient.restricted) {
+    return {
+      id: patient.id,
+      name,
+      patientId: patient.id,
+      recordId: patient.id,
+      admissionDate: '—',
+      admissionDateRaw: '',
+      color: colors[index % colors.length],
+      age: 0,
+      gender: '—',
+      initials: `${patient.firstName[0] ?? ''}${patient.lastName[0] ?? ''}`,
+      daysInCare: 0,
+      restricted: true,
+      location: wardLocation(patient),
+    };
+  }
   const status = admission?.dischargeDate ? 'discharged' : 'admitted';
   const admissionDate = admission?.admissionDate ?? '';
   return {
     id: patient.id,
     name,
     patientId: patient.id,
+    admissionId: admission?.id,
     recordId: admission?.id ?? patient.id,
     admissionDate: admissionDate ? formatDateNumeric(admissionDate) : '—',
     admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : '',
@@ -42,6 +61,7 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     triage: triageForDisplay(admission),
     contact: contactDetailsOf(patient),
     room: admission?.room?.number,
+    location: wardLocation(patient),
     patientClass: admission?.patientClass,
     classSince: admission?.classSince,
     assignedDoctor: admission?.physician
@@ -92,6 +112,7 @@ export function ManagementPortalView() {
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [detailName, setDetailName] = useState<string | null>(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
   const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
 
   /* Refetched every time a patient is opened, so a summary the physician
@@ -113,7 +134,8 @@ export function ManagementPortalView() {
   useEffect(() => {
     loadPatients()
       .then((mapped) => {
-        if (mapped[0]) setSelectedId((current) => current ?? mapped[0].id);
+        const first = mapped.find((patient) => !patient.restricted);
+        if (first) setSelectedId((current) => current ?? first.id);
       })
       .catch(() => setPatients([]));
   }, [loadPatients]);
@@ -134,7 +156,7 @@ export function ManagementPortalView() {
     pageSize: 8,
     searchFields: (patient) => [patient.name, patient.patientId, patient.recordId],
     filterPredicates: {
-      status: (patient, value) => value === 'all' || displayStatus(patient) === value,
+      status: (patient, value) => value === 'all' || (!patient.restricted && displayStatus(patient) === value),
     },
     initialFilters: { status: 'all' },
     sorters: {
@@ -190,6 +212,18 @@ export function ManagementPortalView() {
       }
       return next;
     });
+  };
+
+  const addOrder = (patientId: string, saved: PhysicianOrder) => {
+    const mapped = mapOrder(saved);
+    setOrdersByPatient((previous) => ({
+      ...previous,
+      [patientId]: [
+        mapped,
+        ...(previous[patientId] ?? []).filter((item) => item.order?.id !== saved.id),
+      ],
+    }));
+    setSelectedDate(mapped.dateKey);
   };
   const ordersById = new Map(
     ordersForDisplay.flatMap((set) => (set.order ? [[set.order.id, set.order] as const] : [])),
@@ -266,6 +300,7 @@ export function ManagementPortalView() {
           <thead>
             <tr style={patientTableStyles.thRow}>
               <th style={patientTableStyles.th}>Patient</th>
+              <th style={patientTableStyles.th}>Ward</th>
               <th style={patientTableStyles.th}>Triage</th>
               <th style={patientTableStyles.th}>Sex</th>
               <th style={patientTableStyles.th}>Age</th>
@@ -278,6 +313,20 @@ export function ManagementPortalView() {
           <tbody>
             {table.rows.map((p) => {
               const active = p.id === selectedId;
+              if (p.restricted) {
+                return (
+                  <tr key={p.id} style={patientTableStyles.tr}>
+                    <td style={patientTableStyles.td}>
+                      <span style={patientTableStyles.name}>{p.name}</span>
+                    </td>
+                    <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.location}</td>
+                    <td style={patientTableStyles.td} colSpan={6} />
+                    <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
+                      <OtherWardLabel />
+                    </td>
+                  </tr>
+                );
+              }
               return (
                 <tr
                   key={p.id}
@@ -294,6 +343,7 @@ export function ManagementPortalView() {
                       <span style={patientTableStyles.name}>{p.name}</span>
                     </div>
                   </td>
+                  <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>{p.location}</td>
                   <td style={patientTableStyles.td}>
                     <TriageBadge level={p.triage?.level} compact />
                   </td>
@@ -330,7 +380,7 @@ export function ManagementPortalView() {
               <tr>
                 <td
                   style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                  colSpan={8}
+                  colSpan={9}
                 >
                   {patients.length === 0
                     ? 'No patients are currently admitted.'
@@ -379,6 +429,13 @@ export function ManagementPortalView() {
                   </>
                 );
               }}
+              footer={
+                selected.admissionId && selected.status !== 'discharged' ? (
+                  <Button variant="primary" onClick={() => setShowOrderModal(true)}>
+                    Enter Order on Behalf of Physician
+                  </Button>
+                ) : undefined
+              }
               emptyMessage={
                 activeDate
                   ? `No physician orders for ${formatDateLongFromKey(activeDate)}. Choose another date to view previous orders.`
@@ -423,6 +480,20 @@ export function ManagementPortalView() {
             loadPatients().catch(() => undefined);
           }}
           onClose={() => setDetailName(null)}
+        />
+      )}
+
+      {selected?.admissionId && showOrderModal && (
+        <OnBehalfOrderModal
+          open
+          admissionId={selected.admissionId}
+          patientName={selected.name}
+          careTeamNames={[
+            ...(selected.assignedDoctor ? [selected.assignedDoctor] : []),
+            ...(selected.additionalDoctors ?? []),
+          ]}
+          onClose={() => setShowOrderModal(false)}
+          onSaved={(saved) => addOrder(selected.id, saved)}
         />
       )}
     </div>
