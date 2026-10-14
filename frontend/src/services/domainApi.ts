@@ -25,6 +25,7 @@ import type {
   PasswordResetRequestPage,
   StaffAccount,
   TrendBucket,
+  Ward,
   WardRoom,
   SummaryVersion,
 } from '../types';
@@ -162,6 +163,7 @@ export const notificationsApi = {
 // --- Admin ---
 export const adminApi = {
   listUsers: () => api.get<StaffAccount[]>('/admin/users'),
+  listWards: () => api.get<Ward[]>('/admin/wards'),
   createUser: (data: AdminUserInput) => api.post('/admin/users', data),
   updateUser: (id: string, data: AdminUserInput) => api.patch(`/admin/users/${id}`, data),
   /** One page of activity logs, filtered server-side. */
