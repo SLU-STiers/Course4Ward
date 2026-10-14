@@ -105,3 +105,15 @@ export function contactDetailsOf(patient: Patient): PatientContactDetails {
     contactPersonAddress: patient.contactPersonAddress ?? '',
   };
 }
+
+/** Row action for a patient outside the nurse's wards: their details cannot be opened. */
+export function OtherWardLabel() {
+  return (
+    <span
+      title="This patient is not in your assigned ward"
+      style={{ fontSize: 12, fontWeight: 600, color: '#64748b', whiteSpace: 'nowrap' }}
+    >
+      🔒 Other ward
+    </span>
+  );
+}

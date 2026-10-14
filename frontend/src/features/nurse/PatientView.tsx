@@ -9,14 +9,26 @@ import { sexLabel, statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
 import { PatientDetailModal } from './PatientDetailModal';
-import { contactDetailsOf } from './PatientModalParts';
+import { OtherWardLabel, contactDetailsOf } from './PatientModalParts';
 import { triageForDisplay } from '../../lib/triage';
 import type { AdmissionRecord } from './types';
-import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf } from './patientClass';
+import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf, wardLocation } from './patientClass';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { Patient, PhysicianOrder } from '../../types';
 
 function toRecord(patient: Patient): AdmissionRecord {
+  if (patient.restricted) {
+    return {
+      id: patient.id,
+      name: `${patient.firstName} ${patient.lastName}`,
+      admittedOn: '—',
+      admittedOnRaw: '',
+      dischargedOn: null,
+      status: 'Admitted', // unknown; never shown or filtered on (see `restricted`)
+      restricted: true,
+      location: wardLocation(patient),
+    };
+  }
   const admission = patient.admissions?.[0];
   return {
     id: admission?.id ?? patient.id,
@@ -65,7 +77,7 @@ export function PatientView() {
     pageSize: 8,
     searchFields: (record) => [record.id, record.name],
     filterPredicates: {
-      status: (record, value) => value === 'all' || record.status === value,
+      status: (record, value) => value === 'all' || (!record.restricted && record.status === value),
     },
     initialFilters: { status: 'all' },
     sorters: {
@@ -227,8 +239,8 @@ export function PatientView() {
             {table.rows.map((r) => (
               <tr
                 key={r.id}
-                onClick={() => openViewing(r.name)}
-                style={{ ...patientTableStyles.tr, cursor: 'pointer' }}
+                onClick={r.restricted ? undefined : () => openViewing(r.name)}
+                style={{ ...patientTableStyles.tr, cursor: r.restricted ? 'default' : 'pointer' }}
               >
                 <td style={patientTableStyles.td}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -248,9 +260,16 @@ export function PatientView() {
                   {r.dischargedOn ?? '—'}
                 </td>
                 <td style={patientTableStyles.td}>
-                  <StatusBadge showDot status={STATUS_TONE[r.status]} label={r.status} />
+                  {r.restricted ? (
+                    <span style={patientTableStyles.cell}>{r.location}</span>
+                  ) : (
+                    <StatusBadge showDot status={STATUS_TONE[r.status]} label={r.status} />
+                  )}
                 </td>
                 <td style={{ ...patientTableStyles.td, textAlign: 'right' }}>
+                  {r.restricted ? (
+                    <OtherWardLabel />
+                  ) : (
                   <button
                     type="button"
                     style={patientTableStyles.viewBtn}
@@ -261,6 +280,7 @@ export function PatientView() {
                   >
                     View
                   </button>
+                  )}
                 </td>
               </tr>
             ))}

@@ -57,6 +57,13 @@ export interface Patient {
   dischargeDate?: string | null;
   initialAssessment?: string | null;
   admissions?: PatientAdmission[];
+  /**
+   * Nurse lists only: the patient is outside the nurse's wards, so the server
+   * sent just the name and where they are (`wardName`, `roomNumber`).
+   */
+  restricted?: boolean;
+  wardName?: string | null;
+  roomNumber?: string | null;
 }
 
 /**
@@ -79,7 +86,7 @@ export interface PatientAdmission {
   /** Full triage row for nurses and physicians; claims payloads include it on the order's admission. */
   triage?: AdmissionTriage | null;
   /** Ward room of an admitted patient. */
-  room?: { id: string; number: string } | null;
+  room?: { id: string; number: string; ward?: { id: string; name: string } | null } | null;
 }
 
 /** A ward room, occupied while an undischarged admission holds it. */

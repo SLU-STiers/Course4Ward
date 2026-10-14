@@ -32,6 +32,9 @@ export type NursePatient = {
   contact?: PatientContactDetails;
   /** Ward room number of an admitted patient. */
   room?: string;
+  /** Outside the nurse's wards: only the name and `location` are known. */
+  restricted?: boolean;
+  location?: string;
 };
 /** Registration contact and background details, as display strings ('' when not recorded). */
 export type PatientContactDetails = {
@@ -82,4 +85,7 @@ export type AdmissionRecord = {
   admittedOnRaw: string;
   dischargedOn: string | null;
   status: AdmissionStatus;
+  /** Outside the nurse's wards: only the name and `location` are known. */
+  restricted?: boolean;
+  location?: string;
 };
