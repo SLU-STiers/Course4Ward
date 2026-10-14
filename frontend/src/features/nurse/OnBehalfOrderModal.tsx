@@ -2,13 +2,8 @@ import { useEffect, useState } from 'react';
 import { isAxiosError } from 'axios';
 import { Button, Modal } from '../../components/ui';
 import { ordersApi, patientsApi } from '../../services/domainApi';
-import type { PhysicianOrder } from '../../types';
-
-type PhysicianOption = {
-  id: string;
-  firstName: string;
-  lastName: string;
-};
+import type { PhysicianOption, PhysicianOrder } from '../../types';
+import { PhysicianWardSelect } from './PhysicianWardSelect';
 
 type OrderChannel = 'SMS' | 'Email' | 'Verbal' | 'Others';
 
@@ -199,24 +194,18 @@ export function OnBehalfOrderModal({
             </div>
           </fieldset>
 
-          <label style={{ color: '#0f172a', fontWeight: 700 }}>
+          <div style={{ color: '#0f172a', fontWeight: 700 }}>
             Ordered By / On Behalf Of
-            <select
+            <PhysicianWardSelect
+              physicians={physicians}
               value={physicianId}
-              onChange={(event) => setPhysicianId(event.target.value)}
+              onChange={setPhysicianId}
               disabled={loadingPhysicians || Boolean(physicianError)}
-              style={fieldStyle}
-            >
-              <option value="">
-                {loadingPhysicians ? 'Loading physicians...' : 'Select a physician'}
-              </option>
-              {physicians.map((physician) => (
-                <option key={physician.id} value={physician.id}>
-                  Dr. {physician.firstName} {physician.lastName}
-                </option>
-              ))}
-            </select>
-          </label>
+              selectStyle={fieldStyle}
+              placeholder={loadingPhysicians ? 'Loading physicians...' : 'Select a physician'}
+              ariaLabel="Physician ordering on behalf"
+            />
+          </div>
           {physicianError && (
             <p role="alert" style={{ margin: '-10px 0 0', color: '#b91c1c' }}>
               {physicianError}

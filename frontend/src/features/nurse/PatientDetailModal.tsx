@@ -7,10 +7,10 @@ import { addPatient as s, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { OBSERVATION_LIMIT_HOURS, hoursSince } from '../../lib/patient';
+import { PhysicianWardSelect } from './PhysicianWardSelect';
 
 import type { AdmissionStatus, PatientChart } from './types';
-
-type PhysicianOption = { id: string; userId: string; firstName: string; lastName: string };
+import type { PhysicianOption } from '../../types';
 
 export function PatientDetailModal({
   chart,
@@ -218,24 +218,19 @@ export function PatientDetailModal({
               {canAddConsulting && (
                 <>
                   <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <select
-                      style={{ ...s.select, flex: 1 }}
+                    <PhysicianWardSelect
+                      physicians={availableToAdd}
                       value={pendingDoctorId}
-                      onChange={(e) => setPendingDoctorId(e.target.value)}
+                      onChange={setPendingDoctorId}
+                      selectStyle={{ ...s.select, flex: 1 }}
                       disabled={adding || !availableToAdd.length}
-                      aria-label="Consulting physician to add"
-                    >
-                      <option value="">
-                        {availableToAdd.length
+                      placeholder={
+                        availableToAdd.length
                           ? 'Select a consulting physician'
-                          : 'No other physicians available'}
-                      </option>
-                      {availableToAdd.map((doctor) => (
-                        <option key={doctor.id} value={doctor.id}>
-                          Dr. {doctor.firstName} {doctor.lastName} ({doctor.userId})
-                        </option>
-                      ))}
-                    </select>
+                          : 'No other physicians available'
+                      }
+                      ariaLabel="Consulting physician to add"
+                    />
                     <button
                       type="button"
                       style={{

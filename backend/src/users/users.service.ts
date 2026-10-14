@@ -23,15 +23,19 @@ export class UsersService {
     mustResetPassword: true,
     createdAt: true,
     wards: { select: { ward: { select: { id: true, name: true } } } },
+    physicianWards: { select: { ward: { select: { id: true, name: true } } } },
   };
 
-  /** Ward ids to store for a user: only nurses have wards, and every id must exist. */
+  /** Validate ward assignments for physicians and nurses. */
   private async wardIdsFor(role: Role, wardIds: string[] | undefined) {
-    if (role !== Role.NURSE) {
-      if (wardIds?.length) throw new BadRequestException('Only nurses are assigned to wards');
+    if (role !== Role.NURSE && role !== Role.PHYSICIAN) {
+      if (wardIds?.length) throw new BadRequestException('Only physicians and nurses are assigned to wards');
       return [];
     }
     const ids = [...new Set(wardIds ?? [])];
+    if (role === Role.PHYSICIAN && !ids.length) {
+      throw new BadRequestException('Physicians must be assigned at least one ward / specialty');
+    }
     if (!ids.length) return ids;
     const found = await this.prisma.ward.count({ where: { id: { in: ids } } });
     if (found !== ids.length) throw new BadRequestException('One or more wards do not exist');
@@ -82,7 +86,10 @@ export class UsersService {
           role: dto.role,
           passwordHash,
           mustResetPassword: true,
-          wards: wardIds.length
+          wards: dto.role === Role.NURSE && wardIds.length
+            ? { create: wardIds.map((wardId) => ({ wardId })) }
+            : undefined,
+          physicianWards: dto.role === Role.PHYSICIAN && wardIds.length
             ? { create: wardIds.map((wardId) => ({ wardId })) }
             : undefined,
         },
@@ -117,19 +124,32 @@ export class UsersService {
 
     const { wardIds: requestedWardIds, ...fields } = dto;
     const role = dto.role ?? existing.role;
-    // Replace the ward set when it is sent, and drop it when a nurse becomes another role.
+    // Replace ward assignments when sent, and clear both relation types on role changes.
     const wardIds =
       requestedWardIds !== undefined || role !== existing.role
         ? await this.wardIdsFor(role, requestedWardIds)
-        : null;
+        : undefined;
 
     const statusChanged = dto.isActive !== undefined && dto.isActive !== existing.isActive;
     const user = await this.prisma.user.update({
       where: { id },
       data: {
         ...fields,
-        ...(wardIds
-          ? { wards: { deleteMany: {}, create: wardIds.map((wardId) => ({ wardId })) } }
+        ...(wardIds !== undefined
+          ? {
+              wards: {
+                deleteMany: {},
+                ...(role === Role.NURSE && wardIds.length
+                  ? { create: wardIds.map((wardId) => ({ wardId })) }
+                  : {}),
+              },
+              physicianWards: {
+                deleteMany: {},
+                ...(role === Role.PHYSICIAN && wardIds.length
+                  ? { create: wardIds.map((wardId) => ({ wardId })) }
+                  : {}),
+              },
+            }
           : {}),
         ...(statusChanged ? { sessionVersion: { increment: 1 } } : {}),
       },

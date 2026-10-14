@@ -22,7 +22,7 @@ export class CreateUserDto {
 
   @ApiPropertyOptional({
     type: [String],
-    description: 'Nurses only: the wards they work in (replaces the current set on update)',
+    description: 'Physicians and nurses: assigned wards (replaces the current set on update)',
   })
   @IsOptional()
   @IsArray()

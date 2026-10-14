@@ -44,8 +44,11 @@ export function AccountsPanel() {
   } | null>(null);
 
   const createUser = useMutation({
-    // Only nurses have wards; the server refuses them for any other role.
-    mutationFn: () => adminApi.createUser({ ...form, wardIds: form.role === 'NURSE' ? form.wardIds : undefined }),
+    mutationFn: () =>
+      adminApi.createUser({
+        ...form,
+        wardIds: ['NURSE', 'PHYSICIAN'].includes(form.role) ? form.wardIds : undefined,
+      }),
     onSuccess: () => {
       setForm({ firstName: '', lastName: '', role: '', temporaryPassword: '', wardIds: [] });
       setAddOpen(false);
@@ -57,7 +60,7 @@ export function AccountsPanel() {
     mutationFn: () =>
       adminApi.updateUser(editingId as string, {
         ...editForm,
-        wardIds: editForm.role === 'NURSE' ? editForm.wardIds : undefined,
+        wardIds: ['NURSE', 'PHYSICIAN'].includes(editForm.role) ? editForm.wardIds : undefined,
       }),
     onSuccess: () => {
       setEditingId(null);
@@ -72,7 +75,9 @@ export function AccountsPanel() {
       lastName: user.lastName,
       role: user.role,
       isActive: user.isActive,
-      wardIds: (user.wards ?? []).map(({ ward }) => ward.id),
+      wardIds: (user.role === 'PHYSICIAN' ? user.physicianWards ?? [] : user.wards ?? []).map(
+        ({ ward }) => ward.id,
+      ),
     });
   };
 
@@ -90,7 +95,7 @@ export function AccountsPanel() {
             <th style={styles.th}>User ID</th>
             <th style={styles.th}>Name</th>
             <th style={styles.th}>Role</th>
-            <th style={styles.th}>Wards</th>
+            <th style={styles.th}>Wards / Specialties</th>
             <th style={styles.th}>Status</th>
             <th style={styles.th}></th>
           </tr>
@@ -104,8 +109,10 @@ export function AccountsPanel() {
               </td>
               <td style={styles.td}>{u.role}</td>
               <td style={styles.td}>
-                {u.role === 'NURSE'
-                  ? u.wards?.map(({ ward }) => ward.name).join(', ') || 'No ward assigned'
+                {u.role === 'NURSE' || u.role === 'PHYSICIAN'
+                  ? (u.role === 'PHYSICIAN' ? u.physicianWards : u.wards)
+                      ?.map(({ ward }) => ward.name)
+                      .join(', ') || 'No ward assigned'
                   : '—'}
               </td>
               <td style={styles.td}>{u.isActive ? 'Active' : 'Deactivated'}</td>
@@ -150,8 +157,18 @@ export function AccountsPanel() {
             <option value="CLAIMS_PROCESSOR">Claims Processor</option>
             <option value="ADMIN">Admin</option>
           </select>
-          {form.role === 'NURSE' && (
-            <WardChecklist wards={wards} value={form.wardIds} onChange={(wardIds) => setForm({ ...form, wardIds })} />
+          {(form.role === 'NURSE' || form.role === 'PHYSICIAN') && (
+            <WardChecklist
+              wards={wards}
+              value={form.wardIds}
+              onChange={(wardIds) => setForm({ ...form, wardIds })}
+              legend={form.role === 'PHYSICIAN' ? 'Assigned wards / specialties' : 'Assigned wards'}
+            />
+          )}
+          {form.role === 'PHYSICIAN' && form.wardIds.length === 0 && (
+            <span role="status" style={{ fontSize: 13, color: '#b91c1c' }}>
+              Assign at least one ward / specialty to this physician.
+            </span>
           )}
           <input
             style={styles.formInput}
@@ -162,6 +179,7 @@ export function AccountsPanel() {
           />
           <button
             style={styles.primaryButton}
+            disabled={createUser.isPending || (form.role === 'PHYSICIAN' && !form.wardIds.length)}
             onClick={() => {
               const fullName = `${form.firstName || 'New'} ${form.lastName || 'User'}`.trim();
               setConfirmation({
@@ -207,12 +225,18 @@ export function AccountsPanel() {
             <option value="CLAIMS_PROCESSOR">Claims Processor</option>
             <option value="ADMIN">Admin</option>
           </select>
-          {editForm.role === 'NURSE' && (
+          {(editForm.role === 'NURSE' || editForm.role === 'PHYSICIAN') && (
             <WardChecklist
               wards={wards}
               value={editForm.wardIds}
               onChange={(wardIds) => setEditForm({ ...editForm, wardIds })}
+              legend={editForm.role === 'PHYSICIAN' ? 'Assigned wards / specialties' : 'Assigned wards'}
             />
+          )}
+          {editForm.role === 'PHYSICIAN' && editForm.wardIds.length === 0 && (
+            <span role="status" style={{ fontSize: 13, color: '#b91c1c' }}>
+              Assign at least one ward / specialty to this physician.
+            </span>
           )}
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
             <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} /> Active
@@ -221,6 +245,7 @@ export function AccountsPanel() {
             <button style={styles.secondaryButton} onClick={() => setEditingId(null)}>Cancel</button>
             <button
               style={styles.primaryButton}
+              disabled={updateUser.isPending || (editForm.role === 'PHYSICIAN' && !editForm.wardIds.length)}
               onClick={() => {
                 const fullName = `${editForm.firstName || 'User'} ${editForm.lastName || ''}`.trim();
                 setConfirmation({
@@ -253,19 +278,21 @@ export function AccountsPanel() {
   );
 }
 
-/** The wards a nurse works in; they see full patient details only there. */
+/** Selects one or more wards for a physician specialty or nurse assignment. */
 function WardChecklist({
   wards,
   value,
   onChange,
+  legend,
 }: {
   wards: Ward[];
   value: string[];
   onChange: (wardIds: string[]) => void;
+  legend: string;
 }) {
   return (
     <fieldset style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: '8px 12px', margin: 0 }}>
-      <legend style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', padding: '0 4px' }}>Assigned wards</legend>
+      <legend style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', padding: '0 4px' }}>{legend}</legend>
       {wards.map((ward) => (
         <label key={ward.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '2px 0' }}>
           <input

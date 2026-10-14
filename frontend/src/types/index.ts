@@ -393,7 +393,7 @@ export interface AdminUserInput {
   role?: string;
   temporaryPassword?: string;
   isActive?: boolean;
-  /** Nurses only: the wards they work in (replaces the current set). */
+  /** Physician / nurse ward assignments (replaces the current set). */
   wardIds?: string[];
 }
 
@@ -419,6 +419,17 @@ export interface StaffAccount {
   createdAt: string;
   /** Nurses: the wards they work in. */
   wards?: { ward: { id: string; name: string } }[];
+  /** Physicians: assigned wards, which are used as their specialties. */
+  physicianWards?: { ward: { id: string; name: string } }[];
+}
+
+/** Active physician option and its assigned ward specialties. */
+export interface PhysicianOption {
+  id: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  wards: { ward: { id: string; name: string } }[];
 }
 
 /** Row returned by `GET /admin/password-reset-requests`, with its requester. */

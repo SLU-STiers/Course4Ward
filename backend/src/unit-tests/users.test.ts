@@ -105,9 +105,43 @@ describe('UsersService', () => {
       wardIds,
     });
 
-    it('refuses wards for anyone but a nurse', async () => {
-      await expect(service.create(input(Role.PHYSICIAN, ['ward-surgery']), 'admin-1')).rejects.toThrow(
-        'Only nurses are assigned to wards',
+    it('refuses wards for roles other than physicians and nurses', async () => {
+      await expect(service.create(input(Role.ADMIN, ['ward-surgery']), 'admin-1')).rejects.toThrow(
+        'Only physicians and nurses are assigned to wards',
+      );
+    });
+
+    it('requires at least one ward specialty for a physician', async () => {
+      await expect(service.create(input(Role.PHYSICIAN, []), 'admin-1')).rejects.toThrow(
+        'Physicians must be assigned at least one ward / specialty',
+      );
+    });
+
+    it('creates a physician with multiple ward specialties', async () => {
+      const tx = {
+        userIdCounter: {
+          findUnique: jest.fn().mockResolvedValue(null),
+          create: jest.fn().mockResolvedValue({ role: Role.PHYSICIAN, nextNumber: 1 }),
+          update: jest.fn(),
+        },
+        user: { create: jest.fn().mockResolvedValue({}) },
+      };
+      mockPrismaService.$transaction.mockImplementation(async (callback) => callback(tx));
+      mockPrismaService.ward.count.mockResolvedValue(2);
+
+      await service.create(
+        input(Role.PHYSICIAN, ['ward-obdr', 'ward-picu']),
+        'admin-1',
+      );
+
+      expect(tx.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            physicianWards: {
+              create: [{ wardId: 'ward-obdr' }, { wardId: 'ward-picu' }],
+            },
+          }),
+        }),
       );
     });
 
@@ -132,6 +166,26 @@ describe('UsersService', () => {
               deleteMany: {},
               create: [{ wardId: 'ward-micu' }, { wardId: 'ward-surgery' }],
             },
+          }),
+        }),
+      );
+    });
+
+    it('replaces a physician specialty set on update', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({ isActive: true, role: Role.PHYSICIAN });
+      mockPrismaService.ward.count.mockResolvedValue(2);
+      mockPrismaService.user.update.mockResolvedValue({});
+
+      await service.update('user-1', { wardIds: ['ward-obdr', 'ward-picu'] }, 'admin-1');
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            physicianWards: {
+              deleteMany: {},
+              create: [{ wardId: 'ward-obdr' }, { wardId: 'ward-picu' }],
+            },
+            wards: { deleteMany: {} },
           }),
         }),
       );
