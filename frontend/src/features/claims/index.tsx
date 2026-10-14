@@ -447,11 +447,11 @@ export function ClaimsProcessorDashboard() {
             <ReviewRequestModal
               request={selectedRequest}
               onClose={() => setSelectedRequest(null)}
-              onRequestRevisions={(message) => {
+              onRequestRevisions={(message) =>
                 claimsApi.notifyPhysician(selectedRequest.id, message).then(() => {
                   setSelectedRequest(null);
-                });
-              }}
+                })
+              }
             />
           )}
 
