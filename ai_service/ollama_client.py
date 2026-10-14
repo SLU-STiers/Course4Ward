@@ -10,7 +10,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 # ------------------ Configuration (can be set via .env) ------------------
 OLLAMA_CHAT_URL = os.getenv("OLLAMA_CHAT_URL", "http://localhost:11434/api/chat")
-MODEL = os.getenv("MODEL", "qwen3.5:latest")       # change as needed
+MODEL = os.getenv("MODEL", "qwen3.5:4b")       # change as needed
 
 # ------------------ FastAPI App ------------------------------------------
 app = FastAPI(title="Doctor's Orders Summarizer – Batch")

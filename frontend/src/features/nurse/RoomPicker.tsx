@@ -93,6 +93,10 @@ export function RoomPicker({
   };
 
   const floorLabel = (value: string) => (value ? `Floor ${value}` : 'Other');
+  const roomLabel = (number: string) => {
+    const ward = rooms?.find((room) => room.number === number)?.ward;
+    return ward ? `Room ${number} · ${ward.name}` : `Room ${number}`;
+  };
 
   return (
     <div>
@@ -135,7 +139,7 @@ export function RoomPicker({
                 aria-invalid={problem ? true : undefined}
               >
                 <span style={{ color: chosen ? '#0f172a' : '#94a3b8' }}>
-                  {chosen ? `Room ${chosen}` : 'Select a room'}
+                  {chosen ? roomLabel(chosen) : 'Select a room'}
                 </span>
                 <ChevronDown size={16} color="#64748b" aria-hidden="true" />
               </button>
@@ -200,7 +204,10 @@ export function RoomPicker({
                         onClick={() => !taken && pick(room.number)}
                         title={taken ? `Room ${room.number} is occupied` : undefined}
                       >
-                        <span style={{ fontWeight: 700 }}>Room {room.number}</span>
+                        <span>
+                          <span style={{ fontWeight: 700 }}>Room {room.number}</span>
+                          {room.ward && <span style={styles.ward}> · {room.ward.name}</span>}
+                        </span>
                         <span style={{ ...styles.tag, ...(taken ? styles.tagTaken : styles.tagFree) }}>
                           {taken ? 'Occupied' : room.number === chosen ? 'Selected' : 'Available'}
                         </span>
@@ -222,7 +229,7 @@ export function RoomPicker({
         chosen &&
         rooms && (
           <span style={styles.ok} role="status">
-            ✓ Room {chosen} is available
+            ✓ {roomLabel(chosen)} is available
           </span>
         )
       )}
@@ -268,6 +275,7 @@ const styles: Record<string, CSSProperties> = {
   },
   optionSelected: { backgroundColor: '#f0fdfa', boxShadow: `inset 0 0 0 1px ${TEAL}` },
   optionTaken: { color: '#94a3b8', cursor: 'not-allowed' },
+  ward: { fontWeight: 500, color: '#64748b' },
   tag: { fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999 },
   tagFree: { color: '#15803d', backgroundColor: '#dcfce7' },
   tagTaken: { color: '#b91c1c', backgroundColor: '#fee2e2' },
