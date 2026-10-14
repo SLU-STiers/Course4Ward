@@ -983,3 +983,26 @@ export const passwordResets: SeedPasswordReset[] = [
   { id: uid(813), userLoginId: 'CLM003', token: 'reset-token-0013', requestedAt: daysAgo(2, 11), expiresAt: daysAgo(1, 11), resolvedAt: daysAgo(1, 12), status: ResetStatus.APPROVED, ipAddress: '10.0.0.7' },
   { id: uid(814), userLoginId: 'DOC005', token: 'reset-token-0014', requestedAt: daysAgo(1, 10), expiresAt: daysFromNow(1, 10), status: ResetStatus.PENDING, ipAddress: '192.168.1.14' },
 ];
+// ---------- Wards ----------
+// Ward ids come from migration 20261014022553_add_wards: ER / OPD holds every
+// patient without a room; Medical = rooms 1xx, Surgical = rooms 2xx.
+export const nurseWards: { userId: string; wardIds: string[] }[] = [
+  { userId: 'NRS001', wardIds: ['ward-er-opd', 'ward-medical'] },
+  { userId: 'NRS002', wardIds: ['ward-surgical'] },
+  { userId: 'NRS003', wardIds: ['ward-medical'] },
+  { userId: 'NRS004', wardIds: ['ward-er-opd'] },
+  { userId: 'NRS005', wardIds: ['ward-medical', 'ward-surgical'] },
+];
+
+/** Rooms for some current inpatients, so the ward split shows; the rest stay in ER / OPD. */
+export const admissionRooms: Record<string, string> = {
+  adm1: '101',
+  adm2: '102',
+  adm8: '103',
+  adm10: '104',
+  adm11: '105',
+  adm4: '201',
+  adm14: '202',
+  adm20: '203',
+  adm26: '204',
+};
