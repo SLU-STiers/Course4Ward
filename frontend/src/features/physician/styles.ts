@@ -591,31 +591,8 @@ export const manage: Record<string, CSSProperties> = {
   aiActionRow: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, width: "100%" },
   /** Pushes the primary action (Approve / Save) to the right edge. */
   aiActionSpacer: { flex: "1 1 auto" },
-  /** Right-hand "Compare versions" panel (SummaryHistory). */
-  historyCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
-    padding: 16,
-    border: "1px solid #e2e8f0",
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    minHeight: 0,
-    boxSizing: "border-box",
-  },
-  historyHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  historyTitle: { margin: 0, fontSize: 15, fontWeight: 800, color: "#7c00b8" },
-  historyHint: { margin: "4px 0 12px", fontSize: 12, color: "#64748b" },
-  /** Versions sit side by side while the panel is wide enough, then wrap. */
+  /** "Compare versions" popup (SummaryHistory): versions side by side, wrapping when narrow. */
   historyGrid: {
-    flex: "1 1 auto",
-    minHeight: 0,
-    overflowY: "auto",
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
     alignContent: "start",

@@ -1,12 +1,12 @@
 /**
- * Part of the physician dashboard — the right-hand "Compare versions" panel:
+ * Part of the physician dashboard — the "Compare versions" popup:
  * the current Course in the Ward beside its earlier texts, with the words each
  * one changes highlighted, so the physician can pick the one to keep.
  */
 
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
 import { courseInWardApi } from '../../services/domainApi';
+import { Modal } from '../../components/ui';
 import type { CourseInWard, SummaryStatus, SummaryVersion } from '../../types';
 import { AiActionButton } from '../../components/ai/AiSummaryCard';
 import { manage } from './styles';
@@ -84,23 +84,13 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
   };
 
   return (
-    <section style={manage.historyCard} aria-label="Compare summary versions">
-      <div style={manage.historyHeader}>
-        <h3 style={manage.historyTitle}>Compare versions</h3>
-        <button
-          type="button"
-          className="ui-icon-btn"
-          title="Close"
-          aria-label="Close version comparison"
-          onClick={onClose}
-        >
-          <X size={16} />
-        </button>
-      </div>
-      <p style={manage.historyHint}>
-        Highlighted words differ from the current text. The last 3 earlier versions are kept.
-      </p>
-
+    <Modal
+      open
+      onClose={onClose}
+      size="xl"
+      title="Compare versions"
+      description="Highlighted words differ from the current text. The last 3 earlier versions are kept."
+    >
       <div style={manage.historyGrid}>
         <article style={{ ...manage.historyItem, ...manage.historyItemCurrent }}>
           <div style={manage.historyMeta}>Current · {SOURCE_LABEL[summary.status]}</div>
@@ -147,6 +137,6 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
           ))
         )}
       </div>
-    </section>
+    </Modal>
   );
 }
