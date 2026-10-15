@@ -17,6 +17,7 @@ import {
   formatDateLongFromKey,
   toDateKey,
 } from '../../lib/format';
+import { apiErrorMessage } from '../../lib/apiError';
 import { manage } from './styles';
 
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
@@ -347,8 +348,10 @@ export function ManageView() {
         setSummaryDraft(null);
         onDone?.();
       })
-      .catch(() =>
-        setOrderError("The AI summary could not be generated. Try Generate again or write it manually."),
+      .catch((err) =>
+        setOrderError(
+          apiErrorMessage(err, "The AI summary could not be generated. Try Generate again or write it manually."),
+        ),
       )
       .finally(() => setGeneratingSummary(false));
   };
@@ -427,7 +430,9 @@ export function ManageView() {
         // Open the comparison so the new text sits beside the old ones.
         setShowingHistory(true);
       })
-      .catch(() => setOrderError("The summary could not be regenerated. Please try again."))
+      .catch((err) =>
+        setOrderError(apiErrorMessage(err, "The summary could not be regenerated. Please try again.")),
+      )
       .finally(() => setRegeneratingSummary(false));
   };
 

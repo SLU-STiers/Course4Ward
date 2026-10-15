@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CourseInWard, PhysicianOrder, PhysicianRequest } from '../../types';
 import { courseInWardApi, ordersApi } from '../../services/domainApi';
 import { formatDateLongFromKey, toDateKey } from '../../lib/format';
+import { apiErrorMessage } from '../../lib/apiError';
 import llamaIcon from '../../Img/llama.png';
 import { review } from './styles';
 import { mergeSummaries, summariesPerDay, summaryDayKey } from './summaries';
@@ -143,8 +144,10 @@ export function ReviewSummaryModal({
         setDraft(null);
         setRegenInstructions('');
       })
-      .catch(() =>
-        setError('The AI summary could not be generated for this day. Try again or edit it manually.'),
+      .catch((err) =>
+        setError(
+          apiErrorMessage(err, 'The AI summary could not be generated for this day. Try again or edit it manually.'),
+        ),
       )
       .finally(() => setBusy(null));
   };
