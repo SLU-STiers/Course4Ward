@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -64,10 +71,11 @@ function toIso(value: Date | string | null | undefined): string | null {
 }
 
 @Injectable()
-export class CourseInWardService {
+export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   private readonly aiServiceUrl: string;
   private readonly ollamaClient: OllamaClient;
   private readonly logger = new Logger(CourseInWardService.name);
+  private batchTimer?: NodeJS.Timeout;
 
   constructor(
     private prisma: PrismaService,
@@ -247,7 +255,7 @@ export class CourseInWardService {
   // order day (today by default). The AI groups its output per admission-day,
   // so a day spent under two admissions still files as one summary per
   // admission, each stored against the day it summarizes.
-  async generateSummary(patientId: string, requestedById: string, day?: string | null) {
+  async generateSummary(patientId: string, requestedById: string | null, day?: string | null) {
     const targetDay = day ?? dayKeyOf(new Date())!;
     const [patient, targetOrders] = await Promise.all([
       this.prisma.patient.findUnique({ where: { id: patientId } }),
@@ -279,12 +287,84 @@ export class CourseInWardService {
       summaries.push(summary);
     }
 
-    await this.auditLog.record({
-      userId: requestedById,
-      action: 'SUMMARY_GENERATED_AI',
-    });
+    // The nightly batch has no requester when the admission has no attending physician.
+    if (requestedById) {
+      await this.auditLog.record({
+        userId: requestedById,
+        action: 'SUMMARY_GENERATED_AI',
+      });
+    }
 
     return summaries;
+  }
+
+  onModuleInit() {
+    this.scheduleNightlyBatch();
+  }
+
+  onModuleDestroy() {
+    clearTimeout(this.batchTimer);
+  }
+
+  /**
+   * Arms a timer for the next `SUMMARY_BATCH_TIME` (server-local `HH:mm`,
+   * default `23:59`; `off` disables it). Re-arms itself after every run.
+   */
+  private scheduleNightlyBatch() {
+    const raw = (this.config.get<string>('SUMMARY_BATCH_TIME') ?? '23:59').trim();
+    if (raw.toLowerCase() === 'off') {
+      this.logger.log('[batch] nightly summarization disabled (SUMMARY_BATCH_TIME=off)');
+      return;
+    }
+    let match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(raw);
+    if (!match) {
+      this.logger.warn(`[batch] invalid SUMMARY_BATCH_TIME "${raw}", using 23:59`);
+      match = /^(\d+):(\d+)$/.exec('23:59')!;
+    }
+
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(Number(match[1]), Number(match[2]), 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+
+    this.logger.log(`[batch] next nightly summarization at ${next.toString()}`);
+    this.batchTimer = setTimeout(() => {
+      this.runBatchSummaries()
+        .catch((err) => this.logger.error(`[batch] run failed: ${(err as Error).message}`))
+        .finally(() => this.scheduleNightlyBatch());
+    }, next.getTime() - now.getTime());
+  }
+
+  /**
+   * Generates the AI draft of `day` (today by default) for every patient who
+   * still has orders that day not linked to a summary. Patients are processed
+   * one at a time so the local LLM is never flooded; one failure doesn't stop
+   * the rest. Audit entries are attributed to the attending physician.
+   */
+  async runBatchSummaries(day: string = dayKeyOf(new Date())!) {
+    const start = dayStart(day);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    const admissions = await this.prisma.patientAdmission.findMany({
+      where: {
+        orders: { some: { dateCreated: { gte: start, lt: end }, summarizationId: null } },
+      },
+      select: { patientId: true, physicianId: true },
+    });
+    const patients = new Map(admissions.map((a) => [a.patientId, a.physicianId]));
+
+    let done = 0;
+    for (const [patientId, physicianId] of patients) {
+      try {
+        await this.generateSummary(patientId, physicianId, day);
+        done++;
+      } catch (err) {
+        this.logger.warn(`[batch] patient ${patientId}: ${(err as Error).message}`);
+      }
+    }
+    this.logger.log(`[batch] ${day}: summarized ${done}/${patients.size} patient(s)`);
+    return { day, patients: patients.size, summarized: done };
   }
 
   /**
