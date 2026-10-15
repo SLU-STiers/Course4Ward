@@ -212,7 +212,8 @@ def generate_summary(
     orders belong to (e.g. "Day 1 of Admission #..."). `references`, when
     provided, adds retrieved RAG examples (prior APPROVED summaries of similar
     orders) used only as style guidance. The output paragraph format is unchanged.
-    Returns (summary_text, elapsed_seconds) or (None, elapsed) on error.
+    Returns (summary_text, elapsed_seconds, None), or (None, elapsed, reason)
+    on error, where `reason` says what went wrong in plain words.
     """
     user_content = build_prompt(doctor_orders, group_label, references, instructions)
     payload = {
@@ -226,20 +227,33 @@ def generate_summary(
     start_time = time.time()
     try:
         response = requests.post(OLLAMA_CHAT_URL, json=payload, timeout=120)
-    except requests.exceptions.RequestException as e:
-        elapsed = time.time() - start_time
+    except requests.exceptions.ConnectionError as e:
         print(f"Request error: {e}")
-        return None, elapsed
+        return None, time.time() - start_time, (
+            f"Cannot reach Ollama at {OLLAMA_CHAT_URL}. Make sure Ollama is running."
+        )
+    except requests.exceptions.Timeout:
+        return None, time.time() - start_time, "Ollama did not respond within 120 seconds."
+    except requests.exceptions.RequestException as e:
+        print(f"Request error: {e}")
+        return None, time.time() - start_time, f"Request to Ollama failed: {e}"
 
     elapsed = time.time() - start_time
 
     if response.status_code != 200:
         print(f"Ollama error (status {response.status_code}): {response.text}")
-        return None, elapsed
+        try:
+            detail = response.json().get("error") or response.text
+        except ValueError:
+            detail = response.text
+        # e.g. 404 "model 'qwen3.5:4b' not found" when the model isn't pulled.
+        return None, elapsed, f"Ollama returned HTTP {response.status_code}: {detail.strip()}"
 
     data = response.json()
     summary = data.get("message", {}).get("content", "").strip()
-    return summary, elapsed
+    if not summary:
+        return None, elapsed, f"Model '{MODEL}' returned an empty summary."
+    return summary, elapsed, None
 
 # ------------------ Grouping Helpers --------------------------------------
 def _parse_iso_date(value: Optional[str]):
@@ -381,14 +395,13 @@ async def generate_summary_batch(req: BatchSummaryRequest):
             else:
                 label = _day_label(admission.admissionId, order_date, admission_date)
 
-            summary, elapsed = generate_summary(
+            summary, elapsed, error = generate_summary(
                 group_text,
                 req.temperature,
                 group_label=label,
                 references=[r.model_dump(exclude_none=True) for r in req.references],
                 instructions=req.instructions,
             )
-            error = None if summary else "Failed to generate summary (check Ollama logs)"
 
             results.append(GroupResult(
                 group_id=_build_group_id(admission.admissionId, day_number),
