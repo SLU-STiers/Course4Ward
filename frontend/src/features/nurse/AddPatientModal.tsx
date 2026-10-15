@@ -44,6 +44,23 @@ const ORDER_CHANNELS: [OrderChannel, string][] = [
   ['OTHER', 'Other'],
 ];
 
+/** Religions common in the Philippines; anything else goes under "Others". */
+const RELIGIONS = [
+  'Roman Catholic',
+  'Islam',
+  'Iglesia ni Cristo',
+  'Born Again Christian',
+  'Protestant',
+  'Aglipayan (Philippine Independent Church)',
+  'Seventh-day Adventist',
+  "Jehovah's Witness",
+  'Latter-day Saints (Mormon)',
+  'Buddhism',
+  'None',
+];
+/** Religion dropdown value that reveals the "please specify" input. */
+const RELIGION_OTHER = 'OTHER';
+
 /** General complaints offered in the Chief Complaint dropdowns. */
 const CHIEF_COMPLAINTS = [
   'Abdominal pain (tummy ache)',
@@ -95,7 +112,10 @@ export type AddPatientFormResult = {
   insurance: InsuranceType | '';
   /** Required when insurance is OTHER. */
   insuranceOther: string;
+  /** One of `RELIGIONS`, `RELIGION_OTHER`, or '' when not picked yet. */
   religion: string;
+  /** Required when religion is `RELIGION_OTHER`. */
+  religionOther: string;
   contactPersonName: string;
   contactPersonNumber: string;
   contactPersonAddress: string;
@@ -127,6 +147,7 @@ const emptyForm = (): AddPatientFormResult => ({
   insurance: '',
   insuranceOther: '',
   religion: '',
+  religionOther: '',
   contactPersonName: '',
   contactPersonNumber: '',
   contactPersonAddress: '',
@@ -145,7 +166,6 @@ const emptyForm = (): AddPatientFormResult => ({
 /** Text fields that must hold more than whitespace (the inputs' `required` lets "  " through). */
 const REQUIRED_TEXT: [keyof AddPatientFormResult, string][] = [
   ['contactNumber', 'personal number'],
-  ['religion', 'religion'],
   ['address', 'address'],
   ['contactPersonName', 'contact person'],
   ['contactPersonNumber', 'contact person’s number'],
@@ -190,6 +210,7 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       age: String(draft.form?.age ?? ''),
       gender: toSex(draft.form?.gender),
       insurance: toInsurance(draft.form?.insurance),
+      ...toReligion(draft.form?.religion, draft.form?.religionOther),
       triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
       chiefComplaints: Array.from({ length: COMPLAINT_SLOTS }, (_, i) => {
         const value = draft.form?.chiefComplaints?.[i];
@@ -233,6 +254,14 @@ const toSex = (value: unknown): Sex | '' => {
   const upper = typeof value === 'string' ? value.toUpperCase() : value;
   return isSex(upper) ? upper : '';
 };
+
+/** Fits a draft's religion to the dropdown; free text from older drafts moves under "Others". */
+function toReligion(value: unknown, other: unknown): Pick<AddPatientFormResult, 'religion' | 'religionOther'> {
+  const religion = typeof value === 'string' ? value.trim() : '';
+  const religionOther = typeof other === 'string' ? other : '';
+  if (religion === RELIGION_OTHER || RELIGIONS.includes(religion)) return { religion, religionOther };
+  return religion ? { religion: RELIGION_OTHER, religionOther: religion } : { religion: '', religionOther };
+}
 
 const toInsurance = (value: unknown): InsuranceType | '' =>
   typeof value === 'string' && value in INSURANCE_LABEL ? (value as InsuranceType) : '';
@@ -352,6 +381,15 @@ export function AddPatientModal({
       setError(`Please enter the ${missing[1]}.`);
       return;
     }
+    if (!form.religion) {
+      setError('Please select the patient’s religion.');
+      return;
+    }
+    const religion = form.religion === RELIGION_OTHER ? form.religionOther.trim() : form.religion;
+    if (!religion) {
+      setError('Please specify the patient’s religion.');
+      return;
+    }
     const insuranceOther = form.insuranceOther.trim();
     if (form.insurance === 'OTHER' && !insuranceOther) {
       setError('Please specify the patient’s insurance.');
@@ -396,7 +434,7 @@ export function AddPatientModal({
         address: form.address.trim() || undefined,
         insurance: form.insurance || undefined,
         insuranceOther: form.insurance === 'OTHER' ? insuranceOther : undefined,
-        religion: form.religion.trim() || undefined,
+        religion,
         contactPersonName: form.contactPersonName.trim() || undefined,
         contactPersonNumber: form.contactPersonNumber.trim() || undefined,
         contactPersonAddress: form.contactPersonAddress.trim() || undefined,
@@ -569,14 +607,31 @@ export function AddPatientModal({
                 )}
               </Field>
               <Field label="Religion" required>
-                <input
+                <select
                   style={s.input}
                   value={form.religion}
                   onChange={(e) => setField('religion', e.target.value)}
-                  placeholder="e.g. Roman Catholic"
-                  maxLength={100}
                   required
-                />
+                >
+                  <option value="">Select religion</option>
+                  {RELIGIONS.map((religion) => (
+                    <option key={religion} value={religion}>
+                      {religion}
+                    </option>
+                  ))}
+                  <option value={RELIGION_OTHER}>Others (please specify)</option>
+                </select>
+                {form.religion === RELIGION_OTHER && (
+                  <input
+                    style={{ ...s.input, marginTop: 8 }}
+                    value={form.religionOther}
+                    onChange={(e) => setField('religionOther', e.target.value)}
+                    placeholder="Specify religion, e.g. Baptist"
+                    aria-label="Specify religion"
+                    maxLength={100}
+                    required
+                  />
+                )}
               </Field>
               <div style={{ gridColumn: '1 / -1' }}>
                 <Field label="Address" required>
