@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
 import { ConfigService } from '@nestjs/config';
-import { Sex, SummaryStatus } from '@prisma/client';
+import { OrderStatus, Sex, SummaryStatus } from '@prisma/client';
 
 // Mock the OllamaClient BEFORE importing the service. Every `new OllamaClient()`
 // returns this ONE object, so the instance the service builds in its
@@ -323,7 +323,7 @@ describe('CourseInWardService', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.generateSummary(mockPatientId, mockRequestedById, '2026-03-04')
-      ).rejects.toThrow('No orders recorded for this patient on 2026-03-04');
+      ).rejects.toThrow('No finished orders recorded for this patient on 2026-03-04');
       expect(mockOllamaClient.summarizeBatch).not.toHaveBeenCalled();
     });
 
@@ -652,7 +652,7 @@ describe('CourseInWardService', () => {
         '2026-03-04',
       );
       expect(mockPrismaService.physicianOrder.findMany).not.toHaveBeenCalledWith(
-        expect.objectContaining({ where: { summarizationId: mockSummaryId } }),
+        expect.objectContaining({ where: { summarizationId: mockSummaryId, status: OrderStatus.FINISHED } }),
       );
       expect(mockOllamaClient.summarizeBatch).toHaveBeenCalled();
       expect(mockPrismaService.courseInWard.update).toHaveBeenCalledWith({
@@ -700,7 +700,7 @@ describe('CourseInWardService', () => {
 
       // Assert
       expect(mockPrismaService.physicianOrder.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { summarizationId: mockSummaryId } }),
+        expect.objectContaining({ where: { summarizationId: mockSummaryId, status: OrderStatus.FINISHED } }),
       );
       expect(mockOllamaClient.summarizeBatch).toHaveBeenCalled();
     });

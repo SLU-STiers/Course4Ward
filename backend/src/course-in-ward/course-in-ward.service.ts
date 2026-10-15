@@ -7,7 +7,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, SummaryStatus } from '@prisma/client';
+import { OrderStatus, Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
@@ -264,7 +264,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     if (!patient) throw new NotFoundException('Patient not found');
     if (targetOrders.length === 0) {
       throw new BadRequestException(
-        `No orders recorded for this patient on ${targetDay}`,
+        `No finished orders recorded for this patient on ${targetDay}`,
       );
     }
 
@@ -337,7 +337,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Generates the AI draft of `day` (today by default) for every patient who
-   * still has orders that day not linked to a summary. Patients are processed
+   * still has FINISHED orders that day not linked to a summary. Patients are processed
    * one at a time so the local LLM is never flooded; one failure doesn't stop
    * the rest. Audit entries are attributed to the attending physician.
    */
@@ -348,7 +348,13 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
     const admissions = await this.prisma.patientAdmission.findMany({
       where: {
-        orders: { some: { dateCreated: { gte: start, lt: end }, summarizationId: null } },
+        orders: {
+          some: {
+            dateCreated: { gte: start, lt: end },
+            status: OrderStatus.FINISHED,
+            summarizationId: null,
+          },
+        },
       },
       select: { patientId: true, physicianId: true },
     });
@@ -501,14 +507,14 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     }
 
     const linked = await this.prisma.physicianOrder.findMany({
-      where: { summarizationId: summary.id },
+      where: { summarizationId: summary.id, status: OrderStatus.FINISHED },
       orderBy: { dateCreated: 'asc' },
       include: { admission: { select: { id: true, admissionDate: true } } },
     });
     if (linked.length) return linked;
 
     return this.prisma.physicianOrder.findMany({
-      where: { admission: { patientId: summary.patientId } },
+      where: { admission: { patientId: summary.patientId }, status: OrderStatus.FINISHED },
       orderBy: { dateCreated: 'asc' },
       include: { admission: { select: { id: true, admissionDate: true } } },
     });
