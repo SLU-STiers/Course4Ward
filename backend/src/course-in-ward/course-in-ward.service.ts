@@ -7,6 +7,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import { OrderStatus, Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
@@ -70,6 +71,27 @@ function toIso(value: Date | string | null | undefined): string | null {
   );
 }
 
+/**
+ * Says why a call to the AI service failed: not running, timed out, or the
+ * service's own error (`detail`), so the physician sees the actual cause.
+ */
+function describeAiError(err: unknown, aiServiceUrl: string): string {
+  if (axios.isAxiosError(err)) {
+    if (err.response) {
+      const detail = (err.response.data as { detail?: unknown } | undefined)?.detail;
+      const text = typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : err.message;
+      return `The AI service returned an error (HTTP ${err.response.status}): ${text}`;
+    }
+    if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+      return 'The AI service took too long to respond. Try again, or summarize fewer days at once.';
+    }
+    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+      return `Cannot reach the AI service at ${aiServiceUrl}. Make sure it is running.`;
+    }
+  }
+  return `AI summarization failed: ${(err as Error)?.message ?? String(err)}`;
+}
+
 @Injectable()
 export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   private readonly aiServiceUrl: string;
@@ -102,80 +124,88 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('No orders found to summarize');
     }
 
+    // Group the incoming orders by admission so the AI service can label each
+    // admission-day group correctly.
+    interface AdmissionBucket {
+      admissionDate: Date | null;
+      orders: any[];
+    }
+    const byAdmission = new Map<string, AdmissionBucket>();
+    for (const order of orders) {
+      const key: string = order.admissionId ?? 'no-admission';
+      let bucket = byAdmission.get(key);
+      if (!bucket) {
+        bucket = {
+          admissionDate: order.admission?.admissionDate ?? null,
+          orders: [] as any[],
+        };
+        byAdmission.set(key, bucket);
+      }
+      bucket.orders.push(order);
+    }
+
+    const admissions = Array.from(byAdmission.entries()).map(([admissionId, bucket]) => ({
+      admissionId,
+      admissionDate: toIso(bucket.admissionDate),
+      orders: bucket.orders.map((order) => ({
+        id: String(order.id),
+        text: order.orderContent,
+        dateCreated: toIso(order.dateCreated),
+      })),
+    }));
+
+    // RAG: embed the combined orders and retrieve similar APPROVED summaries
+    // to use as style exemplars during generation.
+    const queryText = orders
+      .map((order) => order.orderContent)
+      .filter(Boolean)
+      .join('\n');
+    const references = queryText ? await this.retrieveReferences(queryText) : [];
+
+    this.logger.log(
+      `[ai] summarizing ${orders.length} order(s) across ${admissions.length} admission(s) with ${references.length} RAG reference(s)`,
+    );
+
+    let response;
     try {
-      // Group the incoming orders by admission so the AI service can label each
-      // admission-day group correctly.
-      interface AdmissionBucket {
-        admissionDate: Date | null;
-        orders: any[];
-      }
-      const byAdmission = new Map<string, AdmissionBucket>();
-      for (const order of orders) {
-        const key: string = order.admissionId ?? 'no-admission';
-        let bucket = byAdmission.get(key);
-        if (!bucket) {
-          bucket = {
-            admissionDate: order.admission?.admissionDate ?? null,
-            orders: [] as any[],
-          };
-          byAdmission.set(key, bucket);
-        }
-        bucket.orders.push(order);
-      }
-
-      const admissions = Array.from(byAdmission.entries()).map(([admissionId, bucket]) => ({
-        admissionId,
-        admissionDate: toIso(bucket.admissionDate),
-        orders: bucket.orders.map((order) => ({
-          id: String(order.id),
-          text: order.orderContent,
-          dateCreated: toIso(order.dateCreated),
-        })),
-      }));
-
-      // RAG: embed the combined orders and retrieve similar APPROVED summaries
-      // to use as style exemplars during generation.
-      const queryText = orders
-        .map((order) => order.orderContent)
-        .filter(Boolean)
-        .join('\n');
-      const references = queryText ? await this.retrieveReferences(queryText) : [];
-
-      this.logger.log(
-        `[ai] summarizing ${orders.length} order(s) across ${admissions.length} admission(s) with ${references.length} RAG reference(s)`,
-      );
-
-      const response = await this.ollamaClient.summarizeBatch(admissions, {
+      response = await this.ollamaClient.summarizeBatch(admissions, {
         temperature: 0.1,
         references,
         instructions,
       });
-
-      if (response.failed > 0 || response.results.some((result) => !result.success)) {
-        throw new Error('One or more order summaries failed');
-      }
-
-      return response.results
-        .filter((result) => Boolean(result.summary))
-        .map((result) => {
-          const memberOrders = result.orders ?? [];
-          // Every member order of a group shares the group's calendar day, so
-          // the earliest one names the day the summary belongs to.
-          const groupDays = memberOrders
-            .map((order) => dayKeyOf(order.dateCreated))
-            .filter((day): day is string => Boolean(day))
-            .sort();
-          return {
-            day: groupDays[0] ?? null,
-            summary: result.summary as string,
-            orderIds: memberOrders.map((order) => String(order.id)),
-          };
-        });
     } catch (err) {
+      this.logger.warn(`[ai] summarize request failed: ${(err as Error).message}`);
+      throw new BadRequestException(describeAiError(err, this.aiServiceUrl));
+    }
+
+    const failed = response.results.filter((result) => !result.success);
+    if (response.failed > 0 || failed.length > 0) {
+      const reasons = [
+        ...new Set(failed.map((result) => result.error?.replace(/\.+$/, '')).filter(Boolean)),
+      ];
       throw new BadRequestException(
-        'AI summarization service is unavailable. Try again or write the summary manually.',
+        `The AI could not summarize ${failed.length || response.failed} of ${response.total_groups} day(s): ` +
+          (reasons.join('; ') || 'no reason given by the AI service') +
+          '.',
       );
     }
+
+    return response.results
+      .filter((result) => Boolean(result.summary))
+      .map((result) => {
+        const memberOrders = result.orders ?? [];
+        // Every member order of a group shares the group's calendar day, so
+        // the earliest one names the day the summary belongs to.
+        const groupDays = memberOrders
+          .map((order) => dayKeyOf(order.dateCreated))
+          .filter((day): day is string => Boolean(day))
+          .sort();
+        return {
+          day: groupDays[0] ?? null,
+          summary: result.summary as string,
+          orderIds: memberOrders.map((order) => String(order.id)),
+        };
+      });
   }
 
 

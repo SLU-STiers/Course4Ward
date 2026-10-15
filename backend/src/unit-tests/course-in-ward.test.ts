@@ -7,6 +7,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
 import { ConfigService } from '@nestjs/config';
 import { OrderStatus, Sex, SummaryStatus } from '@prisma/client';
+import { AxiosError } from 'axios';
 
 // Mock the OllamaClient BEFORE importing the service. Every `new OllamaClient()`
 // returns this ONE object, so the instance the service builds in its
@@ -341,7 +342,7 @@ describe('CourseInWardService', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.generateSummary(mockPatientId, mockRequestedById)
-      ).rejects.toThrow('AI summarization service is unavailable');
+      ).rejects.toThrow('AI summarization failed: AI service unavailable');
       expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
     });
 
@@ -358,7 +359,7 @@ describe('CourseInWardService', () => {
             summary: null,
             success: false,
             processing_time_seconds: 1.0,
-            error: 'Failed to summarize',
+            error: "Ollama returned HTTP 404: model 'qwen3.5:4b' not found",
             orders: [],
           },
         ],
@@ -367,11 +368,25 @@ describe('CourseInWardService', () => {
       mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(failedAiResponse);
 
-      // Act & Assert
+      // Act & Assert: the AI service's own reason reaches the physician
       await expect(
         service.generateSummary(mockPatientId, mockRequestedById)
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        "The AI could not summarize 1 of 1 day(s): Ollama returned HTTP 404: model 'qwen3.5:4b' not found.",
+      );
       expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
+    });
+
+    it('should say the AI service is not running when the connection is refused', async () => {
+      mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockRejectedValue(
+        new AxiosError('connect ECONNREFUSED 127.0.0.1:8000', 'ECONNREFUSED'),
+      );
+
+      await expect(
+        service.generateSummary(mockPatientId, mockRequestedById)
+      ).rejects.toThrow(/Cannot reach the AI service at .*\. Make sure it is running\./);
     });
 
     it('should store one summary per day group when the AI reports several', async () => {
