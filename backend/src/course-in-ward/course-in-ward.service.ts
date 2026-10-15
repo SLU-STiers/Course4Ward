@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
 import { OllamaClient, OllamaReference } from './ollama-client';
 
@@ -282,6 +282,15 @@ export class CourseInWardService {
     await this.auditLog.record({
       userId: requestedById,
       action: 'SUMMARY_GENERATED_AI',
+      details: {
+        summary: `Generated the Course in the Ward summary for ${fullName(patient)} (${targetDay})`,
+        items: detailItems([
+          ['Patient', fullName(patient)],
+          ['Day', targetDay],
+          ['Orders summarized', targetOrders.length],
+          ['Summaries saved', summaries.length],
+        ]),
+      },
     });
 
     return summaries;
@@ -359,9 +368,18 @@ export class CourseInWardService {
       },
     });
 
+    const patientName = await this.auditLog.patientName({ patientId: existing.patientId });
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_EDITED_MANUAL',
+      details: {
+        summary: `Edited ${patientName}'s summary for ${dayLabel(existing.summaryDate)}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Summary day', dayLabel(existing.summaryDate)],
+        ]),
+        changes: [{ field: 'Summary text', from: existing.summaryContent, to: editedText }],
+      },
     });
 
     return updated;
@@ -398,9 +416,19 @@ export class CourseInWardService {
 
     await this.linkOrdersToSummary(updated.id, group.orderIds);
 
+    const patientName = await this.auditLog.patientName({ patientId: existing.patientId });
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_REGENERATED_AI',
+      details: {
+        summary: `Regenerated ${patientName}'s summary for ${dayLabel(updated.summaryDate)}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Summary day', dayLabel(updated.summaryDate)],
+          ['Extra instructions', instructions?.trim()],
+        ]),
+        changes: [{ field: 'Summary text', from: existing.summaryContent, to: group.summary }],
+      },
     });
 
     return updated;
@@ -457,9 +485,17 @@ export class CourseInWardService {
     // The approved text is final, so the drafts before it are no longer needed.
     await this.prisma.summaryVersion.deleteMany({ where: { summaryId: id } });
 
+    const patientName = await this.auditLog.patientName({ patientId: approved.patientId });
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_APPROVED',
+      details: {
+        summary: `Approved ${patientName}'s summary for ${dayLabel(approved.summaryDate)}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Summary day', dayLabel(approved.summaryDate)],
+        ]),
+      },
     });
 
     return approved;
@@ -500,9 +536,19 @@ export class CourseInWardService {
       },
     });
 
+    const patientName = await this.auditLog.patientName({ patientId: existing.patientId });
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_VERSION_RESTORED',
+      details: {
+        summary: `Restored an earlier version of ${patientName}'s summary for ${dayLabel(existing.summaryDate)}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Summary day', dayLabel(existing.summaryDate)],
+          ['Version saved on', dayLabel(version.createdAt)],
+        ]),
+        changes: [{ field: 'Summary text', from: existing.summaryContent, to: version.content }],
+      },
     });
 
     return updated;

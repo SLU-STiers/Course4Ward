@@ -974,6 +974,147 @@ td {
   border-bottom: 0;
 }
 
+/* Rows open the Activity details dialog (`ActivityLogDetails.tsx`). */
+.admin-log-table__row {
+  cursor: pointer;
+}
+
+.admin-log-table__row:focus-visible {
+  outline: 2px solid var(--c4w-color-primary, #2563eb);
+  outline-offset: -2px;
+}
+
+/* The recorded summary under the action badge, e.g. "Added Dr. Ana Reyes to
+   Juan Dela Cruz's care team". Clamped so long names never grow the row. */
+.admin-log-table__summary {
+  display: -webkit-box;
+  max-width: 320px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--c4w-color-text-muted, #64748b);
+}
+
+/* ---------- Activity details dialog ---------- */
+.admin-log-details {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.admin-log-details__headline {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.admin-log-details__summary {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--c4w-color-text-primary, #0f172a);
+}
+
+.admin-log-details__grid {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.admin-log-details__grid dt {
+  color: var(--c4w-color-text-muted, #64748b);
+  font-weight: 500;
+}
+
+.admin-log-details__grid dd {
+  margin: 0;
+  color: var(--c4w-color-text-primary, #0f172a);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-log-details__muted {
+  margin: 0;
+  font-size: 12px;
+  color: var(--c4w-color-text-muted, #64748b);
+}
+
+.admin-log-details__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.admin-log-details__heading {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c4w-color-text-muted, #64748b);
+}
+
+.admin-log-details__changes-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--c4w-color-border, #e2e8f0);
+  border-radius: var(--c4w-radius-control, 8px);
+}
+
+.admin-log-details__changes {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-log-details__changes th,
+.admin-log-details__changes td {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--c4w-color-divider, #f1f5f9);
+}
+
+.admin-log-details__changes thead th {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c4w-color-text-muted, #64748b);
+  background: var(--c4w-color-surface-muted, #f8fafc);
+}
+
+.admin-log-details__changes tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.admin-log-details__changes tbody th {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--c4w-color-text-primary, #0f172a);
+}
+
+/* Summary edits put whole paragraphs here; keep them readable but bounded. */
+.admin-log-details__before,
+.admin-log-details__after {
+  min-width: 140px;
+  max-width: 360px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-log-details__before {
+  color: var(--c4w-color-text-muted, #64748b);
+}
+
+.admin-log-details__after {
+  color: var(--c4w-color-text-primary, #0f172a);
+}
+
 /* ---------- Admin dashboard shell ----------
    The dashboard is a headline strip over two columns: the activity log (the
    work surface) and the reporting panel. Two columns are what keep the screen

@@ -32,6 +32,8 @@ const mockPrismaService = {
 
 const mockAuditLogService = {
   record: jest.fn(),
+  patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
+  userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
 } as unknown as jest.Mocked<AuditLogService>;
 
 const mockNotificationsService = {
@@ -144,10 +146,10 @@ describe("Claims Module", () => {
             status: "VALIDATED",
           },
         });
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "CLAIM_CREATED",
-        });
+        }));
         expect(result).toEqual(mockClaim);
       });
 
@@ -323,10 +325,10 @@ describe("Claims Module", () => {
           message: expect.stringContaining("Please re-check the dosage."),
           requestId: mockClaimId,
         });
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "CLAIM_PHYSICIAN_NOTIFIED",
-        });
+        }));
         expect(result).toEqual(updatedClaim);
       });
 
@@ -389,10 +391,10 @@ describe("Claims Module", () => {
           where: { id: mockClaimId },
           data: { status: "CF4_GENERATED" },
         });
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "CF4_GENERATED",
-        });
+        }));
         expect(result).toEqual({
           claim: updatedClaim,
           cf4Fields: {

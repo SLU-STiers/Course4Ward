@@ -1,7 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InsuranceType, OrderEnteredBy, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import {
+  AuditLogService,
+  dayLabel,
+  detailItems,
+  fullName,
+} from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
 
 function buildTriage(dto: CreatePatientDto, nurseId: string) {
@@ -73,6 +78,14 @@ const CLASS_LABEL: Record<PatientClass, string> = {
   OUTPATIENT: 'an outpatient',
   OBSERVATION: 'under observation',
   INPATIENT: 'admitted',
+};
+
+/** Class names as the activity log shows them. */
+const CLASS_NAME: Record<PatientClass, string> = {
+  EMERGENCY: 'Emergency',
+  OUTPATIENT: 'Outpatient',
+  OBSERVATION: 'Observation',
+  INPATIENT: 'Inpatient',
 };
 
 const ORDER_LABEL: Partial<Record<OrderType, string>> = {
@@ -229,12 +242,47 @@ export class PatientsService {
         )
       : await createPatient(this.prisma, null);
 
+    const patientName = fullName(patient);
+    const attending = await this.auditLog.userLabel(dto.physicianId);
+    const consultants = await Promise.all(
+      additionalPhysicianIds.map((id) => this.auditLog.userLabel(id)),
+    );
     await this.auditLog.record({
       userId: nurseId,
       action: 'PATIENT_CREATED',
+      details: {
+        summary: `Registered ${patientName} as ${CLASS_NAME[patientClass]}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Sex', dto.gender],
+          ['Date of birth', patient.dateOfBirth ? dayLabel(patient.dateOfBirth) : null],
+          ['Class', CLASS_NAME[patientClass]],
+          ['Admission date', dayLabel(admissionDate)],
+          ['Attending physician', attending],
+          ['Additional physicians', consultants.join(', ')],
+          ['Room', dto.roomNumber],
+          ['Insurance', dto.insurance === InsuranceType.OTHER ? dto.insuranceOther : dto.insurance],
+          ['Religion', dto.religion],
+          ['Triage level', dto.triageLevel],
+          ['Initial assessment', initialAssessment],
+        ]),
+      },
     });
     if (orderType) {
-      await this.auditLog.record({ userId: nurseId, action: 'ORDER_CREATED' });
+      await this.auditLog.record({
+        userId: nurseId,
+        action: 'ORDER_CREATED',
+        details: {
+          summary: `Entered ${attending}'s ${ORDER_LABEL[orderType]} for ${patientName}`,
+          items: detailItems([
+            ['Patient', patientName],
+            ['Ordering physician', attending],
+            ['Order type', ORDER_LABEL[orderType]],
+            ['Order', registrationOrder],
+            ['Received via', dto.registrationOrderChannel],
+          ]),
+        },
+      });
     }
 
     return patient;
@@ -337,7 +385,7 @@ export class PatientsService {
     const admission = await this.inRoomTransaction(async (tx) => {
       const current = await tx.patientAdmission.findUnique({
         where: { id: admissionId },
-        select: { dischargeDate: true, patientClass: true },
+        select: { dischargeDate: true, patientClass: true, room: { select: { number: true } } },
       });
       if (!current) throw new NotFoundException('Admission not found');
       if (current.dischargeDate) {
@@ -347,15 +395,30 @@ export class PatientsService {
         throw new BadRequestException('A room can only be assigned to an admitted patient');
       }
       const roomId = roomNumber ? await this.freeRoomId(tx, roomNumber, admissionId) : null;
-      return tx.patientAdmission.update({
+      const updated = await tx.patientAdmission.update({
         where: { id: admissionId },
         data: { roomId },
         select: { id: true, room: roomSelect },
       });
+      return { updated, previousRoom: current.room?.number ?? null };
     });
 
-    await this.auditLog.record({ userId, action: 'PATIENT_UPDATED' });
-    return admission;
+    const patientName = await this.auditLog.patientName({ admissionId });
+    const { updated, previousRoom } = admission;
+    await this.auditLog.record({
+      userId,
+      action: 'PATIENT_UPDATED',
+      details: {
+        summary: roomNumber
+          ? previousRoom
+            ? `Moved ${patientName} from room ${previousRoom} to room ${roomNumber}`
+            : `Assigned ${patientName} to room ${roomNumber}`
+          : `Removed ${patientName} from room ${previousRoom ?? '—'}`,
+        items: detailItems([['Patient', patientName]]),
+        changes: [{ field: 'Room', from: previousRoom ?? 'None', to: roomNumber ?? 'None' }],
+      },
+    });
+    return updated;
   }
 
   /** The id of room `number`, if it exists and no other undischarged admission holds it. */
@@ -405,7 +468,7 @@ export class PatientsService {
   }
 
   async update(id: string, dto: UpdatePatientDto, userId: string) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
     const patient = await this.prisma.patient.update({
       where: { id },
       data: {
@@ -414,9 +477,24 @@ export class PatientsService {
       },
     });
 
+    const changes = [
+      { field: 'Sex', from: existing.gender ?? '—', to: patient.gender ?? '—' },
+      {
+        field: 'Date of birth',
+        from: dayLabel(existing.dateOfBirth),
+        to: dayLabel(patient.dateOfBirth),
+      },
+    ].filter((change) => change.from !== change.to);
     await this.auditLog.record({
       userId,
       action: 'PATIENT_UPDATED',
+      details: {
+        summary: changes.length
+          ? `Updated ${fullName(patient)}'s ${changes.map((change) => change.field.toLowerCase()).join(' and ')}`
+          : `Saved ${fullName(patient)}'s details with no changes`,
+        items: detailItems([['Patient', fullName(patient)]]),
+        changes,
+      },
     });
 
     return patient;
@@ -456,7 +534,23 @@ export class PatientsService {
     });
     if (count === 0) throw new ConflictException('This patient is already discharged');
 
-    await this.auditLog.record({ userId, action: 'REGISTER_PATIENT' });
+    const patientName = await this.auditLog.patientName({ patientId: admission.patientId });
+    await this.auditLog.record({
+      userId,
+      action: 'REGISTER_PATIENT',
+      details: {
+        summary:
+          admission.patientClass === PatientClass.OUTPATIENT
+            ? `Ended ${patientName}'s outpatient visit`
+            : `Discharged ${patientName}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Class', CLASS_NAME[admission.patientClass]],
+          ['Admitted', dayLabel(admission.admissionDate)],
+          ['Discharged', dayLabel(dischargeDate)],
+        ]),
+      },
+    });
     return { ...admission, dischargeDate };
   }
 
@@ -510,7 +604,24 @@ export class PatientsService {
       throw new ConflictException('This patient was updated by someone else; reload and try again');
     }
 
-    await this.auditLog.record({ userId, action: 'PATIENT_UPDATED' });
+    const patientName = await this.auditLog.patientName({ patientId: admission.patientId });
+    await this.auditLog.record({
+      userId,
+      action: 'PATIENT_UPDATED',
+      details: {
+        summary:
+          target === PatientClass.INPATIENT
+            ? `Admitted ${patientName} as an inpatient`
+            : `Placed ${patientName} under observation`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Carried out', `Physician's ${ORDER_LABEL[orderType]}`],
+        ]),
+        changes: [
+          { field: 'Class', from: CLASS_NAME[admission.patientClass], to: CLASS_NAME[target] },
+        ],
+      },
+    });
     return { ...admission, patientClass: target, classSince };
   }
 
@@ -545,7 +656,19 @@ export class PatientsService {
       select: { createdAt: true, physician: { select: { id: true, firstName: true, lastName: true } } },
     });
 
-    await this.auditLog.record({ userId: nurseId, action: 'PATIENT_UPDATED' });
+    const patientName = await this.auditLog.patientName({ admissionId });
+    await this.auditLog.record({
+      userId: nurseId,
+      action: 'PATIENT_UPDATED',
+      details: {
+        summary: `Added Dr. ${fullName(entry.physician)} to ${patientName}'s care team`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Physician added', await this.auditLog.userLabel(physicianId)],
+          ['Attending physician', await this.auditLog.userLabel(admission.physicianId)],
+        ]),
+      },
+    });
     return entry;
   }
 }

@@ -41,6 +41,8 @@ const openAdmission = {
 
 const mockAuditLogService = {
   record: jest.fn(),
+  patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
+  userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
 } as unknown as jest.Mocked<AuditLogService>;
 
 describe('OrdersService', () => {
@@ -102,10 +104,10 @@ describe('OrdersService', () => {
         },
         include: orderInclude,
       });
-      expect(auditLogService.record).toHaveBeenCalledWith({
+      expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: 'nurse-123',
         action: 'ORDER_CREATED',
-      });
+      }));
       expect(result).toEqual(mockOrder);
     });
 
@@ -427,10 +429,10 @@ describe('OrdersService', () => {
         executedById: 'nurse-123',
         executedAt: expect.any(Date),
       });
-      expect(auditLogService.record).toHaveBeenCalledWith({
+      expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: 'nurse-123',
         action: 'ORDER_STATUS_UPDATED',
-      });
+      }));
     });
 
     it.each([

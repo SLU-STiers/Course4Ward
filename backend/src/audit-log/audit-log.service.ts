@@ -105,12 +105,39 @@ const USER_SELECT = {
 
 const AUDIT_LOG_INCLUDE = { user: { select: USER_SELECT } };
 
+/** One fact about a logged action ("Patient": "Juan Dela Cruz"). */
+export interface AuditDetailItem {
+  label: string;
+  value: string;
+}
+
+/** One edited field, before and after. */
+export interface AuditChange {
+  field: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * What specifically happened, stored with the log row. The action alone
+ * ("Patient record updated") cannot say whether a room changed or a doctor
+ * joined the care team; this can. Values are display-ready text, so the admin
+ * screen renders them as-is and the record keeps the names as they were then.
+ */
+export interface AuditDetails {
+  /** One sentence: "Added Dr. Ana Reyes to Juan Dela Cruz's care team". */
+  summary: string;
+  items?: AuditDetailItem[];
+  changes?: AuditChange[];
+}
+
 /** A log row as the Activity Logs table consumes it. */
 export interface AuditLogEntry {
   id: string;
   timeStamp: Date;
   action: ActionType;
   userId: string;
+  details: Prisma.JsonValue | null;
   user: { userId: string; firstName: string; lastName: string; role: Role };
 }
 
@@ -169,6 +196,38 @@ export interface AuditLogQuery {
 interface RecordAuditInput {
   userId: string;
   action: AuditAction | string;
+  details?: AuditDetails;
+}
+
+/** "First Last", or a fallback when the record is gone. */
+export function fullName(
+  person: { firstName: string; lastName: string } | null | undefined,
+  fallback = 'Unknown',
+): string {
+  return person ? `${person.firstName} ${person.lastName}`.trim() : fallback;
+}
+
+/** "YYYY-MM-DD" for a date, as the logs show calendar days. */
+export function dayLabel(date: Date | string | null | undefined): string {
+  if (!date) return '—';
+  const value = typeof date === 'string' ? new Date(date) : date;
+  return Number.isNaN(value.getTime()) ? String(date) : value.toISOString().slice(0, 10);
+}
+
+/** "TO_ACCOMPLISH" -> "To accomplish", for enum values with no label of their own. */
+export function humanize(value: string | null | undefined): string {
+  if (!value) return '—';
+  const words = value.toLowerCase().replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Drops empty values so a detail list only shows what was actually given. */
+export function detailItems(
+  entries: Array<[label: string, value: string | number | null | undefined]>,
+): AuditDetailItem[] {
+  return entries
+    .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '')
+    .map(([label, value]) => ({ label, value: String(value) }));
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -192,8 +251,42 @@ export class AuditLogService {
       data: {
         userId: input.userId,
         action: action ?? ActionType.EDIT_ACCOUNT,
+        ...(input.details ? { details: input.details as unknown as Prisma.InputJsonObject } : {}),
       },
     });
+  }
+
+  /** The patient's name for a log line, found by whichever id the caller has. */
+  async patientName(ref: { patientId?: string; admissionId?: string; summaryId?: string }) {
+    const select = { firstName: true, lastName: true } as const;
+    const patient = ref.patientId
+      ? await this.prisma.patient.findUnique({ where: { id: ref.patientId }, select })
+      : ref.admissionId
+        ? (
+            await this.prisma.patientAdmission.findUnique({
+              where: { id: ref.admissionId },
+              select: { patient: { select } },
+            })
+          )?.patient
+        : ref.summaryId
+          ? (
+              await this.prisma.courseInWard.findUnique({
+                where: { id: ref.summaryId },
+                select: { patient: { select } },
+              })
+            )?.patient
+          : null;
+    return fullName(patient, 'Unknown patient');
+  }
+
+  /** A staff member's name and login id for a log line ("Ana Reyes (DOC001)"). */
+  async userLabel(id: string | null | undefined) {
+    if (!id) return '—';
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { firstName: true, lastName: true, userId: true },
+    });
+    return user ? `${fullName(user)} (${user.userId})` : 'Unknown user';
   }
 
   /**

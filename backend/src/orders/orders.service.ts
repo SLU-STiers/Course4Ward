@@ -9,7 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { OrderEnteredBy, OrderStatus, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditLogService, detailItems, fullName, humanize } from '../audit-log/audit-log.service';
 import { OllamaClient } from '../course-in-ward/ollama-client';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/create-order.dto';
 
@@ -112,9 +112,23 @@ export class OrdersService {
       include: orderInclude,
     });
 
+    const patientName = await this.auditLog.patientName({ admissionId: dto.admissionId });
+    const physicianName = fullName(order.orderedBy);
     await this.auditLog.record({
       userId: enteredById,
       action: 'ORDER_CREATED',
+      details: {
+        summary:
+          enteredByRole === Role.NURSE
+            ? `Entered Dr. ${physicianName}'s ${humanize(type).toLowerCase()} order for ${patientName}`
+            : `Wrote a ${humanize(type).toLowerCase()} order for ${patientName}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Ordering physician', `Dr. ${physicianName}`],
+          ['Order type', humanize(type)],
+          ['Order', dto.orderContent],
+        ]),
+      },
     });
 
     // Best-effort: persist the pgvector embedding so this order can serve as a
@@ -238,9 +252,25 @@ export class OrdersService {
       include: orderInclude,
     });
 
+    const patientName = await this.auditLog.patientName({ admissionId: order.admissionId });
+    const changes = [
+      { field: 'Status', from: humanize(order.status), to: humanize(updated.status) },
+      { field: 'Nurse note', from: order.nurseComment ?? '—', to: updated.nurseComment ?? '—' },
+    ].filter((change) => change.from !== change.to);
     await this.auditLog.record({
       userId: nurseId,
       action: 'ORDER_STATUS_UPDATED',
+      details: {
+        summary: changed
+          ? `Marked an order for ${patientName} as ${humanize(updated.status).toLowerCase()}`
+          : `Updated the note on an order for ${patientName}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Ordering physician', `Dr. ${fullName(updated.orderedBy)}`],
+          ['Order', order.orderContent],
+        ]),
+        changes,
+      },
     });
 
     return updated;
