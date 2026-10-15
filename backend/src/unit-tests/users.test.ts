@@ -27,6 +27,8 @@ describe('UsersService', () => {
 
   const mockAuditLogService = {
     record: jest.fn(),
+    patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
+    userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
   };
 
   beforeEach(async () => {
@@ -90,9 +92,45 @@ describe('UsersService', () => {
         }),
       }),
     );
-    expect(mockAuditLogService.record).toHaveBeenCalledWith({
+    expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'admin-1',
       action: 'USER_CREATED',
+      details: expect.objectContaining({
+        summary: 'Created Nurse account NRS001 for Jane Doe',
+        items: expect.arrayContaining([
+          { label: 'Login ID', value: 'NRS001' },
+          { label: 'Role', value: 'Nurse' },
+        ]),
+      }),
+    }));
+  });
+
+  it('logs exactly which account fields an update changed', async () => {
+    const before = {
+      id: 'user-1',
+      userId: 'NRS001',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      role: Role.NURSE,
+      isActive: true,
+      wards: [{ ward: { id: 'ward-er', name: 'ER' } }],
+      physicianWards: [],
+    };
+    mockPrismaService.user.findUnique.mockResolvedValue(before);
+    mockPrismaService.user.update.mockResolvedValue({ ...before, lastName: 'Cruz', isActive: false });
+
+    await service.update('user-1', { lastName: 'Cruz', isActive: false }, 'admin-1');
+
+    expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      userId: 'admin-1',
+      action: 'USER_UPDATED',
+      details: expect.objectContaining({
+        summary: 'Updated Jane Cruz (NRS001): last name, status',
+        changes: [
+          { field: 'Last name', from: 'Doe', to: 'Cruz' },
+          { field: 'Status', from: 'Active', to: 'Inactive' },
+        ],
+      }),
     });
   });
 

@@ -261,11 +261,24 @@ export type AuditLogAction =
   | 'UPDATE_ORDER_STATUS';
 
 /** One row of `GET /admin/audit-logs`. */
+/**
+ * What specifically a logged action did, as recorded by the backend
+ * (`AuditDetails` in `audit-log.service.ts`). Values are display-ready text.
+ */
+export interface AuditLogDetails {
+  /** One sentence: "Added Dr. Ana Reyes to Juan Dela Cruz's care team". */
+  summary: string;
+  items?: Array<{ label: string; value: string }>;
+  changes?: Array<{ field: string; from: string; to: string }>;
+}
+
 export interface AuditLogEntry {
   id: string;
   timeStamp: string;
   action: AuditLogAction;
   userId: string;
+  /** Null for entries logged before details were recorded. */
+  details: AuditLogDetails | null;
   user: {
     userId: string;
     firstName: string;

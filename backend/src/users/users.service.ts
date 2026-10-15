@@ -2,9 +2,25 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import * as bcrypt from 'bcrypt';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import {
+  AuditChange,
+  AuditLogService,
+  ROLE_LABELS,
+  detailItems,
+  fullName,
+} from '../audit-log/audit-log.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+
+type WardLinks = { ward: { name: string } }[];
+
+/** The account's ward / specialty names, as one comparable line. */
+function wardNames(user: { wards?: WardLinks; physicianWards?: WardLinks }): string {
+  const names = [...(user.wards ?? []), ...(user.physicianWards ?? [])].map((link) => link.ward.name).sort();
+  return names.length ? names.join(', ') : 'None';
+}
+
+const yesNo = (value: boolean) => (value ? 'Yes' : 'No');
 
 @Injectable()
 export class UsersService {
@@ -100,6 +116,17 @@ export class UsersService {
     await this.auditLog.record({
       userId: actingAdminId,
       action: 'USER_CREATED',
+      details: {
+        summary: `Created ${ROLE_LABELS[user.role]} account ${user.userId} for ${fullName(user)}`,
+        items: detailItems([
+          ['Login ID', user.userId],
+          ['Name', fullName(user)],
+          ['Role', ROLE_LABELS[user.role]],
+          ['Wards / specialties', wardNames(user)],
+          ['Status', user.isActive ? 'Active' : 'Inactive'],
+          ['Must change password on first sign-in', yesNo(user.mustResetPassword)],
+        ]),
+      },
     });
 
     return user;
@@ -118,7 +145,7 @@ export class UsersService {
   async update(id: string, dto: UpdateUserDto, actingAdminId: string) {
     const existing = await this.prisma.user.findUnique({
       where: { id },
-      select: { isActive: true, role: true },
+      select: this.safeSelect,
     });
     if (!existing) throw new NotFoundException('User not found');
 
@@ -156,9 +183,30 @@ export class UsersService {
       select: this.safeSelect,
     });
 
+    const changes: AuditChange[] = [];
+    const compare = (field: string, from: string, to: string) => {
+      if (from !== to) changes.push({ field, from, to });
+    };
+    compare('First name', existing.firstName, user.firstName);
+    compare('Last name', existing.lastName, user.lastName);
+    compare('Role', ROLE_LABELS[existing.role], ROLE_LABELS[user.role]);
+    compare('Wards / specialties', wardNames(existing), wardNames(user));
+    compare('Status', existing.isActive ? 'Active' : 'Inactive', user.isActive ? 'Active' : 'Inactive');
+
+    const target = `${fullName(user)} (${user.userId})`;
     await this.auditLog.record({
       userId: actingAdminId,
       action: 'USER_UPDATED',
+      details: {
+        summary: changes.length
+          ? `Updated ${target}: ${changes.map((change) => change.field.toLowerCase()).join(', ')}`
+          : `Saved ${target} with no changes`,
+        items: detailItems([
+          ['Account', target],
+          ['Role', ROLE_LABELS[user.role]],
+        ]),
+        changes,
+      },
     });
 
     return user;

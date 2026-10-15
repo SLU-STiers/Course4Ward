@@ -65,6 +65,8 @@ const mockPrismaService = {
 
 const mockAuditLogService = {
   record: jest.fn(),
+  patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
+  userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
 } as unknown as jest.Mocked<AuditLogService>;
 
 describe("Patients Module", () => {
@@ -296,10 +298,10 @@ describe("Patients Module", () => {
             include: expect.any(Object),
           }),
         );
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "PATIENT_CREATED",
-        });
+        }));
         expect(result).toEqual(mockPatientSimple);
       });
 
@@ -520,10 +522,10 @@ describe("Patients Module", () => {
               },
             }),
           );
-          expect(auditLogService.record).toHaveBeenCalledWith({
+          expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
             userId: mockUser.id,
             action: "ORDER_CREATED",
-          });
+          }));
         },
       );
 
@@ -655,10 +657,10 @@ describe("Patients Module", () => {
         expect(prismaService.patientAdmission.update).toHaveBeenCalledWith(
           expect.objectContaining({ where: { id: mockAdmissionId }, data: { roomId: "room-101" } }),
         );
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "PATIENT_UPDATED",
-        });
+        }));
       });
 
       it("should refuse an occupied room when reassigning", async () => {
@@ -923,10 +925,13 @@ describe("Patients Module", () => {
             select: expect.objectContaining({ createdAt: true }),
           }),
         );
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "PATIENT_UPDATED",
-        });
+          details: expect.objectContaining({
+            summary: "Added Dr. Ana Reyes to Juan Dela Cruz's care team",
+          }),
+        }));
         expect(result).toEqual(created);
       });
 
@@ -1137,10 +1142,10 @@ describe("Patients Module", () => {
             dateOfBirth: new Date(mockUpdatePatientDto.dateOfBirth),
           },
         });
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "PATIENT_UPDATED",
-        });
+        }));
         expect(result).toEqual(updatedPatient);
       });
 

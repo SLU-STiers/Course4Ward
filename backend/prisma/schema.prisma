@@ -438,6 +438,10 @@ model AuditLog {
   timeStamp DateTime   @default(now())
   action    ActionType
   userId    String
+  /// What specifically happened: `{ summary, items?, changes? }` (see
+  /// `AuditDetails` in `audit-log.service.ts`). Null on rows written before
+  /// details were recorded.
+  details   Json?
 
   user User @relation(fields: [userId], references: [id])
 

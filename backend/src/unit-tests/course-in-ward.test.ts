@@ -56,6 +56,8 @@ const mockPrismaService = {
 
 const mockAuditLogService = {
   record: jest.fn(),
+  patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
+  userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
 };
 
 const mockOrdersService = {
@@ -248,10 +250,10 @@ describe('CourseInWardService', () => {
         where: { id: { in: ['order-1', 'order-2'] } },
         data: { summarizationId: 'summary-789' },
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: mockRequestedById,
         action: 'SUMMARY_GENERATED_AI',
-      });
+      }));
       expect(result).toEqual([mockCreatedSummary]);
     });
 
@@ -473,10 +475,10 @@ describe('CourseInWardService', () => {
           status: SummaryStatus.DRAFT_EDITED,
         },
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: mockPhysicianId,
         action: 'SUMMARY_EDITED_MANUAL',
-      });
+      }));
       expect(result).toEqual(mockUpdatedSummary);
     });
 
@@ -559,10 +561,10 @@ describe('CourseInWardService', () => {
         where: { id: current.id },
         data: { summaryContent: 'Older text', status: SummaryStatus.DRAFT_AI },
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: 'physician-456',
         action: 'SUMMARY_VERSION_RESTORED',
-      });
+      }));
     });
 
     it('should reject a version of another summary', async () => {
@@ -662,10 +664,10 @@ describe('CourseInWardService', () => {
           status: SummaryStatus.DRAFT_AI,
         }),
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: mockPhysicianId,
         action: 'SUMMARY_REGENERATED_AI',
-      });
+      }));
       expect(result).toEqual(mockUpdatedSummary);
     });
 
@@ -781,10 +783,10 @@ describe('CourseInWardService', () => {
         },
         data: { status: 'VALIDATED' },
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: mockPhysicianId,
         action: 'SUMMARY_APPROVED',
-      });
+      }));
       expect(result).toEqual(mockApprovedSummary);
     });
 

@@ -11,7 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { Prisma, ResetStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditLogService, detailItems, fullName } from '../audit-log/audit-log.service';
 import { LoginDto } from './dto/login.dto';
 import {
   RequestPasswordResetDto,
@@ -285,7 +285,17 @@ export class AuthService {
       }),
     ]);
 
-    await this.auditLog.record({ userId: actingAdminId, action: 'PASSWORD_RESET' });
+    await this.auditLog.record({
+      userId: actingAdminId,
+      action: 'PASSWORD_RESET',
+      details: {
+        summary: `Approved the password reset request of ${fullName(request.user)} (${request.user.userId})`,
+        items: detailItems([
+          ['Account', `${fullName(request.user)} (${request.user.userId})`],
+          ['Decision', 'Approved — temporary password issued'],
+        ]),
+      },
+    });
 
     return {
       message: 'Password reset approved.',
@@ -324,7 +334,17 @@ export class AuthService {
       }),
     ]);
 
-    await this.auditLog.record({ userId: actingAdminId, action: 'PASSWORD_RESET' });
+    await this.auditLog.record({
+      userId: actingAdminId,
+      action: 'PASSWORD_RESET',
+      details: {
+        summary: `Rejected the password reset request of ${fullName(request.user)} (${request.user.userId})`,
+        items: detailItems([
+          ['Account', `${fullName(request.user)} (${request.user.userId})`],
+          ['Decision', 'Rejected'],
+        ]),
+      },
+    });
 
     return {
       message: 'Password reset request rejected.',
@@ -365,6 +385,7 @@ export class AuthService {
     await this.auditLog.record({
       userId: request.userId,
       action: 'PASSWORD_RESET',
+      details: { summary: 'Set a new password using an approved reset request' },
     });
 
     return { message: 'Password updated successfully.' };
@@ -378,7 +399,11 @@ export class AuthService {
     });
     await this.discardTemporaryPasswords(userId);
 
-    await this.auditLog.record({ userId, action: 'PASSWORD_RESET' });
+    await this.auditLog.record({
+      userId,
+      action: 'PASSWORD_RESET',
+      details: { summary: 'Changed their own password' },
+    });
     return {
       message: 'Password updated successfully.',
       ...(await this.issueTokens(user.id, user.userId, user.role, user.sessionVersion)),
