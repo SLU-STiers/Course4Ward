@@ -83,7 +83,7 @@ export interface PatientAdmission {
   classSince?: string;
   initialAssessment?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
-  additionalPhysicians?: { physician: { id: string; firstName: string; lastName: string } }[];
+  additionalPhysicians?: { createdAt?: string; physician: { id: string; firstName: string; lastName: string } }[];
   /** Full triage row for nurses and physicians; claims payloads include it on the order's admission. */
   triage?: AdmissionTriage | null;
   /** Ward room of an admitted patient. */

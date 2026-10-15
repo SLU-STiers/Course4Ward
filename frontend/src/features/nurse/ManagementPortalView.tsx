@@ -56,6 +56,7 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     recordId: admission?.id ?? patient.id,
     admissionDate: admissionDate ? formatDateNumeric(admissionDate) : '—',
     admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : '',
+    admittedAt: admissionDate || undefined,
     color: colors[index % colors.length],
     age: patient.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()) : 0,
     gender: sexLabel(patient.gender),
@@ -72,9 +73,10 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     assignedDoctor: admission?.physician
       ? `Dr. ${admission.physician.firstName} ${admission.physician.lastName}`
       : null,
-    additionalDoctors: (admission?.additionalPhysicians ?? []).map(
-      ({ physician }) => `Dr. ${physician.firstName} ${physician.lastName}`,
-    ),
+    additionalDoctors: (admission?.additionalPhysicians ?? []).map(({ physician, createdAt }) => ({
+      name: `Dr. ${physician.firstName} ${physician.lastName}`,
+      addedAt: createdAt,
+    })),
   };
 }
 
@@ -276,7 +278,9 @@ export function ManagementPortalView() {
     admissionDate: detailPatient.admissionDate,
     recordId: detailPatient.recordId,
     assignedDoctors: [
-      ...(detailPatient.assignedDoctor ? [detailPatient.assignedDoctor] : []),
+      ...(detailPatient.assignedDoctor
+        ? [{ name: detailPatient.assignedDoctor, addedAt: detailPatient.admittedAt }]
+        : []),
       ...(detailPatient.additionalDoctors ?? []),
     ],
     triage: detailPatient.triage ?? triageForDisplay(null),
@@ -290,7 +294,7 @@ export function ManagementPortalView() {
   const careTeamNames = detailPatient
     ? [
         ...(detailPatient.assignedDoctor ? [detailPatient.assignedDoctor] : []),
-        ...(detailPatient.additionalDoctors ?? []),
+        ...(detailPatient.additionalDoctors ?? []).map((doctor) => doctor.name),
       ]
     : [];
   const canEnterOrders = Boolean(detailPatient?.admissionId) && detailPatient?.status !== 'discharged';

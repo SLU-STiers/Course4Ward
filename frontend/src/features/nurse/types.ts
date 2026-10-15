@@ -15,6 +15,8 @@ export type NursePatient = {
   admissionDate: string;
   /** `YYYY-MM-DD` for sorting / date inputs; `admissionDate` is for display. */
   admissionDateRaw: string;
+  /** Raw admission timestamp — also when the attending physician was assigned. */
+  admittedAt?: string;
   color: string;
   age: number;
   gender: string;
@@ -28,7 +30,7 @@ export type NursePatient = {
   /** When the admission entered its current class. */
   classSince?: string;
   assignedDoctor?: string | null;
-  additionalDoctors?: string[];
+  additionalDoctors?: AssignedDoctor[];
   contact?: PatientContactDetails;
   /** Ward room number of an admitted patient. */
   room?: string;
@@ -47,6 +49,12 @@ export type PatientContactDetails = {
   contactPersonNumber: string;
   contactPersonAddress: string;
 };
+/** A physician on the care team and when they were added to it. */
+export type AssignedDoctor = {
+  name: string;
+  /** ISO timestamp; absent when unknown. */
+  addedAt?: string;
+};
 /** A triage row formatted for display — see `triageForDisplay`. */
 export type TriageAssessment = TriageDisplay;
 export type PatientChart = {
@@ -57,7 +65,7 @@ export type PatientChart = {
   recordId: string;
   triage: TriageAssessment;
   /** First entry is the attending physician; the rest are consulting physicians. */
-  assignedDoctors: string[];
+  assignedDoctors: AssignedDoctor[];
   contact?: PatientContactDetails;
   /** Ward room number of an admitted patient. */
   room?: string;

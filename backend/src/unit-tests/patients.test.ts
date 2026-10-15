@@ -909,7 +909,10 @@ describe("Patients Module", () => {
       it("should add a consulting physician to an active admission", async () => {
         (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(activeAdmission);
         (prismaService.user.findFirst as jest.Mock).mockResolvedValue({ id: "physician-3" });
-        const created = { physician: { id: "physician-3", firstName: "Ana", lastName: "Reyes" } };
+        const created = {
+          createdAt: new Date(),
+          physician: { id: "physician-3", firstName: "Ana", lastName: "Reyes" },
+        };
         (prismaService.admissionPhysician.create as jest.Mock).mockResolvedValue(created);
 
         const result = await service.addConsultingPhysician(mockAdmissionId, "physician-3", mockUser.id);
@@ -917,6 +920,7 @@ describe("Patients Module", () => {
         expect(prismaService.admissionPhysician.create).toHaveBeenCalledWith(
           expect.objectContaining({
             data: { admissionId: mockAdmissionId, physicianId: "physician-3" },
+            select: expect.objectContaining({ createdAt: true }),
           }),
         );
         expect(auditLogService.record).toHaveBeenCalledWith({
@@ -1036,6 +1040,7 @@ describe("Patients Module", () => {
                 additionalPhysicians: {
                   orderBy: { createdAt: "asc" },
                   select: {
+                    createdAt: true,
                     physician: { select: { id: true, firstName: true, lastName: true } },
                   },
                 },

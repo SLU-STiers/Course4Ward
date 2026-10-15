@@ -41,13 +41,13 @@ function buildChart(
     gender: extras.gender ?? fromList?.gender ?? '—',
     admissionDate: extras.admissionDate ?? fromList?.admissionDate ?? '15/04/2026',
     recordId: extras.recordId ?? fromList?.recordId ?? 'SH-2024-0000',
-    assignedDoctors: extras.assignedDoctors ?? ['Dr. Mike Mentzer'],
+    assignedDoctors: extras.assignedDoctors ?? [{ name: 'Dr. Mike Mentzer' }],
     triage: { ...DEFAULT_TRIAGE, ...extras.triage },
   };
 }
 export const INITIAL_CHARTS: Record<string, PatientChart> = {
   'Sarah Brown': buildChart('Sarah Brown', {
-    assignedDoctors: ['Dr. Mike Mentzer'],
+    assignedDoctors: [{ name: 'Dr. Mike Mentzer' }],
     triage: {
       time: '08:12 AM',
       heartRate: '98 bpm',
@@ -60,7 +60,7 @@ export const INITIAL_CHARTS: Record<string, PatientChart> = {
     },
   }),
   'Michael Owen': buildChart('Michael Owen', {
-    assignedDoctors: ['Dr. Mike Mentzer'],
+    assignedDoctors: [{ name: 'Dr. Mike Mentzer' }],
     triage: {
       time: '07:40 AM',
       heartRate: '88 bpm',
@@ -73,7 +73,7 @@ export const INITIAL_CHARTS: Record<string, PatientChart> = {
     },
   }),
   'Mary Jane': buildChart('Mary Jane', {
-    assignedDoctors: ['Dr. Jecy Guillian'],
+    assignedDoctors: [{ name: 'Dr. Jecy Guillian' }],
     triage: {
       time: '04:10 PM',
       heartRate: '76 bpm',

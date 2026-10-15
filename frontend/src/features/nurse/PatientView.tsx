@@ -108,11 +108,15 @@ export function PatientView() {
         recordId: viewingAdmission?.id ?? viewingPatient.id,
         assignedDoctors: [
           ...(viewingAdmission?.physician
-            ? [`Dr. ${viewingAdmission.physician.firstName} ${viewingAdmission.physician.lastName}`]
+            ? [{
+                name: `Dr. ${viewingAdmission.physician.firstName} ${viewingAdmission.physician.lastName}`,
+                addedAt: viewingAdmission.admissionDate,
+              }]
             : []),
-          ...(viewingAdmission?.additionalPhysicians ?? []).map(
-            ({ physician }) => `Dr. ${physician.firstName} ${physician.lastName}`,
-          ),
+          ...(viewingAdmission?.additionalPhysicians ?? []).map(({ physician, createdAt }) => ({
+            name: `Dr. ${physician.firstName} ${physician.lastName}`,
+            addedAt: createdAt,
+          })),
         ],
         triage: triageForDisplay(viewingAdmission),
         contact: contactDetailsOf(viewingPatient),

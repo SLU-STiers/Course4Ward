@@ -9,9 +9,16 @@ import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { OBSERVATION_LIMIT_HOURS, hoursSince } from '../../lib/patient';
 import { PhysicianWardSelect } from './PhysicianWardSelect';
+import { formatDateShort, formatTimeMedium } from '../../lib/format';
 
-import type { AdmissionStatus, PatientChart } from './types';
+import type { AdmissionStatus, AssignedDoctor, PatientChart } from './types';
 import type { PhysicianOption } from '../../types';
+
+/** `Attending · Added 15 Oct 2026, 02:34 PM` — the role, plus when the doctor joined the care team. */
+function doctorMeta(role: string, doctor: AssignedDoctor): string {
+  if (!doctor.addedAt || Number.isNaN(new Date(doctor.addedAt).getTime())) return role;
+  return `${role} · Added ${formatDateShort(doctor.addedAt)}, ${formatTimeMedium(doctor.addedAt)}`;
+}
 
 export function PatientDetailModal({
   chart,
@@ -100,7 +107,7 @@ export function PatientDetailModal({
       .catch(() => setPhysicians([]));
   }, [canAddConsulting]);
 
-  const onTeam = new Set(chart.assignedDoctors);
+  const onTeam = new Set(chart.assignedDoctors.map((doctor) => doctor.name));
   const availableToAdd = physicians.filter(
     (doctor) => !onTeam.has(`Dr. ${doctor.firstName} ${doctor.lastName}`),
   );
@@ -234,7 +241,7 @@ export function PatientDetailModal({
           <Section icon={SECTION_ICONS.careTeam} title="Care Team" hint="Attending physician leads care; consultants advise">
             <span style={s.label}>Attending Physician</span>
             {attending ? (
-              <DoctorCard name={attending} meta="Attending" />
+              <DoctorCard name={attending.name} meta={doctorMeta('Attending', attending)} />
             ) : (
               <div style={s.emptyDoctors}>No attending physician assigned yet.</div>
             )}
@@ -243,7 +250,9 @@ export function PatientDetailModal({
               <span style={s.label}>Consulting Physicians</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {consulting.length ? (
-                  consulting.map((name) => <DoctorCard key={name} name={name} meta="Consulting" />)
+                  consulting.map((doctor) => (
+                    <DoctorCard key={doctor.name} name={doctor.name} meta={doctorMeta('Consulting', doctor)} />
+                  ))
                 ) : (
                   <div style={s.emptyDoctors}>No consulting physicians.</div>
                 )}

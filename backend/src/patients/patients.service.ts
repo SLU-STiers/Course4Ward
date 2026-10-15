@@ -54,7 +54,7 @@ function isSerializationFailure(error: unknown) {
 
 const additionalPhysiciansSelect = {
   orderBy: { createdAt: 'asc' as const },
-  select: { physician: { select: { id: true, firstName: true, lastName: true } } },
+  select: { createdAt: true, physician: { select: { id: true, firstName: true, lastName: true } } },
 };
 
 function resolveDateOfBirth(dto: CreatePatientDto): Date | undefined {
@@ -542,7 +542,7 @@ export class PatientsService {
 
     const entry = await this.prisma.admissionPhysician.create({
       data: { admissionId, physicianId },
-      select: { physician: { select: { id: true, firstName: true, lastName: true } } },
+      select: { createdAt: true, physician: { select: { id: true, firstName: true, lastName: true } } },
     });
 
     await this.auditLog.record({ userId: nurseId, action: 'PATIENT_UPDATED' });
