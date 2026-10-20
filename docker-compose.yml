@@ -1,0 +1,61 @@
+# Local dev stack. Ollama runs on the host (it needs the GPU and the pulled model);
+# override any ${VAR} below in a root .env file.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: cims
+      POSTGRES_PASSWORD: cims
+      POSTGRES_DB: cims
+    ports:
+      - "5433:5432" # 5433 on the host so it doesn't clash with a local Postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cims -d cims"]
+      interval: 5s
+      retries: 10
+
+  ai_service:
+    build: ./ai_service
+    environment:
+      OLLAMA_CHAT_URL: ${OLLAMA_CHAT_URL:-http://host.docker.internal:11434/api/chat}
+      MODEL: ${MODEL:-qwen3.5:4b}
+      EMBED_MODEL_PATH: /models/embedding
+    volumes:
+      - ${EMBED_MODEL_DIR:-C:/my_models/qwen3-embedding-0.6b}:/models/embedding:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+      ai_service:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://cims:cims@db:5432/cims
+      AI_SERVICE_URL: http://ai_service:8000
+      CORS_ORIGIN: http://localhost:5173
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
+      SUMMARY_BATCH_TIME: ${SUMMARY_BATCH_TIME:-23:59}
+      TZ: ${TZ:-Asia/Manila}
+    ports:
+      - "3000:3000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:3000
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  pgdata:

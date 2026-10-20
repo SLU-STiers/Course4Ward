@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { signOut } from '../services/signOut';
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'wheel', 'touchstart', 'scroll', 'click'] as const;
@@ -8,7 +9,6 @@ const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'wheel', 'touchsta
 export function useIdleLogout() {
   const navigate = useNavigate();
   const accessToken = useAuthStore((state) => state.accessToken);
-  const logout = useAuthStore((state) => state.logout);
   const timeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -23,7 +23,7 @@ export function useIdleLogout() {
 
     const onIdle = () => {
       clearTimer();
-      logout();
+      signOut('IDLE_TIMEOUT');
       navigate('/login', { replace: true });
     };
 
@@ -46,5 +46,5 @@ export function useIdleLogout() {
         window.removeEventListener(event, resetTimer, options);
       }
     };
-  }, [accessToken, logout, navigate]);
+  }, [accessToken, navigate]);
 }

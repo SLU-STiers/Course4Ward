@@ -31,6 +31,18 @@ export interface PasswordResetQuery {
 
 const DEFAULT_RESET_REQUEST_PAGE_SIZE = 10;
 
+/** Why a session ended: the user pressed Log out, or the idle timer did it for them. */
+export const LOGOUT_REASONS = ['MANUAL', 'IDLE_TIMEOUT'] as const;
+export type LogoutReason = (typeof LOGOUT_REASONS)[number];
+
+const LOGOUT_DETAILS: Record<LogoutReason, { summary: string; reason: string }> = {
+  MANUAL: { summary: 'Signed out manually', reason: 'Logged out by the user' },
+  IDLE_TIMEOUT: {
+    summary: 'Session timed out due to inactivity (automatic logout)',
+    reason: 'Automatically logged out after being idle',
+  },
+};
+
 /** How long a reset request (and, once approved, its temporary password) stays retrievable. */
 export const RESET_REQUEST_TTL_MS = 60 * 60 * 1000;
 
@@ -71,6 +83,16 @@ export class AuthService {
         mustResetPassword: user.mustResetPassword,
       },
     };
+  }
+
+  async logout(userId: string, reason: LogoutReason) {
+    const { summary, reason: reasonText } = LOGOUT_DETAILS[reason];
+    await this.auditLog.record({
+      userId,
+      action: 'LOGOUT',
+      details: { summary, items: detailItems([['Reason', reasonText]]) },
+    });
+    return { message: 'Signed out.' };
   }
 
   // Exchanges a still-valid refresh token for a fresh token pair, so an

@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { authApi } from '../services/domainApi';
 import { useAuthStore } from '../store/authStore';
+import { signOut } from '../services/signOut';
 import { ROLE_PATH } from '../routes/roleRoutes';
 import { ActionButton } from '../components/ui/DashboardUi';
 
 export function ResetPassword() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
-  const logout = useAuthStore((state) => state.logout);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   /* One flag for both fields: the two eye buttons are the same control, so
@@ -22,7 +22,7 @@ export function ResetPassword() {
   // bounce off the login redirect. Sign the temporary session out and return
   // the user to the login page instead.
   function handleBack() {
-    logout();
+    signOut('MANUAL');
     navigate('/login', { replace: true });
   }
 
