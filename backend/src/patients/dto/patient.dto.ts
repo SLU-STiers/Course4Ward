@@ -28,20 +28,31 @@ const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? val
 export const normalizeRoom = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().replace(/^(room|rm\.?)\s*/i, '').toUpperCase() : value;
 
-/** Digits with optional +, spaces, dashes and parentheses; 7–20 characters. */
-const PHONE_PATTERN = /^\+?[0-9()\-\s]{7,20}$/;
+/** Philippine mobile numbers entered for patient registration. */
+const PHONE_PATTERN = /^\d{11}$/;
 const PHONE_MESSAGE = (field: string) =>
-  `${field} may only contain digits, spaces, +, - and parentheses (7–20 characters)`;
+  `${field} must contain exactly 11 digits`;
+const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M} .'\u2019-]*$/u;
 
 export class CreatePatientDto {
   @ApiProperty()
+  @Transform(trim)
   @IsString()
   @MinLength(1)
+  @MaxLength(150)
+  @Matches(NAME_PATTERN, {
+    message: 'First name may contain letters, spaces, hyphens, apostrophes, and periods only',
+  })
   firstName: string;
 
   @ApiProperty()
+  @Transform(trim)
   @IsString()
   @MinLength(1)
+  @MaxLength(150)
+  @Matches(NAME_PATTERN, {
+    message: 'Last name may contain letters, spaces, hyphens, apostrophes, and periods only',
+  })
   lastName: string;
 
   // Required and never defaulted: the nurse has to pick it.
@@ -93,6 +104,9 @@ export class CreatePatientDto {
   @Transform(trim)
   @IsString()
   @MaxLength(150)
+  @Matches(NAME_PATTERN, {
+    message: 'Contact person name may contain letters, spaces, hyphens, apostrophes, and periods only',
+  })
   contactPersonName?: string;
 
   @ApiPropertyOptional({ example: '0918 765 4321' })

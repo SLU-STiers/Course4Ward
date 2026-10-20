@@ -408,6 +408,70 @@ describe("Patients Module", () => {
         expect(errors.map((error) => error.property)).toContain("triageLevel");
       });
 
+      it.each(["Juan1", "123", "Juan Cruz!"])(
+        "should reject invalid patient names in the DTO (%s)",
+        async (name) => {
+          const dto = plainToInstance(CreatePatientDto, {
+            firstName: name,
+            lastName: "Dela Cruz",
+            physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          });
+          const errors = await validate(dto);
+          expect(errors.map((error) => error.property)).toContain("firstName");
+        },
+      );
+
+      it.each(["0917 123 4567", "1234567890", "123456789012", "abc12345678"])(
+        "should reject phone numbers that are not exactly 11 digits (%s)",
+        async (contactNumber) => {
+          const dto = plainToInstance(CreatePatientDto, {
+            firstName: "Juan",
+            lastName: "Dela Cruz",
+            physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+            contactNumber,
+          });
+          const errors = await validate(dto);
+          expect(errors.map((error) => error.property)).toContain("contactNumber");
+        },
+      );
+
+      it("should accept valid names and 11-digit contact numbers", async () => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: Sex.MALE,
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          contactNumber: "09171234567",
+          contactPersonName: "Maria O’Connor",
+          contactPersonNumber: "09187654321",
+        });
+        expect(await validate(dto)).toHaveLength(0);
+      });
+
+      it("should reject numbers in the contact person name", async () => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: Sex.MALE,
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          contactPersonName: "Maria123",
+        });
+        const errors = await validate(dto);
+        expect(errors.map((error) => error.property)).toContain("contactPersonName");
+      });
+
+      it("should reject a contact person number that is not exactly 11 digits", async () => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: Sex.MALE,
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          contactPersonNumber: "0918 765 4321",
+        });
+        const errors = await validate(dto);
+        expect(errors.map((error) => error.property)).toContain("contactPersonNumber");
+      });
+
       const insuranceErrors = async (fields: Record<string, unknown>) => {
         const dto = plainToInstance(CreatePatientDto, {
           firstName: "Juan",
