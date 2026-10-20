@@ -181,6 +181,9 @@ const REQUIRED_TEXT: [keyof AddPatientFormResult, string][] = [
 ];
 
 const MAX_AGE = 130;
+const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M} .'\u2019-]*$/u;
+const sanitizeName = (value: string) => value.replace(/[^\p{L}\p{M} .'\u2019-]/gu, '');
+const sanitizePhoneNumber = (value: string) => value.replace(/\D/g, '').slice(0, 11);
 
 /** Returns the message to show under the Age field, or null when the value is valid. */
 function ageError(value: string): string | null {
@@ -207,8 +210,19 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
     const form = {
       ...emptyForm(),
       ...draft.form,
+      firstName: sanitizeName(typeof draft.form?.firstName === 'string' ? draft.form.firstName : ''),
+      lastName: sanitizeName(typeof draft.form?.lastName === 'string' ? draft.form.lastName : ''),
       age: String(draft.form?.age ?? ''),
       gender: toSex(draft.form?.gender),
+      contactNumber: sanitizePhoneNumber(
+        typeof draft.form?.contactNumber === 'string' ? draft.form.contactNumber : '',
+      ),
+      contactPersonName: sanitizeName(
+        typeof draft.form?.contactPersonName === 'string' ? draft.form.contactPersonName : '',
+      ),
+      contactPersonNumber: sanitizePhoneNumber(
+        typeof draft.form?.contactPersonNumber === 'string' ? draft.form.contactPersonNumber : '',
+      ),
       insurance: toInsurance(draft.form?.insurance),
       ...toReligion(draft.form?.religion, draft.form?.religionOther),
       triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
@@ -362,6 +376,10 @@ export function AddPatientModal({
       setError('Please enter the patient’s first and last name.');
       return;
     }
+    if (!NAME_PATTERN.test(firstName) || !NAME_PATTERN.test(lastName)) {
+      setError('Patient names may contain letters, spaces, hyphens, apostrophes, and periods only.');
+      return;
+    }
     if (ageMessage) {
       setAgeTouched(true);
       setError(ageMessage);
@@ -379,6 +397,18 @@ export function AddPatientModal({
     const missing = REQUIRED_TEXT.find(([key]) => !String(form[key]).trim());
     if (missing) {
       setError(`Please enter the ${missing[1]}.`);
+      return;
+    }
+    if (!NAME_PATTERN.test(form.contactPersonName.trim())) {
+      setError('The contact person’s name may contain letters, spaces, hyphens, apostrophes, and periods only.');
+      return;
+    }
+    if (!/^\d{11}$/.test(form.contactNumber)) {
+      setError('Personal number must contain exactly 11 digits.');
+      return;
+    }
+    if (!/^\d{11}$/.test(form.contactPersonNumber)) {
+      setError('Contact number must contain exactly 11 digits.');
       return;
     }
     if (!form.religion) {
@@ -514,8 +544,9 @@ export function AddPatientModal({
                 <input
                   style={s.input}
                   value={form.firstName}
-                  onChange={(e) => setField('firstName', e.target.value)}
+                  onChange={(e) => setField('firstName', sanitizeName(e.target.value))}
                   placeholder="e.g. Juan"
+                  maxLength={150}
                   required
                 />
               </Field>
@@ -523,8 +554,9 @@ export function AddPatientModal({
                 <input
                   style={s.input}
                   value={form.lastName}
-                  onChange={(e) => setField('lastName', e.target.value)}
+                  onChange={(e) => setField('lastName', sanitizeName(e.target.value))}
                   placeholder="e.g. Dela Cruz"
+                  maxLength={150}
                   required
                 />
               </Field>
@@ -683,7 +715,7 @@ export function AddPatientModal({
                 <input
                   style={s.input}
                   value={form.contactPersonName}
-                  onChange={(e) => setField('contactPersonName', e.target.value)}
+                  onChange={(e) => setField('contactPersonName', sanitizeName(e.target.value))}
                   placeholder="e.g. Maria Dela Cruz"
                   maxLength={150}
                   required
@@ -988,16 +1020,15 @@ function PhoneInput({
     <input
       style={s.input}
       type="tel"
-      inputMode="tel"
+      inputMode="numeric"
       autoComplete="off"
       value={value}
-      // Keep only characters a phone number can contain.
-      onChange={(e) => onChange(e.target.value.replace(/[^0-9+()\-\s]/g, ''))}
+      onChange={(e) => onChange(sanitizePhoneNumber(e.target.value))}
       placeholder={placeholder}
-      maxLength={20}
+      maxLength={11}
       required
-      pattern="\+?[0-9\s\-\(\)]{7,20}"
-      title="7–20 digits; spaces, +, - and parentheses are allowed"
+      pattern="\d{11}"
+      title="Enter exactly 11 digits"
     />
   );
 }

@@ -109,7 +109,11 @@ export function ReviewSummaryModal({
   const dayOrders = ordersByDay.get(activeDay) ?? [];
   const daySummary = summaryByDay.get(activeDay);
   const editing = draft?.day === activeDay;
-  const missingDays = days.filter((day) => !summaryByDay.has(day));
+  const missingDays = days.filter((day) => {
+    const summary = summaryByDay.get(day);
+    return !summary || !summary.summaryContent.trim();
+  });
+  const approvalBlocked = busy !== null || editing || missingDays.length > 0;
 
   const replaceSummary = (updated: CourseInWard[]) =>
     setSummaries((previous) => mergeSummaries(previous, updated));
@@ -155,6 +159,7 @@ export function ReviewSummaryModal({
   // Approving the request signs off every day reviewed here: each other day's
   // summary is approved first, then the request's own summary.
   const approveAll = () => {
+    if (approvalBlocked) return;
     setBusy('approving');
     setError(null);
     const others = days
@@ -343,7 +348,7 @@ export function ReviewSummaryModal({
                 rows={7}
                 style={review.summaryEditor}
               />
-            ) : daySummary ? (
+            ) : daySummary?.summaryContent.trim() ? (
               <div style={review.summaryBox}>
                 <div style={review.summaryStatus}>{STATUS_LABEL[daySummary.status]}</div>
                 {daySummary.summaryContent}
@@ -415,7 +420,7 @@ export function ReviewSummaryModal({
           <footer style={review.footer}>
             {missingDays.length > 0 && (
               <span style={review.footerHint}>
-                {missingDays.length} day{missingDays.length === 1 ? " has" : "s have"} no summary yet
+                Some days have no AI summarizations.
               </span>
             )}
             <button type="button" style={review.cancelBtn} onClick={onClose}>
@@ -423,8 +428,11 @@ export function ReviewSummaryModal({
             </button>
             <button
               type="button"
-              style={review.approveBtn}
-              disabled={busy !== null || editing}
+              style={{
+                ...review.approveBtn,
+                ...(approvalBlocked ? review.approveBtnDisabled : {}),
+              }}
+              disabled={approvalBlocked}
               onClick={approveAll}
             >
               {busy === "approving" ? "Approving..." : "Approve All Days"}
