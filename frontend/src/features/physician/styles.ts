@@ -1027,4 +1027,8 @@ export const review: Record<string, CSSProperties> = {
     fontWeight: 700,
     cursor: "pointer",
   },
+  approveBtnDisabled: {
+    backgroundColor: "#94a3b8",
+    cursor: "not-allowed",
+  },
 };
