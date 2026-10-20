@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 export type AuditAction =
   | 'LOGIN'
+  | 'LOGOUT'
   | 'PASSWORD_RESET'
   | 'USER_CREATED'
   | 'USER_UPDATED'
@@ -39,6 +40,7 @@ export type AuditAction =
  */
 export const ACTION_MAP: Record<AuditAction, ActionType> = {
   LOGIN: ActionType.LOGIN,
+  LOGOUT: ActionType.LOGOUT,
   PASSWORD_RESET: ActionType.PASSWORD_RESET,
   USER_CREATED: ActionType.ADD_ACCOUNT,
   USER_UPDATED: ActionType.EDIT_ACCOUNT,

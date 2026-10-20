@@ -1,13 +1,13 @@
 import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
-import { AuthService, RESET_REQUEST_TTL_MS } from './auth.service';
+import { AuthService, LOGOUT_REASONS, LogoutReason, RESET_REQUEST_TTL_MS } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import {
   RequestPasswordResetDto,
   ConfirmPasswordResetDto,
 } from './dto/reset-password.dto';
-import { IsString, MinLength } from 'class-validator';
+import { IsIn, IsString, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -19,6 +19,11 @@ class ChangePasswordDto {
 
 const RESET_TOKEN_COOKIE = 'resetToken';
 const RESET_TOKEN_COOKIE_OPTIONS = { httpOnly: true, sameSite: 'lax' as const, path: '/' };
+
+class LogoutDto {
+  @IsIn(LOGOUT_REASONS)
+  reason: LogoutReason;
+}
 
 class RefreshTokenDto {
   @IsString()
@@ -38,6 +43,12 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refreshToken);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  logout(@Body() dto: LogoutDto, @CurrentUser() user: any) {
+    return this.authService.logout(user.id, dto.reason);
   }
 
   @Get('session')

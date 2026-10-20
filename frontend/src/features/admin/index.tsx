@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from '../../services/domainApi';
 import { useAuthStore } from '../../store/authStore';
+import { signOut } from '../../services/signOut';
 import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
@@ -18,7 +19,6 @@ import type { ResetRequestRow } from './types';
 
 export function AdminPanel() {
   const [activeNav, setActiveNav] = useState<'dashboard' | 'users' | 'requests'>('dashboard');
-  const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
   const knownRequestIds = useRef<Set<string> | null>(null);
@@ -66,7 +66,7 @@ export function AdminPanel() {
     pendingCount > 0 ? (pendingCount > 99 ? '99+' : String(pendingCount)) : undefined;
 
   const handleLogout = () => {
-    logout(); // Clears Zustand state and deletes sessionStorage['cims_auth'] automatically
+    signOut('MANUAL');
     navigate('/login', { replace: true });
   };
 

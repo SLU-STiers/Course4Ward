@@ -11,7 +11,7 @@ import { DashboardIcon, ExportIcon, RequestsIcon } from '../../components/icons/
 import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { ORDER_TEXT_STYLE, SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
-import { useAuthStore } from '../../store/authStore';
+import { signOut } from '../../services/signOut';
 import { claimsApi } from '../../services/domainApi';
 import { toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
@@ -68,7 +68,6 @@ export function ClaimsProcessorDashboard() {
   const [confirmingSummary, setConfirmingSummary] = useState(false);
   const overviewRequest = requests.find((request) => request.id === previewPatient?.claimId) ?? requests[0];
 
-  const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
 
   // Upload File State
@@ -97,7 +96,7 @@ export function ClaimsProcessorDashboard() {
   useEffect(loadClaims, [loadClaims]);
 
   const handleLogout = () => {
-    logout();
+    signOut('MANUAL');
     navigate('/login');
   };
 
