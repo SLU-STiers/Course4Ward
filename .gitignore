@@ -49,3 +49,6 @@ brag-output*/
 }
 # Raw fine-tuning source spreadsheet (derived JSONL files are committed)
 fine_tuning_data/*.xlsx
+
+# Fine-tuned GGUF weights (multi-GB, kept local for now)
+fine-tuned models/
