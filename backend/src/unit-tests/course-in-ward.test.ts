@@ -702,6 +702,24 @@ describe('CourseInWardService', () => {
       );
     });
 
+    it('should use the fine-tuned model without RAG references when chosen', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockAuditLogService.record.mockResolvedValue({});
+      mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
+      mockOllamaClient.embed.mockClear();
+
+      await service.regenerateSummary(mockSummaryId, mockPhysicianId, undefined, 'fine_tuned');
+
+      expect(mockOllamaClient.embed).not.toHaveBeenCalled();
+      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({ model: 'fine_tuned', references: [] }),
+      );
+    });
+
     it('should fall back to the linked orders when the summary day has none', async () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);

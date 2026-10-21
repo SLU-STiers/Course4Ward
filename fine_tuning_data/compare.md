@@ -8,7 +8,7 @@ The patient was referred to Neurosurgery for co-management and a repeat plain cr
 
 The patient was referred to Neurosurgery for co-management by Dr. Diomampo and Dr. Liquete Villanueva regarding a repeat plain cranial CT scan. A subarachnoid hemorrhage with intraventricular extension secondary to a ruptured left middle cerebral artery aneurysm was confirmed, and present management including medical decompression was continued while the patient remained NPO. Tentative scheduling for aneurysmal clipping at 4 pm was arranged, and consent for the procedure was secured after informing the operating room of anesthesia requirements. The non-institutional laboratory results were uploaded to the EMR, and surgical assistance from Dr. Dy was requested with clearance obtained from the main service.
 
-**Fine-tuned (finetuned-qwen, 8.9s, 60 words)**
+**Fine-tuned (course4ward-summarizer, 16.5s, 50 words)**
 
 The patient was referred to Neurosurgery for a ruptured left middle cerebral artery aneurysm with subarachral hemorrhage and intraventricular extension, and plain cranial CT scan was repeated. Present management including medical decompression and NPO were continued while the patient was reassessed, and aneurysmal clipping was tentatively scheduled on March 10, 2026 at 4 PM under appropriate anesthesia with consent secured.
 
@@ -28,7 +28,7 @@ The patient underwent clipping of the left posterior communicating artery aneury
 
 PNSS 1L x 120 cc/hr and PLRS 1L x 120 cc/hr were continued in the right arm IVF, while Mannitol was discontinued and hypokalemia was managed with KCl side drip at 4 meqs/hr for one more cycle. Serum electrolytes including Na, K, Cl, iCa, Mg, and Creatinine were monitored post-op, and CBC and serum sodium levels were checked every 8 hours starting at 8 PM. Urine output was recorded Q1h initially then hourly, and CBG was monitored Q6 while the patient remained NPO except for oral medications or NGT intake. Chlorhexidine gargle 15-20 ml TID was ordered, and elastic bandage, dressing, and staples were maintained with daily changes of the neck flat dressing if needed. Family was apprised of neurological status, risks for vasospasm, and possible complications including infection, bleeding, fever, or profuse soaking of the dressing.
 
-**Fine-tuned (finetuned-qwen, 8.5s, 158 words)**
+**Fine-tuned (course4ward-summarizer, 32.9s, 148 words)**
 
 The patient was maintained on a nicardipine drip with totilac at 30 cc/hr and serum sodium monitoring, then referred to Anesthesia for left pterional craniotomy and clipping of the left posterior communicating artery aneurysm under LMA/Davalan. Blood typing, PT/PTT, and 2 units pRBC were secured, CBG was done q4h while NPO, and the procedure was explained to the family with a target SBP of 120-140 mmHg during surgery. Post-operatively, the patient was returned to the MICU on AC mode (TV 380, BUR 16, I:E 1:2.5, FiO2 30%, PEEP 5, PS 24) with a lumbar drain, paracetamol and ketorolac IV, fentanyl PRN, ondansetron, ceftriaxone OD, levetiracetam via NGT, omeprazole, nimodipine, totilac at 40 cc/hr, and strict maintenance of SBP >150-160 mmHg with antihypertensives held. Mannitol was discontinued, BP target was adjusted to 150-170 mmHg with norepinephrine as needed, serum sodium monitoring q8 was continued with a target of 150-155 mEq/L, and hypokalemia was treated with a KCl side drip.
 
@@ -44,7 +44,7 @@ The patient was kept on NPO except oral medications via NGT, with PNSS 1 L x 120
 
 The patient was placed on NPO diet with nutrition provided via NGT using PNSS 1L at 120cc/hr and Totilac 40cc/hr while oxygen was set to FiO2 60%, TV 380, BUR 16, I:E 1:2.5, and PEEP 5 with a serum sodium level checked every eight hours and CBG monitored every six hours. Nimodipine 30mg two tablets every four hours, Edaravone 30mg IV every twelve hours, PCT 600mg IV every six hours, Levetiracetam 500mg one tablet twice daily, Zynapse 1g IV every eight hours, Ketorolac 30mg IV every eight hours PRN, Metoclopramide 10mg IV every eight hours PRN, Omeprazole 40mg IV every twelve hours, NAC 600mg one tablet once daily, and Lactulose 20cc OD if no bowel movement were administered. Standby Norepinephrine 8mg in 100cc PNSS was prepared to target a systolic blood pressure of 150-170mmHg while Telmisartan and Carvedilol were placed on hold, and Paracetamol dosing was adjusted for the next shift. Hypokalemia was treated with 40 meqs KCl plus 100cc PNSS at four meqs/hr, and a lumbar drain bandage was maintained with the drainage bag replaced as needed. Serum potassium levels were to be included in the next laboratory extraction while urine output was monitored for signs of catheter-associated urinary tract infection.
 
-**Fine-tuned (finetuned-qwen, 4.8s, 72 words)**
+**Fine-tuned (course4ward-summarizer, 19.9s, 83 words)**
 
 The patient was fully recovered from anesthesia and shifted to mechanical ventilation (SIMV) with TV 380, fSimv 16, T-insp 0.95, PEEP 5, and PSupp 24, while present management was continued. Totilac was increased to 60 cc/hr then decreased to 50 cc/hr, and NPO feeding was resumed via NGT. Urinalysis was requested for hazy urine output, the IFC was changed gently and aseptically, and serum K was included in the next lab extraction.
 
@@ -60,7 +60,7 @@ For catheter-associated UTI, urine GS/CS was sent and ceftriaxone 2 g IV OD was 
 
 Ceftriaxone 2 g IV OD was continued for catheter-associated urinary tract infection and subarachnoid hemorrhage management while urine GSCS results were awaited. CBG monitoring q4H pre-feeding, serum Na Q8H, and 2D echo results were ordered with OF feeding at 1200 kcal Boost Optimum in six divided feedings initiated. IVF rate was decreased to 100 cc/hr for PNSS 1 L and Totilac at 60 cc/hr while Nicardipine drip was maintained to target SBP of 150-170 mmHg. VSIMV settings were adjusted with TV 380, Fsimv 16, Tinsp 0.95, PEEP 5, and Psupp 24 for acute respiratory failure type 1. KCl drip at 40 meqs in 100 cc NSS x 4 meqs/hr x 3 cycles and KCl tablets 1 tab TID were started for hypokalemia correction. Paracetamol was shifted to 500 mg/tab 1 tab q6 while Celecoxib 200 mg cap BID and Fentanyl 50 mcg SIVP q4h PRN were added for pain control. Lumbar drain change materials including PRBC bag, sterile scissors, tongue depressor, linens, gauze, and Tegaderms were prepared under anesthesia guidance. MV settings were shifted to VSIMV with Fio2 40%, Vt 380, Fsimv 12, Tinsp 1.25, PEEP 5, and Psupp 10 for pulmonary titration. Totilac rate was increased to 50 cc/hr then adjusted to 60 cc/hr while SBP target of 130-170 mmHg was maintained with Nicardipine drip. Telmisartan 40 mg tab OD was resumed and serial monitoring of right-sided weakness continued with BP target of 150-170 mmHg.
 
-**Fine-tuned (finetuned-qwen, 8.0s, 161 words)**
+**Fine-tuned (course4ward-summarizer, 25.0s, 103 words)**
 
 Urine sample was sent for GS/CS, and ceftriaxone 2 g IV OD was continued. Paracetamol was shifted to 500 mg 1 tab q6 x 3 more days, celecoxib 200 mg 1 cap BID x 4 days was started, and fentanyl 50 mcg SIVP q4h PRN for pain was ordered. KCl drip 40 mEq in 100 cc NSS at 4 mEq/hr x 3 cycles and KCl tablets 1 tab TID x 9 doses were started. The lumbar drain was changed aseptically, and serial monitoring of right-sided weakness was requested with BP maintained at 130-170 mmHg. Telmisartan 40 mg 1 tab was resumed, the nicardipine drip was titrated to maintain SBP 130-170 mmHg, and serum Na was followed up. PS was titrated down by 2 q1 until PS 8, with ventilator settings shifted to VSIMV FiO2 40%, Vt 380, Fsimv 12, Ti 1.25, PEEP 5, and PSsupp 8. Totilac was adjusted to 40 cc/hr then increased to 50 cc/hr and later 60 cc/hr.
 
@@ -76,7 +76,7 @@ Fecalysis with FOBT and creatinine were requested, and ranitidine 50 mg IV was g
 
 Fecalalysis and FOBT were included to labs, and creatinine was ordered for laboratory evaluation. Ranitidine 50 mg IV was administered now followed by administration every eight hours, while calcium gluconate 10% slow IV push was prepared for twenty to twenty-five minutes and salbutamol neb in four cc PNSS was scheduled for administration now then every fifteen minutes for three doses followed by every six hours. Gastrointestinal solution ten units RI plus D5050 was ordered if capillary blood glucose exceeded two hundred, administered every six hours for three doses, and CBG monitoring was set to occur every four hours while on NPO status. Hydration was increased to one hundred cc PNSS per hour for four hours then reassessed, and ketoanalogues two tabs were started three times daily with ezoprole 40 mg IV q12h increased and clopidogrel held. Urinalysis, sodium bicarbonate 200 meqs SIVP now revised to 100 meqs SIVP now, chest xray supine and upright, and ABGs were ordered for repeat creatinine, potassium, phosphorus, and electrolyte monitoring by six AM.
 
-**Fine-tuned (finetuned-qwen, 6.4s, 106 words)**
+**Fine-tuned (course4ward-summarizer, 21.4s, 82 words)**
 
 Fecalalysis, FOBT, creatinine, BUN, urinalysis, and ABG were included in the labs, and ranitidine 50 mg IV q8h, calcium gluconate 10% slow IV push over 20-25 minutes, salbutamol neb q4h x3 doses, GI solution (10 units RI + D50/50) q6h for 3 doses with CBG monitoring, ketoanalogues 2 tabs TID, ezoprolol 40 mg IV q12, and sodium bicarbonate 100 mEq SIVP were started. For hyperkalemia, salbutamol neb was adjusted to q4h x3 doses, and the insulin glargine 70/30 was held with CBG monitoring. Hydration was increased to 100 cc/hr for 4 hours then reassessed, and NPO, FPA supine and upright, chest x-ray, and lipase were requested.
 
@@ -96,7 +96,7 @@ Whole abdomen ultrasound and chest/abdominal CT scans with triple contrast were 
 
 Serum creatinine was to be repeated 48 hours post-CT scan, and a serum sodium level was secured in the laboratory. A palliative care order for fentanyl 25 mcg SIVP and a standby drip of 5 amp in 90 cc PNSS was established. Difflam spray 1–2 sprays directly to the throat qid as needed was started for throat irritation.
 
-**Fine-tuned (finetuned-qwen, 7.5s, 143 words)**
+**Fine-tuned (course4ward-summarizer, 24.3s, 135 words)**
 
 The patient was referred to Nephrology and IM-Residency for acute pancreatitis, and a WAB ultrasound, urinalysis, repeat creatinine, K, phosphorus, ABG, CBC, BUN, lipid profile, serum Na, chest CT, and whole abdomen CT with triple contrast were requested. PNSS was increased to 150 cc/hr then decreased to 120 cc/hr, NAC 1.2 g IV over 1 hour q12h was started for CIN prophylaxis, fentanyl SIVP and a standby drip were given, Difflam spray qid PRN was started, and the soft DM diet with CBG TID premeal was allowed. 2 units pRBC were secured and transfused over 4 hours, IVF was decreased to 40 cc/hr during transfusion, HRZE medications were held, ezoprole and salbutamol nebulization were discontinued, insulin 70/30 was held on NPO, and RI 6 units SC PRN for CBG >200 mg/dl and D50/50 1 vial IV PRN for CBG <100 mg/dl were given.
 
@@ -112,7 +112,7 @@ PNSS 1 L x 120 cc/hr, soft diabetic diet, CBR with assisted bathroom privileges 
 
 A chest CT scan and whole abdominal CT scan with triple contrast were obtained along with serum creatinine 48 hours post-CT for a patient with rectal adenocarcinoma stage IV and acute kidney injury. Intravenous fluids of PNSS 1L at 120cc/hr were ordered, later adjusted to 100cc/hr per nephrology consultation, while NAC 1.2g IV q12 hours and ezoprole 40mg IV q12H were continued for acute pancreatitis and hyperkalemia management. Pain control with tramadol 50mg IV q8H PRN was maintained alongside soft DM diet, CBR activity with assisted BRPs CBG TID pre-meals, and difflam spray 1-2 spray QID as needed for throat irritation. Valsartan 160mg 1 tab OD was ordered while clopidogrel was held, and insulin 70/30 55u AM and 25u PM with RI 6u sc PRN for CBG >200 mg/dl and D5050 1 vial IV PRN for CBG <100 mg/dl were continued for type 2 diabetes. Zykast 1 tab ODHS was administered by the medical resident on order, and input was monitored quantitatively with serum creatinine to be repeated 48 hours post-CT.
 
-**Fine-tuned (finetuned-qwen, 3.8s, 42 words)**
+**Fine-tuned (course4ward-summarizer, 14.7s, 40 words)**
 
 The patient was referred to Nephrology for AKI due to prerenal dehydration and obstructive uropathy from the rectal mass on top of probable CKD, and IVF was regulated to 100 cc/hr with quantitative input monitoring. Zykast was given then 1 tab ODHS.
 
@@ -128,7 +128,7 @@ The diet was revised to 1600 kcal/day of Nutribest 4 scoops in 200 cc water q6h,
 
 A diet of 1600 kcal/day consisting of Nutribest 4 scoops in 200 cc of water every 6 hours with pre and post feeding flushing of 60 mL of water was established, and IVF PNSS 1L at 60 cc/hr was initiated. Lipid profile, FBS, AST, ALT, BUA, serum Na, K, and fecalysis were ordered in the AM, while Levodopa + Carbidopa 250/25 mg 1 tab q6h was continued and Pregabalin 75 mg 1 tab BID was held. Baclofen was held for now, Telmisartan 80 mg 1 tab OD was substituted for Losartan, and Lactulose 30 cc ODHS if no BM for the day was ordered for neurogenic bowel dysfunction. Hydration was increased to 100 cc/hr with PLRS 1L IVF TF, and Senokot Forte 1 tab TID was discontinued due to acute gastroenteritis. Referral to Neurology and Cardiology services was made for joint management and consideration of PEG insertion.
 
-**Fine-tuned (finetuned-qwen, 6.6s, 130 words)**
+**Fine-tuned (course4ward-summarizer, 21.3s, 106 words)**
 
 Diet was revised to 1600 kcal/day (Nutribest 4 scoops in 200 cc water every 6 hours with pre and post feeding flushing of 60 ml water), PNSS 1 L x 60 cc/hr was continued, and serum Na, K, lipid profile, FBS, AST, ALT, and BUA were requested. Levodopa + carbidopa was increased to 250/25 mg 1 tab q4h, pregabalin was decreased to 75 mg 1 tab OD, baclofen was held, lactulose 30 cc ODHS if no BM for the day and Senokot Forte were continued, amlodipine 10 mg was given, and losartan was shifted to telmisartan 80 mg 1 tab OD. For acute gastroenteritis, hydration was increased to 100 cc/hr with PLRS 1 L x 100 cc/hr, fecalysis and serum Na and K were requested, and Senokot Forte was held.
 
@@ -144,6 +144,6 @@ PLRS 1 L x 100 cc/hr, Nutribest 1600 kcal/day (4 scoops in 200 cc water q6h with
 
 Fluids were administered as PLRS 1L at 100cc/hr and Nutribest was given with pre- and post-feeding flushing while diet was set to 1600 kcal/day. Levodopa plus carbidopa, Pregabalin, Lactulose, Telmisartan, and Sarminamide were ordered or continued with specific dosing intervals, whereas Baclofen and Senokot Forte were held. A portable CXR, CBC, ABG, and soft food trial were initiated with strict aspiration precautions while Ampicillin sulbactam was started for aspiration pneumonia after consultation. Cardiology services were consulted today for OOT and TTO updates regarding the patient's condition.
 
-**Fine-tuned (finetuned-qwen, 3.9s, 49 words)**
+**Fine-tuned (course4ward-summarizer, 20.0s, 106 words)**
 
 Mechanically soft food per orem with strict aspiration precaution was tried, and feeding care was resumed with salbutamol nebulization now then q8h. A portable CXR, CBC, and ABG were requested, and serum Na and K were awaited. Aspiration pneumonia was diagnosed, and ampicillin-sulbactam 3 g IV q8h was started.

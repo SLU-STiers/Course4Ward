@@ -12,10 +12,16 @@ import { OrderStatus, Prisma, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
-import { OllamaClient, OllamaReference } from './ollama-client';
+import { OllamaClient, OllamaReference, SummaryModel } from './ollama-client';
 
 /** Vector dimension produced by the ai-service embedding model (Qwen3-Embedding-0.6B). */
 const EMBEDDING_DIM = 1024;
+
+/** How each AI model is named in the audit log. */
+const MODEL_LABEL: Record<SummaryModel, string> = {
+  standard: 'Standard (RAG)',
+  fine_tuned: 'Fine-tuned',
+};
 
 /** Earlier texts kept per summary; the oldest is dropped when a new one is saved. */
 export const MAX_SUMMARY_VERSIONS = 3;
@@ -115,9 +121,14 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   // The AI summarizes per admission PER DAY, so a batch spanning several days
   // comes back as one group per (admission, calendar day). Each group keeps the
   // orders it was built from, which is how the caller files it under a day.
+  //
+  // `model` picks the writer: `standard` is the base model guided by RAG
+  // references; `fine_tuned` already learned the style, and was trained without
+  // references, so it gets none.
   private async callAiSummarizer(
     orders: any[],
     instructions?: string,
+    model: SummaryModel = 'standard',
   ): Promise<DaySummaryGroup[]> {
     if (!orders || orders.length === 0) {
       this.logger.warn('[ai] callAiSummarizer received no orders');
@@ -160,10 +171,11 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       .map((order) => order.orderContent)
       .filter(Boolean)
       .join('\n');
-    const references = queryText ? await this.retrieveReferences(queryText) : [];
+    const references =
+      model === 'standard' && queryText ? await this.retrieveReferences(queryText) : [];
 
     this.logger.log(
-      `[ai] summarizing ${orders.length} order(s) across ${admissions.length} admission(s) with ${references.length} RAG reference(s)`,
+      `[ai] summarizing ${orders.length} order(s) across ${admissions.length} admission(s) with the ${model} model and ${references.length} RAG reference(s)`,
     );
 
     let response;
@@ -172,6 +184,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         temperature: 0.1,
         references,
         instructions,
+        model,
       });
     } catch (err) {
       this.logger.warn(`[ai] summarize request failed: ${(err as Error).message}`);
@@ -285,7 +298,12 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   // order day (today by default). The AI groups its output per admission-day,
   // so a day spent under two admissions still files as one summary per
   // admission, each stored against the day it summarizes.
-  async generateSummary(patientId: string, requestedById: string | null, day?: string | null) {
+  async generateSummary(
+    patientId: string,
+    requestedById: string | null,
+    day?: string | null,
+    model: SummaryModel = 'standard',
+  ) {
     const targetDay = day ?? dayKeyOf(new Date())!;
     const [patient, targetOrders] = await Promise.all([
       this.prisma.patient.findUnique({ where: { id: patientId } }),
@@ -298,7 +316,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const groups = await this.callAiSummarizer(targetOrders);
+    const groups = await this.callAiSummarizer(targetOrders, undefined, model);
 
     const summaries = [];
     for (const [index, group] of groups.entries()) {
@@ -327,6 +345,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
           items: detailItems([
             ['Patient', fullName(patient)],
             ['Day', targetDay],
+            ['AI model', MODEL_LABEL[model]],
             ['Orders summarized', targetOrders.length],
             ['Summaries saved', summaries.length],
           ]),
@@ -503,7 +522,12 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
   // "Resummarized Physician's Orders" -- option 2: regenerate via AI, optionally
   // steered by the physician's extra prompt instructions.
-  async regenerateSummary(id: string, physicianId: string, instructions?: string) {
+  async regenerateSummary(
+    id: string,
+    physicianId: string,
+    instructions?: string,
+    model: SummaryModel = 'standard',
+  ) {
     const existing = await this.findOne(id);
 
     const sourceOrders = await this.findSummarySourceOrders(existing);
@@ -514,7 +538,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     // Keep the summary filed under the day it already covers: when the source
     // orders span more than one day, take that day's group.
     const summaryDay = dayKeyOf(existing.summaryDate);
-    const groups = await this.callAiSummarizer(sourceOrders, instructions);
+    const groups = await this.callAiSummarizer(sourceOrders, instructions, model);
     const group = groups.find((candidate) => candidate.day === summaryDay) ?? groups[0];
     if (!group?.summary) {
       throw new BadRequestException('No orders found to regenerate this summary');
@@ -541,6 +565,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         items: detailItems([
           ['Patient', patientName],
           ['Summary day', dayLabel(updated.summaryDate)],
+          ['AI model', MODEL_LABEL[model]],
           ['Extra instructions', instructions?.trim()],
         ]),
         changes: [{ field: 'Summary text', from: existing.summaryContent, to: group.summary }],

@@ -7,6 +7,8 @@ import { formatDateLongFromKey, toDateKey } from '../../lib/format';
 import { apiErrorMessage } from '../../lib/apiError';
 import llamaIcon from '../../Img/llama.png';
 import { review } from './styles';
+import { AiModelToggle } from '../../components/ai/AiSummaryCard';
+import { useSummaryModel } from '../../hooks/useSummaryModel';
 import { mergeSummaries, summariesPerDay, summaryDayKey } from './summaries';
 
 const STATUS_LABEL: Record<CourseInWard['status'], string> = {
@@ -64,6 +66,7 @@ export function ReviewSummaryModal({
   const [busy, setBusy] = useState<'saving' | 'generating' | 'approving' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [regenInstructions, setRegenInstructions] = useState('');
+  const [summaryModel, setSummaryModel] = useSummaryModel();
 
   // State starts fresh per request: RequestsView keys this modal by request id.
   useEffect(() => {
@@ -139,9 +142,9 @@ export function ReviewSummaryModal({
     setError(null);
     const call = daySummary
       ? courseInWardApi
-          .regenerate(daySummary.id, regenInstructions)
+          .regenerate(daySummary.id, regenInstructions, summaryModel)
           .then(({ data }) => [{ ...daySummary, ...data }])
-      : courseInWardApi.generate(patientId, activeDay).then(({ data }) => data);
+      : courseInWardApi.generate(patientId, activeDay, summaryModel).then(({ data }) => data);
     void call
       .then((updated) => {
         replaceSummary(updated);
@@ -360,6 +363,16 @@ export function ReviewSummaryModal({
             )}
 
             {error && <div style={review.errorText}>{error}</div>}
+
+            {!editing && (
+              <div style={{ marginTop: 10 }}>
+                <AiModelToggle
+                  value={summaryModel}
+                  onChange={setSummaryModel}
+                  disabled={busy !== null}
+                />
+              </div>
+            )}
 
             {daySummary && !editing && (
               <input

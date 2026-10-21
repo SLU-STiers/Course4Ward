@@ -239,6 +239,12 @@ export class OrdersService {
     const order = await this.prisma.physicianOrder.findFirst({ where: { id, active: true } });
     if (!order) throw new NotFoundException('Order not found');
 
+    // A finished order with a submitted note is the nurse's final record of
+    // it; neither the status nor the note can change after that.
+    if (order.status === OrderStatus.FINISHED && order.nurseComment) {
+      throw new BadRequestException('This order is finished and its note has already been submitted');
+    }
+
     if (ORDER_STATUS_RANK[dto.status] < ORDER_STATUS_RANK[order.status]) {
       throw new BadRequestException('An order’s status cannot be moved back once it has progressed');
     }
