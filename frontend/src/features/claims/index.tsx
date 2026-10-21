@@ -71,17 +71,7 @@ export function ClaimsProcessorDashboard() {
   const navigate = useNavigate();
 
   // Upload File State
-  const [uploadedFile, setUploadedFile] = useState<{
-    name: string;
-    size: string;
-    progress: string;
-    isUploading: boolean;
-  } | null>({
-    name: 'SteveJoabs_PhilHealth.pdf',
-    size: '60 KB of 120 KB',
-    progress: 'Uploading...',
-    isUploading: true,
-  });
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const loadClaims = useCallback(() => {
     claimsApi.findAll().then(({ data }) => {
@@ -218,16 +208,25 @@ export function ClaimsProcessorDashboard() {
   /* Counts every queued row, including the ones on other pages. */
   const selectedPatientCount = cf4Patients.filter((patient) => patient.selected).length;
 
+  const acceptTemplateFile = (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.pdf') || file.type && file.type !== 'application/pdf') {
+      setUploadedFile(null);
+      setExportError('Choose a valid PDF file to use as the existing CF4 template.');
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setUploadedFile(null);
+      setExportError('The PDF must be 50 MB or smaller.');
+      return;
+    }
+    setExportError('');
+    setUploadedFile(file);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setUploadedFile({
-        name: file.name,
-        size: `${(file.size / 1024).toFixed(0)} KB`,
-        progress: 'Uploading...',
-        isUploading: true,
-      });
-    }
+    e.currentTarget.value = '';
+    if (file) acceptTemplateFile(file);
   };
 
   const goToExportSubView = (view: ExportSubView) => {
@@ -239,6 +238,11 @@ export function ClaimsProcessorDashboard() {
      at least one patient queued before the review step opens. New-CF4 takes the
      whole multi-select queue, in the order the table showed it. */
   const handleProceedToSummary = (source: ExportSource) => {
+    if (source === 'existing-cf4' && !uploadedFile) {
+      setExportError('Upload an existing CF4 PDF before proceeding.');
+      return;
+    }
+
     const queued =
       source === 'new-cf4'
         ? sortedCf4Patients.filter((candidate) => candidate.selected)
@@ -696,14 +700,22 @@ export function ClaimsProcessorDashboard() {
 
                   <hr style={styles.uploadDivider} />
 
-                  <div style={styles.dragDropZone}>
+                  <div
+                    style={styles.dragDropZone}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const file = event.dataTransfer.files[0];
+                      if (file) acceptTemplateFile(file);
+                    }}
+                  >
                     <p style={styles.dragDropTitle}>Choose a file or drag & drop it here</p>
-                    <p style={styles.dragDropSubtitle}>PDF or XML, up to 50MB</p>
+                    <p style={styles.dragDropSubtitle}>PDF, up to 50MB</p>
                     <label style={styles.browseFileBtn}>
                       Browse File
                       <input
                         type="file"
-                        accept=".pdf,.xml"
+                        accept=".pdf,application/pdf"
                         style={{ display: 'none' }}
                         onChange={handleFileUpload}
                       />
@@ -716,8 +728,7 @@ export function ClaimsProcessorDashboard() {
                       <div style={{ flex: 1 }}>
                         <div style={styles.uploadedFileName}>{uploadedFile.name}</div>
                         <div style={styles.uploadedFileMeta}>
-                          {uploadedFile.size} •{' '}
-                          <span style={{ color: '#0284c7' }}>⚙️ {uploadedFile.progress}</span>
+                          {(uploadedFile.size / 1024).toFixed(0)} KB · Ready to populate
                         </div>
                       </div>
                       <button
@@ -763,6 +774,7 @@ export function ClaimsProcessorDashboard() {
                   sourceFileName={
                     exportSource === 'existing-cf4' ? uploadedFile?.name : undefined
                   }
+                  sourceFile={exportSource === 'existing-cf4' ? uploadedFile ?? undefined : undefined}
                   error={exportError}
                   onBack={() => goToExportSubView(exportSource)}
                   onConfirm={() => void handleConfirmSummary()}

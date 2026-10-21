@@ -1,7 +1,6 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
 import { useEffect, useMemo, useState } from 'react';
-import type { jsPDF } from 'jspdf';
 
 import { Button, Modal, StatusBadge } from '../../components/ui';
 import type { Cf4SummaryDraft, ExportSource } from './types';
@@ -19,6 +18,8 @@ type Cf4SummaryPreviewProps = {
   evaluator: string;
   /** Uploaded local PDF's name for the existing-CF4 workflow. */
   sourceFileName?: string;
+  /** Uploaded existing CF4 PDF, retained locally for preview and population. */
+  sourceFile?: File;
   /** Validation/confirmation message shown above the footer. */
   error?: string;
   onBack: () => void;
@@ -49,6 +50,7 @@ export function Cf4SummaryPreview({
   source,
   evaluator,
   sourceFileName,
+  sourceFile,
   error,
   onBack,
   onConfirm,
@@ -56,7 +58,20 @@ export function Cf4SummaryPreview({
 }: Cf4SummaryPreviewProps) {
   const [copied, setCopied] = useState(false);
   const [previewMode, setPreviewMode] = useState<'json' | 'pdf'>('json');
-  const [rendered, setRendered] = useState<{ draft: Cf4SummaryDraft; doc: jsPDF } | null>(null);
+  const [rendered, setRendered] = useState<{
+    draft: Cf4SummaryDraft;
+    url: string;
+    note?: string;
+  } | null>(null);
+  const [renderFailure, setRenderFailure] = useState<{
+    draft: Cf4SummaryDraft;
+    message: string;
+  } | null>(null);
+  const [downloadFailure, setDownloadFailure] = useState<{
+    draft: Cf4SummaryDraft;
+    message: string;
+  } | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   /** Full-screen PDF viewer, opened by clicking the inline preview. */
   const [viewerOpen, setViewerOpen] = useState(false);
 
@@ -103,33 +118,73 @@ export function Cf4SummaryPreview({
     return JSON.stringify(payload, null, 2);
   }, [patient, request, evaluator, source, sourceFileName]);
 
-  /* One document per draft, shared by the embedded preview and the download so
-     the two can never drift apart. jsPDF is ~336 kB, so it is imported only
-     once this review step opens instead of shipping in every dashboard's
-     bundle. Building is a pure function of the draft, so the "Generated ..."
-     timestamp stays stable while the processor toggles tabs or re-renders. */
+  /* Build one document per draft. The preview and download both use this same
+     Blob; a template PDF is retained and populated for the existing-CF4 flow. */
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    void import('./cf4Pdf').then(({ buildCf4Pdf }) => {
-      if (!cancelled) {
-        setRendered({ draft: active, doc: buildCf4Pdf(active, source, evaluator, sourceFileName) });
+    void (async () => {
+      try {
+        if (source === 'existing-cf4') {
+          if (!sourceFile) throw new Error('Upload an existing CF4 PDF to populate.');
+          const { buildExistingCf4Pdf } = await import('./existingCf4Pdf');
+          const result = await buildExistingCf4Pdf(
+            active,
+            evaluator,
+            sourceFile,
+            sourceFileName ?? sourceFile.name,
+          );
+          const pdfBuffer = new ArrayBuffer(result.bytes.byteLength);
+          new Uint8Array(pdfBuffer).set(result.bytes);
+          const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          if (!cancelled) {
+            setRendered({ draft: active, url, note: result.note });
+          } else {
+            URL.revokeObjectURL(url);
+          }
+          return;
+        }
+
+        const { buildCf4Pdf } = await import('./cf4Pdf');
+        const doc = buildCf4Pdf(active, source, evaluator);
+        const bytes = doc.output('arraybuffer');
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        if (!cancelled) {
+          setRendered({ draft: active, url });
+        } else {
+          URL.revokeObjectURL(url);
+        }
+      } catch (cause) {
+        if (!cancelled) {
+          setRenderFailure({
+            draft: active,
+            message: cause instanceof Error
+              ? `Could not prepare the PDF: ${cause.message}`
+              : 'Could not prepare the PDF. Please try again.',
+          });
+        }
       }
-    });
+    })();
     return () => {
       cancelled = true;
     };
-  }, [active, source, evaluator, sourceFileName]);
+  }, [active, source, evaluator, sourceFileName, sourceFile, retryCount]);
 
-  /* Only the document built for the draft currently on screen. Keying on draft
-     identity means a stale PDF from the previous patient is ignored while the
-     next one is still building, instead of being shown or downloaded. */
-  const pdf = rendered && rendered.draft === active ? rendered.doc : null;
+  useEffect(() => {
+    if (!rendered) return;
+    return () => URL.revokeObjectURL(rendered.url);
+  }, [rendered]);
 
-  /* Inlined as a data URI rather than an object URL: the document is
-     text-only, so it stays small, and this keeps the preview a pure value —
-     no effect, no setState and no blob to revoke when the queue is paged. */
-  const pdfUrl = useMemo(() => (pdf ? pdf.output('datauristring') : null), [pdf]);
+  /* Ignore stale output while another patient/template is being prepared. */
+  const pdf = rendered?.draft === active ? rendered : null;
+  const pdfUrl = pdf?.url ?? null;
+  const renderError =
+    !pdf && renderFailure?.draft === active ? renderFailure.message : '';
+  const downloadError =
+    downloadFailure?.draft === active ? downloadFailure.message : '';
+  const visibleError = downloadError || renderError;
 
   if (!patient) return null;
 
@@ -148,8 +203,23 @@ export function Cf4SummaryPreview({
 
   /** Saves the exact document shown in the PDF preview tab. */
   const handleDownload = () => {
-    if (!pdf) return;
-    pdf.save(`course-in-the-ward-${patient.patientId}.pdf`);
+    if (!pdfUrl) return;
+    const link = document.createElement('a');
+    try {
+      link.href = pdfUrl;
+      link.download = `${source === 'existing-cf4' ? 'completed-cf4' : 'course-in-the-ward'}-${patient.patientId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+    } catch (cause) {
+      setDownloadFailure({
+        draft: active,
+        message: cause instanceof Error
+          ? `Could not download the PDF: ${cause.message}`
+          : 'Could not download the PDF. Please try again.',
+      });
+    } finally {
+      link.remove();
+    }
   };
 
   return (
@@ -172,6 +242,22 @@ export function Cf4SummaryPreview({
             : 'Review the summary below. The preview on the right shows the record that gets written for the Course in the Ward; confirming generates the CF4 document.'}
         </span>
       </div>
+
+      {visibleError && (
+        <p style={styles.exportErrorBanner} role="alert">
+          {visibleError}{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setRenderFailure(null);
+              setDownloadFailure(null);
+              setRetryCount((count) => count + 1);
+            }}
+          >
+            Retry PDF
+          </button>
+        </p>
+      )}
 
       {total > 1 && (
         <>
@@ -335,7 +421,12 @@ export function Cf4SummaryPreview({
               </button>
             </div>
           ) : (
-            <div style={styles.pdfPreviewEmpty}>Preparing preview…</div>
+            <div style={styles.pdfPreviewEmpty}>
+              {renderError ? 'PDF preview unavailable. See the error above.' : 'Preparing preview…'}
+            </div>
+          )}
+          {previewMode === 'pdf' && pdf?.note && (
+            <p role="status" style={styles.summaryPanelMeta}>{pdf.note}</p>
           )}
         </div>
       </div>
