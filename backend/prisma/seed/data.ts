@@ -2,6 +2,7 @@ import {
   PatientClass,
   ActionType,
   CommunicationChannel,
+  InsuranceType,
   OrderEnteredBy,
   OrderStatus,
   OrderType,
@@ -983,3 +984,171 @@ export const passwordResets: SeedPasswordReset[] = [
   { id: uid(813), userLoginId: 'CLM003', token: 'reset-token-0013', requestedAt: daysAgo(2, 11), expiresAt: daysAgo(1, 11), resolvedAt: daysAgo(1, 12), status: ResetStatus.APPROVED, ipAddress: '10.0.0.7' },
   { id: uid(814), userLoginId: 'DOC005', token: 'reset-token-0014', requestedAt: daysAgo(1, 10), expiresAt: daysFromNow(1, 10), status: ResetStatus.PENDING, ipAddress: '192.168.1.14' },
 ];
+// ---------- Wards ----------
+// Ward ids come from migration 20261014022553_add_wards. Emergency holds every
+// patient without a room; the others own starter rooms (Coronary 101-103,
+// OBDR 104-106, Neonatal ICU 107-108, Pedia ICU 109-110, Medical ICU 201-205,
+// Surgery 206-210).
+export const nurseWards: { userId: string; wardIds: string[] }[] = [
+  { userId: 'NRS001', wardIds: ['ward-emergency', 'ward-micu'] },
+  { userId: 'NRS002', wardIds: ['ward-surgery'] },
+  { userId: 'NRS003', wardIds: ['ward-coronary'] },
+  { userId: 'NRS004', wardIds: ['ward-emergency'] },
+  { userId: 'NRS005', wardIds: ['ward-obdr', 'ward-nicu', 'ward-picu'] },
+];
+
+/** Rooms for some current inpatients, so the ward split shows; the rest stay in Emergency. */
+export const admissionRooms: Record<string, string> = {
+  adm8: '101', // hypertensive urgency -> Coronary
+  adm10: '102', // heart failure -> Coronary
+  adm14: '103', // NSTEMI -> Coronary
+  adm1: '201', // pneumonia -> Medical ICU
+  adm2: '202', // pyelonephritis -> Medical ICU
+  adm11: '203', // severe anemia -> Medical ICU
+  adm20: '204', // pancreatitis -> Medical ICU
+  adm4: '206', // appendectomy -> Surgery
+  adm26: '207', // post-op hernia repair -> Surgery
+};
+
+// ---------- Patient registration details ----------
+// Built from small pools so all 30 patients get every Add Patient field.
+
+const STREETS = ['Session Road', 'Bonifacio Street', 'Magsaysay Avenue', 'Naguilian Road', 'Marcos Highway', 'Leonard Wood Road', 'Gibraltar Road', 'Loakan Road', 'Ambuklao Road', 'Kisad Road'];
+const BARANGAYS = ['Aurora Hill', 'Camp 7', 'Irisan', 'Pacdal', 'Bakakeng Central', 'Quezon Hill', 'Lualhati', 'Guisad', 'Engineers Hill', 'Pinsao Proper', 'Betag', 'Pico'];
+const RELIGIONS = ['Roman Catholic', 'Roman Catholic', 'Roman Catholic', 'Iglesia ni Cristo', 'Born Again Christian', 'Anglican', 'Seventh-day Adventist', 'Islam'];
+const INSURANCES: [InsuranceType, string?][] = [
+  [InsuranceType.PHILHEALTH],
+  [InsuranceType.PHILHEALTH],
+  [InsuranceType.HMO],
+  [InsuranceType.PHILHEALTH],
+  [InsuranceType.PRIVATE],
+  [InsuranceType.PHILHEALTH],
+  [InsuranceType.NONE],
+  [InsuranceType.OTHER, 'Company health plan'],
+];
+const CONTACT_FIRST_NAMES = ['Lourdes', 'Jose', 'Cristina', 'Manuel', 'Rebecca', 'Antonio', 'Imelda', 'Roberto', 'Gina', 'Alfredo'];
+
+const phone = (seed: number) =>
+  `09${17 + (seed % 3)} ${String(200 + seed * 37).slice(-3)} ${String(1000 + seed * 613).slice(-4)}`;
+const address = (seed: number) => {
+  const city = seed % 4 === 3 ? 'La Trinidad, Benguet' : 'Baguio City, Benguet';
+  return `${10 + seed * 7} ${STREETS[seed % STREETS.length]}, ${BARANGAYS[seed % BARANGAYS.length]}, ${city}`;
+};
+
+export interface SeedPatientDetails {
+  contactNumber: string;
+  address: string;
+  insurance: InsuranceType;
+  insuranceOther: string | null;
+  religion: string;
+  contactPersonName: string;
+  contactPersonNumber: string;
+  contactPersonAddress: string;
+}
+
+/** Contact, insurance and religion for each seeded patient (by patient key). */
+export const patientDetails: Record<string, SeedPatientDetails> = Object.fromEntries(
+  patients.map((p, i) => {
+    const [insurance, insuranceOther] = INSURANCES[i % INSURANCES.length];
+    // Most contact persons live at home with the patient.
+    const livesTogether = i % 3 !== 2;
+    return [
+      p.key,
+      {
+        contactNumber: phone(i + 1),
+        address: address(i),
+        insurance,
+        insuranceOther: insuranceOther ?? null,
+        religion: RELIGIONS[i % RELIGIONS.length],
+        contactPersonName: `${CONTACT_FIRST_NAMES[i % CONTACT_FIRST_NAMES.length]} ${p.lastName}`,
+        contactPersonNumber: phone(i + 41),
+        contactPersonAddress: livesTogether ? address(i) : address(i + 5),
+      },
+    ];
+  }),
+);
+
+// ---------- Triage at registration ----------
+
+export interface SeedTriage {
+  /** 1 Resuscitation … 5 Non-Urgent. */
+  level: number;
+  /** 24h HH:mm, shortly before the 09:15 admission. */
+  time: string;
+  heartRate: number;
+  respRate: number;
+  spo2: number;
+  bp: [number, number];
+  temp: number;
+  pain: number;
+  /** Labels from the nurse Add Patient dropdowns. */
+  complaints: string[];
+}
+
+const t = (
+  level: number,
+  heartRate: number,
+  respRate: number,
+  spo2: number,
+  bp: [number, number],
+  temp: number,
+  pain: number,
+  complaints: string[],
+  time = '08:50',
+): SeedTriage => ({ level, time, heartRate, respRate, spo2, bp, temp, pain, complaints });
+
+/** Triage per admission key, matching each admission's working diagnosis. */
+export const triages: Record<string, SeedTriage> = {
+  // Currently admitted
+  adm1: t(3, 102, 24, 93, [130, 80], 38.6, 3, ['Cough', 'Fever', 'Shortness of breath']),
+  adm2: t(3, 98, 20, 98, [118, 76], 38.9, 7, ['Fever', 'Painful urination', 'Back pain']),
+  adm4: t(2, 110, 22, 98, [124, 78], 38.2, 8, ['Abdominal pain (tummy ache)', 'Fever', 'Nausea / vomiting'], '08:40'),
+  adm6: t(3, 96, 20, 98, [100, 70], 38.8, 5, ['Fever', 'Headache', 'Body weakness / fatigue']),
+  adm8: t(2, 88, 18, 98, [180, 110], 36.8, 6, ['Headache', 'Dizziness'], '08:45'),
+  adm10: t(2, 112, 28, 89, [150, 95], 36.7, 4, ['Shortness of breath', 'Body weakness / fatigue'], '08:35'),
+  adm11: t(3, 108, 20, 97, [100, 60], 36.9, 2, ['Body weakness / fatigue', 'Dizziness']),
+  adm14: t(2, 96, 20, 95, [146, 90], 36.6, 8, ['Chest pain', 'Shortness of breath'], '08:30'),
+  adm15: t(2, 128, 22, 97, [150, 70], 38.4, 3, ['Fever', 'Body weakness / fatigue', 'Diarrhea'], '08:40'),
+  adm17: t(4, 100, 18, 99, [104, 68], 37.2, 6, ['Abdominal pain (tummy ache)', 'Nausea / vomiting']),
+  adm19: t(5, 78, 16, 99, [118, 74], 36.5, 1, ['Body weakness / fatigue'], '08:55'),
+  adm20: t(3, 104, 20, 97, [132, 84], 37.8, 8, ['Abdominal pain (tummy ache)', 'Nausea / vomiting', 'Loss of appetite']),
+  adm23: t(3, 102, 20, 98, [96, 64], 38.7, 5, ['Fever', 'Skin rash / itching', 'Headache']),
+  adm24: t(2, 92, 24, 94, [170, 100], 36.6, 4, ['Body weakness / fatigue', 'Nausea / vomiting', 'Loss of appetite'], '08:35'),
+  adm26: t(4, 80, 16, 99, [126, 80], 36.7, 4, ['Abdominal pain (tummy ache)'], '08:55'),
+  adm28: t(4, 92, 20, 97, [120, 78], 37.9, 2, ['Cough', 'Fever', 'Sore throat']),
+  adm30: t(2, 84, 18, 98, [160, 94], 36.6, 0, ['Dizziness', 'Headache', 'Body weakness / fatigue'], '08:40'),
+  adm31: t(3, 106, 26, 92, [128, 82], 37.0, 2, ['Shortness of breath', 'Cough']),
+  adm36: t(5, 76, 16, 99, [120, 76], 36.6, 2, ['Abdominal pain (tummy ache)'], '08:55'),
+  // Discharged
+  adm3: t(3, 98, 18, 98, [138, 86], 38.1, 6, ['Wound / injury', 'Fever']),
+  adm5: t(2, 110, 28, 88, [144, 88], 37.4, 3, ['Shortness of breath', 'Cough'], '08:35'),
+  adm7: t(3, 112, 20, 98, [96, 60], 37.8, 5, ['Diarrhea', 'Nausea / vomiting', 'Abdominal pain (tummy ache)']),
+  adm9: t(2, 90, 18, 96, [190, 105], 36.8, 0, ['Body weakness / fatigue', 'Dizziness'], '08:30'),
+  adm12: t(3, 104, 26, 92, [130, 80], 37.1, 2, ['Shortness of breath', 'Cough']),
+  adm13: t(3, 86, 18, 97, [140, 84], 36.6, 8, ['Back pain']),
+  adm16: t(1, 118, 24, 92, [90, 60], 36.5, 9, ['Chest pain', 'Shortness of breath', 'Dizziness'], '08:25'),
+  adm18: t(1, 124, 32, 86, [88, 56], 39.2, 4, ['Fever', 'Cough', 'Shortness of breath'], '08:25'),
+  adm21: t(3, 98, 18, 98, [130, 82], 38.0, 8, ['Abdominal pain (tummy ache)', 'Fever', 'Nausea / vomiting']),
+  adm22: t(2, 108, 26, 90, [156, 92], 36.7, 3, ['Shortness of breath', 'Body weakness / fatigue'], '08:35'),
+  adm25: t(4, 94, 18, 98, [134, 84], 38.3, 6, ['Fever', 'Skin rash / itching']),
+  adm27: t(3, 102, 18, 98, [122, 78], 38.6, 8, ['Sore throat', 'Fever', 'Ear pain']),
+  adm29: t(1, 126, 26, 93, [84, 52], 39.4, 5, ['Fever', 'Painful urination', 'Body weakness / fatigue'], '08:25'),
+  adm32: t(3, 98, 20, 98, [102, 68], 38.9, 5, ['Fever', 'Headache', 'Joint pain']),
+  adm33: t(4, 80, 16, 99, [124, 80], 36.7, 5, ['Chest pain', 'Abdominal pain (tummy ache)'], '08:55'),
+  adm34: t(3, 82, 18, 98, [138, 86], 36.6, 4, ['Chest pain']),
+  adm35: t(2, 148, 22, 96, [118, 76], 36.8, 2, ['Dizziness', 'Shortness of breath', 'Chest pain'], '08:35'),
+};
+
+/** Nurses on triage duty in Emergency, alternated across admissions. */
+export const triageNurseUserIds = ['NRS001', 'NRS004'];
+
+/** Consulting physicians (besides the attending) for some admissions. */
+export const consultingPhysicians: Record<string, string[]> = {
+  adm1: ['DOC004'],
+  adm4: ['DOC005'],
+  adm10: ['DOC006'],
+  adm14: ['DOC001', 'DOC004'],
+  adm24: ['DOC002'],
+  adm16: ['DOC006'],
+  adm29: ['DOC005'],
+};

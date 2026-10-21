@@ -4,9 +4,11 @@ import type { ReactNode } from 'react';
 import patientInfoIcon from '../../Img/patient-information.png';
 import assessmentIcon from '../../Img/assesment.png';
 import careTeamIcon from '../../Img/care-team.png';
+import padlockIcon from '../../Img/padlock.png';
 import { addPatient as s } from './styles';
-import type { TriageAssessment } from './types';
-import type { PatientAdmission } from '../../types';
+import { INSURANCE_LABEL } from '../../lib/patient';
+import type { PatientContactDetails } from './types';
+import type { Patient } from '../../types';
 
 export const SECTION_ICONS = {
   patientInfo: patientInfoIcon,
@@ -87,33 +89,41 @@ export function DoctorCard({
   );
 }
 
-/** Formats an admission's stored triage row and notes for display. */
-export function triageForDisplay(admission?: PatientAdmission | null): TriageAssessment {
-  const triage = admission?.triage;
-  const show = (value: string | number | null | undefined) =>
-    value === null || value === undefined || value === '' ? '—' : String(value);
+/** Reads a patient's registration contact and background details for display. */
+export function contactDetailsOf(patient: Patient): PatientContactDetails {
   return {
-    level: triage?.triageLevel ?? null,
-    time: show(triage?.triageTime),
-    heartRate: show(triage?.heartRate),
-    respRate: show(triage?.respRate),
-    spo2: show(triage?.spo2),
-    bp:
-      triage?.bpSystolic != null && triage?.bpDiastolic != null
-        ? `${triage.bpSystolic}/${triage.bpDiastolic}`
-        : '—',
-    temp: triage?.temperature != null ? Number(triage.temperature).toFixed(1) : '—',
-    pain: show(triage?.painScore),
-    notes: admission?.initialAssessment?.trim() || 'No notes recorded.',
+    contactNumber: patient.contactNumber ?? '',
+    address: patient.address ?? '',
+    insurance:
+      patient.insurance === 'OTHER' && patient.insuranceOther
+        ? `Other — ${patient.insuranceOther}`
+        : patient.insurance
+          ? INSURANCE_LABEL[patient.insurance]
+          : '',
+    religion: patient.religion ?? '',
+    contactPersonName: patient.contactPersonName ?? '',
+    contactPersonNumber: patient.contactPersonNumber ?? '',
+    contactPersonAddress: patient.contactPersonAddress ?? '',
   };
 }
 
-export const VITAL_FIELDS = [
-  { key: 'time', label: 'Time' },
-  { key: 'heartRate', label: 'Heart Rate', unit: 'bpm' },
-  { key: 'respRate', label: 'Resp. Rate', unit: '/min' },
-  { key: 'spo2', label: 'SpO₂', unit: '%' },
-  { key: 'bp', label: 'Blood Pressure', unit: 'mmHg' },
-  { key: 'temp', label: 'Temp', unit: '°C' },
-  { key: 'pain', label: 'Pain', unit: '/10' },
-] as const;
+/** Row action for a patient outside the nurse's wards: their details cannot be opened. */
+export function OtherWardLabel() {
+  return (
+    <span
+      title="This patient is not in your assigned ward"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        fontSize: 12,
+        fontWeight: 600,
+        color: '#64748b',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <img src={padlockIcon} alt="" aria-hidden="true" style={{ width: 12, height: 12, objectFit: 'contain' }} />
+      Other ward
+    </span>
+  );
+}

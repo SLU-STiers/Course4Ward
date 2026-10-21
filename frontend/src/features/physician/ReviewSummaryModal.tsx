@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CourseInWard, PhysicianOrder, PhysicianRequest } from '../../types';
 import { courseInWardApi, ordersApi } from '../../services/domainApi';
 import { formatDateLongFromKey, toDateKey } from '../../lib/format';
+import { apiErrorMessage } from '../../lib/apiError';
 import llamaIcon from '../../Img/llama.png';
 import { review } from './styles';
 import { mergeSummaries, summariesPerDay, summaryDayKey } from './summaries';
@@ -62,6 +63,7 @@ export function ReviewSummaryModal({
   const [draft, setDraft] = useState<{ day: string; text: string } | null>(null);
   const [busy, setBusy] = useState<'saving' | 'generating' | 'approving' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [regenInstructions, setRegenInstructions] = useState('');
 
   // State starts fresh per request: RequestsView keys this modal by request id.
   useEffect(() => {
@@ -107,7 +109,11 @@ export function ReviewSummaryModal({
   const dayOrders = ordersByDay.get(activeDay) ?? [];
   const daySummary = summaryByDay.get(activeDay);
   const editing = draft?.day === activeDay;
-  const missingDays = days.filter((day) => !summaryByDay.has(day));
+  const missingDays = days.filter((day) => {
+    const summary = summaryByDay.get(day);
+    return !summary || !summary.summaryContent.trim();
+  });
+  const approvalBlocked = busy !== null || editing || missingDays.length > 0;
 
   const replaceSummary = (updated: CourseInWard[]) =>
     setSummaries((previous) => mergeSummaries(previous, updated));
@@ -133,16 +139,19 @@ export function ReviewSummaryModal({
     setError(null);
     const call = daySummary
       ? courseInWardApi
-          .regenerate(daySummary.id)
+          .regenerate(daySummary.id, regenInstructions)
           .then(({ data }) => [{ ...daySummary, ...data }])
       : courseInWardApi.generate(patientId, activeDay).then(({ data }) => data);
     void call
       .then((updated) => {
         replaceSummary(updated);
         setDraft(null);
+        setRegenInstructions('');
       })
-      .catch(() =>
-        setError('The AI summary could not be generated for this day. Try again or edit it manually.'),
+      .catch((err) =>
+        setError(
+          apiErrorMessage(err, 'The AI summary could not be generated for this day. Try again or edit it manually.'),
+        ),
       )
       .finally(() => setBusy(null));
   };
@@ -150,6 +159,7 @@ export function ReviewSummaryModal({
   // Approving the request signs off every day reviewed here: each other day's
   // summary is approved first, then the request's own summary.
   const approveAll = () => {
+    if (approvalBlocked) return;
     setBusy('approving');
     setError(null);
     const others = days
@@ -338,7 +348,7 @@ export function ReviewSummaryModal({
                 rows={7}
                 style={review.summaryEditor}
               />
-            ) : daySummary ? (
+            ) : daySummary?.summaryContent.trim() ? (
               <div style={review.summaryBox}>
                 <div style={review.summaryStatus}>{STATUS_LABEL[daySummary.status]}</div>
                 {daySummary.summaryContent}
@@ -350,6 +360,19 @@ export function ReviewSummaryModal({
             )}
 
             {error && <div style={review.errorText}>{error}</div>}
+
+            {daySummary && !editing && (
+              <input
+                type="text"
+                placeholder="Additional instructions for Regenerate (optional)"
+                aria-label="Additional instructions for Regenerate"
+                maxLength={1000}
+                value={regenInstructions}
+                disabled={busy !== null}
+                onChange={(e) => setRegenInstructions(e.target.value)}
+                style={{ ...review.fieldInput, width: '100%', marginTop: 10, boxSizing: 'border-box' }}
+              />
+            )}
 
             <div style={review.aiActions}>
               {daySummary && (
@@ -397,7 +420,7 @@ export function ReviewSummaryModal({
           <footer style={review.footer}>
             {missingDays.length > 0 && (
               <span style={review.footerHint}>
-                {missingDays.length} day{missingDays.length === 1 ? " has" : "s have"} no summary yet
+                Some days have no AI summarizations.
               </span>
             )}
             <button type="button" style={review.cancelBtn} onClick={onClose}>
@@ -405,8 +428,11 @@ export function ReviewSummaryModal({
             </button>
             <button
               type="button"
-              style={review.approveBtn}
-              disabled={busy !== null || editing}
+              style={{
+                ...review.approveBtn,
+                ...(approvalBlocked ? review.approveBtnDisabled : {}),
+              }}
+              disabled={approvalBlocked}
               onClick={approveAll}
             >
               {busy === "approving" ? "Approving..." : "Approve All Days"}

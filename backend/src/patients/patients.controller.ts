@@ -14,8 +14,10 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PatientsService } from './patients.service';
+import { WardAccessService } from '../wards/ward-access.service';
 import {
   AddConsultingPhysicianDto,
+  AssignRoomDto,
   CreatePatientDto,
   UpdatePatientDto,
 } from './dto/patient.dto';
@@ -25,7 +27,10 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('patients')
 export class PatientsController {
-  constructor(private patientsService: PatientsService) {}
+  constructor(
+    private patientsService: PatientsService,
+    private wardAccess: WardAccessService,
+  ) {}
 
   @Post()
   @Roles(Role.NURSE)
@@ -39,61 +44,80 @@ export class PatientsController {
     return this.patientsService.listPhysicians();
   }
 
+  @Get('rooms')
+  @Roles(Role.NURSE)
+  listRooms() {
+    return this.patientsService.listRooms();
+  }
+
   @Get()
   @Roles(Role.PHYSICIAN, Role.NURSE, Role.CLAIMS_PROCESSOR)
-  findAll(@CurrentUser() user: any) {
-    return this.patientsService.findAssignedTo(user.id, user.role);
+  async findAll(@CurrentUser() user: any) {
+    return this.wardAccess.redactPatients(user, await this.patientsService.findAssignedTo(user.id, user.role));
   }
 
   @Get('assigned-to-me')
   @Roles(Role.PHYSICIAN, Role.NURSE)
-  findAssignedToMe(@CurrentUser() user: any) {
-    return this.patientsService.findAssignedTo(user.id, user.role);
+  async findAssignedToMe(@CurrentUser() user: any) {
+    return this.wardAccess.redactPatients(user, await this.patientsService.findAssignedTo(user.id, user.role));
   }
 
   @Get('nurse-assigned')
   @Roles(Role.NURSE)
-  findForNurse() {
-    return this.patientsService.findAllForNurse();
+  async findForNurse(@CurrentUser() user: any) {
+    return this.wardAccess.redactPatients(user, await this.patientsService.findAllForNurse());
   }
 
   @Get(':id')
   @Roles(Role.PHYSICIAN, Role.NURSE, Role.CLAIMS_PROCESSOR)
-  findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.wardAccess.assertPatient(user, id);
     return this.patientsService.findOne(id);
   }
 
   @Patch(':id')
   @Roles(Role.NURSE, Role.PHYSICIAN)
-  update(@Param('id') id: string, @Body() dto: UpdatePatientDto, @CurrentUser() user: any) {
+  async update(@Param('id') id: string, @Body() dto: UpdatePatientDto, @CurrentUser() user: any) {
+    await this.wardAccess.assertPatient(user, id);
     return this.patientsService.update(id, dto, user.id);
   }
 
   @Patch('admissions/:id/discharge')
   @Roles(Role.NURSE)
-  discharge(@Param('id') id: string, @CurrentUser() user: any) {
+  async discharge(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.wardAccess.assertAdmission(user, id);
     return this.patientsService.dischargeAdmission(id, user.id);
   }
 
   @Patch('admissions/:id/admit')
   @Roles(Role.NURSE)
-  admit(@Param('id') id: string, @CurrentUser() user: any) {
+  async admit(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.wardAccess.assertAdmission(user, id);
     return this.patientsService.admitAdmission(id, user.id);
   }
 
   @Patch('admissions/:id/observe')
   @Roles(Role.NURSE)
-  observe(@Param('id') id: string, @CurrentUser() user: any) {
+  async observe(@Param('id') id: string, @CurrentUser() user: any) {
+    await this.wardAccess.assertAdmission(user, id);
     return this.patientsService.observeAdmission(id, user.id);
+  }
+
+  @Patch('admissions/:id/room')
+  @Roles(Role.NURSE)
+  async assignRoom(@Param('id') id: string, @Body() dto: AssignRoomDto, @CurrentUser() user: any) {
+    await this.wardAccess.assertAdmission(user, id);
+    return this.patientsService.assignRoom(id, dto.roomNumber, user.id);
   }
 
   @Post('admissions/:id/consulting-physicians')
   @Roles(Role.NURSE)
-  addConsultingPhysician(
+  async addConsultingPhysician(
     @Param('id') id: string,
     @Body() dto: AddConsultingPhysicianDto,
     @CurrentUser() user: any,
   ) {
+    await this.wardAccess.assertAdmission(user, id);
     return this.patientsService.addConsultingPhysician(id, dto.physicianId, user.id);
   }
 }

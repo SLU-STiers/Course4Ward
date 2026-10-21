@@ -73,6 +73,11 @@ class BatchSummaryRequest(BaseModel):
         default_factory=list,
         description="Optional RAG references (prior APPROVED summaries of similar orders) used as style guidance.",
     )
+    instructions: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Optional extra instructions from the physician, e.g. when regenerating a summary.",
+    )
 
 
 class GroupResult(BaseModel):
@@ -140,19 +145,15 @@ def _format_references(references):
     return "\n".join(lines).strip()
 
 
-def generate_summary(
+def build_prompt(
     doctor_orders: str,
-    temperature: float = 0.1,
     group_label: Optional[str] = None,
     references: Optional[List[dict]] = None,
-):
+    instructions: Optional[str] = None,
+) -> str:
     """
-    Calls Ollama to generate a summary of the doctor's orders.
-    `group_label`, when provided, tells the model which day/admission group the
-    orders belong to (e.g. "Day 1 of Admission #..."). `references`, when
-    provided, adds retrieved RAG examples (prior APPROVED summaries of similar
-    orders) used only as style guidance. The output paragraph format is unchanged.
-    Returns (summary_text, elapsed_seconds) or (None, elapsed) on error.
+    The summarization prompt. Shared with fine_tuning_data/build_dataset.py so
+    fine-tuning examples see exactly the prompt the service sends.
     """
     context_block = (
         f"ORDERS BELONG TO: {group_label} (these orders were written on the same "
@@ -163,29 +164,58 @@ def generate_summary(
 
     references_block = _format_references(references)
     references_rules = (
-        "7. REFERENCES: When reference examples are present, match their tone, "
+        "6. REFERENCES: When reference examples are present, match their tone, "
         "structure, and terminology, but summarize ONLY the CURRENT orders below. "
         "Do not copy any clinical detail from the references and do not mention them.\n"
         if references_block
         else ""
     )
 
-    user_content = f"""
+    instructions = (instructions or "").strip()
+    instructions_block = (
+        "ADDITIONAL INSTRUCTIONS FROM THE PHYSICIAN (apply them, but never add "
+        "clinical details that are not in the orders):\n"
+        f"{instructions}\n\n"
+        if instructions
+        else ""
+    )
+
+    return f"""
 You are an expert clinical documentation specialist familiar with Philippine healthcare standards. Your task is to process raw doctor's orders and summarize them for the "Course in the Ward" section of PhilHealth CF4.
 
 RULES (FOLLOW THESE STRICTLY):
 1. TENSE & VOICE (MANDATORY): Every sentence MUST be in past tense and passive voice. Change verbs: "start" -> "was started", "administer" -> "was administered", "obtain" -> "was obtained", "refer" -> "was referred", "consult" -> "was consulted". Do NOT use present tense ("is given", "are ordered") or imperative mood.
-2. OUTPUT LENGTH: Exactly 5 sentences. Group related orders into the same sentence using "and", "while", or semicolons. Do not use bullet points or numbered lists.
-3. COMPLETENESS: Include EVERY exact detail from the orders: medications (dose, route, frequency), diagnostics, fluids, oxygen, labs, referrals, PRN conditions, monitoring, consult criteria. Do not omit anything.
-4. NO ADDITIONS: Do not add diagnoses, outcomes, or context not present in the orders.
+2. OUTPUT LENGTH: Keep it as short as possible; aim for at most 5 sentences and go beyond that only when the orders cannot be covered otherwise. Never pad with content that isn't in the orders. Group related orders into the same sentence using "and", "while", or semicolons. Do not use bullet points or numbered lists.
+3. COMPLETENESS: Include every clinically relevant detail from the orders: medications (dose, route, frequency), diagnostics, fluids, oxygen, labs, procedures, referrals, PRN conditions, monitoring, consult criteria. Mention supplies and materials only when truly essential (e.g. a blood product or device used on the patient); otherwise just name the procedure they are for.
+4. NO NAMES: Omit physicians' and staff names, including signatures; refer to the service instead (e.g. "IM-IDS", "Neurology", "Anesthesia", "the attending physician").
+5. NO ADDITIONS: Do not add diagnoses, outcomes, or context not present in the orders.
 {references_rules}
 {context_block}{references_block}
-
+{instructions_block}
 CURRENT DOCTOR'S ORDERS:
 {doctor_orders}
 
 FINAL REMINDER: Output ONLY the summary paragraph. No extra text, no greetings, no bullet points. Do not mention or echo the reference examples.
 """
+
+
+def generate_summary(
+    doctor_orders: str,
+    temperature: float = 0.1,
+    group_label: Optional[str] = None,
+    references: Optional[List[dict]] = None,
+    instructions: Optional[str] = None,
+):
+    """
+    Calls Ollama to generate a summary of the doctor's orders.
+    `group_label`, when provided, tells the model which day/admission group the
+    orders belong to (e.g. "Day 1 of Admission #..."). `references`, when
+    provided, adds retrieved RAG examples (prior APPROVED summaries of similar
+    orders) used only as style guidance. The output paragraph format is unchanged.
+    Returns (summary_text, elapsed_seconds, None), or (None, elapsed, reason)
+    on error, where `reason` says what went wrong in plain words.
+    """
+    user_content = build_prompt(doctor_orders, group_label, references, instructions)
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": user_content}],
@@ -197,20 +227,33 @@ FINAL REMINDER: Output ONLY the summary paragraph. No extra text, no greetings, 
     start_time = time.time()
     try:
         response = requests.post(OLLAMA_CHAT_URL, json=payload, timeout=120)
-    except requests.exceptions.RequestException as e:
-        elapsed = time.time() - start_time
+    except requests.exceptions.ConnectionError as e:
         print(f"Request error: {e}")
-        return None, elapsed
+        return None, time.time() - start_time, (
+            f"Cannot reach Ollama at {OLLAMA_CHAT_URL}. Make sure Ollama is running."
+        )
+    except requests.exceptions.Timeout:
+        return None, time.time() - start_time, "Ollama did not respond within 120 seconds."
+    except requests.exceptions.RequestException as e:
+        print(f"Request error: {e}")
+        return None, time.time() - start_time, f"Request to Ollama failed: {e}"
 
     elapsed = time.time() - start_time
 
     if response.status_code != 200:
         print(f"Ollama error (status {response.status_code}): {response.text}")
-        return None, elapsed
+        try:
+            detail = response.json().get("error") or response.text
+        except ValueError:
+            detail = response.text
+        # e.g. 404 "model 'qwen3.5:4b' not found" when the model isn't pulled.
+        return None, elapsed, f"Ollama returned HTTP {response.status_code}: {detail.strip()}"
 
     data = response.json()
     summary = data.get("message", {}).get("content", "").strip()
-    return summary, elapsed
+    if not summary:
+        return None, elapsed, f"Model '{MODEL}' returned an empty summary."
+    return summary, elapsed, None
 
 # ------------------ Grouping Helpers --------------------------------------
 def _parse_iso_date(value: Optional[str]):
@@ -352,13 +395,13 @@ async def generate_summary_batch(req: BatchSummaryRequest):
             else:
                 label = _day_label(admission.admissionId, order_date, admission_date)
 
-            summary, elapsed = generate_summary(
+            summary, elapsed, error = generate_summary(
                 group_text,
                 req.temperature,
                 group_label=label,
                 references=[r.model_dump(exclude_none=True) for r in req.references],
+                instructions=req.instructions,
             )
-            error = None if summary else "Failed to generate summary (check Ollama logs)"
 
             results.append(GroupResult(
                 group_id=_build_group_id(admission.admissionId, day_number),

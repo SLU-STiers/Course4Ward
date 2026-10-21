@@ -120,6 +120,17 @@ export const ui: Record<string, CSSProperties> = {
     cursor: 'pointer',
     color: '#94a3b8',
     fontSize: 16,
+    /* Icon-only button: the global `button { padding: 8px 12px }` rule would
+       otherwise size this box (37x37.6) and offset the glyph instead of
+       centring it. Pin a square box and centre the mark ourselves. */
+    display: 'grid',
+    placeItems: 'center',
+    width: 32,
+    height: 32,
+    padding: 0,
+    lineHeight: 1,
+    borderRadius: 8,
+    flexShrink: 0,
   },
   detailGrid: {
     display: 'grid',
@@ -204,6 +215,28 @@ export const ui: Record<string, CSSProperties> = {
   addRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 },
 };
 
+/** The chevron drawn on the right of every `<select>` (see `addPatient.select`). */
+const SELECT_CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230f172a' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.5 9.5 12 15l5.5-5.5'/%3E%3C/svg%3E\")";
+
+/**
+ * One box for every text control in the modals. `<select>` adds the drawn
+ * chevron on top of this (see `addPatient.select`).
+ */
+const controlBox: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  height: 40,
+  padding: '0 12px',
+  fontSize: 14,
+  color: '#0f172a',
+  backgroundColor: '#ffffff',
+  border: '1px solid #cbd5e1',
+  borderRadius: 10,
+  outline: 'none',
+  fontFamily: 'inherit',
+};
+
 export const addPatient: Record<string, CSSProperties> = {
   modal: {
     backgroundColor: '#ffffff',
@@ -260,6 +293,16 @@ export const addPatient: Record<string, CSSProperties> = {
   grid4: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 },
   label: { display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6 },
   required: { color: '#dc2626', marginLeft: 3 },
+  subsectionTitle: {
+    margin: '18px 0 10px',
+    paddingTop: 14,
+    borderTop: '1px solid #e2e8f0',
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#334155',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   inputInvalid: { borderColor: '#dc2626', backgroundColor: '#fef2f2' },
   inputReadOnly: { backgroundColor: '#f1f5f9', color: '#475569', cursor: 'default' },
   fieldError: { display: 'block', marginTop: 4, fontSize: 12, fontWeight: 600, color: '#b91c1c' },
@@ -287,18 +330,24 @@ export const addPatient: Record<string, CSSProperties> = {
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
-  input: {
-    width: '100%',
-    boxSizing: 'border-box',
-    height: 40,
-    padding: '0 12px',
-    fontSize: 14,
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-    border: '1px solid #cbd5e1',
-    borderRadius: 10,
-    outline: 'none',
-    fontFamily: 'inherit',
+  input: controlBox,
+  select: {
+    ...controlBox,
+    /*
+     * Chrome draws the native dropdown arrow flush against the right border and
+     * ignores padding-right when placing it, so it sat at 0px while the label
+     * was inset 12px — visibly off. Draw the chevron ourselves instead (same
+     * 24px / 1.7-stroke mark as NavIcons' ChevronDownIcon) and inset it to
+     * match the label, reserving room so long options never run under it.
+     */
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    backgroundImage: SELECT_CHEVRON,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 12px center',
+    backgroundSize: '16px 16px',
+    paddingRight: 36,
+    cursor: 'pointer',
   },
   textarea: {
     width: '100%',
@@ -472,6 +521,11 @@ export const addPatient: Record<string, CSSProperties> = {
     cursor: 'pointer',
     display: 'grid',
     placeItems: 'center',
+    /* Same trap as `closeX`: the inherited `button` padding (8px 12px) eats all
+       but 4x10px of this 28px box and leaves the ✕ sitting low-right. */
+    padding: 0,
+    lineHeight: 1,
+    flexShrink: 0,
   },
   emptyDoctors: {
     padding: '12px',
@@ -505,16 +559,6 @@ export const addPatient: Record<string, CSSProperties> = {
 
 /* Per-order execution status + nurse comment, inside the orders timeline. */
 export const orderExec: Record<string, CSSProperties> = {
-  updateBtn: {
-    border: 'none',
-    background: 'none',
-    color: '#0284c7',
-    fontSize: 12,
-    fontWeight: 700,
-    cursor: 'pointer',
-    padding: 0,
-    fontFamily: 'inherit',
-  },
   editor: {
     marginTop: 10,
     display: 'flex',

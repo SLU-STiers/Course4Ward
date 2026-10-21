@@ -25,6 +25,10 @@ import type {
   PasswordResetRequestPage,
   StaffAccount,
   TrendBucket,
+  Ward,
+  WardRoom,
+  SummaryVersion,
+  PhysicianOption,
 } from '../types';
 
 // --- Auth ---
@@ -54,9 +58,7 @@ export const patientsApi = {
   assignedToMe: () => api.get<Patient[]>('/patients/assigned-to-me'),
   nurseAssigned: () => api.get<Patient[]>('/patients/nurse-assigned'),
   listPhysicians: () =>
-    api.get<{ id: string; userId: string; firstName: string; lastName: string }[]>(
-      '/patients/physicians',
-    ),
+    api.get<PhysicianOption[]>('/patients/physicians'),
   getOne: (id: string) => api.get<Patient>(`/patients/${id}`),
   create: (data: Record<string, unknown>) => api.post<Patient>('/patients', data),
   update: (id: string, data: Partial<Patient>) => api.patch<Patient>(`/patients/${id}`, data),
@@ -68,6 +70,14 @@ export const patientsApi = {
   observe: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/observe`),
   addConsultingPhysician: (admissionId: string, physicianId: string) =>
     api.post(`/patients/admissions/${admissionId}/consulting-physicians`, { physicianId }),
+  /** Nurse-only: active ward rooms with their occupancy. */
+  listRooms: () => api.get<WardRoom[]>('/patients/rooms'),
+  /** Nurse-only: puts an admitted patient in a free room, or clears it with `null`. */
+  assignRoom: (admissionId: string, roomNumber: string | null) =>
+    api.patch<{ id: string; room: { id: string; number: string } | null }>(
+      `/patients/admissions/${admissionId}/room`,
+      { roomNumber },
+    ),
 };
 
 // --- Orders ---
@@ -105,8 +115,18 @@ export const courseInWardApi = {
     api.post<CourseInWard[]>('/course-in-ward/generate', day ? { patientId, day } : { patientId }),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
-  regenerate: (id: string) => api.post<CourseInWard>(`/course-in-ward/${id}/regenerate`),
+  /** `instructions`: optional extra prompt for the AI (blank = none). */
+  regenerate: (id: string, instructions?: string) =>
+    api.post<CourseInWard>(
+      `/course-in-ward/${id}/regenerate`,
+      instructions?.trim() ? { instructions: instructions.trim() } : {},
+    ),
   approve: (id: string) => api.patch<CourseInWard>(`/course-in-ward/${id}/approve`),
+  /** Earlier texts of a summary, newest first (the last 3 are kept). */
+  versions: (id: string) => api.get<SummaryVersion[]>(`/course-in-ward/${id}/versions`),
+  /** Makes an earlier text current again; the replaced text becomes a version. */
+  restoreVersion: (id: string, versionId: string) =>
+    api.post<CourseInWard>(`/course-in-ward/${id}/versions/${versionId}/restore`),
   forPatient: (patientId: string) =>
     api.get<CourseInWard[]>(`/course-in-ward/patient/${patientId}`),
 };
@@ -142,6 +162,7 @@ export const notificationsApi = {
 // --- Admin ---
 export const adminApi = {
   listUsers: () => api.get<StaffAccount[]>('/admin/users'),
+  listWards: () => api.get<Ward[]>('/admin/wards'),
   createUser: (data: AdminUserInput) => api.post('/admin/users', data),
   updateUser: (id: string, data: AdminUserInput) => api.patch(`/admin/users/${id}`, data),
   /** One page of activity logs, filtered server-side. */

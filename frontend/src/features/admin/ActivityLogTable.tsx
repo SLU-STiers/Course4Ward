@@ -8,6 +8,7 @@ import { daysAgoValue, formatDateShort, formatTimeLocale, todayValue } from '../
 import { ACTION_FILTER_OPTIONS, actionMeta, roleLabel } from './activityLabels';
 import { styles } from './styles';
 import { ActivityLogGraph } from './ActivityLogGraph';
+import { ActivityLogDetails } from './ActivityLogDetails';
 import type {
   ActionFilter,
   ActivityLogFilters,
@@ -15,7 +16,7 @@ import type {
   ActivityRangePreset as RangePreset,
   RoleFilter,
 } from './types';
-import type { AuditLogQuery } from '../../types';
+import type { AuditLogEntry, AuditLogQuery } from '../../types';
 
 const PAGE_SIZE = 10;
 
@@ -47,6 +48,7 @@ export function ActivityLogTable() {
   const [customTo, setCustomTo] = useState('');
   const [page, setPage] = useState(1);
   const [view, setView] = useState<ActivityLogView>('table');
+  const [selected, setSelected] = useState<AuditLogEntry | null>(null);
 
   const range = useMemo(
     () => resolveRange(rangePreset, customFrom, customTo),
@@ -149,7 +151,7 @@ export function ActivityLogTable() {
           searchProps={{
             value: searchInput,
             onChange: handleSearchChange,
-            placeholder: 'Search by name, login id or action...',
+            placeholder: 'Search by log ID, name, login ID, role or action...',
             ariaLabel: 'Search activity logs',
           }}
           filters={[
@@ -271,7 +273,19 @@ export function ActivityLogTable() {
                   const timestamp = new Date(entry.timeStamp);
                   const meta = actionMeta(entry.action);
                   return (
-                    <tr key={entry.id}>
+                    <tr
+                      key={entry.id}
+                      className="admin-log-table__row"
+                      tabIndex={0}
+                      aria-label={`View details: ${entry.details?.summary ?? meta.label}`}
+                      onClick={() => setSelected(entry)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelected(entry);
+                        }
+                      }}
+                    >
                       <td>
                         <span style={styles.cellStack}>
                           <span style={styles.userNameCell}>{formatDateShort(timestamp)}</span>
@@ -297,8 +311,13 @@ export function ActivityLogTable() {
                         </span>
                       </td>
                       <td>{roleLabel(entry.user.role)}</td>
-                      <td title={meta.description}>
-                        <StatusBadge status={meta.badge} label={meta.label} />
+                      <td title={entry.details?.summary ?? meta.description}>
+                        <span style={{ ...styles.cellStack, alignItems: 'flex-start', gap: 4 }}>
+                          <StatusBadge status={meta.badge} label={meta.label} />
+                          {entry.details?.summary ? (
+                            <span className="admin-log-table__summary">{entry.details.summary}</span>
+                          ) : null}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -315,6 +334,8 @@ export function ActivityLogTable() {
               </tbody>
             </table>
           </div>
+
+          <ActivityLogDetails entry={selected} onClose={() => setSelected(null)} />
 
           <div style={styles.activityPagination}>
             <span style={styles.paginationInfo}>

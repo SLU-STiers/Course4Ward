@@ -9,7 +9,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { OrderEnteredBy, OrderStatus, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditLogService, detailItems, fullName, humanize } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { OllamaClient } from '../course-in-ward/ollama-client';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/create-order.dto';
 
@@ -51,6 +52,7 @@ export class OrdersService {
     private prisma: PrismaService,
     private auditLog: AuditLogService,
     private config: ConfigService,
+    private notifications: NotificationsService,
   ) {
     this.ollama = new OllamaClient(
       this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000',
@@ -112,9 +114,23 @@ export class OrdersService {
       include: orderInclude,
     });
 
+    const patientName = await this.auditLog.patientName({ admissionId: dto.admissionId });
+    const physicianName = fullName(order.orderedBy);
     await this.auditLog.record({
       userId: enteredById,
       action: 'ORDER_CREATED',
+      details: {
+        summary:
+          enteredByRole === Role.NURSE
+            ? `Entered Dr. ${physicianName}'s ${humanize(type).toLowerCase()} order for ${patientName}`
+            : `Wrote a ${humanize(type).toLowerCase()} order for ${patientName}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Ordering physician', `Dr. ${physicianName}`],
+          ['Order type', humanize(type)],
+          ['Order', dto.orderContent],
+        ]),
+      },
     });
 
     // Best-effort: persist the pgvector embedding so this order can serve as a
@@ -238,17 +254,88 @@ export class OrdersService {
       include: orderInclude,
     });
 
+    const patientName = await this.auditLog.patientName({ admissionId: order.admissionId });
+    const changes = [
+      { field: 'Status', from: humanize(order.status), to: humanize(updated.status) },
+      { field: 'Nurse note', from: order.nurseComment ?? '—', to: updated.nurseComment ?? '—' },
+    ].filter((change) => change.from !== change.to);
     await this.auditLog.record({
       userId: nurseId,
       action: 'ORDER_STATUS_UPDATED',
+      details: {
+        summary: changed
+          ? `Marked an order for ${patientName} as ${humanize(updated.status).toLowerCase()}`
+          : `Updated the note on an order for ${patientName}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Ordering physician', `Dr. ${fullName(updated.orderedBy)}`],
+          ['Order', order.orderContent],
+        ]),
+        changes,
+      },
     });
+
+    if (changed && dto.status === OrderStatus.FINISHED && !order.summarizationId) {
+      await this.notifyFinishedAfterSummary(order);
+    }
 
     return updated;
   }
 
   /**
-   * Orders written on ONE calendar day for a patient, oldest first -- the input
-   * to a per-day AI summarization. `day` is a local `YYYY-MM-DD` key; omitting
+   * Only finished orders are summarized, so an order finished after its day's
+   * Course in the Ward was written is missing from it: tell the attending
+   * physician (or the ordering one) so they can regenerate. Best effort -- never
+   * fails the nurse's status update. Fires at most once per order, since an
+   * order reaches FINISHED only once.
+   */
+  private async notifyFinishedAfterSummary(order: {
+    id: string;
+    admissionId: string;
+    orderedById: string;
+    dateCreated: Date;
+  }) {
+    try {
+      const created = new Date(order.dateCreated);
+      const start = new Date(created.getFullYear(), created.getMonth(), created.getDate());
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+
+      const admission = await this.prisma.patientAdmission.findUnique({
+        where: { id: order.admissionId },
+        select: {
+          patientId: true,
+          physicianId: true,
+          patient: { select: { firstName: true, lastName: true } },
+        },
+      });
+      if (!admission) return;
+
+      const summary = await this.prisma.courseInWard.findFirst({
+        where: { patientId: admission.patientId, summaryDate: { gte: start, lt: end } },
+        select: { id: true },
+      });
+      if (!summary) return;
+
+      const day = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      await this.notifications.create({
+        userId: admission.physicianId ?? order.orderedById,
+        title: 'Order finished after summary',
+        message:
+          `An order for ${admission.patient.firstName} ${admission.patient.lastName} on ${day} ` +
+          `was finished after that day's Course in the Ward was written. Regenerate the summary to include it.`,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[notify] could not check summary for finished order ${order.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * FINISHED orders written on ONE calendar day for a patient, oldest first --
+   * the input to a per-day AI summarization (only carried-out orders belong in
+   * the Course in the Ward). `day` is a local `YYYY-MM-DD` key; omitting
    * it means today. The owning admission rides along so the AI service can
    * label the group ("Day N of Admission").
    */
@@ -256,7 +343,11 @@ export class OrdersService {
     const { start, end } = localDayRange(day);
 
     return this.prisma.physicianOrder.findMany({
-      where: { admission: { patientId }, dateCreated: { gte: start, lt: end } },
+      where: {
+        admission: { patientId },
+        dateCreated: { gte: start, lt: end },
+        status: OrderStatus.FINISHED,
+      },
       orderBy: { dateCreated: 'asc' },
       include: { admission: { select: { id: true, admissionDate: true } } },
     });

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import { IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class GenerateSummaryDto {
@@ -21,4 +21,15 @@ export class EditSummaryDto {
   @ApiProperty({ description: "Physician's manually edited summary text" })
   @IsString()
   editedText: string;
+}
+
+export class RegenerateSummaryDto {
+  @ApiProperty({
+    required: false,
+    description: 'Optional extra instructions for the AI, e.g. "mention the IV fluids first".',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  instructions?: string;
 }

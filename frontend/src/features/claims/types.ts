@@ -1,6 +1,7 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
 import type { OrderExecutionState } from '../../components/orders/orderStatus';
+import type { TriageDisplay } from '../../lib/triage';
 
 
 export type TabType = 'overview' | 'requests' | 'export';
@@ -26,6 +27,8 @@ export interface SummarizationRequest {
     admissionDate: string;
   };
   summaryText: string;
+  /** Triage assessment recorded when the patient was registered for this admission. */
+  triage: TriageDisplay;
   /**
    * `id` is the physician order's own id — unique per order, never per claim.
    * Carries the nurse's execution state (`OrderExecutionState`) so the timeline

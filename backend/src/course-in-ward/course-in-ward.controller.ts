@@ -14,14 +14,22 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CourseInWardService } from './course-in-ward.service';
-import { GenerateSummaryDto, EditSummaryDto } from './dto/course-in-ward.dto';
+import { WardAccessService } from '../wards/ward-access.service';
+import {
+  GenerateSummaryDto,
+  EditSummaryDto,
+  RegenerateSummaryDto,
+} from './dto/course-in-ward.dto';
 
 @ApiTags('course-in-ward')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('course-in-ward')
 export class CourseInWardController {
-  constructor(private courseInWardService: CourseInWardService) {}
+  constructor(
+    private courseInWardService: CourseInWardService,
+    private wardAccess: WardAccessService,
+  ) {}
 
   @Post('generate')
   @Roles(Role.PHYSICIAN)
@@ -38,8 +46,28 @@ export class CourseInWardController {
 
   @Post(':id/regenerate')
   @Roles(Role.PHYSICIAN)
-  regenerate(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.courseInWardService.regenerateSummary(id, user.id);
+  regenerate(
+    @Param('id') id: string,
+    @Body() dto: RegenerateSummaryDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.courseInWardService.regenerateSummary(id, user.id, dto.instructions);
+  }
+
+  @Get(':id/versions')
+  @Roles(Role.PHYSICIAN)
+  versions(@Param('id') id: string) {
+    return this.courseInWardService.listVersions(id);
+  }
+
+  @Post(':id/versions/:versionId/restore')
+  @Roles(Role.PHYSICIAN)
+  restore(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.courseInWardService.restoreVersion(id, versionId, user.id);
   }
 
   @Patch(':id/approve')
@@ -50,7 +78,8 @@ export class CourseInWardController {
 
   @Get('patient/:patientId')
   @Roles(Role.PHYSICIAN, Role.NURSE, Role.CLAIMS_PROCESSOR)
-  findForPatient(@Param('patientId') patientId: string) {
+  async findForPatient(@Param('patientId') patientId: string, @CurrentUser() user: any) {
+    await this.wardAccess.assertPatient(user, patientId);
     return this.courseInWardService.findForPatient(patientId);
   }
 }

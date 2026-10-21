@@ -1,14 +1,20 @@
 import { PatientClass, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
+  admissionRooms,
   admissions,
   approvalRequests,
   auditLogs,
+  consultingPhysicians,
   coursesInWard,
   DEMO_PASSWORD,
   notes,
+  nurseWards,
   orders,
+  patientDetails,
   patients,
+  triageNurseUserIds,
+  triages,
   users,
 } from './seed/data';
 
@@ -55,8 +61,10 @@ async function main() {
   }
 
   // 2) Patients — no natural unique key, so upsert by the fixed seed id.
+  // Registration details also fill seeded rows from older seeds that lack them.
   const patientIds = new Map<string, string>();
   for (const p of patients) {
+    const details = must(patientDetails[p.key], `details for patient '${p.key}'`);
     await prisma.patient.upsert({
       where: { id: p.id },
       update: {},
@@ -66,14 +74,19 @@ async function main() {
         lastName: p.lastName,
         gender: p.gender,
         dateOfBirth: p.dateOfBirth,
+        ...details,
       },
     });
+    await prisma.patient.updateMany({ where: { id: p.id, contactNumber: null }, data: details });
     patientIds.set(p.key, p.id);
   }
 
-  // 3) Admissions.
+  // 3) Admissions, each with its triage (chief complaints lead the initial
+  // assessment, as the nurse Add Patient form writes it) and consultants.
   const admissionIds = new Map<string, string>();
-  for (const a of admissions) {
+  for (const [index, a] of admissions.entries()) {
+    const triage = must(triages[a.key], `triage for admission '${a.key}'`);
+    const initialAssessment = `Chief complaint: ${triage.complaints.join(', ')}.\n\n${a.initialAssessment ?? ''}`.trim();
     await prisma.patientAdmission.upsert({
       where: { id: a.id },
       update: {},
@@ -85,8 +98,44 @@ async function main() {
         dischargeDate: a.dischargeDate ?? null,
         patientClass: a.patientClass ?? PatientClass.INPATIENT,
         classSince: a.classSince ?? a.admissionDate,
-        initialAssessment: a.initialAssessment ?? null,
+        initialAssessment,
       },
+    });
+    // Older seeds stored the assessment without complaints; only that untouched text is replaced.
+    if (a.initialAssessment) {
+      await prisma.patientAdmission.updateMany({
+        where: { id: a.id, initialAssessment: a.initialAssessment },
+        data: { initialAssessment },
+      });
+    }
+    await prisma.triageAssessment.upsert({
+      where: { admissionId: a.id },
+      update: {},
+      create: {
+        admissionId: a.id,
+        triageLevel: triage.level,
+        triageTime: triage.time,
+        heartRate: triage.heartRate,
+        respRate: triage.respRate,
+        spo2: triage.spo2,
+        bpSystolic: triage.bp[0],
+        bpDiastolic: triage.bp[1],
+        temperature: triage.temp,
+        painScore: triage.pain,
+        recordedById: must(
+          userIds.get(triageNurseUserIds[index % triageNurseUserIds.length]),
+          'triage nurse',
+        ),
+        createdAt: a.admissionDate,
+      },
+    });
+    const consultants = consultingPhysicians[a.key] ?? [];
+    await prisma.admissionPhysician.createMany({
+      data: consultants.map((userId) => ({
+        admissionId: a.id,
+        physicianId: must(userIds.get(userId), `consultant '${userId}'`),
+      })),
+      skipDuplicates: true,
     });
     admissionIds.set(a.key, a.id);
   }
@@ -189,7 +238,28 @@ async function main() {
     });
   }
 
-  // 9) Report.
+  // 9) Wards: nurse assignments, and rooms for some current inpatients. Only
+  // fills gaps (no room yet, room free), so it never moves a real patient.
+  for (const { userId, wardIds } of nurseWards) {
+    const nurseId = must(userIds.get(userId), `nurse '${userId}'`);
+    await prisma.nurseWard.createMany({
+      data: wardIds.map((wardId) => ({ nurseId, wardId })),
+      skipDuplicates: true,
+    });
+  }
+  for (const [key, number] of Object.entries(admissionRooms)) {
+    const room = await prisma.room.findUnique({
+      where: { number },
+      select: { id: true, admissions: { where: { dischargeDate: null }, take: 1, select: { id: true } } },
+    });
+    if (!room || room.admissions.length) continue;
+    await prisma.patientAdmission.updateMany({
+      where: { id: must(admissionIds.get(key), `admission '${key}'`), roomId: null, dischargeDate: null },
+      data: { roomId: room.id },
+    });
+  }
+
+  // 10) Report.
   const width = Math.max(...users.map((u) => u.role.length), 0) + 2;
   console.log('\nMock data seeded (idempotent — safe to re-run):');
   console.log(`  users=${users.length} patients=${patients.length} admissions=${admissions.length}`);

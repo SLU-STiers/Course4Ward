@@ -1,12 +1,13 @@
 // unit-tests/course-in-ward.test.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { CourseInWardService } from '../course-in-ward/course-in-ward.service';
+import { CourseInWardService, MAX_SUMMARY_VERSIONS } from '../course-in-ward/course-in-ward.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
 import { ConfigService } from '@nestjs/config';
-import { Sex, SummaryStatus } from '@prisma/client';
+import { OrderStatus, Sex, SummaryStatus } from '@prisma/client';
+import { AxiosError } from 'axios';
 
 // Mock the OllamaClient BEFORE importing the service. Every `new OllamaClient()`
 // returns this ONE object, so the instance the service builds in its
@@ -45,10 +46,19 @@ const mockPrismaService = {
   summaryApprovalRequest: {
     updateMany: jest.fn(),
   },
+  summaryVersion: {
+    create: jest.fn(),
+    findFirst: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
+    delete: jest.fn(),
+    deleteMany: jest.fn(),
+  },
 };
 
 const mockAuditLogService = {
   record: jest.fn(),
+  patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
+  userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
 };
 
 const mockOrdersService = {
@@ -241,10 +251,10 @@ describe('CourseInWardService', () => {
         where: { id: { in: ['order-1', 'order-2'] } },
         data: { summarizationId: 'summary-789' },
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: mockRequestedById,
         action: 'SUMMARY_GENERATED_AI',
-      });
+      }));
       expect(result).toEqual([mockCreatedSummary]);
     });
 
@@ -316,7 +326,7 @@ describe('CourseInWardService', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.generateSummary(mockPatientId, mockRequestedById, '2026-03-04')
-      ).rejects.toThrow('No orders recorded for this patient on 2026-03-04');
+      ).rejects.toThrow('No finished orders recorded for this patient on 2026-03-04');
       expect(mockOllamaClient.summarizeBatch).not.toHaveBeenCalled();
     });
 
@@ -332,7 +342,7 @@ describe('CourseInWardService', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.generateSummary(mockPatientId, mockRequestedById)
-      ).rejects.toThrow('AI summarization service is unavailable');
+      ).rejects.toThrow('AI summarization failed: AI service unavailable');
       expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
     });
 
@@ -349,7 +359,7 @@ describe('CourseInWardService', () => {
             summary: null,
             success: false,
             processing_time_seconds: 1.0,
-            error: 'Failed to summarize',
+            error: "Ollama returned HTTP 404: model 'qwen3.5:4b' not found",
             orders: [],
           },
         ],
@@ -358,11 +368,25 @@ describe('CourseInWardService', () => {
       mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(failedAiResponse);
 
-      // Act & Assert
+      // Act & Assert: the AI service's own reason reaches the physician
       await expect(
         service.generateSummary(mockPatientId, mockRequestedById)
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        "The AI could not summarize 1 of 1 day(s): Ollama returned HTTP 404: model 'qwen3.5:4b' not found.",
+      );
       expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
+    });
+
+    it('should say the AI service is not running when the connection is refused', async () => {
+      mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockRejectedValue(
+        new AxiosError('connect ECONNREFUSED 127.0.0.1:8000', 'ECONNREFUSED'),
+      );
+
+      await expect(
+        service.generateSummary(mockPatientId, mockRequestedById)
+      ).rejects.toThrow(/Cannot reach the AI service at .*\. Make sure it is running\./);
     });
 
     it('should store one summary per day group when the AI reports several', async () => {
@@ -466,11 +490,42 @@ describe('CourseInWardService', () => {
           status: SummaryStatus.DRAFT_EDITED,
         },
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: mockPhysicianId,
         action: 'SUMMARY_EDITED_MANUAL',
-      });
+      }));
       expect(result).toEqual(mockUpdatedSummary);
+    });
+
+    it('should keep the replaced text as a version and trim to the cap', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockPrismaService.summaryVersion.findMany.mockResolvedValueOnce([{ id: 'oldest' }]);
+
+      await service.editSummary(mockSummaryId, mockEditedText, mockPhysicianId);
+
+      expect(mockPrismaService.summaryVersion.create).toHaveBeenCalledWith({
+        data: {
+          summaryId: mockSummaryId,
+          content: 'Original AI summary',
+          source: SummaryStatus.DRAFT_AI,
+        },
+      });
+      expect(mockPrismaService.summaryVersion.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: MAX_SUMMARY_VERSIONS }),
+      );
+      expect(mockPrismaService.summaryVersion.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['oldest'] } },
+      });
+    });
+
+    it('should not keep a version when the text is unchanged', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockExistingSummary);
+
+      await service.editSummary(mockSummaryId, 'Original AI summary', mockPhysicianId);
+
+      expect(mockPrismaService.summaryVersion.create).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if summary does not exist', async () => {
@@ -484,6 +539,56 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.findUnique).toHaveBeenCalledWith({
         where: { id: mockSummaryId },
       });
+      expect(mockPrismaService.courseInWard.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreVersion', () => {
+    const current = {
+      id: 'summary-789',
+      patientId: 'patient-123',
+      summaryContent: 'Current text',
+      status: SummaryStatus.APPROVED,
+      summaryDate: new Date(),
+    };
+
+    it('should swap the version in and keep the current text as a version', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(current);
+      mockPrismaService.summaryVersion.findFirst.mockResolvedValue({
+        id: 'v1',
+        summaryId: current.id,
+        content: 'Older text',
+        source: SummaryStatus.DRAFT_AI,
+      });
+      mockPrismaService.courseInWard.update.mockResolvedValue({});
+
+      await service.restoreVersion(current.id, 'v1', 'physician-456');
+
+      expect(mockPrismaService.summaryVersion.delete).toHaveBeenCalledWith({ where: { id: 'v1' } });
+      expect(mockPrismaService.summaryVersion.create).toHaveBeenCalledWith({
+        data: { summaryId: current.id, content: 'Current text', source: SummaryStatus.APPROVED },
+      });
+      // Deleted before the cap runs, so restoring the oldest version cannot prune it.
+      expect(mockPrismaService.summaryVersion.delete.mock.invocationCallOrder[0]).toBeLessThan(
+        mockPrismaService.summaryVersion.create.mock.invocationCallOrder[0],
+      );
+      expect(mockPrismaService.courseInWard.update).toHaveBeenCalledWith({
+        where: { id: current.id },
+        data: { summaryContent: 'Older text', status: SummaryStatus.DRAFT_AI },
+      });
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
+        userId: 'physician-456',
+        action: 'SUMMARY_VERSION_RESTORED',
+      }));
+    });
+
+    it('should reject a version of another summary', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(current);
+      mockPrismaService.summaryVersion.findFirst.mockResolvedValue(null);
+
+      await expect(service.restoreVersion(current.id, 'v-other', 'physician-456')).rejects.toThrow(
+        NotFoundException,
+      );
       expect(mockPrismaService.courseInWard.update).not.toHaveBeenCalled();
     });
   });
@@ -564,7 +669,7 @@ describe('CourseInWardService', () => {
         '2026-03-04',
       );
       expect(mockPrismaService.physicianOrder.findMany).not.toHaveBeenCalledWith(
-        expect.objectContaining({ where: { summarizationId: mockSummaryId } }),
+        expect.objectContaining({ where: { summarizationId: mockSummaryId, status: OrderStatus.FINISHED } }),
       );
       expect(mockOllamaClient.summarizeBatch).toHaveBeenCalled();
       expect(mockPrismaService.courseInWard.update).toHaveBeenCalledWith({
@@ -574,11 +679,27 @@ describe('CourseInWardService', () => {
           status: SummaryStatus.DRAFT_AI,
         }),
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: mockPhysicianId,
         action: 'SUMMARY_REGENERATED_AI',
-      });
+      }));
       expect(result).toEqual(mockUpdatedSummary);
+    });
+
+    it('should pass the physician instructions to the AI service', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
+      mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
+      mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockAuditLogService.record.mockResolvedValue({});
+      mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.regenerateSummary(mockSummaryId, mockPhysicianId, 'Mention the antibiotic first.');
+
+      expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({ instructions: 'Mention the antibiotic first.' }),
+      );
     });
 
     it('should fall back to the linked orders when the summary day has none', async () => {
@@ -596,7 +717,7 @@ describe('CourseInWardService', () => {
 
       // Assert
       expect(mockPrismaService.physicianOrder.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { summarizationId: mockSummaryId } }),
+        expect.objectContaining({ where: { summarizationId: mockSummaryId, status: OrderStatus.FINISHED } }),
       );
       expect(mockOllamaClient.summarizeBatch).toHaveBeenCalled();
     });
@@ -677,10 +798,10 @@ describe('CourseInWardService', () => {
         },
         data: { status: 'VALIDATED' },
       });
-      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
         userId: mockPhysicianId,
         action: 'SUMMARY_APPROVED',
-      });
+      }));
       expect(result).toEqual(mockApprovedSummary);
     });
 

@@ -1,6 +1,7 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
 import { useEffect, useMemo, useState } from 'react';
+import { Check, History, Pencil, RefreshCw } from 'lucide-react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, OrderType, PhysicianOrder } from '../../types';
@@ -11,14 +12,18 @@ import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrders
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { ORDER_TYPE_OPTIONS, orderTypeLabel } from '../../components/orders/orderType';
 import { useTableState } from '../../hooks/useTableState';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import {
   formatDateLongFromKey,
   toDateKey,
 } from '../../lib/format';
+import { apiErrorMessage } from '../../lib/apiError';
 import { manage } from './styles';
 
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
 import { mapPatient } from './patient';
+import { TriageSummaryBar } from './TriageSummaryBar';
+import { SummaryHistory } from './SummaryHistory';
 import { triageQueueKey } from '../../lib/triage';
 import { mergeSummaries, summariesPerDay } from './summaries';
 import type { DashboardPatient } from './types';
@@ -63,6 +68,9 @@ export function ManageView() {
     { day: string; text: string } | null
   >(null);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
+  const [regenInstructions, setRegenInstructions] = useState("");
+  const [showingHistory, setShowingHistory] = useState(false);
+  const [savingSummaryEdit, setSavingSummaryEdit] = useState(false);
   /** A day with no Course in the Ward yet is generating its first one. */
   const [generatingSummary, setGeneratingSummary] = useState(false);
   /** Order-date filter (`YYYY-MM-DD`); `null` means unfiltered — every order. */
@@ -272,6 +280,7 @@ export function ManageView() {
   useEffect(() => {
     setEditingSummary(false);
     setSummaryDraft(null);
+    setShowingHistory(false);
   }, [selected?.id, summaryDay]);
 
   // Choosing a day for the orders focuses the summary on it too — the calendar
@@ -304,6 +313,15 @@ export function ManageView() {
     setOrdersByPatient((previous) => ({ ...previous, [patientId]: data }));
   };
 
+  // Nurses update order statuses from their own screen; pick those up live.
+  usePolling(
+    () => {
+      if (selected) reloadOrders(selected.id).catch(() => undefined);
+    },
+    ORDER_POLL_MS,
+    Boolean(selected),
+  );
+
   /** Refresh the per-patient summary list with a row the API just returned. */
   const replaceSummary = (patientId: string, updated: CourseInWard) => {
     setSummariesByPatient((previous) => ({
@@ -330,8 +348,10 @@ export function ManageView() {
         setSummaryDraft(null);
         onDone?.();
       })
-      .catch(() =>
-        setOrderError("The AI summary could not be generated. Try Generate again or write it manually."),
+      .catch((err) =>
+        setOrderError(
+          apiErrorMessage(err, "The AI summary could not be generated. Try Generate again or write it manually."),
+        ),
       )
       .finally(() => setGeneratingSummary(false));
   };
@@ -394,6 +414,41 @@ export function ManageView() {
       .then(({ data }) => replaceSummary(selected.id, data))
       .catch(() => setOrderError("The summary could not be approved. Please try again."))
       .finally(() => setApprovingSummary(false));
+  };
+
+  const regenerateSummary = (summaryId: string) => {
+    if (!selected || regeneratingSummary) return;
+    setRegeneratingSummary(true);
+    setOrderError(null);
+    void courseInWardApi
+      .regenerate(summaryId, regenInstructions)
+      .then(({ data }) => {
+        replaceSummary(selected.id, data);
+        setEditingSummary(false);
+        setSummaryDraft(null);
+        setRegenInstructions("");
+        // Open the comparison so the new text sits beside the old ones.
+        setShowingHistory(true);
+      })
+      .catch((err) =>
+        setOrderError(apiErrorMessage(err, "The summary could not be regenerated. Please try again.")),
+      )
+      .finally(() => setRegeneratingSummary(false));
+  };
+
+  const saveSummaryEdit = (summaryId: string) => {
+    if (!selected || savingSummaryEdit) return;
+    setSavingSummaryEdit(true);
+    setOrderError(null);
+    void courseInWardApi
+      .edit(summaryId, summaryText)
+      .then(({ data }) => {
+        replaceSummary(selected.id, data);
+        setEditingSummary(false);
+        setSummaryDraft(null);
+      })
+      .catch(() => setOrderError("The edited summary could not be saved. Please try again."))
+      .finally(() => setSavingSummaryEdit(false));
   };
 
   if (loading)
@@ -693,272 +748,322 @@ export function ManageView() {
             </p>
           </section>
         ) : (
-          <Group
-            orientation="vertical"
-            id="physician-manage-chart"
-            style={manage.panelGroup}
-          >
-            {/* Orders on top, AI summary below — drag the handle between them
-                to trade height between the two. */}
-            <Panel
-              id="orders"
-              defaultSize="62"
-              minSize="260px"
-              style={manage.panelFill}
+          <div style={manage.chartColumn}>
+            <TriageSummaryBar
+              patientName={selected.name}
+              admission={openAdmission ?? selected.admissions?.[0]}
+            />
+            <Group
+              orientation="vertical"
+              id="physician-manage-chart"
+              style={{ ...manage.panelGroup, flex: "1 1 auto", height: "auto" }}
             >
-              <SubmittedOrdersTimeline
-                title="Submitted Physician Orders"
-                fill
-                dateValue={activeOrderDate ?? ""}
-                onDateChange={setOrderDateFilter}
-                onPrev={() => goToAdjacentOrderDay(-1)}
-                onNext={() => goToAdjacentOrderDay(1)}
-                prevDisabled={!hasPrevOrderDay}
-                nextDisabled={!hasNextOrderDay}
-                prevLabel={prevDayLabel}
-                nextLabel={nextDayLabel}
-                availableDays={selectableOrderDays}
-                onClear={() => setOrderDateFilter(null)}
-                clearLabel="Show all"
-                orders={displayedOrders.map((order) => ({
-                  id: order.id,
-                  dateCreated: order.dateCreated,
-                  doctor: order.orderedBy
-                    ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}`
-                    : "Physician",
-                  content: order.orderContent,
-                }))}
-                emptyMessage={
-                  selectedOrders === undefined
-                    ? "Loading doctor’s orders…"
-                    : activeOrderDate === todayKey
-                      ? "No orders yet today. Add one below."
-                      : activeOrderDate
-                        ? `No orders on ${selectedDateLabel}.`
-                      : "No doctor’s orders recorded for this patient yet."
-                }
-                renderContent={(entry) => {
-                  const order = allOrders.find((item) => item.id === entry.id);
-                  // Read-only: the nurse's execution status and note on this order.
-                  return (
+              {/* Orders on top, AI summary below — drag the handle between them
+                  to trade height between the two. */}
+              <Panel
+                id="orders"
+                defaultSize="62"
+                minSize="260px"
+                style={manage.panelFill}
+              >
+                <SubmittedOrdersTimeline
+                  title="Submitted Physician Orders"
+                  fill
+                  dateValue={activeOrderDate ?? ""}
+                  onDateChange={setOrderDateFilter}
+                  onPrev={() => goToAdjacentOrderDay(-1)}
+                  onNext={() => goToAdjacentOrderDay(1)}
+                  prevDisabled={!hasPrevOrderDay}
+                  nextDisabled={!hasNextOrderDay}
+                  prevLabel={prevDayLabel}
+                  nextLabel={nextDayLabel}
+                  availableDays={selectableOrderDays}
+                  onClear={() => setOrderDateFilter(null)}
+                  clearLabel="Show all"
+                  orders={displayedOrders.map((order) => ({
+                    id: order.id,
+                    dateCreated: order.dateCreated,
+                    doctor: order.orderedBy
+                      ? `Dr. ${order.orderedBy.firstName} ${order.orderedBy.lastName}`
+                      : "Physician",
+                    content: order.orderContent,
+                  }))}
+                  emptyMessage={
+                    selectedOrders === undefined
+                      ? "Loading doctor’s orders…"
+                      : activeOrderDate === todayKey
+                        ? "No orders yet today. Add one below."
+                        : activeOrderDate
+                          ? `No orders on ${selectedDateLabel}.`
+                        : "No doctor’s orders recorded for this patient yet."
+                  }
+                  renderContent={(entry) => {
+                    const order = allOrders.find((item) => item.id === entry.id);
+                    // Read-only: the nurse's execution status and note on this order.
+                    return (
+                      <>
+                        <div style={manage.timelineOrderText}>{entry.content}</div>
+                        {order && <OrderStatusSummary order={order} />}
+                      </>
+                    );
+                  }}
+                  footer={
                     <>
-                      <div style={manage.timelineOrderText}>{entry.content}</div>
-                      {order && <OrderStatusSummary order={order} />}
-                    </>
-                  );
-                }}
-                footer={
-                  <>
-                    <textarea
-                      value={draft}
-                      onChange={(e) => {
-                        setDraft(e.target.value);
-                        setOrderError(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                          e.preventDefault();
-                          void submitOrders();
-                        }
-                      }}
-                      placeholder="Add a new order"
-                      rows={2}
-                      maxLength={2000}
-                      disabled={savingOrders}
-                      style={manage.noteArea}
-                    />
-
-                    <div style={manage.orderActions}>
-                      <div
-                        role="radiogroup"
-                        aria-label="Order type"
-                        style={manage.orderTypeGroup}
-                      >
-                        {ORDER_TYPE_OPTIONS.map((option) => {
-                          const blocked = orderTypeBlockedReason[option.value];
-                          const active = effectiveOrderType === option.value;
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              role="radio"
-                              aria-checked={active}
-                              disabled={savingOrders || Boolean(blocked)}
-                              title={blocked ?? `${option.label} order`}
-                              style={{
-                                ...manage.orderTypeOption,
-                                ...(active ? manage.orderTypeOptionActive : {}),
-                                ...(blocked ? manage.orderTypeOptionDisabled : {}),
-                              }}
-                              onClick={() => {
-                                setOrderType(option.value);
-                                setOrderError(null);
-                              }}
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {orderError && (
-                        <span role="alert" style={manage.orderError}>{orderError}</span>
-                      )}
-                      {submitted && !orderError && (
-                        <span style={{ fontSize: 12, color: "#166534" }}>
-                          Order saved
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        style={manage.submitBtn}
-                        disabled={savingOrders || !draft.trim()}
-                        aria-busy={savingOrders}
-                        onClick={() => void submitOrders()}
-                      >
-                        {savingOrders
-                          ? "Saving..."
-                          : effectiveOrderType === "DEFAULT"
-                            ? "Submit"
-                            : `Submit ${orderTypeLabel(effectiveOrderType)} Order`}
-                      </button>
-                    </div>
-                  </>
-                }
-              />
-            </Panel>
-
-            <Separator className="ui-split-separator ui-split-separator--row" />
-
-
-            <Panel
-              id="summary"
-              defaultSize="38"
-              minSize="160px"
-              style={manage.panelFill}
-            >
-              <AiSummaryCard
-                fill
-                badgeLabel={
-                  summary ? SUMMARY_BADGE[summary.status] : "No summary yet"
-                }
-                badgeMuted={!summary}
-                dayLabel={
-                  summaryDay
-                    ? formatDateLongFromKey(summaryDay)
-                    : "No order dates"
-                }
-                dayPosition={
-                  summaryDay && orderDays.length > 1
-                    ? `${orderDays.indexOf(summaryDay) + 1} of ${orderDays.length}`
-                    : undefined
-                }
-                onPrevDay={() => goToAdjacentSummaryDay(-1)}
-                onNextDay={() => goToAdjacentSummaryDay(1)}
-                prevDayDisabled={!hasPrevSummaryDay}
-                nextDayDisabled={!hasNextSummaryDay}
-                text={summaryText}
-                emptyMessage={
-                  summaryDay
-                    ? `No Course in the Ward for ${formatDateLongFromKey(
-                        summaryDay,
-                      )} yet.`
-                    : "No doctor’s orders recorded for this patient yet."
-                }
-                actions={
-                  !summary ? (
-                    <AiActionButton
-                      disabled={!summaryDay || generatingSummary}
-                      aria-busy={generatingSummary}
-                      onClick={() =>
-                        summaryDay && generateSummaryForDay(summaryDay)
-                      }
-                    >
-                      {generatingSummary ? (
-                        <span className="ui-btn__spinner" aria-hidden="true" />
-                      ) : null}
-                      {generatingSummary ? "Generating..." : "Generate"}
-                    </AiActionButton>
-                  ) : (
-                    <>
-                      {summary.status !== "APPROVED" && !editingSummary && (
-                        <AiActionButton
-                          disabled={approvingSummary}
-                          aria-busy={approvingSummary}
-                          onClick={() => approveSummary(summary.id)}
-                        >
-                          {approvingSummary ? "Approving..." : "✓ Approve"}
-                        </AiActionButton>
-                      )}
-                      <AiActionButton
-                        onClick={() => {
-                          if (!editingSummary) {
-                            setSummaryDraft(
-                              summaryDay
-                                ? { day: summaryDay, text: summary.summaryContent }
-                                : null,
-                            );
-                            setEditingSummary(true);
-                            return;
+                      <textarea
+                        value={draft}
+                        onChange={(e) => {
+                          setDraft(e.target.value);
+                          setOrderError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            void submitOrders();
                           }
-                          void courseInWardApi
-                            .edit(summary.id, summaryText)
-                            .then(({ data }) => {
-                              replaceSummary(selected.id, data);
-                              setEditingSummary(false);
-                              setSummaryDraft(null);
-                            })
-                            .catch(() => undefined);
                         }}
-                      >
-                        {editingSummary ? "Save Summary" : "Edit Summary"}
-                      </AiActionButton>
+                        placeholder="Add a new order"
+                        rows={2}
+                        maxLength={2000}
+                        disabled={savingOrders}
+                        style={manage.noteArea}
+                      />
+
+                      <div style={manage.orderActions}>
+                        <div
+                          role="radiogroup"
+                          aria-label="Order type"
+                          style={manage.orderTypeGroup}
+                        >
+                          {ORDER_TYPE_OPTIONS.map((option) => {
+                            const blocked = orderTypeBlockedReason[option.value];
+                            const active = effectiveOrderType === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={active}
+                                disabled={savingOrders || Boolean(blocked)}
+                                title={blocked ?? `${option.label} order`}
+                                style={{
+                                  ...manage.orderTypeOption,
+                                  ...(active ? manage.orderTypeOptionActive : {}),
+                                  ...(blocked ? manage.orderTypeOptionDisabled : {}),
+                                }}
+                                onClick={() => {
+                                  setOrderType(option.value);
+                                  setOrderError(null);
+                                }}
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {orderError && (
+                          <span role="alert" style={manage.orderError}>{orderError}</span>
+                        )}
+                        {submitted && !orderError && (
+                          <span style={{ fontSize: 12, color: "#166534" }}>
+                            Order saved
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          style={manage.submitBtn}
+                          disabled={savingOrders || !draft.trim()}
+                          aria-busy={savingOrders}
+                          onClick={() => void submitOrders()}
+                        >
+                          {savingOrders
+                            ? "Saving..."
+                            : effectiveOrderType === "DEFAULT"
+                              ? "Submit"
+                              : `Submit ${orderTypeLabel(effectiveOrderType)} Order`}
+                        </button>
+                      </div>
+                    </>
+                  }
+                />
+              </Panel>
+
+              <Separator className="ui-split-separator ui-split-separator--row" />
+
+
+              <Panel
+                id="summary"
+                defaultSize="38"
+                minSize="160px"
+                style={manage.panelFill}
+              >
+                <AiSummaryCard
+                  fill
+                  badgeLabel={
+                    summary ? SUMMARY_BADGE[summary.status] : "No summary yet"
+                  }
+                  badgeMuted={!summary}
+                  dayLabel={
+                    summaryDay
+                      ? formatDateLongFromKey(summaryDay)
+                      : "No order dates"
+                  }
+                  dayPosition={
+                    summaryDay && orderDays.length > 1
+                      ? `${orderDays.indexOf(summaryDay) + 1} of ${orderDays.length}`
+                      : undefined
+                  }
+                  onPrevDay={() => goToAdjacentSummaryDay(-1)}
+                  onNextDay={() => goToAdjacentSummaryDay(1)}
+                  prevDayDisabled={!hasPrevSummaryDay}
+                  nextDayDisabled={!hasNextSummaryDay}
+                  text={summaryText}
+                  emptyMessage={
+                    summaryDay
+                      ? `No Course in the Ward for ${formatDateLongFromKey(
+                          summaryDay,
+                        )} yet.`
+                      : "No doctor’s orders recorded for this patient yet."
+                  }
+                  actions={
+                    !summary ? (
                       <AiActionButton
-                        disabled={regeneratingSummary}
-                        aria-busy={regeneratingSummary}
-                        onClick={() => {
-                          if (regeneratingSummary) return;
-                          setRegeneratingSummary(true);
-                          void courseInWardApi
-                            .regenerate(summary.id)
-                            .then(({ data }) => {
-                              replaceSummary(selected.id, data);
-                              setEditingSummary(false);
-                              setSummaryDraft(null);
-                            })
-                            .catch(() => undefined)
-                            .finally(() => setRegeneratingSummary(false));
-                        }}
+                        disabled={!summaryDay || generatingSummary}
+                        aria-busy={generatingSummary}
+                        onClick={() =>
+                          summaryDay && generateSummaryForDay(summaryDay)
+                        }
                       >
-                        {regeneratingSummary ? (
+                        {generatingSummary ? (
                           <span className="ui-btn__spinner" aria-hidden="true" />
                         ) : null}
-                        {regeneratingSummary
-                          ? "Regenerating..."
-                          : "↻ Regenerate"}
+                        {generatingSummary ? "Generating..." : "Generate"}
                       </AiActionButton>
-                    </>
-                  )
-                }
-              >
-                {editingSummary && summary ? (
-                  <textarea
-                    value={summaryText}
-                    onChange={(e) =>
-                      setSummaryDraft(
-                        summaryDay
-                          ? { day: summaryDay, text: e.target.value }
-                          : null,
-                      )
-                    }
-                    rows={6}
-                    style={manage.aiEditor}
-                  />
-                ) : null}
-              </AiSummaryCard>
-            </Panel>
-          </Group>
+                    ) : (
+                      <>
+                        {!editingSummary && (
+                          // The instructions only steer Regenerate, so they share a row.
+                          <div style={manage.aiRegenRow}>
+                            <input
+                              type="text"
+                              placeholder="Optional instructions, e.g. mention the IV fluids first"
+                              aria-label="Instructions for Regenerate (optional)"
+                              maxLength={1000}
+                              value={regenInstructions}
+                              disabled={regeneratingSummary}
+                              onChange={(e) => setRegenInstructions(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") regenerateSummary(summary.id);
+                              }}
+                              style={manage.aiRegenInput}
+                            />
+                            <AiActionButton
+                              disabled={regeneratingSummary}
+                              aria-busy={regeneratingSummary}
+                              onClick={() => regenerateSummary(summary.id)}
+                            >
+                              {regeneratingSummary ? (
+                                <span className="ui-btn__spinner" aria-hidden="true" />
+                              ) : (
+                                <RefreshCw size={14} aria-hidden="true" />
+                              )}
+                              {regeneratingSummary ? "Regenerating..." : "Regenerate"}
+                            </AiActionButton>
+                          </div>
+                        )}
+                        <div style={manage.aiActionRow}>
+                          {editingSummary ? (
+                            <>
+                              <span style={manage.aiActionSpacer} />
+                              <AiActionButton
+                                disabled={savingSummaryEdit}
+                                onClick={() => {
+                                  setEditingSummary(false);
+                                  setSummaryDraft(null);
+                                }}
+                              >
+                                Cancel
+                              </AiActionButton>
+                              <AiActionButton
+                                className="ui-ai-btn--primary"
+                                disabled={savingSummaryEdit || !summaryText.trim()}
+                                aria-busy={savingSummaryEdit}
+                                onClick={() => saveSummaryEdit(summary.id)}
+                              >
+                                <Check size={14} aria-hidden="true" />
+                                {savingSummaryEdit ? "Saving..." : "Save Summary"}
+                              </AiActionButton>
+                            </>
+                          ) : (
+                            <>
+                              <AiActionButton
+                                disabled={regeneratingSummary}
+                                onClick={() => {
+                                  setShowingHistory(false);
+                                  setSummaryDraft(
+                                    summaryDay
+                                      ? { day: summaryDay, text: summary.summaryContent }
+                                      : null,
+                                  );
+                                  setEditingSummary(true);
+                                }}
+                              >
+                                <Pencil size={14} aria-hidden="true" />
+                                Edit
+                              </AiActionButton>
+                              <AiActionButton
+                                onClick={() => setShowingHistory(true)}
+                              >
+                                <History size={14} aria-hidden="true" />
+                                Compare Versions
+                              </AiActionButton>
+                              <span style={manage.aiActionSpacer} />
+                              {summary.status !== "APPROVED" && (
+                                <AiActionButton
+                                  className="ui-ai-btn--primary"
+                                  disabled={approvingSummary || regeneratingSummary}
+                                  aria-busy={approvingSummary}
+                                  onClick={() => approveSummary(summary.id)}
+                                >
+                                  <Check size={14} aria-hidden="true" />
+                                  {approvingSummary ? "Approving..." : "Approve"}
+                                </AiActionButton>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )
+                  }
+                >
+                  {editingSummary && summary ? (
+                    <textarea
+                      value={summaryText}
+                      onChange={(e) =>
+                        setSummaryDraft(
+                          summaryDay
+                            ? { day: summaryDay, text: e.target.value }
+                            : null,
+                        )
+                      }
+                      rows={6}
+                      style={manage.aiEditor}
+                    />
+                  ) : null}
+                </AiSummaryCard>
+              </Panel>
+            </Group>
+          </div>
         )}
       </Panel>
+
+      {/* A portal popup, so it does not take a panel slot. */}
+      {showingHistory && selected && summary ? (
+        <SummaryHistory
+          summary={summary}
+          onRestored={(updated) => replaceSummary(selected.id, updated)}
+          onClose={() => setShowingHistory(false)}
+        />
+      ) : null}
     </Group>
   );
 }

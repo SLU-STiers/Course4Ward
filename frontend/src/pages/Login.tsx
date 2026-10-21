@@ -11,7 +11,6 @@ import logoImg from '../Img/Course4Ward-Logo.png';
 import bgImg from '../Img/Course4Ward-Background.png';
 import stiersImg from '../Img/S-tiers.png';
 
-const RESET_TOKEN_STORAGE_KEY = 'cims_password_reset_token';
 const RESET_STATUS_POLL_INTERVAL_MS = 5000;
 
 const INCORRECT_CREDENTIALS_MESSAGE = 'Invalid credentials. Please check your user ID and password.';
@@ -56,11 +55,36 @@ export function Login() {
   const [showReset, setShowReset] = useState(false);
   const [resetUserId, setResetUserId] = useState('');
   const [resetMessage, setResetMessage] = useState<string | null>(null);
-  const [hasPendingReset, setHasPendingReset] = useState(() =>
-    Boolean(sessionStorage.getItem(RESET_TOKEN_STORAGE_KEY)),
-  );
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [hasPendingReset, setHasPendingReset] = useState(false);
   const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const [passwordCopied, setPasswordCopied] = useState(false);
+
+  // The reset request is tracked by an httpOnly cookie, so after a refresh ask
+  // the server whether this browser has one in flight. That brings back an
+  // already-issued temporary password (the same one, never a new one) or
+  // resumes polling. Nothing is shown when there is no request.
+  useEffect(() => {
+    let cancelled = false;
+    authApi
+      .passwordResetStatus()
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (data.status === 'APPROVED' && data.temporaryPassword) {
+          setTemporaryPassword(data.temporaryPassword);
+          setResetMessage('Your reset request was approved. Use this temporary password to log in.');
+        } else if (data.status === 'PENDING') {
+          setHasPendingReset(true);
+          setResetMessage('Your request is still awaiting administrator approval. Keep this login page open.');
+        }
+      })
+      .catch(() => {
+        // No recoverable request; the page works as normal.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasPendingReset || temporaryPassword) return;
@@ -78,7 +102,6 @@ export function Login() {
             });
           }
           setHasPendingReset(false);
-          sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
           return;
         }
 
@@ -87,14 +110,12 @@ export function Login() {
             'Your password reset request was rejected by an administrator. Please submit a new request if needed.',
           );
           setHasPendingReset(false);
-          sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
           return;
         }
 
         if (data.status === 'EXPIRED') {
           setResetMessage('This reset request expired. Please submit a new request if needed.');
           setHasPendingReset(false);
-          sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
           return;
         }
       } catch {
@@ -115,7 +136,6 @@ export function Login() {
     try {
       const { data } = await authApi.login(userId, password);
       setAuth(data.accessToken, data.refreshToken, data.user, rememberMe);
-      sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
 
       if (data.user.mustResetPassword) {
         navigate('/reset-password');
@@ -132,12 +152,12 @@ export function Login() {
   async function handleResetRequest(e: React.FormEvent) {
     e.preventDefault();
     setResetMessage(null);
+    setResetError(null);
     setTemporaryPassword(null);
     setPasswordCopied(false);
     try {
       const { data } = await authApi.requestPasswordReset(resetUserId);
       setHasPendingReset(true);
-      sessionStorage.setItem(RESET_TOKEN_STORAGE_KEY, 'active');
       setShowReset(false);
       setResetMessage(
         data.message || 'Your request was submitted. Keep this login page open while an administrator reviews it.',
@@ -147,7 +167,7 @@ export function Login() {
       }
     } catch (err: any) {
       const backendMessage = err?.response?.data?.message;
-      setResetMessage(
+      setResetError(
         backendMessage || 'Something went wrong. Please contact the IT desk.'
       );
     }
@@ -253,10 +273,14 @@ export function Login() {
               <input
                 className="auth-input"
                 value={resetUserId}
-                onChange={(e) => setResetUserId(e.target.value)}
+                onChange={(e) => {
+                  setResetUserId(e.target.value);
+                  setResetError(null);
+                }}
                 placeholder="Enter User ID..."
                 required
               />
+              {resetError && <p className="auth-error" role="alert">{resetError}</p>}
             </div>
 
             {resetMessage && <p className="auth-info">{resetMessage}</p>}
@@ -267,7 +291,7 @@ export function Login() {
               </ActionButton>
             )}
 
-            <button type="button" className="auth-link-center" onClick={() => setShowReset(false)}>
+            <button type="button" className="auth-link-center" onClick={() => { setShowReset(false); setResetError(null); }}>
               Back to login
             </button>
           </form>

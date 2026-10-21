@@ -11,7 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { Prisma, ResetStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditLogService, detailItems, fullName } from '../audit-log/audit-log.service';
 import { LoginDto } from './dto/login.dto';
 import {
   RequestPasswordResetDto,
@@ -30,6 +30,21 @@ export interface PasswordResetQuery {
 }
 
 const DEFAULT_RESET_REQUEST_PAGE_SIZE = 10;
+
+/** Why a session ended: the user pressed Log out, or the idle timer did it for them. */
+export const LOGOUT_REASONS = ['MANUAL', 'IDLE_TIMEOUT'] as const;
+export type LogoutReason = (typeof LOGOUT_REASONS)[number];
+
+const LOGOUT_DETAILS: Record<LogoutReason, { summary: string; reason: string }> = {
+  MANUAL: { summary: 'Signed out manually', reason: 'Logged out by the user' },
+  IDLE_TIMEOUT: {
+    summary: 'Session timed out due to inactivity (automatic logout)',
+    reason: 'Automatically logged out after being idle',
+  },
+};
+
+/** How long a reset request (and, once approved, its temporary password) stays retrievable. */
+export const RESET_REQUEST_TTL_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -68,6 +83,16 @@ export class AuthService {
         mustResetPassword: user.mustResetPassword,
       },
     };
+  }
+
+  async logout(userId: string, reason: LogoutReason) {
+    const { summary, reason: reasonText } = LOGOUT_DETAILS[reason];
+    await this.auditLog.record({
+      userId,
+      action: 'LOGOUT',
+      details: { summary, items: detailItems([['Reason', reasonText]]) },
+    });
+    return { message: 'Signed out.' };
   }
 
   // Exchanges a still-valid refresh token for a fresh token pair, so an
@@ -120,7 +145,7 @@ export class AuthService {
     });
 
     if (!user) {
-      return null;
+      throw new NotFoundException('User ID not found');
     }
 
     await this.prisma.passwordResetRequest.updateMany({
@@ -134,7 +159,7 @@ export class AuthService {
         userId: user.id,
         ipAddress,
         token: resetToken,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + RESET_REQUEST_TTL_MS),
       },
     });
 
@@ -142,14 +167,7 @@ export class AuthService {
   }
 
   async requestPasswordReset(dto: RequestPasswordResetDto, ipAddress?: string) {
-    const resetToken = await this.createPasswordResetRequest(dto.userId, ipAddress);
-
-    if (!resetToken) {
-      return {
-        message:
-          'If the user ID exists, a reset request has been submitted for administrator approval.',
-      };
-    }
+    await this.createPasswordResetRequest(dto.userId, ipAddress);
 
     return {
       message: 'Reset request submitted for administrator approval.',
@@ -174,10 +192,21 @@ export class AuthService {
       return { status: 'EXPIRED' as const };
     }
 
-    return {
-      status: request.status,
-      temporaryPassword: request.status === 'APPROVED' ? request.temporaryPassword : null,
-    };
+    if (request.status === 'APPROVED') {
+      // Cleared once the user sets a new password, so a used one is never re-served.
+      if (!request.temporaryPassword) return { status: 'EXPIRED' as const };
+
+      // Read-only on purpose: a page refresh gets back the password issued at
+      // approval instead of a new one. `expiresAt` lets the controller keep the
+      // cookie alive for the same window.
+      return {
+        status: 'APPROVED' as const,
+        temporaryPassword: request.temporaryPassword,
+        expiresAt: request.expiresAt,
+      };
+    }
+
+    return { status: request.status, temporaryPassword: null };
   }
 
   /**
@@ -271,11 +300,24 @@ export class AuthService {
           status: 'APPROVED',
           temporaryPassword,
           resolvedAt: new Date(),
+          // Restart the window so a late approval still leaves the user time
+          // to retrieve the password (e.g. after refreshing the login page).
+          expiresAt: new Date(Date.now() + RESET_REQUEST_TTL_MS),
         },
       }),
     ]);
 
-    await this.auditLog.record({ userId: actingAdminId, action: 'PASSWORD_RESET' });
+    await this.auditLog.record({
+      userId: actingAdminId,
+      action: 'PASSWORD_RESET',
+      details: {
+        summary: `Approved the password reset request of ${fullName(request.user)} (${request.user.userId})`,
+        items: detailItems([
+          ['Account', `${fullName(request.user)} (${request.user.userId})`],
+          ['Decision', 'Approved — temporary password issued'],
+        ]),
+      },
+    });
 
     return {
       message: 'Password reset approved.',
@@ -314,7 +356,17 @@ export class AuthService {
       }),
     ]);
 
-    await this.auditLog.record({ userId: actingAdminId, action: 'PASSWORD_RESET' });
+    await this.auditLog.record({
+      userId: actingAdminId,
+      action: 'PASSWORD_RESET',
+      details: {
+        summary: `Rejected the password reset request of ${fullName(request.user)} (${request.user.userId})`,
+        items: detailItems([
+          ['Account', `${fullName(request.user)} (${request.user.userId})`],
+          ['Decision', 'Rejected'],
+        ]),
+      },
+    });
 
     return {
       message: 'Password reset request rejected.',
@@ -350,10 +402,12 @@ export class AuthService {
       where: { id: request.id },
       data: { resolvedAt: new Date() },
     });
+    await this.discardTemporaryPasswords(request.userId);
 
     await this.auditLog.record({
       userId: request.userId,
       action: 'PASSWORD_RESET',
+      details: { summary: 'Set a new password using an approved reset request' },
     });
 
     return { message: 'Password updated successfully.' };
@@ -365,8 +419,13 @@ export class AuthService {
       where: { id: userId },
       data: { passwordHash, mustResetPassword: false, sessionVersion: { increment: 1 } },
     });
+    await this.discardTemporaryPasswords(userId);
 
-    await this.auditLog.record({ userId, action: 'PASSWORD_RESET' });
+    await this.auditLog.record({
+      userId,
+      action: 'PASSWORD_RESET',
+      details: { summary: 'Changed their own password' },
+    });
     return {
       message: 'Password updated successfully.',
       ...(await this.issueTokens(user.id, user.userId, user.role, user.sessionVersion)),
@@ -379,5 +438,13 @@ export class AuthService {
         mustResetPassword: user.mustResetPassword,
       },
     };
+  }
+
+  /** Once the user has picked their own password, the temporary one must not be retrievable. */
+  private async discardTemporaryPasswords(userId: string) {
+    await this.prisma.passwordResetRequest.updateMany({
+      where: { userId, temporaryPassword: { not: null } },
+      data: { temporaryPassword: null },
+    });
   }
 }

@@ -2,9 +2,11 @@
  * The 5-level triage system: how soon a patient must be seen. Level 1 is the
  * most urgent. The nurse picks the level at registration; nurse and physician
  * patient lists show it so the most urgent patients are seen first.
+ * The full assessment (vitals + notes) is shown to nurses, physicians and
+ * claims processors through `TriageAssessmentPanel`.
  */
 
-import type { TriageLevel } from '../types';
+import type { PatientAdmission, TriageLevel } from '../types';
 
 /**
  * Triage colour tags: Red = critical / life-threatening, needs immediate
@@ -107,3 +109,55 @@ export function triageQueueKey(level: number | null | undefined, arrivedAt?: str
   const arrived = arrivedAt ? new Date(arrivedAt).getTime() : NaN;
   return triageUrgency(level) * 1e13 - (Number.isFinite(arrived) ? arrived : Date.now());
 }
+
+/** A triage row formatted for display: every missing value is `'—'`. */
+export type TriageDisplay = {
+  /** 5-level triage priority; null when none was recorded. */
+  level: TriageLevel | null;
+  time: string;
+  heartRate: string;
+  respRate: string;
+  spo2: string;
+  bp: string;
+  temp: string;
+  pain: string;
+  notes: string;
+  /** Nurse who recorded the triage, e.g. `Maria Santos`; absent when unknown. */
+  recordedBy?: string;
+};
+
+/** Formats an admission's stored triage row and notes (`initialAssessment`) for display. */
+export function triageForDisplay(
+  admission?: Pick<PatientAdmission, 'triage' | 'initialAssessment'> | null,
+): TriageDisplay {
+  const triage = admission?.triage;
+  const show = (value: string | number | null | undefined) =>
+    value === null || value === undefined || value === '' ? '—' : String(value);
+  const recorder = triage?.recordedBy;
+  return {
+    level: triage?.triageLevel ?? null,
+    time: show(triage?.triageTime),
+    heartRate: show(triage?.heartRate),
+    respRate: show(triage?.respRate),
+    spo2: show(triage?.spo2),
+    bp:
+      triage?.bpSystolic != null && triage?.bpDiastolic != null
+        ? `${triage.bpSystolic}/${triage.bpDiastolic}`
+        : '—',
+    temp: triage?.temperature != null ? Number(triage.temperature).toFixed(1) : '—',
+    pain: show(triage?.painScore),
+    notes: admission?.initialAssessment?.trim() || 'No notes recorded.',
+    recordedBy: recorder ? `${recorder.firstName} ${recorder.lastName}` : undefined,
+  };
+}
+
+/** The vital-sign boxes of a triage assessment, in display order. */
+export const VITAL_FIELDS = [
+  { key: 'time', label: 'Time' },
+  { key: 'heartRate', label: 'Heart Rate', unit: 'bpm' },
+  { key: 'respRate', label: 'Resp. Rate', unit: '/min' },
+  { key: 'spo2', label: 'SpO₂', unit: '%' },
+  { key: 'bp', label: 'Blood Pressure', unit: 'mmHg' },
+  { key: 'temp', label: 'Temp', unit: '°C' },
+  { key: 'pain', label: 'Pain', unit: '/10' },
+] as const;

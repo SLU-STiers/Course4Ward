@@ -2,12 +2,13 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
-import { CreatePatientDto } from "../patients/dto/patient.dto";
+import { AssignRoomDto, CreatePatientDto } from "../patients/dto/patient.dto";
 import { Test, TestingModule } from "@nestjs/testing";
 import { PatientsController } from "../patients/patients.controller";
 import { PatientsService } from "../patients/patients.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import { WardAccessService } from "../wards/ward-access.service";
 import {
   CommunicationChannel,
   OrderEnteredBy,
@@ -15,10 +16,22 @@ import {
   OrderType,
   PatientClass,
   PhilHealthCF4Status,
+  Prisma,
   Role,
   Sex,
   SummaryStatus,
 } from "@prisma/client";
+
+const emptyContactDetails = {
+  contactNumber: null,
+  address: null,
+  insurance: null,
+  insuranceOther: null,
+  religion: null,
+  contactPersonName: null,
+  contactPersonNumber: null,
+  contactPersonAddress: null,
+};
 
 const mockPrismaService = {
   patient: {
@@ -30,9 +43,11 @@ const mockPrismaService = {
   user: {
     count: jest.fn(),
     findFirst: jest.fn(),
+    findMany: jest.fn(),
   },
   patientAdmission: {
     findUnique: jest.fn(),
+    update: jest.fn(),
     updateMany: jest.fn(),
   },
   physicianOrder: {
@@ -41,10 +56,17 @@ const mockPrismaService = {
   admissionPhysician: {
     create: jest.fn(),
   },
+  room: {
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+  },
+  $transaction: jest.fn(),
 } as unknown as jest.Mocked<PrismaService>;
 
 const mockAuditLogService = {
   record: jest.fn(),
+  patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
+  userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
 } as unknown as jest.Mocked<AuditLogService>;
 
 describe("Patients Module", () => {
@@ -68,6 +90,7 @@ describe("Patients Module", () => {
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
+    ...emptyContactDetails,
     createdAt: new Date(),
     updatedAt: new Date(),
     admissions: [
@@ -75,12 +98,26 @@ describe("Patients Module", () => {
         id: mockAdmissionId,
         patientId: mockPatientId,
         physicianId: "physician-123",
+        roomId: null,
+        room: null,
         admissionDate: new Date("2024-01-01"),
         dischargeDate: null,
         patientClass: PatientClass.INPATIENT,
         classSince: new Date("2024-01-01"),
         initialAssessment: null,
-        triage: { triageLevel: 3 },
+        triage: {
+          triageLevel: 3,
+          triageTime: "08:30",
+          heartRate: 88,
+          respRate: 18,
+          spo2: 97,
+          bpSystolic: 120,
+          bpDiastolic: 80,
+          temperature: null,
+          painScore: 2,
+          createdAt: new Date("2024-01-01"),
+          recordedBy: { firstName: "Nora", lastName: "Reyes" },
+        },
         createdAt: new Date(),
         updatedAt: new Date(),
         orders: [
@@ -146,6 +183,7 @@ describe("Patients Module", () => {
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
+    ...emptyContactDetails,
     createdAt: new Date(),
     updatedAt: new Date(),
     admissions: [
@@ -159,6 +197,7 @@ describe("Patients Module", () => {
         physician: null,
         additionalPhysicians: [],
         triage: null,
+        room: null,
       },
     ],
   };
@@ -183,6 +222,16 @@ describe("Patients Module", () => {
         PatientsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        // Ward limits have their own tests (ward-access.test.ts); pass everything through here.
+        {
+          provide: WardAccessService,
+          useValue: {
+            redactPatients: async (_user: unknown, patients: unknown[]) => patients,
+            assertPatient: jest.fn(),
+            assertAdmission: jest.fn(),
+            assertOrder: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -193,10 +242,35 @@ describe("Patients Module", () => {
 
     jest.clearAllMocks();
     (mockPrismaService.user.count as jest.Mock).mockResolvedValue(1);
+    (mockPrismaService.$transaction as jest.Mock).mockImplementation((fn) => fn(mockPrismaService));
   });
 
   // ============ SERVICE TESTS ============
   describe("PatientsService", () => {
+    describe("listPhysicians", () => {
+      it("returns physicians with their assigned ward specialties", async () => {
+        (prismaService.user.findMany as jest.Mock).mockResolvedValue([
+          {
+            id: "physician-123",
+            userId: "DOC001",
+            firstName: "Jane",
+            lastName: "Doe",
+            physicianWards: [{ ward: { id: "ward-obdr", name: "OBDR" } }],
+          },
+        ]);
+
+        await expect(service.listPhysicians()).resolves.toEqual([
+          {
+            id: "physician-123",
+            userId: "DOC001",
+            firstName: "Jane",
+            lastName: "Doe",
+            wards: [{ ward: { id: "ward-obdr", name: "OBDR" } }],
+          },
+        ]);
+      });
+    });
+
     describe("create", () => {
       it("should create a new patient with an admission", async () => {
         (prismaService.patient.create as jest.Mock).mockResolvedValue(
@@ -224,10 +298,10 @@ describe("Patients Module", () => {
             include: expect.any(Object),
           }),
         );
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "PATIENT_CREATED",
-        });
+        }));
         expect(result).toEqual(mockPatientSimple);
       });
 
@@ -334,6 +408,113 @@ describe("Patients Module", () => {
         expect(errors.map((error) => error.property)).toContain("triageLevel");
       });
 
+      it.each(["Juan1", "123", "Juan Cruz!"])(
+        "should reject invalid patient names in the DTO (%s)",
+        async (name) => {
+          const dto = plainToInstance(CreatePatientDto, {
+            firstName: name,
+            lastName: "Dela Cruz",
+            physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          });
+          const errors = await validate(dto);
+          expect(errors.map((error) => error.property)).toContain("firstName");
+        },
+      );
+
+      it.each(["0917 123 4567", "1234567890", "123456789012", "abc12345678"])(
+        "should reject phone numbers that are not exactly 11 digits (%s)",
+        async (contactNumber) => {
+          const dto = plainToInstance(CreatePatientDto, {
+            firstName: "Juan",
+            lastName: "Dela Cruz",
+            physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+            contactNumber,
+          });
+          const errors = await validate(dto);
+          expect(errors.map((error) => error.property)).toContain("contactNumber");
+        },
+      );
+
+      it("should accept valid names and 11-digit contact numbers", async () => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: Sex.MALE,
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          contactNumber: "09171234567",
+          contactPersonName: "Maria O’Connor",
+          contactPersonNumber: "09187654321",
+        });
+        expect(await validate(dto)).toHaveLength(0);
+      });
+
+      it("should reject numbers in the contact person name", async () => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: Sex.MALE,
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          contactPersonName: "Maria123",
+        });
+        const errors = await validate(dto);
+        expect(errors.map((error) => error.property)).toContain("contactPersonName");
+      });
+
+      it("should reject a contact person number that is not exactly 11 digits", async () => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: Sex.MALE,
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          contactPersonNumber: "0918 765 4321",
+        });
+        const errors = await validate(dto);
+        expect(errors.map((error) => error.property)).toContain("contactPersonNumber");
+      });
+
+      const insuranceErrors = async (fields: Record<string, unknown>) => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: "MALE",
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+          ...fields,
+        });
+        return (await validate(dto)).map((error) => error.property);
+      };
+
+      it.each([undefined, "", "   "])(
+        "should require the specific insurance when OTHER is chosen (%p)",
+        async (insuranceOther) => {
+          expect(await insuranceErrors({ insurance: "OTHER", insuranceOther })).toContain("insuranceOther");
+        },
+      );
+
+      it("should accept OTHER with the specific insurance", async () => {
+        expect(await insuranceErrors({ insurance: "OTHER", insuranceOther: "Intellicare" })).not.toContain(
+          "insuranceOther",
+        );
+      });
+
+      it("should not require the specific insurance for a listed option", async () => {
+        expect(await insuranceErrors({ insurance: "PHILHEALTH" })).not.toContain("insuranceOther");
+      });
+
+      it("should only store the specific insurance when OTHER is chosen", async () => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatient);
+
+        await service.create(
+          { ...mockCreatePatientDto, insurance: "HMO", insuranceOther: "Leftover text" } as any,
+          mockUser.id,
+        );
+
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ insurance: "HMO", insuranceOther: null }),
+          }),
+        );
+      });
+
       it("should reject inactive or unknown physicians", async () => {
         (prismaService.user.count as jest.Mock).mockResolvedValue(0);
 
@@ -405,10 +586,10 @@ describe("Patients Module", () => {
               },
             }),
           );
-          expect(auditLogService.record).toHaveBeenCalledWith({
+          expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
             userId: mockUser.id,
             action: "ORDER_CREATED",
-          });
+          }));
         },
       );
 
@@ -451,6 +632,159 @@ describe("Patients Module", () => {
         });
         const errors = await validate(dto);
         expect(errors.map((error) => error.property)).toContain("registrationOrder");
+      });
+    });
+
+    describe("rooms", () => {
+      const freeRoom = { id: "room-101", isActive: true, admissions: [] };
+      const occupiedRoom = { ...freeRoom, admissions: [{ id: "admission-9" }] };
+      const inpatientDto = {
+        ...mockCreatePatientDto,
+        patientClass: PatientClass.INPATIENT,
+        registrationOrder: "Admit to ward",
+        roomNumber: "101",
+      };
+
+      it("should list active rooms with their occupancy", async () => {
+        (prismaService.room.findMany as jest.Mock).mockResolvedValue([
+          { id: "room-101", number: "101", admissions: [] },
+          { id: "room-102", number: "102", admissions: [{ id: "admission-9" }] },
+        ]);
+
+        await expect(service.listRooms()).resolves.toEqual([
+          { id: "room-101", number: "101", occupied: false, occupiedByAdmissionId: null },
+          { id: "room-102", number: "102", occupied: true, occupiedByAdmissionId: "admission-9" },
+        ]);
+      });
+
+      it("should register an inpatient into a free room", async () => {
+        (prismaService.room.findUnique as jest.Mock).mockResolvedValue(freeRoom);
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+
+        await service.create(inpatientDto, mockUser.id);
+
+        expect(prismaService.$transaction).toHaveBeenCalled();
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              admissions: { create: expect.objectContaining({ roomId: "room-101" }) },
+            }),
+          }),
+        );
+      });
+
+      it("should reject registering into an occupied room", async () => {
+        (prismaService.room.findUnique as jest.Mock).mockResolvedValue(occupiedRoom);
+
+        await expect(service.create(inpatientDto, mockUser.id)).rejects.toThrow("Room 101 is occupied");
+        expect(prismaService.patient.create).not.toHaveBeenCalled();
+      });
+
+      it("should reject a room that does not exist", async () => {
+        (prismaService.room.findUnique as jest.Mock).mockResolvedValue(null);
+
+        await expect(
+          service.create({ ...inpatientDto, roomNumber: "999" }, mockUser.id),
+        ).rejects.toThrow("Room 999 does not exist");
+      });
+
+      it("should reject a room for a patient who is not admitted", async () => {
+        await expect(
+          service.create({ ...mockCreatePatientDto, roomNumber: "101" }, mockUser.id),
+        ).rejects.toThrow("A room can only be assigned to an admitted patient");
+        expect(prismaService.room.findUnique).not.toHaveBeenCalled();
+      });
+
+      it("should assign a free room to an admitted patient", async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+          dischargeDate: null,
+          patientClass: PatientClass.INPATIENT,
+        });
+        (prismaService.room.findUnique as jest.Mock).mockResolvedValue(freeRoom);
+        (prismaService.patientAdmission.update as jest.Mock).mockResolvedValue({
+          id: mockAdmissionId,
+          room: { id: "room-101", number: "101" },
+        });
+
+        await service.assignRoom(mockAdmissionId, "101", mockUser.id);
+
+        // The patient's own current room does not count as occupied.
+        expect(prismaService.room.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({
+            select: expect.objectContaining({
+              admissions: expect.objectContaining({
+                where: { dischargeDate: null, id: { not: mockAdmissionId } },
+              }),
+            }),
+          }),
+        );
+        expect(prismaService.patientAdmission.update).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: mockAdmissionId }, data: { roomId: "room-101" } }),
+        );
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
+          userId: mockUser.id,
+          action: "PATIENT_UPDATED",
+        }));
+      });
+
+      it("should refuse an occupied room when reassigning", async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+          dischargeDate: null,
+          patientClass: PatientClass.INPATIENT,
+        });
+        (prismaService.room.findUnique as jest.Mock).mockResolvedValue(occupiedRoom);
+
+        await expect(service.assignRoom(mockAdmissionId, "101", mockUser.id)).rejects.toThrow(
+          "Room 101 is occupied",
+        );
+        expect(prismaService.patientAdmission.update).not.toHaveBeenCalled();
+      });
+
+      it("should clear the room", async () => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+          dischargeDate: null,
+          patientClass: PatientClass.INPATIENT,
+        });
+        (prismaService.patientAdmission.update as jest.Mock).mockResolvedValue({
+          id: mockAdmissionId,
+          room: null,
+        });
+
+        await service.assignRoom(mockAdmissionId, null, mockUser.id);
+
+        expect(prismaService.room.findUnique).not.toHaveBeenCalled();
+        expect(prismaService.patientAdmission.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { roomId: null } }),
+        );
+      });
+
+      it.each([
+        ["discharged", { dischargeDate: new Date(), patientClass: PatientClass.INPATIENT }, "discharged"],
+        ["not admitted", { dischargeDate: null, patientClass: PatientClass.OUTPATIENT }, "admitted patient"],
+      ])("should not assign a room to a %s patient", async (_label, admission, message) => {
+        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(admission);
+
+        await expect(service.assignRoom(mockAdmissionId, "101", mockUser.id)).rejects.toThrow(message);
+        expect(prismaService.patientAdmission.update).not.toHaveBeenCalled();
+      });
+
+      it("should report a room taken at the same moment as a conflict", async () => {
+        (prismaService.$transaction as jest.Mock).mockRejectedValue(
+          new Prisma.PrismaClientKnownRequestError("serialization failure", {
+            code: "P2034",
+            clientVersion: "5.22.0",
+          }),
+        );
+
+        await expect(service.assignRoom(mockAdmissionId, "101", mockUser.id)).rejects.toThrow(
+          "That room was just taken",
+        );
+      });
+
+      it.each(["room 101", " Rm. 101 ", "101"])("should read %p as room 101", async (roomNumber) => {
+        const dto = plainToInstance(AssignRoomDto, { roomNumber });
+        expect(await validate(dto)).toHaveLength(0);
+        expect(dto.roomNumber).toBe("101");
       });
     });
 
@@ -641,7 +975,10 @@ describe("Patients Module", () => {
       it("should add a consulting physician to an active admission", async () => {
         (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(activeAdmission);
         (prismaService.user.findFirst as jest.Mock).mockResolvedValue({ id: "physician-3" });
-        const created = { physician: { id: "physician-3", firstName: "Ana", lastName: "Reyes" } };
+        const created = {
+          createdAt: new Date(),
+          physician: { id: "physician-3", firstName: "Ana", lastName: "Reyes" },
+        };
         (prismaService.admissionPhysician.create as jest.Mock).mockResolvedValue(created);
 
         const result = await service.addConsultingPhysician(mockAdmissionId, "physician-3", mockUser.id);
@@ -649,12 +986,16 @@ describe("Patients Module", () => {
         expect(prismaService.admissionPhysician.create).toHaveBeenCalledWith(
           expect.objectContaining({
             data: { admissionId: mockAdmissionId, physicianId: "physician-3" },
+            select: expect.objectContaining({ createdAt: true }),
           }),
         );
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "PATIENT_UPDATED",
-        });
+          details: expect.objectContaining({
+            summary: "Added Dr. Ana Reyes to Juan Dela Cruz's care team",
+          }),
+        }));
         expect(result).toEqual(created);
       });
 
@@ -718,7 +1059,17 @@ describe("Patients Module", () => {
                 dischargeDate: true,
                 patientClass: true,
                 classSince: true,
-                triage: { select: { triageLevel: true } },
+                initialAssessment: true,
+                // Physicians read the full triage assessment, not just the level.
+                triage: expect.objectContaining({
+                  select: expect.objectContaining({
+                    triageLevel: true,
+                    heartRate: true,
+                    bpSystolic: true,
+                    recordedBy: { select: { firstName: true, lastName: true } },
+                  }),
+                }),
+                room: { select: { id: true, number: true, ward: { select: { id: true, name: true } } } },
               },
             },
           },
@@ -758,12 +1109,14 @@ describe("Patients Module", () => {
                 additionalPhysicians: {
                   orderBy: { createdAt: "asc" },
                   select: {
+                    createdAt: true,
                     physician: { select: { id: true, firstName: true, lastName: true } },
                   },
                 },
                 triage: expect.objectContaining({
                   select: expect.objectContaining({ heartRate: true, bpSystolic: true }),
                 }),
+                room: { select: { id: true, number: true, ward: { select: { id: true, name: true } } } },
               },
             },
           },
@@ -853,10 +1206,10 @@ describe("Patients Module", () => {
             dateOfBirth: new Date(mockUpdatePatientDto.dateOfBirth),
           },
         });
-        expect(auditLogService.record).toHaveBeenCalledWith({
+        expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,
           action: "PATIENT_UPDATED",
-        });
+        }));
         expect(result).toEqual(updatedPatient);
       });
 
@@ -950,7 +1303,7 @@ describe("Patients Module", () => {
       it("should call service.findOne with patient id", async () => {
         jest.spyOn(service, "findOne").mockResolvedValue(mockPatient);
 
-        const result = await controller.findOne(mockPatientId);
+        const result = await controller.findOne(mockPatientId, mockUser);
 
         expect(service.findOne).toHaveBeenCalledWith(mockPatientId);
         expect(result).toEqual(mockPatient);

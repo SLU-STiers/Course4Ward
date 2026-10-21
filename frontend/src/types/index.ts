@@ -34,16 +34,37 @@ export interface AuthUser {
 /** Backend `Sex`; `null` on records registered before it was required. */
 export type Sex = 'MALE' | 'FEMALE' | 'OTHER';
 
+/** Backend `InsuranceType`: how the patient's care is covered. */
+export type InsuranceType = 'PHILHEALTH' | 'HMO' | 'PRIVATE' | 'NONE' | 'OTHER';
+
 export interface Patient {
   id: string;
   firstName: string;
   lastName: string;
   gender: Sex | null;
   dateOfBirth: string;
+  /** The patient's own contact / mobile number. */
+  contactNumber?: string | null;
+  address?: string | null;
+  insurance?: InsuranceType | null;
+  /** The specific insurance when `insurance` is OTHER. */
+  insuranceOther?: string | null;
+  religion?: string | null;
+  contactPersonName?: string | null;
+  contactPersonNumber?: string | null;
+  contactPersonAddress?: string | null;
   admissionDate?: string | null;
   dischargeDate?: string | null;
   initialAssessment?: string | null;
   admissions?: PatientAdmission[];
+  /**
+   * Nurse lists only: the patient is outside the nurse's wards, so the server
+   * sent just the name and where they are. Nurse lists carry `wardName` /
+   * `roomNumber` on every row.
+   */
+  restricted?: boolean;
+  wardName?: string | null;
+  roomNumber?: string | null;
 }
 
 /**
@@ -62,9 +83,20 @@ export interface PatientAdmission {
   classSince?: string;
   initialAssessment?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
-  additionalPhysicians?: { physician: { id: string; firstName: string; lastName: string } }[];
-  /** Physician payloads carry only `triageLevel`; nurse payloads the full row. */
+  additionalPhysicians?: { createdAt?: string; physician: { id: string; firstName: string; lastName: string } }[];
+  /** Full triage row for nurses and physicians; claims payloads include it on the order's admission. */
   triage?: AdmissionTriage | null;
+  /** Ward room of an admitted patient. */
+  room?: { id: string; number: string; ward?: { id: string; name: string } | null } | null;
+}
+
+/** A ward room, occupied while an undischarged admission holds it. */
+export interface WardRoom {
+  id: string;
+  number: string;
+  ward: { id: string; name: string } | null;
+  occupied: boolean;
+  occupiedByAdmissionId: string | null;
 }
 
 /** 5-level triage priority, 1 (Resuscitation) to 5 (Non-Urgent). */
@@ -82,6 +114,8 @@ export interface AdmissionTriage {
   temperature: string | number | null;
   painScore: number | null;
   createdAt: string;
+  /** Nurse who recorded the triage. */
+  recordedBy?: { firstName: string; lastName: string } | null;
 }
 
 /** Nurse execution state of an order (backend `OrderStatus`). */
@@ -135,6 +169,17 @@ export interface CourseInWard {
   version?: number;
 }
 
+/** An earlier text of a Course in the Ward, kept when it was regenerated or edited. */
+export interface SummaryVersion {
+  id: string;
+  summaryId: string;
+  content: string;
+  /** The status the text had before it was replaced. */
+  source: SummaryStatus;
+  /** When the text was replaced. */
+  createdAt: string;
+}
+
 export interface PhysicianRequest {
   id: string;
   requestedAt: string;
@@ -182,6 +227,8 @@ export interface ClaimRecord {
       admission: {
         admissionDate: string;
         dischargeDate?: string | null;
+        initialAssessment?: string | null;
+        triage?: AdmissionTriage | null;
       };
       orderedBy: { firstName: string; lastName: string };
     }>;
@@ -214,11 +261,24 @@ export type AuditLogAction =
   | 'UPDATE_ORDER_STATUS';
 
 /** One row of `GET /admin/audit-logs`. */
+/**
+ * What specifically a logged action did, as recorded by the backend
+ * (`AuditDetails` in `audit-log.service.ts`). Values are display-ready text.
+ */
+export interface AuditLogDetails {
+  /** One sentence: "Added Dr. Ana Reyes to Juan Dela Cruz's care team". */
+  summary: string;
+  items?: Array<{ label: string; value: string }>;
+  changes?: Array<{ field: string; from: string; to: string }>;
+}
+
 export interface AuditLogEntry {
   id: string;
   timeStamp: string;
   action: AuditLogAction;
   userId: string;
+  /** Null for entries logged before details were recorded. */
+  details: AuditLogDetails | null;
   user: {
     userId: string;
     firstName: string;
@@ -347,6 +407,15 @@ export interface AdminUserInput {
   role?: string;
   temporaryPassword?: string;
   isActive?: boolean;
+  /** Physician / nurse ward assignments (replaces the current set). */
+  wardIds?: string[];
+}
+
+/** A nursing unit (`GET /admin/wards`); `holdsUnroomed` = patients without a room belong here. */
+export interface Ward {
+  id: string;
+  name: string;
+  holdsUnroomed: boolean;
 }
 
 /** Lifecycle of a password reset request (`ResetStatus` on the backend). */
@@ -362,6 +431,19 @@ export interface StaffAccount {
   isActive: boolean;
   mustResetPassword: boolean;
   createdAt: string;
+  /** Nurses: the wards they work in. */
+  wards?: { ward: { id: string; name: string } }[];
+  /** Physicians: assigned wards, which are used as their specialties. */
+  physicianWards?: { ward: { id: string; name: string } }[];
+}
+
+/** Active physician option and its assigned ward specialties. */
+export interface PhysicianOption {
+  id: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  wards: { ward: { id: string; name: string } }[];
 }
 
 /** Row returned by `GET /admin/password-reset-requests`, with its requester. */

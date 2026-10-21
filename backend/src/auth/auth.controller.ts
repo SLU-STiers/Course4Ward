@@ -1,13 +1,13 @@
 import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
-import { AuthService } from './auth.service';
+import { AuthService, LOGOUT_REASONS, LogoutReason, RESET_REQUEST_TTL_MS } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import {
   RequestPasswordResetDto,
   ConfirmPasswordResetDto,
 } from './dto/reset-password.dto';
-import { IsString, MinLength } from 'class-validator';
+import { IsIn, IsString, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -15,6 +15,14 @@ class ChangePasswordDto {
   @IsString()
   @MinLength(8)
   newPassword: string;
+}
+
+const RESET_TOKEN_COOKIE = 'resetToken';
+const RESET_TOKEN_COOKIE_OPTIONS = { httpOnly: true, sameSite: 'lax' as const, path: '/' };
+
+class LogoutDto {
+  @IsIn(LOGOUT_REASONS)
+  reason: LogoutReason;
 }
 
 class RefreshTokenDto {
@@ -37,6 +45,12 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  logout(@Body() dto: LogoutDto, @CurrentUser() user: any) {
+    return this.authService.logout(user.id, dto.reason);
+  }
+
   @Get('session')
   @UseGuards(JwtAuthGuard)
   session(@CurrentUser() user: any) {
@@ -51,34 +65,40 @@ export class AuthController {
   ) {
     const resetToken = await this.authService.createPasswordResetRequest(dto.userId, req.ip);
 
-    if (resetToken) {
-      res.cookie('resetToken', resetToken, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 1000,
-      });
-    }
+    res.cookie(RESET_TOKEN_COOKIE, resetToken, {
+      ...RESET_TOKEN_COOKIE_OPTIONS,
+      maxAge: RESET_REQUEST_TTL_MS,
+    });
 
-    return resetToken
-      ? { message: 'Reset request submitted for administrator approval.' }
-      : {
-          message:
-            'If the user ID exists, a reset request has been submitted for administrator approval.',
-        };
+    return { message: 'Reset request submitted for administrator approval.' };
   }
 
+  // The httpOnly cookie is what lets the login page get its temporary password
+  // back after a refresh: the password itself never touches client storage.
   @Get('password-reset/status')
-  passwordResetStatus(@Req() req: Request) {
+  async passwordResetStatus(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const cookieToken = req.headers.cookie
       ?.split(';')
       .map((cookie) => cookie.trim())
-      .find((cookie) => cookie.startsWith('resetToken='))
+      .find((cookie) => cookie.startsWith(`${RESET_TOKEN_COOKIE}=`))
       ?.split('=')
       .slice(1)
       .join('=');
 
-    return this.authService.getPasswordResetStatus(cookieToken ?? '');
+    const result = await this.authService.getPasswordResetStatus(cookieToken ?? '');
+
+    if (result.status === 'APPROVED') {
+      // Approval restarts the request's expiry; keep the cookie alive to match.
+      const { expiresAt, ...body } = result;
+      res.cookie(RESET_TOKEN_COOKIE, cookieToken, { ...RESET_TOKEN_COOKIE_OPTIONS, expires: expiresAt });
+      return body;
+    }
+
+    if (result.status === 'EXPIRED' && cookieToken) {
+      res.clearCookie(RESET_TOKEN_COOKIE, RESET_TOKEN_COOKIE_OPTIONS);
+    }
+
+    return result;
   }
 
   @Post('password-reset/confirm')

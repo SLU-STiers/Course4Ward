@@ -1,8 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationType, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { triageSelect } from '../patients/patients.service';
 
 @Injectable()
 export class ClaimsService {
@@ -51,9 +52,19 @@ export class ClaimsService {
       },
     });
 
+    const patientName = await this.auditLog.patientName({ summaryId: courseInWardId });
     await this.auditLog.record({
       userId: claimsProcessorId,
       action: 'CLAIM_CREATED',
+      details: {
+        summary: `Filed a claim for ${patientName}'s summary (${dayLabel(summary.summaryDate)})`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Summary day', dayLabel(summary.summaryDate)],
+          ['Validating physician', await this.auditLog.userLabel(physicianId)],
+          ['Claim status', approved ? 'Validated (summary already approved)' : 'Waiting for physician'],
+        ]),
+      },
     });
 
     return claim;
@@ -89,7 +100,15 @@ export class ClaimsService {
             orders: {
               orderBy: { dateCreated: 'desc' },
               include: {
-                admission: { select: { admissionDate: true, dischargeDate: true } },
+                admission: {
+                  select: {
+                    admissionDate: true,
+                    dischargeDate: true,
+                    // The claim review shows the patient's triage assessment.
+                    initialAssessment: true,
+                    triage: triageSelect,
+                  },
+                },
                 orderedBy: { select: { firstName: true, lastName: true } },
                 // Who the nurse executed the order and when -- the claims
                 // timeline shows the same execution state as the physician's.
@@ -143,7 +162,18 @@ export class ClaimsService {
       }),
     ]);
 
-    await this.auditLog.record({ userId: physicianId, action: 'SUMMARY_APPROVED' });
+    const patientName = await this.auditLog.patientName({ summaryId: request.summaryId });
+    await this.auditLog.record({
+      userId: physicianId,
+      action: 'SUMMARY_APPROVED',
+      details: {
+        summary: `Approved ${patientName}'s summary for ${dayLabel(summary.summaryDate)} from a claim request`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Summary day', dayLabel(summary.summaryDate)],
+        ]),
+      },
+    });
     return { ...updatedRequest, summary };
   }
 
@@ -186,6 +216,14 @@ export class ClaimsService {
     await this.auditLog.record({
       userId: claimsProcessorId,
       action: 'CLAIM_PHYSICIAN_NOTIFIED',
+      details: {
+        summary: `Asked ${await this.auditLog.userLabel(existing.physicianId)} to review ${patientName}'s summary`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Physician', await this.auditLog.userLabel(existing.physicianId)],
+          ['Message', note],
+        ]),
+      },
     });
 
     return claim;
@@ -213,6 +251,13 @@ export class ClaimsService {
     await this.auditLog.record({
       userId: claimsProcessorId,
       action: 'CF4_GENERATED',
+      details: {
+        summary: `Generated the PhilHealth CF4 for ${fullName(claim.summary.patient)}`,
+        items: detailItems([
+          ['Patient', fullName(claim.summary.patient)],
+          ['Summary day', dayLabel(claim.summary.summaryDate)],
+        ]),
+      },
     });
 
     // The actual CF4 document (PDF) would be rendered here from

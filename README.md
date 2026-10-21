@@ -15,29 +15,29 @@ Course4Ward is an AI-assisted web application that is designed to streamline the
 
 # **Prerequisites**
 Before all initialization activities, make sure that you have the following prerequisites to get the program running smoothly:
-- Ensure that the latest Node.js version is installed within the terminal
-- PostgreSQL is installed in the terminal
-- Ollama is installed in the terminal
-- Project files are installed or cloned in the terminal
+- Ensure that the latest Node.js version is installed within the system
+- PostgreSQL is installed in the system
+- Ollama is installed in the system
+- Project files are installed or cloned in the system
 - There is C++ support in Visual Studio
-- Docker is installed in the terminal
-- (Add More, if meron)
+- Docker is installed in the system
+- The latest version of Python is installed in the system
 
-# **Installation**
+# **Development Installation**
 1. After installing or cloning the project files, head to the frontend folder using the following command in the terminal within VS Code:
 - cd frontend 
 2. Find the "backend" folder in the files menu on the left portion of VS Code (or the software application you are using)
 3. Create a file and name it ".env".
 4. Paste the following inside the file:
-- DATABASE_URL="postgresql://postgres:root@localhost:5432/course4ward"
+- DATABASE_URL="postgresql://postgres:<insert key>@localhost:5432/course4ward"
 JWT_ACCESS_SECRET=change_me_access_secret
-JWT_REFRESH_SECRET=change_me_refresh_secret
+JWT_REFRESH_SECRET=change_me_refresh_secret 
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 AI_SERVICE_URL=http://localhost:8000
 PORT=3000
 CORS_ORIGIN=http://localhost:5173
-JWT_SECRET=SuperKey123!
+JWT_SECRET=<insert key>
 5. Install all the npm dependencies using the command:
 - npm install
 6. Do the same from the backend folder. You may use the following commands in order:
@@ -63,7 +63,32 @@ JWT_SECRET=SuperKey123!
 12. Go to the frontend directory and type the following:
 - npm run dev
 13. Click on the “local” link.
-14. (TO BE CONTINUED/REVISED)
+
+# **Installing the AI**
+1. Install ollama in the system
+2. Install qwen3:4b in the system using the CLI. Type the following:
+- ollama run qwen3:4b
+3. In visual studio code, install python using the "Extensions" tab.
+4. Press "Ctrl + P" and type:
+- Python: Create Environment
+5. Select the following:
+- Course4Ward
+- ollama_client.py
+6. Open the terminal and type:
+- cd ai_service
+- pip install -r requirements.txt
+7. After installation, on the same terminal, type:
+- py.exe .\ollama_client.py
+
+# **Docker Installation**
+1. Open the Docker application and wait for the docker engine to start
+2. Go to settings and click Docker Engine
+3. Open Visual Studio Code
+4. Open the file with the project
+5. Open the terminal and type:
+- run: docker compose up --build
+6. Type the following in the terminal to run the project entirely:
+- docker compose up
 
 # **Quick Start**
 Once the prerequisites are followed and the installation steps are done, you may start the Course4Ward web application using the command:

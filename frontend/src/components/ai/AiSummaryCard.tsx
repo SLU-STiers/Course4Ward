@@ -114,7 +114,7 @@ const styles: Record<string, CSSProperties> = {
     minHeight: 0,
     overflowY: 'auto',
   },
-  actions: { display: 'flex', gap: '10px', flexShrink: 0 },
+  actions: { display: 'flex', flexWrap: 'wrap', gap: '10px', flexShrink: 0 },
 };
 
 export interface AiSummaryCardProps {

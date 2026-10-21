@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 export type AuditAction =
   | 'LOGIN'
+  | 'LOGOUT'
   | 'PASSWORD_RESET'
   | 'USER_CREATED'
   | 'USER_UPDATED'
@@ -27,6 +28,7 @@ export type AuditAction =
   | 'SUMMARY_EDITED_MANUAL'
   | 'SUMMARY_REGENERATED_AI'
   | 'SUMMARY_APPROVED'
+  | 'SUMMARY_VERSION_RESTORED'
   | 'CLAIM_CREATED'
   | 'CLAIM_PHYSICIAN_NOTIFIED'
   | 'CF4_GENERATED';
@@ -38,6 +40,7 @@ export type AuditAction =
  */
 export const ACTION_MAP: Record<AuditAction, ActionType> = {
   LOGIN: ActionType.LOGIN,
+  LOGOUT: ActionType.LOGOUT,
   PASSWORD_RESET: ActionType.PASSWORD_RESET,
   USER_CREATED: ActionType.ADD_ACCOUNT,
   USER_UPDATED: ActionType.EDIT_ACCOUNT,
@@ -51,9 +54,45 @@ export const ACTION_MAP: Record<AuditAction, ActionType> = {
   SUMMARY_EDITED_MANUAL: ActionType.EDIT_SUMMARY,
   SUMMARY_REGENERATED_AI: ActionType.REGENERATE_SUMMARY,
   SUMMARY_APPROVED: ActionType.APPROVE_SUMMARY,
+  SUMMARY_VERSION_RESTORED: ActionType.EDIT_SUMMARY,
   CLAIM_CREATED: ActionType.CLAIM_CREATED,
   CLAIM_PHYSICIAN_NOTIFIED: ActionType.CLAIM_PHYSICIAN_NOTIFIED,
   CF4_GENERATED: ActionType.CF4_GENERATED,
+};
+
+/**
+ * The wording the admin Activity Logs table shows for each action and role.
+ * Mirrors `frontend/src/features/admin/activityLabels.ts` so free-text search
+ * matches what the admin actually reads ("Account updated", "Signed in",
+ * "Claims processor"), not only the stored enum names.
+ */
+export const ACTION_LABELS: Record<ActionType, string> = {
+  LOGIN: 'Signed in',
+  LOGOUT: 'Signed out',
+  ADD_NOTE: 'Note added',
+  CREATE_ORDER_NURSE: 'Order entered (nurse)',
+  CREATE_ORDER: 'Order created',
+  UPDATE_ORDER_STATUS: 'Order status updated',
+  REQUEST_SUMMARY: 'Summary generated (AI)',
+  EDIT_SUMMARY: 'Summary edited',
+  REGENERATE_SUMMARY: 'Summary regenerated',
+  APPROVE_SUMMARY: 'Summary approved',
+  CLAIM_CREATED: 'Claim created',
+  CLAIM_PHYSICIAN_NOTIFIED: 'Physician notified',
+  CF4_GENERATED: 'PhilHealth CF4 generated',
+  ADD_ACCOUNT: 'Account created',
+  EDIT_ACCOUNT: 'Account updated',
+  DELETE_ACCOUNT: 'Account deactivated',
+  PASSWORD_RESET: 'Password reset',
+  REGISTER_PATIENT: 'Patient registered',
+  PATIENT_UPDATED: 'Patient record updated',
+};
+
+export const ROLE_LABELS: Record<Role, string> = {
+  PHYSICIAN: 'Physician',
+  NURSE: 'Nurse',
+  CLAIMS_PROCESSOR: 'Claims processor',
+  ADMIN: 'Admin',
 };
 
 export const AUDIT_LOG_BUCKETS = ['day', 'week', 'month', 'year'] as const;
@@ -68,12 +107,39 @@ const USER_SELECT = {
 
 const AUDIT_LOG_INCLUDE = { user: { select: USER_SELECT } };
 
+/** One fact about a logged action ("Patient": "Juan Dela Cruz"). */
+export interface AuditDetailItem {
+  label: string;
+  value: string;
+}
+
+/** One edited field, before and after. */
+export interface AuditChange {
+  field: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * What specifically happened, stored with the log row. The action alone
+ * ("Patient record updated") cannot say whether a room changed or a doctor
+ * joined the care team; this can. Values are display-ready text, so the admin
+ * screen renders them as-is and the record keeps the names as they were then.
+ */
+export interface AuditDetails {
+  /** One sentence: "Added Dr. Ana Reyes to Juan Dela Cruz's care team". */
+  summary: string;
+  items?: AuditDetailItem[];
+  changes?: AuditChange[];
+}
+
 /** A log row as the Activity Logs table consumes it. */
 export interface AuditLogEntry {
   id: string;
   timeStamp: Date;
   action: ActionType;
   userId: string;
+  details: Prisma.JsonValue | null;
   user: { userId: string; firstName: string; lastName: string; role: Role };
 }
 
@@ -122,13 +188,48 @@ export interface AuditLogQuery {
   userId?: string;
   from?: Date;
   to?: Date;
-  /** Free text matched against the actor name/id and against the action name. */
+  /**
+   * Free text matched against every column the table shows: log id, actor
+   * name (first, last or full) and login id, role, and action.
+   */
   search?: string;
 }
 
 interface RecordAuditInput {
   userId: string;
   action: AuditAction | string;
+  details?: AuditDetails;
+}
+
+/** "First Last", or a fallback when the record is gone. */
+export function fullName(
+  person: { firstName: string; lastName: string } | null | undefined,
+  fallback = 'Unknown',
+): string {
+  return person ? `${person.firstName} ${person.lastName}`.trim() : fallback;
+}
+
+/** "YYYY-MM-DD" for a date, as the logs show calendar days. */
+export function dayLabel(date: Date | string | null | undefined): string {
+  if (!date) return '—';
+  const value = typeof date === 'string' ? new Date(date) : date;
+  return Number.isNaN(value.getTime()) ? String(date) : value.toISOString().slice(0, 10);
+}
+
+/** "TO_ACCOMPLISH" -> "To accomplish", for enum values with no label of their own. */
+export function humanize(value: string | null | undefined): string {
+  if (!value) return '—';
+  const words = value.toLowerCase().replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Drops empty values so a detail list only shows what was actually given. */
+export function detailItems(
+  entries: Array<[label: string, value: string | number | null | undefined]>,
+): AuditDetailItem[] {
+  return entries
+    .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '')
+    .map(([label, value]) => ({ label, value: String(value) }));
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -152,8 +253,42 @@ export class AuditLogService {
       data: {
         userId: input.userId,
         action: action ?? ActionType.EDIT_ACCOUNT,
+        ...(input.details ? { details: input.details as unknown as Prisma.InputJsonObject } : {}),
       },
     });
+  }
+
+  /** The patient's name for a log line, found by whichever id the caller has. */
+  async patientName(ref: { patientId?: string; admissionId?: string; summaryId?: string }) {
+    const select = { firstName: true, lastName: true } as const;
+    const patient = ref.patientId
+      ? await this.prisma.patient.findUnique({ where: { id: ref.patientId }, select })
+      : ref.admissionId
+        ? (
+            await this.prisma.patientAdmission.findUnique({
+              where: { id: ref.admissionId },
+              select: { patient: { select } },
+            })
+          )?.patient
+        : ref.summaryId
+          ? (
+              await this.prisma.courseInWard.findUnique({
+                where: { id: ref.summaryId },
+                select: { patient: { select } },
+              })
+            )?.patient
+          : null;
+    return fullName(patient, 'Unknown patient');
+  }
+
+  /** A staff member's name and login id for a log line ("Ana Reyes (DOC001)"). */
+  async userLabel(id: string | null | undefined) {
+    if (!id) return '—';
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { firstName: true, lastName: true, userId: true },
+    });
+    return user ? `${fullName(user)} (${user.userId})` : 'Unknown user';
   }
 
   /**
@@ -197,24 +332,29 @@ export class AuditLogService {
 
     const term = query.search?.trim();
     if (term) {
-      // Searching "approve summary" or "DOC001" both work: the term is matched
-      // against the action name as well as the actor.
-      const matchingActions = this.matchingActionsFor(term.replace(/\s+/g, '_').toUpperCase());
+      // Like the other tables: the term matches if any visible column contains
+      // it. "Ana Reyes", "a1b2c3d4", "Claims processor" and "Account updated"
+      // each find their rows.
+      const contains = { contains: term, mode: 'insensitive' as const };
+      const { actions, roles, words } = this.searchTargets(term);
 
       const matches: Prisma.AuditLogWhereInput[] = [
+        { id: contains },
+        { user: { userId: contains } },
+        // Full name: every word has to hit the first or last name.
         {
           user: {
-            OR: [
-              { firstName: { contains: term, mode: 'insensitive' } },
-              { lastName: { contains: term, mode: 'insensitive' } },
-              { userId: { contains: term, mode: 'insensitive' } },
-            ],
+            AND: words.map((word) => ({
+              OR: [
+                { firstName: { contains: word, mode: 'insensitive' as const } },
+                { lastName: { contains: word, mode: 'insensitive' as const } },
+              ],
+            })),
           },
         },
       ];
-      if (matchingActions.length) {
-        matches.unshift({ action: { in: matchingActions } });
-      }
+      if (roles.length) matches.push({ user: { role: { in: roles } } });
+      if (actions.length) matches.push({ action: { in: actions } });
       conditions.push({ OR: matches });
     }
 
@@ -311,27 +451,34 @@ export class AuditLogService {
   }
 
   /**
-   * The action names a free-text term refers to, matching either the call-site
-   * name (`SUMMARY_APPROVED`) or the persisted enum value (`APPROVE_SUMMARY`).
-   * Shared by the Prisma and raw-SQL filter builders so both select the same
-   * rows.
+   * What a free-text term refers to beyond plain text columns: the actions
+   * whose label (`Account updated`) or enum value (`APPROVE_SUMMARY`)
+   * contains it, the roles whose label or enum
+   * value contains it, and the words used for full-name matching. Shared by
+   * the Prisma and raw-SQL filter builders so both select the same rows.
    */
-  private matchingActionsFor(needle: string): ActionType[] {
-    return Array.from(
-      new Set<ActionType>([
-        ...(Object.keys(ACTION_MAP) as AuditAction[])
-          .filter((name) => name.includes(needle))
-          .map((name) => ACTION_MAP[name]),
-        ...Object.values(ACTION_MAP).filter((name) => name.includes(needle)),
-      ]),
+  private searchTargets(term: string): { actions: ActionType[]; roles: Role[]; words: string[] } {
+    const lower = term.toLowerCase();
+    const enumNeedle = term.replace(/\s+/g, '_').toUpperCase();
+
+    // Call-site names (`PATIENT_CREATED`) are deliberately not matched: the
+    // admin never sees them, so "created" must not surface "Patient registered".
+    const actions = (Object.keys(ACTION_LABELS) as ActionType[]).filter(
+      (action) => action.includes(enumNeedle) || ACTION_LABELS[action].toLowerCase().includes(lower),
     );
+
+    const roles = (Object.keys(ROLE_LABELS) as Role[]).filter(
+      (role) => role.includes(enumNeedle) || ROLE_LABELS[role].toLowerCase().includes(lower),
+    );
+
+    return { actions, roles, words: term.split(/\s+/).filter(Boolean) };
   }
 
   /**
    * {@link buildWhere} expressed for raw SQL, needed by the `day` aggregation.
    *
    * The two builders must stay in sync: the action-name matching is shared via
-   * {@link matchingActionsFor}, and `logs.test.ts` pins the clause set this one
+   * {@link searchTargets}, and `logs.test.ts` pins the clause set this one
    * produces so a filter added to only one of them fails a test.
    */
   private buildSqlWhere(query: AuditLogQuery): Prisma.Sql {
@@ -346,12 +493,24 @@ export class AuditLogService {
     const term = query.search?.trim();
     if (term) {
       const like = `%${term}%`;
+      const { actions, roles, words } = this.searchTargets(term);
+      const nameMatch = Prisma.join(
+        words.map((word) => {
+          const wordLike = `%${word}%`;
+          return Prisma.sql`(u."firstName" ILIKE ${wordLike} OR u."lastName" ILIKE ${wordLike})`;
+        }),
+        ' AND ',
+      );
       const matches: Prisma.Sql[] = [
-        Prisma.sql`u."firstName" ILIKE ${like} OR u."lastName" ILIKE ${like} OR u."userId" ILIKE ${like}`,
+        Prisma.sql`a."id" ILIKE ${like}`,
+        Prisma.sql`u."userId" ILIKE ${like}`,
+        Prisma.sql`(${nameMatch})`,
       ];
-      const matchingActions = this.matchingActionsFor(term.replace(/\s+/g, '_').toUpperCase());
-      if (matchingActions.length) {
-        matches.unshift(Prisma.sql`a."action"::text IN (${Prisma.join(matchingActions)})`);
+      if (roles.length) {
+        matches.push(Prisma.sql`u."role"::text IN (${Prisma.join(roles)})`);
+      }
+      if (actions.length) {
+        matches.push(Prisma.sql`a."action"::text IN (${Prisma.join(actions)})`);
       }
       conditions.push(Prisma.sql`(${Prisma.join(matches, ' OR ')})`);
     }

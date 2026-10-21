@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { signOut } from '../../services/signOut';
 import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
@@ -16,12 +17,11 @@ import type { TabType } from './types';
 
 export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
-  const logout = useAuthStore((s) => s.logout);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
+    signOut('MANUAL');
     navigate("/login");
   };
 

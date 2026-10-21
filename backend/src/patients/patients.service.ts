@@ -1,7 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderEnteredBy, OrderType, PatientClass, Role } from '@prisma/client';
+import { InsuranceType, OrderEnteredBy, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import {
+  AuditLogService,
+  dayLabel,
+  detailItems,
+  fullName,
+} from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
 
 function buildTriage(dto: CreatePatientDto, nurseId: string) {
@@ -21,7 +26,11 @@ function buildTriage(dto: CreatePatientDto, nurseId: string) {
   return hasAny ? { ...triage, recordedById: nurseId } : null;
 }
 
-const triageSelect = {
+/**
+ * The triage assessment every clinical role reads: nurses, physicians and
+ * (through the claim's admission) claims processors.
+ */
+export const triageSelect = {
   select: {
     triageLevel: true,
     triageTime: true,
@@ -33,12 +42,24 @@ const triageSelect = {
     temperature: true,
     painScore: true,
     createdAt: true,
+    recordedBy: { select: { firstName: true, lastName: true } },
   },
 };
 
+const roomSelect = {
+  select: { id: true, number: true, ward: { select: { id: true, name: true } } },
+};
+
+/** Room checks and writes run serializably so two nurses cannot take the same room at once. */
+const ROOM_TX = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable };
+
+function isSerializationFailure(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
+}
+
 const additionalPhysiciansSelect = {
   orderBy: { createdAt: 'asc' as const },
-  select: { physician: { select: { id: true, firstName: true, lastName: true } } },
+  select: { createdAt: true, physician: { select: { id: true, firstName: true, lastName: true } } },
 };
 
 function resolveDateOfBirth(dto: CreatePatientDto): Date | undefined {
@@ -57,6 +78,14 @@ const CLASS_LABEL: Record<PatientClass, string> = {
   OUTPATIENT: 'an outpatient',
   OBSERVATION: 'under observation',
   INPATIENT: 'admitted',
+};
+
+/** Class names as the activity log shows them. */
+const CLASS_NAME: Record<PatientClass, string> = {
+  EMERGENCY: 'Emergency',
+  OUTPATIENT: 'Outpatient',
+  OBSERVATION: 'Observation',
+  INPATIENT: 'Inpatient',
 };
 
 const ORDER_LABEL: Partial<Record<OrderType, string>> = {
@@ -87,13 +116,23 @@ export class PatientsService {
     private auditLog: AuditLogService,
   ) {}
 
-  /** Physicians available for nurse assignment when registering a patient. */
-  listPhysicians() {
-    return this.prisma.user.findMany({
+  /** Physicians available for nurse assignment, including their ward specialties. */
+  async listPhysicians() {
+    const physicians = await this.prisma.user.findMany({
       where: { role: Role.PHYSICIAN, isActive: true },
-      select: { id: true, userId: true, firstName: true, lastName: true },
+      select: {
+        id: true,
+        userId: true,
+        firstName: true,
+        lastName: true,
+        physicianWards: { select: { ward: { select: { id: true, name: true } } } },
+      },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
+    return physicians.map(({ physicianWards, ...physician }) => ({
+      ...physician,
+      wards: physicianWards,
+    }));
   }
 
   // Nurse patient management: demographics + admission. New patients default
@@ -115,6 +154,9 @@ export class PatientsService {
         `No order is entered when registering a patient as ${CLASS_LABEL[patientClass]}`,
       );
     }
+    if (dto.roomNumber && patientClass !== PatientClass.INPATIENT) {
+      throw new BadRequestException('A room can only be assigned to an admitted patient');
+    }
 
     const additionalPhysicianIds = [...new Set(dto.additionalPhysicianIds ?? [])].filter(
       (id) => id !== dto.physicianId,
@@ -131,12 +173,20 @@ export class PatientsService {
     const initialAssessment = (dto.notes ?? dto.initialAssessment ?? '').trim() || null;
     const triage = buildTriage(dto, nurseId);
 
-    const patient = await this.prisma.patient.create({
+    const createPatient = (db: Prisma.TransactionClient, roomId: string | null) => db.patient.create({
       data: {
         firstName: dto.firstName.trim(),
         lastName: dto.lastName.trim(),
         gender: dto.gender,
         dateOfBirth: resolveDateOfBirth(dto),
+        contactNumber: dto.contactNumber || null,
+        address: dto.address || null,
+        insurance: dto.insurance ?? null,
+        insuranceOther: dto.insurance === InsuranceType.OTHER ? dto.insuranceOther || null : null,
+        religion: dto.religion || null,
+        contactPersonName: dto.contactPersonName || null,
+        contactPersonNumber: dto.contactPersonNumber || null,
+        contactPersonAddress: dto.contactPersonAddress || null,
         admissions: {
           create: {
             admissionDate,
@@ -144,6 +194,7 @@ export class PatientsService {
             classSince: admissionDate,
             initialAssessment,
             physicianId: dto.physicianId,
+            roomId,
             additionalPhysicians: additionalPhysicianIds.length
               ? { create: additionalPhysicianIds.map((physicianId) => ({ physicianId })) }
               : undefined,
@@ -178,17 +229,60 @@ export class PatientsService {
             physician: { select: { id: true, firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
             triage: triageSelect,
+            room: roomSelect,
           },
         },
       },
     });
 
+    const roomNumber = dto.roomNumber;
+    const patient = roomNumber
+      ? await this.inRoomTransaction(async (tx) =>
+          createPatient(tx, await this.freeRoomId(tx, roomNumber)),
+        )
+      : await createPatient(this.prisma, null);
+
+    const patientName = fullName(patient);
+    const attending = await this.auditLog.userLabel(dto.physicianId);
+    const consultants = await Promise.all(
+      additionalPhysicianIds.map((id) => this.auditLog.userLabel(id)),
+    );
     await this.auditLog.record({
       userId: nurseId,
       action: 'PATIENT_CREATED',
+      details: {
+        summary: `Registered ${patientName} as ${CLASS_NAME[patientClass]}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Sex', dto.gender],
+          ['Date of birth', patient.dateOfBirth ? dayLabel(patient.dateOfBirth) : null],
+          ['Class', CLASS_NAME[patientClass]],
+          ['Admission date', dayLabel(admissionDate)],
+          ['Attending physician', attending],
+          ['Additional physicians', consultants.join(', ')],
+          ['Room', dto.roomNumber],
+          ['Insurance', dto.insurance === InsuranceType.OTHER ? dto.insuranceOther : dto.insurance],
+          ['Religion', dto.religion],
+          ['Triage level', dto.triageLevel],
+          ['Initial assessment', initialAssessment],
+        ]),
+      },
     });
     if (orderType) {
-      await this.auditLog.record({ userId: nurseId, action: 'ORDER_CREATED' });
+      await this.auditLog.record({
+        userId: nurseId,
+        action: 'ORDER_CREATED',
+        details: {
+          summary: `Entered ${attending}'s ${ORDER_LABEL[orderType]} for ${patientName}`,
+          items: detailItems([
+            ['Patient', patientName],
+            ['Ordering physician', attending],
+            ['Order type', ORDER_LABEL[orderType]],
+            ['Order', registrationOrder],
+            ['Received via', dto.registrationOrderChannel],
+          ]),
+        },
+      });
     }
 
     return patient;
@@ -222,6 +316,7 @@ export class PatientsService {
                   physician: { select: { firstName: true, lastName: true } },
                   additionalPhysicians: additionalPhysiciansSelect,
                   triage: triageSelect,
+                  room: roomSelect,
                 },
               }
             : {
@@ -231,8 +326,9 @@ export class PatientsService {
                   dischargeDate: true,
                   patientClass: true,
                   classSince: true,
-                  // Physicians see the priority, not the full vitals row.
-                  triage: { select: { triageLevel: true } },
+                  initialAssessment: true,
+                  triage: triageSelect,
+                  room: roomSelect,
                 },
               }),
         },
@@ -257,11 +353,105 @@ export class PatientsService {
             physician: { select: { firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
             triage: triageSelect,
+            room: roomSelect,
           },
         },
       },
       orderBy: { updatedAt: 'desc' },
     });
+  }
+
+  /** Active ward rooms, each flagged as occupied while an undischarged admission holds it. */
+  async listRooms() {
+    const rooms = await this.prisma.room.findMany({
+      where: { isActive: true },
+      orderBy: { number: 'asc' },
+      select: {
+        id: true,
+        number: true,
+        ward: { select: { id: true, name: true } },
+        admissions: { where: { dischargeDate: null }, select: { id: true }, take: 1 },
+      },
+    });
+    return rooms.map(({ admissions, ...room }) => ({
+      ...room,
+      occupied: admissions.length > 0,
+      occupiedByAdmissionId: admissions[0]?.id ?? null,
+    }));
+  }
+
+  /** Assigns an admitted patient to a free room, moves them to another, or clears it (`null`). */
+  async assignRoom(admissionId: string, roomNumber: string | null, userId: string) {
+    const admission = await this.inRoomTransaction(async (tx) => {
+      const current = await tx.patientAdmission.findUnique({
+        where: { id: admissionId },
+        select: { dischargeDate: true, patientClass: true, room: { select: { number: true } } },
+      });
+      if (!current) throw new NotFoundException('Admission not found');
+      if (current.dischargeDate) {
+        throw new BadRequestException('Cannot assign a room to a discharged patient');
+      }
+      if (current.patientClass !== PatientClass.INPATIENT) {
+        throw new BadRequestException('A room can only be assigned to an admitted patient');
+      }
+      const roomId = roomNumber ? await this.freeRoomId(tx, roomNumber, admissionId) : null;
+      const updated = await tx.patientAdmission.update({
+        where: { id: admissionId },
+        data: { roomId },
+        select: { id: true, room: roomSelect },
+      });
+      return { updated, previousRoom: current.room?.number ?? null };
+    });
+
+    const patientName = await this.auditLog.patientName({ admissionId });
+    const { updated, previousRoom } = admission;
+    await this.auditLog.record({
+      userId,
+      action: 'PATIENT_UPDATED',
+      details: {
+        summary: roomNumber
+          ? previousRoom
+            ? `Moved ${patientName} from room ${previousRoom} to room ${roomNumber}`
+            : `Assigned ${patientName} to room ${roomNumber}`
+          : `Removed ${patientName} from room ${previousRoom ?? '—'}`,
+        items: detailItems([['Patient', patientName]]),
+        changes: [{ field: 'Room', from: previousRoom ?? 'None', to: roomNumber ?? 'None' }],
+      },
+    });
+    return updated;
+  }
+
+  /** The id of room `number`, if it exists and no other undischarged admission holds it. */
+  private async freeRoomId(tx: Prisma.TransactionClient, number: string, exceptAdmissionId?: string) {
+    const room = await tx.room.findUnique({
+      where: { number },
+      select: {
+        id: true,
+        isActive: true,
+        admissions: {
+          where: {
+            dischargeDate: null,
+            ...(exceptAdmissionId ? { id: { not: exceptAdmissionId } } : {}),
+          },
+          select: { id: true },
+          take: 1,
+        },
+      },
+    });
+    if (!room || !room.isActive) throw new NotFoundException(`Room ${number} does not exist`);
+    if (room.admissions.length) throw new ConflictException(`Room ${number} is occupied`);
+    return room.id;
+  }
+
+  private async inRoomTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
+    try {
+      return await this.prisma.$transaction(fn, ROOM_TX);
+    } catch (error) {
+      if (isSerializationFailure(error)) {
+        throw new ConflictException('That room was just taken by another patient; choose another room');
+      }
+      throw error;
+    }
   }
 
   async findOne(id: string) {
@@ -278,7 +468,7 @@ export class PatientsService {
   }
 
   async update(id: string, dto: UpdatePatientDto, userId: string) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
     const patient = await this.prisma.patient.update({
       where: { id },
       data: {
@@ -287,9 +477,24 @@ export class PatientsService {
       },
     });
 
+    const changes = [
+      { field: 'Sex', from: existing.gender ?? '—', to: patient.gender ?? '—' },
+      {
+        field: 'Date of birth',
+        from: dayLabel(existing.dateOfBirth),
+        to: dayLabel(patient.dateOfBirth),
+      },
+    ].filter((change) => change.from !== change.to);
     await this.auditLog.record({
       userId,
       action: 'PATIENT_UPDATED',
+      details: {
+        summary: changes.length
+          ? `Updated ${fullName(patient)}'s ${changes.map((change) => change.field.toLowerCase()).join(' and ')}`
+          : `Saved ${fullName(patient)}'s details with no changes`,
+        items: detailItems([['Patient', fullName(patient)]]),
+        changes,
+      },
     });
 
     return patient;
@@ -329,7 +534,23 @@ export class PatientsService {
     });
     if (count === 0) throw new ConflictException('This patient is already discharged');
 
-    await this.auditLog.record({ userId, action: 'REGISTER_PATIENT' });
+    const patientName = await this.auditLog.patientName({ patientId: admission.patientId });
+    await this.auditLog.record({
+      userId,
+      action: 'REGISTER_PATIENT',
+      details: {
+        summary:
+          admission.patientClass === PatientClass.OUTPATIENT
+            ? `Ended ${patientName}'s outpatient visit`
+            : `Discharged ${patientName}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Class', CLASS_NAME[admission.patientClass]],
+          ['Admitted', dayLabel(admission.admissionDate)],
+          ['Discharged', dayLabel(dischargeDate)],
+        ]),
+      },
+    });
     return { ...admission, dischargeDate };
   }
 
@@ -383,7 +604,24 @@ export class PatientsService {
       throw new ConflictException('This patient was updated by someone else; reload and try again');
     }
 
-    await this.auditLog.record({ userId, action: 'PATIENT_UPDATED' });
+    const patientName = await this.auditLog.patientName({ patientId: admission.patientId });
+    await this.auditLog.record({
+      userId,
+      action: 'PATIENT_UPDATED',
+      details: {
+        summary:
+          target === PatientClass.INPATIENT
+            ? `Admitted ${patientName} as an inpatient`
+            : `Placed ${patientName} under observation`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Carried out', `Physician's ${ORDER_LABEL[orderType]}`],
+        ]),
+        changes: [
+          { field: 'Class', from: CLASS_NAME[admission.patientClass], to: CLASS_NAME[target] },
+        ],
+      },
+    });
     return { ...admission, patientClass: target, classSince };
   }
 
@@ -415,10 +653,22 @@ export class PatientsService {
 
     const entry = await this.prisma.admissionPhysician.create({
       data: { admissionId, physicianId },
-      select: { physician: { select: { id: true, firstName: true, lastName: true } } },
+      select: { createdAt: true, physician: { select: { id: true, firstName: true, lastName: true } } },
     });
 
-    await this.auditLog.record({ userId: nurseId, action: 'PATIENT_UPDATED' });
+    const patientName = await this.auditLog.patientName({ admissionId });
+    await this.auditLog.record({
+      userId: nurseId,
+      action: 'PATIENT_UPDATED',
+      details: {
+        summary: `Added Dr. ${fullName(entry.physician)} to ${patientName}'s care team`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Physician added', await this.auditLog.userLabel(physicianId)],
+          ['Attending physician', await this.auditLog.userLabel(admission.physicianId)],
+        ]),
+      },
+    });
     return entry;
   }
 }
