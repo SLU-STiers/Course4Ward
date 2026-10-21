@@ -517,6 +517,24 @@ describe('OrdersService', () => {
       expect(data).toEqual({ status: OrderStatus.FINISHED, nurseComment: 'Patient tolerated well' });
     });
 
+    it('should refuse to edit a finished order whose note was already submitted', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        status: OrderStatus.FINISHED,
+        nurseComment: 'Given at 08:00',
+      });
+
+      await expect(
+        service.updateStatus(
+          'order-123',
+          { status: OrderStatus.FINISHED, nurseComment: 'Changed my mind' },
+          'nurse-123',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
+      expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+
     it('should store an empty comment as null', async () => {
       (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(mockOrder);
       (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);

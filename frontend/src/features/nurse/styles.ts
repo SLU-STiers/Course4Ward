@@ -604,6 +604,13 @@ export const orderExec: Record<string, CSSProperties> = {
     fontSize: 12,
     fontFamily: 'inherit',
   },
+  textareaLocked: {
+    color: '#475569',
+    backgroundColor: '#f8fafc',
+    cursor: 'not-allowed',
+    resize: 'none',
+  },
   actions: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
   error: { fontSize: 12, color: '#dc2626', marginRight: 'auto' },
+  lockedNote: { fontSize: 12, color: '#64748b' },
 };

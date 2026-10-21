@@ -7,7 +7,12 @@ import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainAp
 import type { CourseInWard, OrderType, PhysicianOrder } from '../../types';
 import { Button, DataTableToolbar, StatusBadge, TriageBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
-import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
+import {
+  AiActionButton,
+  AiModelToggle,
+  AiSummaryCard,
+} from '../../components/ai/AiSummaryCard';
+import { useSummaryModel } from '../../hooks/useSummaryModel';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { ORDER_TYPE_OPTIONS, orderTypeLabel } from '../../components/orders/orderType';
@@ -69,6 +74,8 @@ export function ManageView() {
   >(null);
   const [regeneratingSummary, setRegeneratingSummary] = useState(false);
   const [regenInstructions, setRegenInstructions] = useState("");
+  /** Which AI writes the summary on Generate / Regenerate. */
+  const [summaryModel, setSummaryModel] = useSummaryModel();
   const [showingHistory, setShowingHistory] = useState(false);
   const [savingSummaryEdit, setSavingSummaryEdit] = useState(false);
   /** A day with no Course in the Ward yet is generating its first one. */
@@ -338,7 +345,7 @@ export function ManageView() {
     setGeneratingSummary(true);
     setOrderError(null);
     void courseInWardApi
-      .generate(selected.id, day)
+      .generate(selected.id, day, summaryModel)
       .then(({ data }) => {
         setSummariesByPatient((previous) => ({
           ...previous,
@@ -421,7 +428,7 @@ export function ManageView() {
     setRegeneratingSummary(true);
     setOrderError(null);
     void courseInWardApi
-      .regenerate(summaryId, regenInstructions)
+      .regenerate(summaryId, regenInstructions, summaryModel)
       .then(({ data }) => {
         replaceSummary(selected.id, data);
         setEditingSummary(false);
@@ -926,6 +933,12 @@ export function ManageView() {
                   }
                   actions={
                     !summary ? (
+                      <>
+                      <AiModelToggle
+                        value={summaryModel}
+                        onChange={setSummaryModel}
+                        disabled={generatingSummary}
+                      />
                       <AiActionButton
                         disabled={!summaryDay || generatingSummary}
                         aria-busy={generatingSummary}
@@ -938,8 +951,16 @@ export function ManageView() {
                         ) : null}
                         {generatingSummary ? "Generating..." : "Generate"}
                       </AiActionButton>
+                      </>
                     ) : (
                       <>
+                        {!editingSummary && (
+                          <AiModelToggle
+                            value={summaryModel}
+                            onChange={setSummaryModel}
+                            disabled={regeneratingSummary}
+                          />
+                        )}
                         {!editingSummary && (
                           // The instructions only steer Regenerate, so they share a row.
                           <div style={manage.aiRegenRow}>

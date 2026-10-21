@@ -79,9 +79,9 @@ def lint(summary):
         problems.append("names a physician")
     if re.search(r"^\s*([-*•]|\d+\.)\s", summary, re.M):
         problems.append("bullet/numbered list")
-    sentences = len(re.findall(r"[.!?](\s|$)", summary))
-    if sentences > 8:
-        problems.append(f"{sentences} sentences")
+    longest = max(len(s.split()) for s in re.split(r"(?<=[.!?])\s+", summary))
+    if longest > 40:  # the prompt asks for sentences under about 35 words
+        problems.append(f"{longest}-word sentence")
     return problems
 
 

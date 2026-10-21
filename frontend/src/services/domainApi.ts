@@ -28,6 +28,7 @@ import type {
   Ward,
   WardRoom,
   SummaryVersion,
+  SummaryModel,
   PhysicianOption,
 } from '../types';
 
@@ -111,15 +112,18 @@ export const notesApi = {
 // --- Course in the Ward (AI summaries) ---
 export const courseInWardApi = {
   /** Summarize one order day (today when `day` is omitted); returns that day's summary rows. */
-  generate: (patientId: string, day?: string) =>
-    api.post<CourseInWard[]>('/course-in-ward/generate', day ? { patientId, day } : { patientId }),
+  generate: (patientId: string, day?: string, model: SummaryModel = 'standard') =>
+    api.post<CourseInWard[]>(
+      '/course-in-ward/generate',
+      day ? { patientId, day, model } : { patientId, model },
+    ),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
   /** `instructions`: optional extra prompt for the AI (blank = none). */
-  regenerate: (id: string, instructions?: string) =>
+  regenerate: (id: string, instructions?: string, model: SummaryModel = 'standard') =>
     api.post<CourseInWard>(
       `/course-in-ward/${id}/regenerate`,
-      instructions?.trim() ? { instructions: instructions.trim() } : {},
+      instructions?.trim() ? { instructions: instructions.trim(), model } : { model },
     ),
   approve: (id: string) => api.patch<CourseInWard>(`/course-in-ward/${id}/approve`),
   /** Earlier texts of a summary, newest first (the last 3 are kept). */

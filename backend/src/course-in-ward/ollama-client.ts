@@ -19,11 +19,16 @@ export interface OllamaReference {
   similarity?: number;
 }
 
+/** `standard` = base model guided by RAG references; `fine_tuned` = the fine-tuned summarizer. */
+export type SummaryModel = 'standard' | 'fine_tuned';
+
 export interface SummarizeBatchOptions {
   temperature?: number;
   references?: OllamaReference[];
   /** Physician's extra prompt instructions (regeneration). */
   instructions?: string;
+  /** Which model writes the summary (default `standard`). */
+  model?: SummaryModel;
 }
 
 export interface OllamaSummaryResult {
@@ -61,7 +66,12 @@ export class OllamaClient {
     });
   }
 
-  async health(): Promise<{ status: string; model: string; embedding_model?: string }> {
+  async health(): Promise<{
+    status: string;
+    model: string;
+    fine_tuned_model?: string;
+    embedding_model?: string;
+  }> {
     const { data } = await this.http.get('/health');
     return data;
   }
@@ -80,6 +90,7 @@ export class OllamaClient {
       {
         admissions,
         temperature: options.temperature ?? 0.1,
+        modelVariant: options.model ?? 'standard',
         ...(options.references && options.references.length
           ? { references: options.references }
           : {}),
