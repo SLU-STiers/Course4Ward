@@ -12,7 +12,7 @@ import requests
 
 URL = "http://localhost:11434/api/chat"
 BASE = sys.argv[1] if len(sys.argv) > 1 else "qwen3.5:4b"
-TUNED = sys.argv[2] if len(sys.argv) > 2 else "course4ward-summarizer"
+TUNED = sys.argv[2] if len(sys.argv) > 2 else "finetuned-qwen"
 HERE = Path(__file__).parent
 
 

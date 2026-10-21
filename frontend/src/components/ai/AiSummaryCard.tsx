@@ -7,6 +7,7 @@
  */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import type { CSSProperties } from 'react';
+import type { SummaryModel } from '../../types';
 import llamaIcon from '../../Img/llama.png';
 import { ChevronLeftIcon, ChevronRightIcon } from '../icons/NavIcons';
 
@@ -115,6 +116,24 @@ const styles: Record<string, CSSProperties> = {
     overflowY: 'auto',
   },
   actions: { display: 'flex', flexWrap: 'wrap', gap: '10px', flexShrink: 0 },
+  modelRow: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' },
+  modelLabel: { fontSize: '12px', fontWeight: 700, color: '#6b21a8', whiteSpace: 'nowrap' },
+  modelGroup: {
+    display: 'inline-flex',
+    border: '1px solid #d3a0f5',
+    borderRadius: '6px',
+    overflow: 'hidden',
+  },
+  modelOption: {
+    border: 'none',
+    background: '#ffffff',
+    color: '#6b21a8',
+    fontSize: '12px',
+    fontWeight: 700,
+    padding: '5px 12px',
+    cursor: 'pointer',
+  },
+  modelOptionActive: { background: '#7c00b8', color: '#ffffff' },
 };
 
 export interface AiSummaryCardProps {
@@ -222,5 +241,54 @@ export function AiActionButton({
       className={['ui-ai-btn', className ?? ''].filter(Boolean).join(' ')}
       {...props}
     />
+  );
+}
+
+const MODEL_OPTIONS: { value: SummaryModel; label: string; title: string }[] = [
+  {
+    value: 'standard',
+    label: 'Standard (RAG)',
+    title: 'Base model, guided by similar approved summaries',
+  },
+  {
+    value: 'fine_tuned',
+    label: 'Fine-tuned',
+    title: 'Model fine-tuned on approved Course in the Ward summaries',
+  },
+];
+
+/** Picks which AI writes the summary on Generate / Regenerate. */
+export function AiModelToggle({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: SummaryModel;
+  onChange: (model: SummaryModel) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div style={styles.modelRow}>
+      <span style={styles.modelLabel}>AI model</span>
+      <div role="radiogroup" aria-label="AI model" style={styles.modelGroup}>
+        {MODEL_OPTIONS.map((option) => {
+          const active = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              title={option.title}
+              disabled={disabled}
+              onClick={() => onChange(option.value)}
+              style={active ? { ...styles.modelOption, ...styles.modelOptionActive } : styles.modelOption}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
