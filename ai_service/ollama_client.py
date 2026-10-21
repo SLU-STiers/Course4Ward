@@ -164,7 +164,7 @@ def build_prompt(
 
     references_block = _format_references(references)
     references_rules = (
-        "6. REFERENCES: When reference examples are present, match their tone, "
+        "7. REFERENCES: When reference examples are present, match their tone, "
         "structure, and terminology, but summarize ONLY the CURRENT orders below. "
         "Do not copy any clinical detail from the references and do not mention them.\n"
         if references_block
@@ -185,10 +185,11 @@ You are an expert clinical documentation specialist familiar with Philippine hea
 
 RULES (FOLLOW THESE STRICTLY):
 1. TENSE & VOICE (MANDATORY): Every sentence MUST be in past tense and passive voice. Change verbs: "start" -> "was started", "administer" -> "was administered", "obtain" -> "was obtained", "refer" -> "was referred", "consult" -> "was consulted". Do NOT use present tense ("is given", "are ordered") or imperative mood.
-2. OUTPUT LENGTH: Keep it as short as possible; aim for at most 5 sentences and go beyond that only when the orders cannot be covered otherwise. Never pad with content that isn't in the orders. Group related orders into the same sentence using "and", "while", or semicolons. Do not use bullet points or numbered lists.
-3. COMPLETENESS: Include every clinically relevant detail from the orders: medications (dose, route, frequency), diagnostics, fluids, oxygen, labs, procedures, referrals, PRN conditions, monitoring, consult criteria. Mention supplies and materials only when truly essential (e.g. a blood product or device used on the patient); otherwise just name the procedure they are for.
-4. NO NAMES: Omit physicians' and staff names, including signatures; refer to the service instead (e.g. "IM-IDS", "Neurology", "Anesthesia", "the attending physician").
-5. NO ADDITIONS: Do not add diagnoses, outcomes, or context not present in the orders.
+2. COMPLETENESS (MOST IMPORTANT): Include every clinically relevant detail from the orders: medications (dose, route, frequency), diagnostics, fluids, diet, oxygen and ventilator settings, labs, procedures, referrals, held or discontinued items, PRN conditions, monitoring, consult criteria. Orders continued from previous days are details too: name each with its dose in one sentence (e.g. "Drug A 500 mg IV q8h and Drug B 10 mg 1 tab OD were continued."), never just "medications were continued". Mention supplies and materials only when truly essential (e.g. a blood product or device used on the patient); otherwise just name the procedure they are for.
+3. NO NAMES: Omit every physician and staff name, including signatures, initials, and names after slashes at the end of an order (e.g. "Dr. Cruz/ Santos/ JRL"); refer to the service instead (e.g. "IM-IDS", "Neurology", "Anesthesia", "the attending physician").
+4. LENGTH & READABILITY: Keep it as short as possible without dropping any detail: no filler, no repeating an order, and the orders' own abbreviations (IV, q8h, PRN). Aim for about 5 sentences; when the orders need more, add sentences instead of lengthening them, and keep each sentence under about 35 words. Do not use bullet points or numbered lists.
+5. CHRONOLOGICAL ORDER: The orders are numbered in the order they were written. Describe them in that sequence, combining only orders that are next to each other into one sentence. Do not add times or timestamps.
+6. NO ADDITIONS: Do not add diagnoses, outcomes, or context not present in the orders. Copy drug names exactly as written; never add or substitute a generic or brand name.
 {references_rules}
 {context_block}{references_block}
 {instructions_block}
