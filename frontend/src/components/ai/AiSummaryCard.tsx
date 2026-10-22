@@ -10,6 +10,7 @@ import type { CSSProperties } from 'react';
 import type { SummaryModel } from '../../types';
 import llamaIcon from '../../Img/llama.png';
 import { ChevronLeftIcon, ChevronRightIcon } from '../icons/NavIcons';
+import { InfoTooltip } from '../ui';
 
 const styles: Record<string, CSSProperties> = {
   card: {
@@ -29,11 +30,20 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
     gap: '8px',
     padding: '10px 16px',
     backgroundColor: '#f1eaff',
   },
-  titleRow: { display: 'flex', alignItems: 'center', gap: '8px' },
+  /** Two groups: the title, then (after a divider) any extra controls. */
+  titleRow: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 14px' },
+  titleGroup: { display: 'flex', alignItems: 'center', gap: '8px' },
+  titleExtra: {
+    display: 'flex',
+    alignItems: 'center',
+    paddingLeft: '14px',
+    borderLeft: '1px solid #d8c4f5',
+  },
   llama: { width: '16px', height: '16px', display: 'block', objectFit: 'contain' },
   title: { margin: 0, fontSize: '15px', fontWeight: 800, color: '#7c00b8' },
   badge: {
@@ -116,8 +126,8 @@ const styles: Record<string, CSSProperties> = {
     overflowY: 'auto',
   },
   actions: { display: 'flex', flexWrap: 'wrap', gap: '10px', flexShrink: 0 },
-  modelRow: { display: 'flex', alignItems: 'center', gap: '8px', width: '100%' },
-  modelLabel: { fontSize: '12px', fontWeight: 700, color: '#6b21a8', whiteSpace: 'nowrap' },
+  /** Toggle and its ⓘ stay one unit; the ⓘ's own 28px hit area supplies the breathing room. */
+  modelRow: { display: 'inline-flex', alignItems: 'center', gap: '4px' },
   modelGroup: {
     display: 'inline-flex',
     border: '1px solid #d3a0f5',
@@ -128,11 +138,15 @@ const styles: Record<string, CSSProperties> = {
     border: 'none',
     background: '#ffffff',
     color: '#6b21a8',
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: 700,
-    padding: '5px 12px',
+    padding: '5px 11px',
     cursor: 'pointer',
   },
+  /** Hairline between the two options, so they read as two buttons. */
+  modelOptionDivider: { borderLeft: '1px solid #d3a0f5' },
+  modelHelpList: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' },
+  modelHelpName: { fontWeight: 700, color: '#6b21a8' },
   modelOptionActive: { background: '#7c00b8', color: '#ffffff' },
 };
 
@@ -155,6 +169,8 @@ export interface AiSummaryCardProps {
   emptyMessage?: string;
   /** Custom body — e.g. the physician's editor. */
   children?: ReactNode;
+  /** Rendered beside the "AI Summarized" title, e.g. the AI model toggle. */
+  titleExtra?: ReactNode;
   /** Footer actions. */
   actions?: ReactNode;
   /** Fill a resizable panel and scroll the body internally. */
@@ -173,6 +189,7 @@ export function AiSummaryCard({
   text,
   emptyMessage,
   children,
+  titleExtra,
   actions,
   fill,
 }: AiSummaryCardProps) {
@@ -180,8 +197,11 @@ export function AiSummaryCard({
     <section style={fill ? { ...styles.card, ...styles.cardFill } : styles.card}>
       <div style={styles.header}>
         <div style={styles.titleRow}>
-          <img src={llamaIcon} alt="" style={styles.llama} />
-          <h3 style={styles.title}>AI Summarized</h3>
+          <div style={styles.titleGroup}>
+            <img src={llamaIcon} alt="" style={styles.llama} />
+            <h3 style={styles.title}>AI Summarized</h3>
+          </div>
+          {titleExtra ? <div style={styles.titleExtra}>{titleExtra}</div> : null}
         </div>
         {badgeLabel ? (
           <span style={badgeMuted ? styles.badgeMuted : styles.badge}>{badgeLabel}</span>
@@ -244,16 +264,16 @@ export function AiActionButton({
   );
 }
 
-const MODEL_OPTIONS: { value: SummaryModel; label: string; title: string }[] = [
+const MODEL_OPTIONS: { value: SummaryModel; label: string; help: string }[] = [
   {
     value: 'standard',
-    label: 'Standard (RAG)',
-    title: 'Base model, guided by similar approved summaries',
+    label: 'Base Model',
+    help: 'The general model, guided by similar summaries physicians already approved.',
   },
   {
     value: 'fine_tuned',
     label: 'Fine-tuned',
-    title: 'Model fine-tuned on approved Course in the Ward summaries',
+    help: 'A model trained on approved Course in the Ward summaries, so it follows their style closely.',
   },
 ];
 
@@ -269,9 +289,8 @@ export function AiModelToggle({
 }) {
   return (
     <div style={styles.modelRow}>
-      <span style={styles.modelLabel}>AI model</span>
       <div role="radiogroup" aria-label="AI model" style={styles.modelGroup}>
-        {MODEL_OPTIONS.map((option) => {
+        {MODEL_OPTIONS.map((option, index) => {
           const active = option.value === value;
           return (
             <button
@@ -279,16 +298,30 @@ export function AiModelToggle({
               type="button"
               role="radio"
               aria-checked={active}
-              title={option.title}
               disabled={disabled}
               onClick={() => onChange(option.value)}
-              style={active ? { ...styles.modelOption, ...styles.modelOptionActive } : styles.modelOption}
+              style={{
+                ...styles.modelOption,
+                ...(index > 0 ? styles.modelOptionDivider : null),
+                ...(active ? styles.modelOptionActive : null),
+              }}
             >
               {option.label}
             </button>
           );
         })}
       </div>
+      <InfoTooltip label="Which AI model writes the summary?">
+        Picks the AI that writes the summary when you press Generate or Regenerate.
+        <span style={styles.modelHelpList}>
+          {MODEL_OPTIONS.map((option) => (
+            <span key={option.value}>
+              <span style={styles.modelHelpName}>{option.label}</span> — {option.help}
+            </span>
+          ))}
+          <span>Your choice is remembered in this browser.</span>
+        </span>
+      </InfoTooltip>
     </div>
   );
 }

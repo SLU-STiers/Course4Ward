@@ -300,7 +300,14 @@ export function ReviewSummaryModal({
             </div>
 
             <div style={review.aiHeader}>
-              <div style={review.sectionLabel}>AI Summarization per Day</div>
+              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <div style={{ ...review.sectionLabel, marginBottom: 0 }}>AI Summarization per Day</div>
+                <AiModelToggle
+                  value={summaryModel}
+                  onChange={setSummaryModel}
+                  disabled={busy !== null || editing}
+                />
+              </div>
               <button
                 type="button"
                 style={review.hideOrdersBtn}
@@ -364,15 +371,6 @@ export function ReviewSummaryModal({
 
             {error && <div style={review.errorText}>{error}</div>}
 
-            {!editing && (
-              <div style={{ marginTop: 10 }}>
-                <AiModelToggle
-                  value={summaryModel}
-                  onChange={setSummaryModel}
-                  disabled={busy !== null}
-                />
-              </div>
-            )}
 
             {daySummary && !editing && (
               <input

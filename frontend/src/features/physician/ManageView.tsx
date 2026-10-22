@@ -931,14 +931,16 @@ export function ManageView() {
                         )} yet.`
                       : "No doctor’s orders recorded for this patient yet."
                   }
+                  titleExtra={
+                    <AiModelToggle
+                      value={summaryModel}
+                      onChange={setSummaryModel}
+                      disabled={generatingSummary || regeneratingSummary}
+                    />
+                  }
                   actions={
                     !summary ? (
                       <>
-                      <AiModelToggle
-                        value={summaryModel}
-                        onChange={setSummaryModel}
-                        disabled={generatingSummary}
-                      />
                       <AiActionButton
                         disabled={!summaryDay || generatingSummary}
                         aria-busy={generatingSummary}
@@ -954,13 +956,6 @@ export function ManageView() {
                       </>
                     ) : (
                       <>
-                        {!editingSummary && (
-                          <AiModelToggle
-                            value={summaryModel}
-                            onChange={setSummaryModel}
-                            disabled={regeneratingSummary}
-                          />
-                        )}
                         {!editingSummary && (
                           // The instructions only steer Regenerate, so they share a row.
                           <div style={manage.aiRegenRow}>
