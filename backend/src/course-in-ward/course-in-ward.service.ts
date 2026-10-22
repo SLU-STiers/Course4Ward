@@ -39,7 +39,7 @@ const EMBEDDING_DIM = 1024;
 
 /** How each AI model is named in the audit log. */
 const MODEL_LABEL: Record<SummaryModel, string> = {
-  standard: 'Standard (RAG)',
+  standard: 'Base Model',
   fine_tuned: 'Fine-tuned',
 };
 

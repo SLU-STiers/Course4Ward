@@ -12,7 +12,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 OLLAMA_CHAT_URL = os.getenv("OLLAMA_CHAT_URL", "http://localhost:11434/api/chat")
 MODEL = os.getenv("MODEL", "qwen3.5:4b")       # change as needed
 # Fine-tuned summarizer imported into Ollama (see fine_tuning_data/).
-FINE_TUNED_MODEL = os.getenv("FINE_TUNED_MODEL", "finetuned-qwen")
+FINE_TUNED_MODEL = os.getenv("FINE_TUNED_MODEL", "course4ward-summarizer")
 
 # Which model a request asks for: the base model (guided by RAG references)
 # or the fine-tuned one.
