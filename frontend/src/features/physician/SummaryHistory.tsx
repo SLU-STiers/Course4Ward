@@ -5,10 +5,12 @@
  */
 
 import { useEffect, useState } from 'react';
+import { Info } from 'lucide-react';
 import { courseInWardApi } from '../../services/domainApi';
 import { Modal } from '../../components/ui';
 import type { CourseInWard, SummaryStatus, SummaryVersion } from '../../types';
 import { AiActionButton } from '../../components/ai/AiSummaryCard';
+import { HighlightedSummary, SummaryComposition } from '../../components/ai/SummaryComposition';
 import { manage } from './styles';
 
 const SOURCE_LABEL: Record<SummaryStatus, string> = {
@@ -57,6 +59,11 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
   const [versions, setVersions] = useState<SummaryVersion[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  /** The in-use card's composition is open, so its order keywords are highlighted. */
+  const [showKeywords, setShowKeywords] = useState(false);
+  // Summaries are composed only of the orders the nurse has finished.
+  const orders = (summary.orders ?? []).filter((order) => order.status === 'FINISHED');
 
   // Refetch whenever the current text changes (regenerate, edit, restore).
   useEffect(() => {
@@ -88,8 +95,44 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
       open
       onClose={onClose}
       size="xl"
-      title="Compare versions"
-      description="The first card is the version in use. Highlighted words are where they differ. The last 3 are kept."
+      ariaLabel="Compare versions"
+      title={
+        <span style={manage.historyTitle}>
+          Compare versions
+          <button
+            type="button"
+            style={{ ...manage.historyInfoButton, ...(showHelp ? manage.historyInfoButtonOn : null) }}
+            aria-label="What is Compare versions?"
+            aria-describedby="compare-versions-help"
+            onMouseEnter={() => setShowHelp(true)}
+            onMouseLeave={() => setShowHelp(false)}
+            onFocus={() => setShowHelp(true)}
+            onBlur={() => setShowHelp(false)}
+          >
+            <Info size={16} aria-hidden="true" />
+          </button>
+          {/* Always rendered so aria-describedby resolves; hidden until hover or focus. */}
+          <span
+            id="compare-versions-help"
+            role="tooltip"
+            style={{ ...manage.historyTooltip, ...(showHelp ? null : manage.historyTooltipHidden) }}
+          >
+            See this summary next to the texts it replaced, and switch back to an earlier one if
+            it reads better. The first card is the version in use.
+            <span style={manage.historyLegend}>
+              <span>
+                <mark style={manage.historyLegendTeal}>Teal</mark> words come from the finished
+                doctor's orders — open Show composition to see them.
+              </span>
+              <span>
+                <mark style={manage.historyChanged}>Yellow</mark> words differ from the version in
+                use.
+              </span>
+              <span>Only the last 3 versions are kept.</span>
+            </span>
+          </span>
+        </span>
+      }
     >
       <div style={manage.historyGrid}>
         <article
@@ -100,7 +143,18 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
             <span style={manage.historyInUse}>✓ In use</span>
             Current version · {SOURCE_LABEL[summary.status]}
           </div>
-          <p style={manage.historyText}>{summary.summaryContent}</p>
+          <p style={manage.historyText}>
+            {showKeywords ? (
+              <HighlightedSummary text={summary.summaryContent} orders={orders} />
+            ) : (
+              summary.summaryContent
+            )}
+          </p>
+          <SummaryComposition
+            text={summary.summaryContent}
+            orders={orders}
+            onToggle={setShowKeywords}
+          />
         </article>
 
         {failed ? (
@@ -136,6 +190,7 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
                   ),
                 )}
               </p>
+              <SummaryComposition text={version.content} orders={orders} />
               <AiActionButton
                 disabled={restoringId !== null}
                 aria-busy={restoringId === version.id}
