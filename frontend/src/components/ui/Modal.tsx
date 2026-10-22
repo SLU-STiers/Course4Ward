@@ -15,6 +15,8 @@ export interface ModalProps {
   onClose: () => void;
   /** Dialog title — also used to label the dialog for assistive tech. */
   title?: ReactNode;
+  /** Names the dialog when `title` is not a plain string. */
+  ariaLabel?: string;
   description?: ReactNode;
   children: ReactNode;
   /** Sticky action row rendered at the bottom. */
@@ -29,6 +31,7 @@ export function Modal({
   open,
   onClose,
   title,
+  ariaLabel,
   description,
   children,
   footer,
@@ -76,7 +79,7 @@ export function Modal({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === 'string' ? title : undefined}
+        aria-label={typeof title === 'string' ? title : ariaLabel}
         tabIndex={-1}
         className={['ui-modal', `ui-modal--${size}`, className ?? ''].filter(Boolean).join(' ')}
         onMouseDown={(event) => event.stopPropagation()}
