@@ -14,6 +14,26 @@ import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/a
 import { OrdersService } from '../orders/orders.service';
 import { OllamaClient, OllamaReference, SummaryModel } from './ollama-client';
 
+/**
+ * The source orders every summary the API returns carries: they give its day,
+ * and their text, timeline and people back the "Composed from" view.
+ */
+const SUMMARY_ORDERS = {
+  orders: {
+    orderBy: { dateCreated: 'asc' },
+    select: {
+      id: true,
+      dateCreated: true,
+      orderContent: true,
+      status: true,
+      type: true,
+      executedAt: true,
+      orderedBy: { select: { firstName: true, lastName: true } },
+      executedBy: { select: { firstName: true, lastName: true } },
+    },
+  },
+} satisfies Prisma.CourseInWardInclude;
+
 /** Vector dimension produced by the ai-service embedding model (Qwen3-Embedding-0.6B). */
 const EMBEDDING_DIM = 1024;
 
@@ -332,7 +352,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         index,
       );
       await this.linkOrdersToSummary(summary.id, orderIds);
-      summaries.push(summary);
+      summaries.push(await this.withOrders(summary.id));
     }
 
     // The nightly batch has no requester when the admission has no attending physician.
@@ -517,7 +537,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    return updated;
+    return this.withOrders(updated.id);
   }
 
   // "Resummarized Physician's Orders" -- option 2: regenerate via AI, optionally
@@ -572,7 +592,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    return updated;
+    return this.withOrders(updated.id);
   }
 
   /**
@@ -639,7 +659,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    return approved;
+    return this.withOrders(approved.id);
   }
 
   /** Earlier texts of a summary, newest first (at most `MAX_SUMMARY_VERSIONS`). */
@@ -692,7 +712,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    return updated;
+    return this.withOrders(updated.id);
   }
 
   /**
@@ -727,12 +747,20 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     return summary;
   }
 
+  /**
+   * A summary as the API returns it, with its source orders. Every write
+   * returns this, or the client's copy would lose its orders (and its day)
+   * until the next full reload.
+   */
+  private withOrders(id: string) {
+    return this.prisma.courseInWard.findUniqueOrThrow({ where: { id }, include: SUMMARY_ORDERS });
+  }
+
   findForPatient(patientId: string) {
     return this.prisma.courseInWard.findMany({
       where: { patientId },
       orderBy: { summaryDate: 'desc' },
-      // The orders a summary was built from carry the day it covers.
-      include: { orders: { select: { id: true, dateCreated: true } } },
+      include: SUMMARY_ORDERS,
     });
   }
 }
