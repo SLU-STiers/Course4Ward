@@ -268,7 +268,7 @@ const MODEL_OPTIONS: { value: SummaryModel; label: string; help: string }[] = [
   {
     value: 'standard',
     label: 'Base Model',
-    help: 'The general model, guided by similar summaries physicians already approved.',
+    help: 'The Base Model, guided by similar summaries physicians already approved.',
   },
   {
     value: 'fine_tuned',
