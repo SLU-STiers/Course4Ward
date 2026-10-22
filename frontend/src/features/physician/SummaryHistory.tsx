@@ -5,9 +5,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Info } from 'lucide-react';
 import { courseInWardApi } from '../../services/domainApi';
-import { Modal } from '../../components/ui';
+import { InfoTooltip, Modal } from '../../components/ui';
 import type { CourseInWard, SummaryStatus, SummaryVersion } from '../../types';
 import { AiActionButton } from '../../components/ai/AiSummaryCard';
 import { HighlightedSummary, SummaryComposition } from '../../components/ai/SummaryComposition';
@@ -59,7 +58,6 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
   const [versions, setVersions] = useState<SummaryVersion[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
   /** The in-use card's composition is open, so its order keywords are highlighted. */
   const [showKeywords, setShowKeywords] = useState(false);
   // Summaries are composed only of the orders the nurse has finished.
@@ -99,24 +97,7 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
       title={
         <span style={manage.historyTitle}>
           Compare versions
-          <button
-            type="button"
-            style={{ ...manage.historyInfoButton, ...(showHelp ? manage.historyInfoButtonOn : null) }}
-            aria-label="What is Compare versions?"
-            aria-describedby="compare-versions-help"
-            onMouseEnter={() => setShowHelp(true)}
-            onMouseLeave={() => setShowHelp(false)}
-            onFocus={() => setShowHelp(true)}
-            onBlur={() => setShowHelp(false)}
-          >
-            <Info size={16} aria-hidden="true" />
-          </button>
-          {/* Always rendered so aria-describedby resolves; hidden until hover or focus. */}
-          <span
-            id="compare-versions-help"
-            role="tooltip"
-            style={{ ...manage.historyTooltip, ...(showHelp ? null : manage.historyTooltipHidden) }}
-          >
+          <InfoTooltip label="What is Compare versions?">
             See this summary next to the texts it replaced, and switch back to an earlier one if
             it reads better. The first card is the version in use.
             <span style={manage.historyLegend}>
@@ -130,7 +111,7 @@ export function SummaryHistory({ summary, onRestored, onClose }: SummaryHistoryP
               </span>
               <span>Only the last 3 versions are kept.</span>
             </span>
-          </span>
+          </InfoTooltip>
         </span>
       }
     >

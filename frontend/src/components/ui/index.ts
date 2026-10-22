@@ -11,6 +11,7 @@ export { TriageBadge, type TriageBadgeProps } from './TriageBadge';
 export { PageHeader, type PageHeaderProps } from './PageHeader';
 export { Popover, type PopoverProps, type PopoverRenderArgs } from './Popover';
 export { Modal, type ModalProps, type ModalSize } from './Modal';
+export { InfoTooltip } from './InfoTooltip';
 export { CalendarPanel, monthCells, type CalendarPanelProps } from './Calendar';
 export { SearchField, type SearchFieldProps } from './SearchField';
 export { SortDirectionToggle, type SortDirection, type SortDirectionToggleProps } from './SortDirectionToggle';
