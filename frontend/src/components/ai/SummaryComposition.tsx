@@ -1,9 +1,9 @@
 /**
- * A summary's text with the order terms it uses highlighted, plus a timeline of
- * the orders it was composed from: when, who ordered, who carried it out, and
- * which of its keywords made it into the summary.
+ * A summary's text with the order terms it uses highlighted, plus a panel with
+ * the timeline of the orders it was composed from: when, who ordered, who
+ * carried it out, and which of its keywords made it into the summary.
  */
-import { useState, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import { formatDateMedium, formatTimeMedium } from '../../lib/format';
 import { orderTypeLabel } from '../orders/orderType';
 import { splitOnTerms, termsInSummary, type SummarySourceOrder } from './summaryKeywords';
@@ -14,36 +14,9 @@ const AMBER = '#d97706';
 const styles: Record<string, CSSProperties> = {
   // Teal, so it never reads as the yellow "changed" mark of Compare versions.
   mark: { backgroundColor: '#ccfbf1', color: 'inherit', borderRadius: '3px', padding: '0 2px' },
-  details: { marginTop: '4px', fontSize: '12px', color: '#334155' },
-  /** Reads as a button: bordered bar, chevron, pointer, hover tint. */
-  summary: {
-    cursor: 'pointer',
-    userSelect: 'none',
-    listStyle: 'none', // hides the native ▸ marker; ours rotates instead
-    // Chevron pinned left on the first line; only the label beside it wraps.
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '8px',
-    padding: '7px 10px',
-    lineHeight: '18px',
-    border: '1px solid #d8c4f5',
-    borderRadius: '8px',
-    backgroundColor: '#faf5ff',
-    fontWeight: 700,
-    color: '#6b21a8',
-    transition: 'background-color 120ms, border-color 120ms',
-  },
-  summaryActive: { backgroundColor: '#f1eaff', borderColor: '#a855f7' },
-  chevron: { display: 'inline-block', flexShrink: 0, fontSize: '12px', transition: 'transform 150ms' },
-  summaryLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: '2px 6px',
-    flex: '1 1 0',
-    minWidth: 0,
-  },
-  summaryHint: { fontSize: '11px', fontWeight: 600, color: '#7e6a99' },
+  panel: { fontSize: '12px', color: '#334155' },
+  head: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', fontWeight: 700, color: '#6b21a8' },
+  empty: { margin: 0, fontSize: '12px', color: '#94a3b8' },
   pill: {
     fontSize: '10px',
     fontWeight: 800,
@@ -120,50 +93,22 @@ export function HighlightedSummary({ text, orders }: { text: string; orders: Sum
   );
 }
 
-export function SummaryComposition({
-  text,
-  orders,
-  onToggle,
-}: {
-  text: string;
-  orders: SummarySourceOrder[];
-  /** Told when the composition is opened or closed, e.g. to highlight the text alongside. */
-  onToggle?: (open: boolean) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [hover, setHover] = useState(false);
-  if (orders.length === 0) return null;
+export function CompositionPanel({ text, orders }: { text: string; orders: SummarySourceOrder[] }) {
+  if (orders.length === 0)
+    return <p style={styles.empty}>No finished orders yet, so there is no composition to show.</p>;
   const rows = [...orders]
     .sort((a, b) => (a.dateCreated ?? '').localeCompare(b.dateCreated ?? ''))
     .map((order) => ({ order, terms: termsInSummary(order.orderContent, text) }));
   const reflected = rows.filter((row) => row.terms.length > 0).length;
 
   return (
-    <details
-      style={styles.details}
-      onToggle={(e) => {
-        setOpen(e.currentTarget.open);
-        onToggle?.(e.currentTarget.open);
-      }}
-    >
-      <summary
-        style={{ ...styles.summary, ...(hover || open ? styles.summaryActive : {}) }}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-      >
-        <span style={{ ...styles.chevron, transform: open ? 'rotate(90deg)' : 'none' }} aria-hidden="true">
-          ▸
+    <div style={styles.panel}>
+      <div style={styles.head}>
+        {orders.length} finished order{orders.length === 1 ? '' : 's'}
+        <span style={{ ...styles.pill, ...(reflected === rows.length ? styles.pillAll : styles.pillSome) }}>
+          {reflected} of {rows.length} reflected
         </span>
-        <span style={styles.summaryLabel}>
-          {open ? 'Hide composition' : 'Show composition'}
-          <span style={styles.summaryHint}>
-            {orders.length} finished order{orders.length === 1 ? '' : 's'}
-          </span>
-          <span style={{ ...styles.pill, ...(reflected === rows.length ? styles.pillAll : styles.pillSome) }}>
-            {reflected} of {rows.length} reflected
-          </span>
-        </span>
-      </summary>
+      </div>
       <ol style={styles.timeline} aria-label="Orders this summary was composed from">
         {rows.map(({ order, terms }, index) => {
           const used = terms.length > 0;
@@ -219,6 +164,6 @@ export function SummaryComposition({
           );
         })}
       </ol>
-    </details>
+    </div>
   );
 }

@@ -591,12 +591,40 @@ export const manage: Record<string, CSSProperties> = {
   aiActionRow: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, width: "100%" },
   /** Pushes the primary action (Approve / Save) to the right edge. */
   aiActionSpacer: { flex: "1 1 auto" },
-  /** "Compare versions" popup (SummaryHistory): versions side by side, wrapping when narrow. */
-  historyGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-    alignContent: "start",
+  /**
+   * "Compare versions" popup (SummaryHistory): version cards on the left, the
+   * selected one's composition on the right. Each pane scrolls on its own, so
+   * the text and its orders stay on screen together; they stack when narrow.
+   */
+  historySplit: { display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 14 },
+  historyList: {
+    flex: "1 1 280px",
+    minWidth: 0,
+    maxHeight: "calc(100vh - 12rem)",
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
     gap: 10,
+    padding: 3, // room for the selected card's ring
+  },
+  historyPanel: {
+    flex: "1.3 1 340px",
+    minWidth: 0,
+    maxHeight: "calc(100vh - 12rem)",
+    overflowY: "auto",
+    boxSizing: "border-box",
+    border: "1px solid #e2e8f0",
+    borderRadius: 10,
+    padding: "12px 14px",
+    backgroundColor: "#f8fafc",
+  },
+  historyPanelTitle: {
+    margin: "0 0 8px",
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    color: "#0f766e",
   },
   historyItem: {
     border: "1px solid #ede4fb",
@@ -606,9 +634,23 @@ export const manage: Record<string, CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: 8,
+    cursor: "pointer",
+  },
+  /** Teal ring: this card's composition is the one shown in the panel. */
+  historyItemSelected: { boxShadow: "0 0 0 3px #5eead4" },
+  /** The card heading doubles as the keyboard way to select the card. */
+  historySelect: {
+    padding: 0,
+    border: 0,
+    background: "none",
+    textAlign: "left",
+    fontFamily: "inherit",
+    cursor: "pointer",
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#6b21a8",
   },
   historyItemCurrent: { border: "2px solid #7c00b8", backgroundColor: "#ffffff" },
-  historyMeta: { fontSize: 11, fontWeight: 700, color: "#6b21a8" },
   historyInUse: {
     display: "inline-block",
     marginRight: 6,
