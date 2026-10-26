@@ -1793,7 +1793,23 @@ td {
 }
 
 .ui-sidebar-profile__initials { line-height: 1; }
-.ui-sidebar-profile__details { min-width: 0; flex: 1; }
+.ui-sidebar-profile__details {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ui-sidebar-profile__details:hover .ui-sidebar-profile__name { text-decoration: underline; }
+.ui-sidebar-profile__details:focus-visible {
+  outline: 2px solid var(--c4w-color-primary, #2563eb);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
 .ui-sidebar-profile__name {
   overflow: hidden;
   color: var(--c4w-color-text-primary, #0f172a);
@@ -1810,6 +1826,18 @@ td {
   white-space: nowrap;
 }
 .ui-sidebar-profile__logout { flex-shrink: 0; }
+.ui-sidebar-profile__account-details { margin: 0; }
+.ui-sidebar-profile__account-details > div + div { margin-top: 1rem; }
+.ui-sidebar-profile__account-details dt {
+  color: var(--c4w-color-text-subtle, #64748b);
+  font-size: 0.75rem;
+}
+.ui-sidebar-profile__account-details dd {
+  margin: 0.25rem 0 0;
+  color: var(--c4w-color-text-primary, #0f172a);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 
 .ui-notification-bell {
   position: relative;

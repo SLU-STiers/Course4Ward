@@ -18,6 +18,7 @@ export function SidebarProfile({
 }: SidebarProfileProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   return (
     <div className="ui-sidebar-profile">
@@ -32,10 +33,16 @@ export function SidebarProfile({
         ) : null}
         {imageFailed ? <span className="ui-sidebar-profile__initials">{initials}</span> : null}
       </div>
-      <div className="ui-sidebar-profile__details">
+      <button
+        type="button"
+        className="ui-sidebar-profile__details"
+        aria-label={`View account details for ${name}`}
+        title="View account details"
+        onClick={() => setProfileOpen(true)}
+      >
         <div className="ui-sidebar-profile__name">{name}</div>
         <div className="ui-sidebar-profile__subtitle">{subtitle}</div>
-      </div>
+      </button>
       <Button
         variant="danger"
         size="sm"
@@ -44,6 +51,28 @@ export function SidebarProfile({
       >
         Log out
       </Button>
+      <Modal
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        title="Account details"
+        size="sm"
+        footer={
+          <Button variant="secondary" size="sm" onClick={() => setProfileOpen(false)}>
+            Close
+          </Button>
+        }
+      >
+        <dl className="ui-sidebar-profile__account-details">
+          <div>
+            <dt>Name</dt>
+            <dd>{name}</dd>
+          </div>
+          <div>
+            <dt>Role / account</dt>
+            <dd>{subtitle}</dd>
+          </div>
+        </dl>
+      </Modal>
       <Modal
         open={logoutOpen}
         onClose={() => setLogoutOpen(false)}
