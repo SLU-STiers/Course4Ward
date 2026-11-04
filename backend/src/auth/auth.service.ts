@@ -12,6 +12,7 @@ import { randomBytes } from 'crypto';
 import { Prisma, ResetStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, detailItems, fullName } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { LoginDto } from './dto/login.dto';
 import {
   RequestPasswordResetDto,
@@ -53,6 +54,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private auditLog: AuditLogService,
+    private notifications: NotificationsService,
   ) {}
 
   async login(dto: LoginDto, ipAddress?: string) {
@@ -161,6 +163,11 @@ export class AuthService {
         token: resetToken,
         expiresAt: new Date(Date.now() + RESET_REQUEST_TTL_MS),
       },
+    });
+
+    await this.notifications.notifyAdmins({
+      title: 'New password reset request',
+      message: `${fullName(user)} (${user.userId}) requested a password reset.`,
     });
 
     return resetToken;
@@ -318,6 +325,11 @@ export class AuthService {
         ]),
       },
     });
+    await this.notifications.create({
+      userId: request.userId,
+      title: 'Password reset request approved',
+      message: 'Your password reset request was approved. Sign in with the issued temporary password and change it when prompted.',
+    });
 
     return {
       message: 'Password reset approved.',
@@ -366,6 +378,11 @@ export class AuthService {
           ['Decision', 'Rejected'],
         ]),
       },
+    });
+    await this.notifications.create({
+      userId: request.userId,
+      title: 'Password reset request rejected',
+      message: 'Your password reset request was rejected. Contact an administrator if you still need help accessing your account.',
     });
 
     return {

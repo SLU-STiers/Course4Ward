@@ -8,6 +8,7 @@ import {
   fullName,
 } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 function buildTriage(dto: CreatePatientDto, nurseId: string) {
   const [bpSystolic, bpDiastolic] = dto.bp ? dto.bp.split('/').map(Number) : [undefined, undefined];
@@ -114,6 +115,7 @@ export class PatientsService {
   constructor(
     private prisma: PrismaService,
     private auditLog: AuditLogService,
+    private notifications: NotificationsService,
   ) {}
 
   /** Physicians available for nurse assignment, including their ward specialties. */
@@ -284,6 +286,17 @@ export class PatientsService {
         },
       });
     }
+
+    await Promise.all([
+      this.notifications.notifyAdmins({
+        title: 'New patient registered',
+        message: `${patientName} was registered as ${CLASS_NAME[patientClass]}.`,
+      }),
+      this.notifications.notifyUsers(requiredIds, {
+        title: 'New patient assigned to your care',
+        message: `${patientName} was registered as ${CLASS_NAME[patientClass]} and assigned to your care team.`,
+      }),
+    ]);
 
     return patient;
   }

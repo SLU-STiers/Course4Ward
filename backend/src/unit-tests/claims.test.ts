@@ -38,6 +38,7 @@ const mockAuditLogService = {
 
 const mockNotificationsService = {
   create: jest.fn(),
+  notifyUsers: jest.fn().mockResolvedValue([]),
 } as unknown as jest.Mocked<NotificationsService>;
 
 describe("Claims Module", () => {
@@ -396,6 +397,13 @@ describe("Claims Module", () => {
           userId: mockUser.id,
           action: "CF4_GENERATED",
         }));
+        expect(notificationsService.notifyUsers).toHaveBeenCalledWith(
+          [mockClaim.physicianId],
+          expect.objectContaining({
+            title: "CF4 generated",
+            message: expect.stringContaining("John Doe"),
+          }),
+        );
         expect(result).toEqual({
           claim: updatedClaim,
           cf4Fields: {

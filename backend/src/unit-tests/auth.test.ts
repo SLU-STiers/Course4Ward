@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { LoginDto } from '../auth/dto/login.dto';
 import * as bcrypt from 'bcrypt';
 
@@ -39,6 +40,11 @@ const mockAuditLogService = {
   userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
 } as unknown as jest.Mocked<AuditLogService>;
 
+const mockNotificationsService = {
+  create: jest.fn().mockResolvedValue(undefined),
+  notifyAdmins: jest.fn().mockResolvedValue([]),
+} as unknown as jest.Mocked<NotificationsService>;
+
 describe('AuthService', () => {
   let service: AuthService;
   let prismaService: typeof mockPrismaService;
@@ -65,6 +71,7 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
@@ -115,6 +122,10 @@ describe('AuthService', () => {
         message: 'Reset request submitted for administrator approval.',
       });
       expect(response).not.toHaveProperty('resetToken');
+      expect(mockNotificationsService.notifyAdmins).toHaveBeenCalledWith({
+        title: 'New password reset request',
+        message: 'John Doe (DRJ-0231) requested a password reset.',
+      });
     });
   });
 

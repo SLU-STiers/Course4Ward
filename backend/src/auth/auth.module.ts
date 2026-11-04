@@ -6,11 +6,13 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { AuditLogModule } from '../audit-log/audit-log.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     PassportModule,
     AuditLogModule,
+    NotificationsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

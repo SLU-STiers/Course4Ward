@@ -70,6 +70,7 @@ export class OrdersService {
         patientClass: true,
         physicianId: true,
         additionalPhysicians: { select: { physicianId: true } },
+        room: { select: { wardId: true } },
       },
     });
     if (!admission) throw new NotFoundException('Admission not found');
@@ -132,6 +133,29 @@ export class OrdersService {
         ]),
       },
     });
+
+    const notification = {
+      title: 'New physician order',
+      message: `A ${humanize(type).toLowerCase()} order for ${patientName} is ready for nursing review.`,
+    };
+    if (enteredByRole === Role.PHYSICIAN) {
+      await Promise.all([
+        this.notifications.notifyUsers([...careTeam].filter((id) => id !== enteredById), {
+          ...notification,
+          title: 'New care-team order',
+          message: `Dr. ${physicianName} entered a ${humanize(type).toLowerCase()} order for ${patientName}.`,
+        }),
+        admission.room?.wardId
+          ? this.notifications.notifyNursesInWard(admission.room.wardId, notification)
+          : Promise.resolve([]),
+      ]);
+    } else {
+      await this.notifications.notifyUsers([...careTeam], {
+        ...notification,
+        title: 'Order entered on your behalf',
+        message: `A ${humanize(type).toLowerCase()} order for ${patientName} was entered on your behalf.`,
+      });
+    }
 
     // Best-effort: persist the pgvector embedding so this order can serve as a
     // RAG reference later. Never blocks or fails order creation if the AI
@@ -281,19 +305,33 @@ export class OrdersService {
       },
     });
 
-    if (changed && dto.status === OrderStatus.FINISHED && !order.summarizationId) {
+    if (changed && dto.status === OrderStatus.FINISHED) {
       await this.notifyFinishedAfterSummary(order);
+    } else if (changed) {
+      const admission = await this.prisma.patientAdmission.findUnique({
+        where: { id: order.admissionId },
+        select: {
+          physicianId: true,
+          additionalPhysicians: { select: { physicianId: true } },
+        },
+      });
+      const physicianIds = [
+        admission?.physicianId,
+        ...(admission?.additionalPhysicians.map(({ physicianId }) => physicianId) ?? []),
+      ].filter((id): id is string => Boolean(id));
+      await this.notifications.notifyUsers(physicianIds, {
+        title: 'Order status updated',
+        message: `A nurse updated an order for ${patientName} to ${humanize(updated.status).toLowerCase()}.`,
+      });
     }
 
     return updated;
   }
 
   /**
-   * Only finished orders are summarized, so an order finished after its day's
-   * Course in the Ward was written is missing from it: tell the attending
-   * physician (or the ordering one) so they can regenerate. Best effort -- never
-   * fails the nurse's status update. Fires at most once per order, since an
-   * order reaches FINISHED only once.
+   * Tell the care team when a nurse finishes an order. If a summary already
+   * exists for that day, highlight that it needs regeneration. Best effort --
+   * never fails the nurse's status update.
    */
   private async notifyFinishedAfterSummary(order: {
     id: string;
@@ -312,6 +350,7 @@ export class OrdersService {
         select: {
           patientId: true,
           physicianId: true,
+          additionalPhysicians: { select: { physicianId: true } },
           patient: { select: { firstName: true, lastName: true } },
         },
       });
@@ -321,15 +360,18 @@ export class OrdersService {
         where: { patientId: admission.patientId, summaryDate: { gte: start, lt: end } },
         select: { id: true },
       });
-      if (!summary) return;
-
       const day = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      await this.notifications.create({
-        userId: admission.physicianId ?? order.orderedById,
-        title: 'Order finished after summary',
-        message:
-          `An order for ${admission.patient.firstName} ${admission.patient.lastName} on ${day} ` +
-          `was finished after that day's Course in the Ward was written. Regenerate the summary to include it.`,
+      const physicianIds = [
+        admission.physicianId,
+        ...admission.additionalPhysicians.map(({ physicianId }) => physicianId),
+        order.orderedById,
+      ].filter((id): id is string => Boolean(id));
+      await this.notifications.notifyUsers(physicianIds, {
+        title: summary ? 'Order finished after summary' : 'Order finished',
+        message: summary
+          ? `An order for ${admission.patient.firstName} ${admission.patient.lastName} on ${day} ` +
+            `was finished after that day's Course in the Ward was written. Regenerate the summary to include it.`
+          : `A nurse finished an order for ${admission.patient.firstName} ${admission.patient.lastName} on ${day}.`,
       });
     } catch (err) {
       this.logger.warn(

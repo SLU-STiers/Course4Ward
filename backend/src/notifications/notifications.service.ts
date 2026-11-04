@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateNotificationInput {
@@ -26,6 +26,39 @@ const MAX_TAKE = 200;
 @Injectable()
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
+
+  /** Sends one notification to each distinct recipient. */
+  notifyUsers(userIds: string[], input: Omit<CreateNotificationInput, 'userId'>) {
+    return Promise.all(
+      [...new Set(userIds)].map((userId) => this.create({ ...input, userId })),
+    );
+  }
+
+  /** Sends a notification to every active user with this role. */
+  async notifyRole(role: Role, input: Omit<CreateNotificationInput, 'userId'>) {
+    const users = await this.prisma.user.findMany({
+      where: { role, isActive: true },
+      select: { id: true },
+    });
+    return this.notifyUsers(users.map(({ id }) => id), input);
+  }
+
+  /** Sends the same update to every active administrator. */
+  async notifyAdmins(input: Omit<CreateNotificationInput, 'userId'>) {
+    return this.notifyRole(Role.ADMIN, input);
+  }
+
+  /** Sends a workflow alert to nurses assigned to the affected ward. */
+  async notifyNursesInWard(
+    wardId: string,
+    input: Omit<CreateNotificationInput, 'userId'>,
+  ) {
+    const nurses = await this.prisma.user.findMany({
+      where: { role: Role.NURSE, isActive: true, wards: { some: { wardId } } },
+      select: { id: true },
+    });
+    return this.notifyUsers(nurses.map(({ id }) => id), input);
+  }
 
   create(input: CreateNotificationInput) {
     return this.prisma.notification.create({
