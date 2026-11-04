@@ -225,9 +225,11 @@ export interface ClaimRecord {
   status: string;
   summary: CourseInWard & {
     summaryDate: string;
+    approvedStatus?: boolean | null;
     patient: Patient;
     orders: Array<PhysicianOrder & {
       admission: {
+        id: string;
         admissionDate: string;
         dischargeDate?: string | null;
         initialAssessment?: string | null;

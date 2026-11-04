@@ -22,6 +22,7 @@
 
 import { jsPDF } from 'jspdf';
 
+import { formatDateMedium } from '../../lib/format';
 import type { Cf4SummaryDraft, ExportSource } from './types';
 
 /** 8.5in — the CF4 is printed on Philippine long bond, not A4. */
@@ -368,7 +369,7 @@ function certification(ctx: Ctx, physician: string, evaluator: string): void {
 // ── Entry point ────────────────────────────────────────────────────────────
 
 /**
- * Builds the CF4 supporting document for one queued patient.
+ * Builds one CF4 supporting document for an admission's daily summaries.
  *
  * @param draft Patient + the persisted summary the document is projected from.
  * @param source Which export workflow produced the draft.
@@ -381,7 +382,7 @@ export function buildCf4Pdf(
   evaluator: string,
   sourceFileName?: string,
 ): jsPDF {
-  const { patient, request } = draft;
+  const { patient, requests } = draft;
   const doc = new jsPDF({
     unit: 'pt',
     format: [PAGE_W, PAGE_H],
@@ -400,15 +401,16 @@ export function buildCf4Pdf(
   notice(ctx, patient.name, source, sourceFileName);
   patientSection(ctx, draft);
 
-  const summaryRows: SummaryRow[] = request?.summaryText
-    ? [{ dateLabel: request.date, text: request.summaryText }]
-    : [];
+  const summaryRows: SummaryRow[] = requests.map((request) => ({
+    dateLabel: formatDateMedium(request.summaryDate),
+    text: request.summaryText,
+  }));
 
   bandWithNext(ctx, 'IV. COURSE IN THE WARD', BAND_H, 'Attach photocopy of laboratory/imaging results');
   courseTable(ctx, summaryRows);
 
   bandWithNext(ctx, 'VII. CERTIFICATION OF HEALTH CARE PROFESSIONAL', 96);
-  certification(ctx, request?.doctor ?? evaluator, evaluator);
+  certification(ctx, requests[0]?.doctor ?? evaluator, evaluator);
 
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page += 1) {

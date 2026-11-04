@@ -17,7 +17,7 @@ function valueForTemplateField(
 ): string | undefined {
   const normalized = normalizedFieldName(name);
   const { patient } = draft;
-  const physician = draft.request?.doctor;
+  const physician = draft.requests[0]?.doctor;
 
   if (normalized.includes('patient') && normalized.includes('name')) return patient.name;
   if (
@@ -98,7 +98,7 @@ export async function buildExistingCf4Pdf(
 
   const bytes = await template.save();
   const note = populatedFields
-    ? `Filled ${populatedFields} matching template field${populatedFields === 1 ? '' : 's'} and appended the Course in the Ward summary.`
-    : 'The template has no recognizable fillable fields. Its original pages were preserved and a populated Course in the Ward summary was appended.';
+    ? `Filled ${populatedFields} matching template field${populatedFields === 1 ? '' : 's'} and appended the collated Course in the Ward summaries.`
+    : 'The template has no recognizable fillable fields. Its original pages were preserved and the collated Course in the Ward summaries were appended.';
   return { bytes, note };
 }

@@ -16,7 +16,7 @@ import { claimsApi } from '../../services/domainApi';
 import { toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
 
-import { mapClaimToPatient, mapClaimToRequest } from './mappers';
+import { groupApprovedPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
 import { ReviewRequestModal } from './ReviewRequestModal';
 import { EligibleSummariesCard } from './EligibleSummariesCard';
 import { Cf4SummaryPreview } from './Cf4SummaryPreview';
@@ -49,18 +49,20 @@ export function ClaimsProcessorDashboard() {
   const [cf4Patients, setCf4Patients] = useState<CF4Patient[]>([]);
   const [patientSearch, setPatientSearch] = useState('');
   const [patientPage, setPatientPage] = useState(1);
+  const [exportPatientPage, setExportPatientPage] = useState(1);
   const [patientSortField, setPatientSortField] = useState<PatientSortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('ascending');
   const [admissionFrom, setAdmissionFrom] = useState('');
   const [admissionTo, setAdmissionTo] = useState('');
   const [patientStatus, setPatientStatus] = useState<PatientStatus>('all');
+  const [selectedExportPatientIds, setSelectedExportPatientIds] = useState<string[]>([]);
   const [previewPatient, setPreviewPatient] = useState<CF4Patient | null>(null);
   const [selectedOrderDate, setSelectedOrderDate] = useState('');
   const [evaluator, setEvaluator] = useState('Dr. Mike Mentzer');
 
   // Export → Course in the Ward Summary review step
   const [exportSource, setExportSource] = useState<ExportSource>('new-cf4');
-  /** Every patient queued for CF4 generation, in the order they were shown. */
+  /** Every admission queued for CF4 generation, in the order it was shown. */
   const [summaryDrafts, setSummaryDrafts] = useState<Cf4SummaryDraft[]>([]);
   const [summaryIndex, setSummaryIndex] = useState(0);
   const [existingPatientId, setExistingPatientId] = useState('');
@@ -75,11 +77,16 @@ export function ClaimsProcessorDashboard() {
 
   const loadClaims = useCallback(() => {
     claimsApi.findAll().then(({ data }) => {
-      setRequests(data.map(mapClaimToRequest));
-      setCf4Patients(data.map(mapClaimToPatient));
+      const mappedRequests = data.map(mapClaimToRequest);
+      const mappedPatients = data.map(mapClaimToPatient);
+      const eligibleIds = new Set(groupApprovedPatients(mappedPatients).map((patient) => patient.id));
+      setRequests(mappedRequests);
+      setCf4Patients(mappedPatients);
+      setSelectedExportPatientIds((previous) => previous.filter((id) => eligibleIds.has(id)));
     }).catch(() => {
       setRequests([]);
       setCf4Patients([]);
+      setSelectedExportPatientIds([]);
     });
   }, []);
 
@@ -91,26 +98,25 @@ export function ClaimsProcessorDashboard() {
   };
 
   const filteredRequests = requests.filter((req) => {
-    const [day, month, year] = req.date.split(' ');
-    const requestDate = `${year}-${
-      {
-        Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
-        Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
-      }[month] ?? '01'
-    }-${day.padStart(2, '0')}`;
+    const requestDate = toDateKey(req.submittedAt);
     return (
       req.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       req.doctor.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      req.patient.name.toLowerCase().includes(searchQuery.toLowerCase())
+      req.patient.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.patient.patientId.toLowerCase().includes(searchQuery.toLowerCase())
     ) &&
       (requestStatus === 'all' || req.status === requestStatus) &&
       (!requestDateFrom || requestDate >= requestDateFrom) &&
       (!requestDateTo || requestDate <= requestDateTo);
   });
   const sortedRequests = [...filteredRequests].sort((a, b) => {
-    const valueA = requestSortField === 'id' ? a.id : requestSortField === 'date' ? `${a.date} ${a.time}` : a.status;
-    const valueB = requestSortField === 'id' ? b.id : requestSortField === 'date' ? `${b.date} ${b.time}` : b.status;
-    const comparison = valueA.localeCompare(valueB, undefined, { numeric: true });
+    const comparison = requestSortField === 'date'
+      ? new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
+      : (requestSortField === 'id' ? a.id : a.status).localeCompare(
+          requestSortField === 'id' ? b.id : b.status,
+          undefined,
+          { numeric: true },
+        );
     return requestSortDirection === 'ascending' ? comparison : -comparison;
   });
   const requestPageSize = 8;
@@ -143,6 +149,32 @@ export function ClaimsProcessorDashboard() {
   const patientStart = (safePatientPage - 1) * patientPageSize;
   const visibleCf4Patients = sortedCf4Patients.slice(patientStart, patientStart + patientPageSize);
   const patientPages = Array.from({ length: patientPageCount }, (_, index) => index + 1);
+  const eligibleExportPatients = groupApprovedPatients(cf4Patients);
+  const filteredExportPatients = eligibleExportPatients.filter(
+    (patient) =>
+      (patient.name.toLowerCase().includes(patientSearch.toLowerCase()) ||
+        patient.patientId.toLowerCase().includes(patientSearch.toLowerCase())) &&
+      (patientStatus === 'all' || patient.status === patientStatus) &&
+      (!admissionFrom || patient.admissionDateRaw >= admissionFrom) &&
+      (!admissionTo || patient.admissionDateRaw <= admissionTo),
+  );
+  const sortedExportPatients = [...filteredExportPatients].sort((a, b) => {
+    const valueA = patientSortValue(a, patientSortField);
+    const valueB = patientSortValue(b, patientSortField);
+    const comparison =
+      typeof valueA === 'number' && typeof valueB === 'number'
+        ? valueA - valueB
+        : String(valueA).localeCompare(String(valueB), undefined, { numeric: true });
+    return sortDirection === 'ascending' ? comparison : -comparison;
+  });
+  const exportPatientPageCount = Math.max(1, Math.ceil(sortedExportPatients.length / patientPageSize));
+  const safeExportPatientPage = Math.min(exportPatientPage, exportPatientPageCount);
+  const exportPatientStart = (safeExportPatientPage - 1) * patientPageSize;
+  const visibleExportPatients = sortedExportPatients.slice(
+    exportPatientStart,
+    exportPatientStart + patientPageSize,
+  );
+  const exportPatientPages = Array.from({ length: exportPatientPageCount }, (_, index) => index + 1);
   /* The days of the claim on screen that actually carry orders — the only stops
      the date arrows and the calendar offer. */
   const orderDates = [
@@ -168,6 +200,7 @@ export function ClaimsProcessorDashboard() {
   const setPatientSearchAndResetPage = (value: string) => {
     setPatientSearch(value);
     setPatientPage(1);
+    setExportPatientPage(1);
   };
 
   const setRequestSearchAndResetPage = (value: string) => {
@@ -192,9 +225,9 @@ export function ClaimsProcessorDashboard() {
     );
   };
 
-  const toggleSelectPatient = (id: string) => {
-    setCf4Patients((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p))
+  const toggleSelectExportPatient = (id: string) => {
+    setSelectedExportPatientIds((previous) =>
+      previous.includes(id) ? previous.filter((selectedId) => selectedId !== id) : [...previous, id],
     );
   };
 
@@ -206,7 +239,7 @@ export function ClaimsProcessorDashboard() {
   };
 
   /* Counts every queued row, including the ones on other pages. */
-  const selectedPatientCount = cf4Patients.filter((patient) => patient.selected).length;
+  const selectedPatientCount = selectedExportPatientIds.length;
 
   const acceptTemplateFile = (file: File) => {
     if (!file.name.toLowerCase().endsWith('.pdf') || file.type && file.type !== 'application/pdf') {
@@ -234,9 +267,7 @@ export function ClaimsProcessorDashboard() {
     setExportSubView(view);
   };
 
-  /* A Course in the Ward Summary is built per patient, so every workflow needs
-     at least one patient queued before the review step opens. New-CF4 takes the
-     whole multi-select queue, in the order the table showed it. */
+  /* Each export draft covers one admission and all approved daily summaries. */
   const handleProceedToSummary = (source: ExportSource) => {
     if (source === 'existing-cf4' && !uploadedFile) {
       setExportError('Upload an existing CF4 PDF before proceeding.');
@@ -245,12 +276,12 @@ export function ClaimsProcessorDashboard() {
 
     const queued =
       source === 'new-cf4'
-        ? sortedCf4Patients.filter((candidate) => candidate.selected)
-        : cf4Patients.filter((candidate) => candidate.claimId === existingPatientId);
+        ? sortedExportPatients.filter((candidate) => selectedExportPatientIds.includes(candidate.id))
+        : eligibleExportPatients.filter((candidate) => candidate.id === existingPatientId);
 
     if (!queued.length) {
       setExportError(
-        'Select at least one patient first — a Course in the Ward Summary JSON is created for each patient.',
+        'Select at least one approved admission first.',
       );
       return;
     }
@@ -259,7 +290,9 @@ export function ClaimsProcessorDashboard() {
     setSummaryDrafts(
       queued.map((patient) => ({
         patient,
-        request: requests.find((request) => request.id === patient.claimId),
+        requests: requests
+          .filter((request) => patient.claimIds.includes(request.id))
+          .sort((a, b) => new Date(a.summaryDate).getTime() - new Date(b.summaryDate).getTime()),
       })),
     );
     setSummaryIndex(0);
@@ -267,9 +300,7 @@ export function ClaimsProcessorDashboard() {
     setExportSubView('summary');
   };
 
-  /* Confirms the whole queue: every selected patient gets its own CF4. Ones the
-     backend rejects (summary not physician-approved) stay queued so the
-     processor can see and retry them. */
+  /* Each admission is exported once, after generating every included daily claim. */
   const handleConfirmSummary = async () => {
     if (!summaryDrafts.length) return;
     setConfirmingSummary(true);
@@ -277,26 +308,32 @@ export function ClaimsProcessorDashboard() {
 
     const generated: Cf4SummaryDraft[] = [];
     const failed: string[] = [];
+    const generatedClaimIds: string[] = [];
     for (const draft of summaryDrafts) {
-      try {
-        await claimsApi.generateCf4(draft.patient.claimId);
-        generated.push(draft);
-      } catch {
-        failed.push(draft.patient.name);
+      let allClaimsGenerated = true;
+      for (const claimId of draft.patient.claimIds) {
+        try {
+          await claimsApi.generateCf4(claimId);
+          generatedClaimIds.push(claimId);
+        } catch {
+          allClaimsGenerated = false;
+          break;
+        }
       }
+      if (allClaimsGenerated) generated.push(draft);
+      else failed.push(draft.patient.name);
     }
 
-    const generatedIds = generated.map((draft) => draft.patient.claimId);
     setRequests((prev) => prev.map((request) => (
-      generatedIds.includes(request.id) ? { ...request, status: 'Approved' } : request
+      generatedClaimIds.includes(request.id) ? { ...request, status: 'Approved' } : request
     )));
-    setCf4Patients((prev) => prev.map((patient) => (
-      generatedIds.includes(patient.claimId) ? { ...patient, selected: false } : patient
-    )));
+    setSelectedExportPatientIds((prev) =>
+      prev.filter((id) => !generated.some((draft) => draft.patient.id === id)),
+    );
     setConfirmingSummary(false);
 
     if (failed.length) {
-      setSummaryDrafts(summaryDrafts.filter((draft) => !generatedIds.includes(draft.patient.claimId)));
+      setSummaryDrafts(summaryDrafts.filter((draft) => !generated.includes(draft)));
       setSummaryIndex(0);
       setExportError(
         `Could not generate the CF4 for ${failed.join(', ')} — the Course in the Ward summary must be physician-approved.`,
@@ -388,9 +425,10 @@ export function ClaimsProcessorDashboard() {
                 <table style={styles.table} className="ui-table-hover">
                   <thead>
                     <tr style={styles.thRow}>
-                      <th style={{ ...styles.th, width: '26%' }}>Submitted On</th>
-                      <th style={{ ...styles.th, width: '24%' }}>Status</th>
-                      <th style={{ ...styles.th, width: '50%', textAlign: 'right' }}>Action</th>
+                      <th style={{ ...styles.th, width: '23%' }}>Submitted On</th>
+                      <th style={{ ...styles.th, width: '42%' }}>Patient</th>
+                      <th style={{ ...styles.th, width: '18%' }}>Status</th>
+                      <th style={{ ...styles.th, width: '17%', textAlign: 'right' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -401,6 +439,19 @@ export function ClaimsProcessorDashboard() {
                             <span style={styles.dateText}>{req.date}</span>
                             <span style={styles.dateSeparator} />
                             <span style={styles.timeText}>{req.time}</span>
+                          </div>
+                        </td>
+                        <td style={styles.td}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                              {req.patient.name}
+                            </span>
+                            <span style={{ fontSize: 11, color: '#64748b' }}>
+                              ID {req.patient.patientId} · {req.patient.age} years · {req.patient.gender}
+                            </span>
+                            <span style={{ fontSize: 11, color: '#64748b' }}>
+                              Admitted {req.patient.admissionDate} · Dr. {req.doctor}
+                            </span>
                           </div>
                         </td>
                         <td style={styles.td}>
@@ -531,12 +582,12 @@ export function ClaimsProcessorDashboard() {
                         { value: 'discharged', label: 'Discharged' },
                       ],
                       value: patientStatus,
-                      onChange: (value) => { setPatientStatus(value as PatientStatus); setPatientPage(1); },
+                      onChange: (value) => { setPatientStatus(value as PatientStatus); setPatientPage(1); setExportPatientPage(1); },
                       extra: (
                         <>
                           <span className="ui-menu__heading">Admission date</span>
-                          <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); }} aria-label="Admission date from" />
-                          <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); }} aria-label="Admission date to" />
+                          <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); setExportPatientPage(1); }} aria-label="Admission date from" />
+                          <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); setExportPatientPage(1); }} aria-label="Admission date to" />
                         </>
                       ),
                     }}
@@ -549,9 +600,9 @@ export function ClaimsProcessorDashboard() {
                         { value: 'name', label: 'Patient name' },
                       ],
                       value: patientSortField,
-                      onChange: (value) => { setPatientSortField(value as PatientSortField); setPatientPage(1); },
+                      onChange: (value) => { setPatientSortField(value as PatientSortField); setPatientPage(1); setExportPatientPage(1); },
                       direction: sortDirection,
-                      onDirectionChange: (direction) => { setSortDirection(direction); setPatientPage(1); },
+                      onDirectionChange: (direction) => { setSortDirection(direction); setPatientPage(1); setExportPatientPage(1); },
                     }}
                   />
 
@@ -569,10 +620,10 @@ export function ClaimsProcessorDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleCf4Patients.map((p) => (
+                        {visibleExportPatients.map((p) => (
                           <tr
                             key={p.id}
-                            style={p.selected ? { ...styles.tr, ...patientTableStyles.rowSelected } : styles.tr}
+                            style={selectedExportPatientIds.includes(p.id) ? { ...styles.tr, ...patientTableStyles.rowSelected } : styles.tr}
                           >
                             <td style={styles.td}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -597,24 +648,39 @@ export function ClaimsProcessorDashboard() {
                             </td>
                             <td style={{ ...styles.td, textAlign: 'right' }}>
                               <button
-                                style={p.selected ? patientTableStyles.deselectBtn : patientTableStyles.viewBtn}
-                                aria-pressed={p.selected}
-                                onClick={() => toggleSelectPatient(p.id)}
+                                style={selectedExportPatientIds.includes(p.id) ? patientTableStyles.deselectBtn : patientTableStyles.viewBtn}
+                                aria-pressed={selectedExportPatientIds.includes(p.id)}
+                                onClick={() => toggleSelectExportPatient(p.id)}
                               >
-                                {p.selected ? 'Deselect' : 'Select'}
+                                {selectedExportPatientIds.includes(p.id) ? 'Deselect' : 'Select'}
                               </button>
                             </td>
                           </tr>
                         ))}
-                        {!visibleCf4Patients.length && (
+                        {!visibleExportPatients.length && (
                           <tr>
                             <td style={{ ...styles.td, ...patientTableStyles.cell }} colSpan={7}>
-                              No patients match the current filters.
+                              No approved patients match the current filters.
                             </td>
                           </tr>
                         )}
                       </tbody>
                     </table>
+                  </div>
+
+                  <div style={styles.paginationRow}>
+                    <span style={styles.paginationText}>
+                      Showing {sortedExportPatients.length ? exportPatientStart + 1 : 0} to{' '}
+                      {Math.min(exportPatientStart + patientPageSize, sortedExportPatients.length)} of{' '}
+                      {sortedExportPatients.length} approved admissions
+                    </span>
+                    <div style={styles.paginationControls}>
+                      <button type="button" style={styles.pageArrowBtn} disabled={safeExportPatientPage === 1} onClick={() => setExportPatientPage((page) => Math.max(1, page - 1))}>‹</button>
+                      {exportPatientPages.map((page) => (
+                        <button type="button" key={page} style={{ ...styles.pageNumberBtn, ...(page === safeExportPatientPage ? styles.pageActive : {}) }} onClick={() => setExportPatientPage(page)}>{page}</button>
+                      ))}
+                      <button type="button" style={styles.pageArrowBtn} disabled={safeExportPatientPage === exportPatientPageCount} onClick={() => setExportPatientPage((page) => Math.min(exportPatientPageCount, page + 1))}>›</button>
+                    </div>
                   </div>
 
                   {exportError && (
@@ -626,8 +692,8 @@ export function ClaimsProcessorDashboard() {
                   <div style={styles.newCf4FooterRowSpread}>
                     <span style={styles.selectionCount}>
                       {selectedPatientCount
-                        ? `${selectedPatientCount} patient${selectedPatientCount === 1 ? '' : 's'} selected`
-                        : 'No patients selected yet'}
+                        ? `${selectedPatientCount} admission${selectedPatientCount === 1 ? '' : 's'} selected`
+                        : 'No admissions selected yet'}
                     </span>
                     <div style={styles.newCf4FooterActions}>
                       <button
@@ -675,9 +741,9 @@ export function ClaimsProcessorDashboard() {
                       }}
                     >
                       <option value="">Select the patient this CF4 belongs to…</option>
-                      {cf4Patients.map((patient) => (
-                        <option key={patient.id} value={patient.claimId}>
-                          {patient.name} · {patient.patientId}
+                      {eligibleExportPatients.map((patient) => (
+                        <option key={patient.id} value={patient.id}>
+                          {patient.name} · {patient.patientId} · {patient.claimIds.length} day{patient.claimIds.length === 1 ? '' : 's'}
                         </option>
                       ))}
                     </select>
@@ -805,12 +871,12 @@ export function ClaimsProcessorDashboard() {
                       { value: 'discharged', label: 'Discharged' },
                     ],
                     value: patientStatus,
-                    onChange: (value) => { setPatientStatus(value as PatientStatus); setPatientPage(1); },
+                    onChange: (value) => { setPatientStatus(value as PatientStatus); setPatientPage(1); setExportPatientPage(1); },
                     extra: (
                       <>
                         <span className="ui-menu__heading">Admission date</span>
-                        <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); }} aria-label="Admission date from" />
-                        <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); }} aria-label="Admission date to" />
+                        <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); setExportPatientPage(1); }} aria-label="Admission date from" />
+                        <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); setExportPatientPage(1); }} aria-label="Admission date to" />
                       </>
                     ),
                   }}
@@ -823,9 +889,9 @@ export function ClaimsProcessorDashboard() {
                       { value: 'name', label: 'Patient name' },
                     ],
                     value: patientSortField,
-                    onChange: (value) => { setPatientSortField(value as PatientSortField); setPatientPage(1); },
+                    onChange: (value) => { setPatientSortField(value as PatientSortField); setPatientPage(1); setExportPatientPage(1); },
                     direction: sortDirection,
-                    onDirectionChange: (direction) => { setSortDirection(direction); setPatientPage(1); },
+                    onDirectionChange: (direction) => { setSortDirection(direction); setPatientPage(1); setExportPatientPage(1); },
                   }}
                 />
 

@@ -243,7 +243,7 @@ describe("Claims Module", () => {
         expect(
           prismaService.summaryApprovalRequest.findMany,
         ).toHaveBeenCalledWith({
-          orderBy: { id: "desc" },
+          orderBy: { requestedAt: "desc" },
           include: {
             summary: {
               include: {
@@ -253,6 +253,7 @@ describe("Claims Module", () => {
                   include: {
                     admission: {
                       select: {
+                        id: true,
                         admissionDate: true,
                         dischargeDate: true,
                         initialAssessment: true,

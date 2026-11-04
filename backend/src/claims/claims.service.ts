@@ -92,7 +92,7 @@ export class ClaimsService {
 
   findAll() {
     return this.prisma.summaryApprovalRequest.findMany({
-      orderBy: { id: 'desc' },
+      orderBy: { requestedAt: 'desc' },
       include: {
         summary: {
           include: {
@@ -102,6 +102,7 @@ export class ClaimsService {
               include: {
                 admission: {
                   select: {
+                    id: true,
                     admissionDate: true,
                     dischargeDate: true,
                     // The claim review shows the patient's triage assessment.

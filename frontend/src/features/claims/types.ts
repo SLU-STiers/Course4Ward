@@ -14,6 +14,9 @@ export type RequestSortField = 'id' | 'date' | 'status';
 export type PatientStatus = 'all' | 'admitted' | 'discharged';
 export interface SummarizationRequest {
   id: string;
+  submittedAt: string;
+  summaryDate: string;
+  admissionId: string;
   doctor: string;
   date: string;
   time: string;
@@ -47,6 +50,8 @@ export interface SummarizationRequest {
 export interface CF4Patient {
   id: string;
   claimId: string;
+  claimIds: string[];
+  admissionId: string;
   patientId: string;
   name: string;
   gender: string;
@@ -60,13 +65,12 @@ export interface CF4Patient {
   /** Whole days since admission, counted inclusively. */
   daysInCare: number;
   status: Exclude<PatientStatus, 'all'>;
-  /** Row is queued for CF4 generation; several rows can be queued at once. */
-  selected: boolean;
+  approved: boolean;
 }
 
-/** One patient queued for the Course in the Ward Summary review step. */
+/** One admission queued for the Course in the Ward Summary review step. */
 export interface Cf4SummaryDraft {
   patient: CF4Patient;
-  /** Persisted claim/summary the JSON is projected from, when one exists. */
-  request?: SummarizationRequest;
+  /** All physician-approved daily summaries from the selected admission. */
+  requests: SummarizationRequest[];
 }

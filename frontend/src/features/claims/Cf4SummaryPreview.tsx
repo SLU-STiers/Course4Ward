@@ -1,20 +1,21 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button, Modal, StatusBadge } from '../../components/ui';
+import { formatDateMedium } from '../../lib/format';
 import type { Cf4SummaryDraft, ExportSource } from './types';
 import { styles } from './styles';
 
 type Cf4SummaryPreviewProps = {
-  /** Every patient queued for CF4 generation, in the order the table showed them. */
+  /** Every admission queued for CF4 generation, in the order the table showed it. */
   drafts: Cf4SummaryDraft[];
   /** Index of the patient currently on screen. */
   index: number;
   onIndexChange: (index: number) => void;
   /** Which export workflow produced these drafts. */
   source: ExportSource;
-  /** Attending physician recorded on the JSON. */
+  /** Attending physician recorded on the document. */
   evaluator: string;
   /** Uploaded local PDF's name for the existing-CF4 workflow. */
   sourceFileName?: string;
@@ -39,9 +40,8 @@ function initialsOf(name: string): string {
 
 /**
  * Review step between picking patients and generating the CF4: steps through
- * every queued patient and shows the Course in the Ward content plus the exact
- * JSON payload that will be written for it, so the processor can confirm before
- * anything is persisted.
+ * every queued admission and shows all approved daily Course in the Ward
+ * entries alongside the collated document before anything is persisted.
  */
 export function Cf4SummaryPreview({
   drafts,
@@ -56,8 +56,6 @@ export function Cf4SummaryPreview({
   onConfirm,
   confirming = false,
 }: Cf4SummaryPreviewProps) {
-  const [copied, setCopied] = useState(false);
-  const [previewMode, setPreviewMode] = useState<'json' | 'pdf'>('json');
   const [rendered, setRendered] = useState<{
     draft: Cf4SummaryDraft;
     url: string;
@@ -79,44 +77,7 @@ export function Cf4SummaryPreview({
   const activeIndex = total ? Math.min(Math.max(index, 0), total - 1) : 0;
   const active = drafts[activeIndex];
   const patient = active?.patient;
-  const request = active?.request;
-
-  const json = useMemo(() => {
-    if (!patient) return '';
-    const payload = {
-      document: 'Course in the Ward Summary',
-      formatVersion: '1.0',
-      generatedAt: new Date().toISOString(),
-      source: source === 'new-cf4' ? 'NEW_CF4' : 'EXISTING_CF4',
-      ...(sourceFileName ? { sourceFile: sourceFileName } : {}),
-      claim: {
-        id: patient.claimId,
-        status: request?.status ?? 'Pending Review',
-      },
-      patient: {
-        id: patient.patientId,
-        name: patient.name,
-        sex: patient.gender,
-        age: patient.age,
-        admitted: patient.admissionDateRaw,
-        daysInCare: patient.daysInCare,
-        status: patient.status,
-      },
-      courseInTheWard: {
-        summaryDate: request?.date ?? patient.admissionDate,
-        text: request?.summaryText ?? '',
-        orders: (request?.orders ?? []).map((order) => ({
-          id: order.id,
-          orderedAt: order.dateCreated,
-          physician: order.doctor,
-          order: order.content,
-        })),
-      },
-      attendingPhysician: request?.doctor ?? evaluator,
-      evaluator,
-    };
-    return JSON.stringify(payload, null, 2);
-  }, [patient, request, evaluator, source, sourceFileName]);
+  const requests = active?.requests ?? [];
 
   /* Build one document per draft. The preview and download both use this same
      Blob; a template PDF is retained and populated for the existing-CF4 flow. */
@@ -191,17 +152,7 @@ export function Cf4SummaryPreview({
   const hasPrevious = activeIndex > 0;
   const hasNext = activeIndex < total - 1;
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(json);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  };
-
-  /** Saves the exact document shown in the PDF preview tab. */
+  /** Saves the exact document shown in the preview. */
   const handleDownload = () => {
     if (!pdfUrl) return;
     const link = document.createElement('a');
@@ -238,8 +189,8 @@ export function Cf4SummaryPreview({
         </span>
         <span style={styles.summarySourceHint}>
           {total > 1
-            ? `Review each selected patient below — one CF4 is generated per patient. The preview on the right shows the record that gets written for the Course in the Ward.`
-            : 'Review the summary below. The preview on the right shows the record that gets written for the Course in the Ward; confirming generates the CF4 document.'}
+            ? `Review each selected admission below — one collated CF4 document is generated per admission, with all approved summary days included.`
+            : 'Review all approved daily summaries for this admission. Confirming generates one collated CF4 document.'}
         </span>
       </div>
 
@@ -351,58 +302,30 @@ export function Cf4SummaryPreview({
           <div style={styles.summaryPanelHeader}>
             <span style={styles.summaryPanelTitle}>Course in the Ward</span>
             <span style={styles.summaryPanelMeta}>
-              {request ? `${request.date} · ${request.time}` : 'No persisted summary'}
+              {requests.length} approved day{requests.length === 1 ? '' : 's'}
             </span>
           </div>
           <div style={styles.summaryPanelBody}>
-            {request?.summaryText ||
-              'No Course in the Ward summary text is available for this patient yet.'}
+            {requests.map((request) => (
+              <section key={request.id} style={{ marginBottom: 18 }}>
+                <h5 style={{ margin: '0 0 6px', fontSize: 12, color: '#334155' }}>
+                  {formatDateMedium(request.summaryDate)}
+                </h5>
+                <div>{request.summaryText || 'No Course in the Ward summary text is available for this day.'}</div>
+              </section>
+            ))}
           </div>
         </div>
 
         <div style={styles.summaryPanel}>
           <div style={styles.summaryPanelHeader}>
-            <div style={styles.summaryPanelTabs}>
-              <button
-                type="button"
-                aria-pressed={previewMode === 'json'}
-                style={
-                  previewMode === 'json'
-                    ? { ...styles.summaryTab, ...styles.summaryTabActive }
-                    : styles.summaryTab
-                }
-                onClick={() => setPreviewMode('json')}
-              >
-                JSON
-              </button>
-              <button
-                type="button"
-                aria-pressed={previewMode === 'pdf'}
-                style={
-                  previewMode === 'pdf'
-                    ? { ...styles.summaryTab, ...styles.summaryTabActive }
-                    : styles.summaryTab
-                }
-                onClick={() => setPreviewMode('pdf')}
-              >
-                PDF Preview
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {previewMode === 'json' && (
-                <Button size="sm" variant="ghost" onClick={() => void handleCopy()}>
-                  {copied ? 'Copied' : 'Copy'}
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={handleDownload} disabled={!pdf}>
-                Download PDF
-              </Button>
-            </div>
+            <span style={styles.summaryPanelTitle}>Collated PDF Preview</span>
+            <Button size="sm" variant="ghost" onClick={handleDownload} disabled={!pdf}>
+              Download PDF
+            </Button>
           </div>
 
-          {previewMode === 'json' ? (
-            <pre style={styles.jsonPreview}>{json}</pre>
-          ) : pdfUrl ? (
+          {pdfUrl ? (
             /* An <iframe> swallows clicks, so a transparent button sits over it
                to open the enlarged viewer. */
             <div style={styles.pdfPreviewShell}>
@@ -425,7 +348,7 @@ export function Cf4SummaryPreview({
               {renderError ? 'PDF preview unavailable. See the error above.' : 'Preparing preview…'}
             </div>
           )}
-          {previewMode === 'pdf' && pdf?.note && (
+          {pdf?.note && (
             <p role="status" style={styles.summaryPanelMeta}>{pdf.note}</p>
           )}
         </div>
