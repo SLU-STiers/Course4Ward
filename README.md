@@ -82,12 +82,27 @@ JWT_SECRET=<insert key>
 
 # **Docker Installation**
 1. Open the Docker application and wait for the docker engine to start
-2. Go to settings and click Docker Engine
-3. Open Visual Studio Code
-4. Open the file with the project
-5. Open the terminal and type:
+2. Go to settings and find "Go to Classic Settings"
+3. Click the "Docker Engine" tab
+4. Remove the content within the text block and paste the following:
+- {
+  "builder": {
+    "gc": {
+      "defaultKeepStorage": "20GB",
+      "enabled": true
+    }
+  },
+  "experimental": false,
+  "registry-mirrors": [
+    "https://mirror.gcr.io"
+  ]
+}
+5. Click the "Apply" button
+6. Open Visual Studio Code
+7. Open the file with the project
+8. Open the terminal and type:
 - run: docker compose up --build
-6. Type the following in the terminal to run the project entirely:
+9. Type the following in the terminal to run the project entirely:
 - docker compose up
 
 # **Quick Start**
