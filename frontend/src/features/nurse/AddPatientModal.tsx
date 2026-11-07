@@ -1,13 +1,13 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
 import type { InsuranceType, PhysicianOption, Sex, TriageLevel } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { formatDateMedium } from '../../lib/format';
 import { INSURANCE_LABEL, SEX_LABEL } from '../../lib/patient';
 import { TRIAGE_LEVELS, triageLevelInfo } from '../../lib/triage';
-import { addPatient as s, ui } from './styles';
+import { addPatient as s, TEAL, ui } from './styles';
 import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { TimePickerField } from './TimePickerField';
@@ -48,7 +48,7 @@ const RELIGIONS = [
 /** Religion dropdown value that reveals the "please specify" input. */
 const RELIGION_OTHER = 'OTHER';
 
-/** General complaints offered in the Chief Complaint dropdowns. */
+/** General complaints offered in the Chief Complaint checklist. */
 const CHIEF_COMPLAINTS = [
   'Abdominal pain (tummy ache)',
   'Allergic reaction',
@@ -73,7 +73,6 @@ const CHIEF_COMPLAINTS = [
   'Toothache',
   'Wound / injury',
 ];
-const COMPLAINT_SLOTS = 5;
 
 export type AddPatientFormResult = {
   firstName: string;
@@ -90,7 +89,6 @@ export type AddPatientFormResult = {
   /** The patient's own contact / mobile number. */
   contactNumber: string;
   address: string;
-  /** '' = not recorded. */
   insurance: InsuranceType | '';
   /** Required when insurance is OTHER. */
   insuranceOther: string;
@@ -110,7 +108,7 @@ export type AddPatientFormResult = {
   bp: string;
   temp: string;
   pain: string;
-  /** One entry per dropdown ('' = none picked); the first is required. */
+  /** Complaints checked in the single dropdown. At least one is required. */
   chiefComplaints: string[];
   notes: string;
 };
@@ -141,7 +139,7 @@ const emptyForm = (): AddPatientFormResult => ({
   bp: '',
   temp: '',
   pain: '',
-  chiefComplaints: Array(COMPLAINT_SLOTS).fill(''),
+  chiefComplaints: [],
   notes: '',
 });
 
@@ -209,10 +207,7 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       insurance: toInsurance(draft.form?.insurance),
       ...toReligion(draft.form?.religion, draft.form?.religionOther),
       triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
-      chiefComplaints: Array.from({ length: COMPLAINT_SLOTS }, (_, i) => {
-        const value = draft.form?.chiefComplaints?.[i];
-        return typeof value === 'string' && CHIEF_COMPLAINTS.includes(value) ? value : '';
-      }),
+      chiefComplaints: toComplaints(draft.form?.chiefComplaints),
     };
     // Fields of older versions of this form.
     for (const legacy of ['admissionStatus', 'admissionOrder', 'admissionOrderChannel']) {
@@ -259,9 +254,47 @@ function toReligion(value: unknown, other: unknown): Pick<AddPatientFormResult, 
 const toInsurance = (value: unknown): InsuranceType | '' =>
   typeof value === 'string' && value in INSURANCE_LABEL ? (value as InsuranceType) : '';
 
+/** Keeps known complaints, dropping blanks left by the old five-slot dropdowns. */
+function toComplaints(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const picked: string[] = [];
+  for (const item of value) {
+    if (typeof item === 'string' && CHIEF_COMPLAINTS.includes(item) && !picked.includes(item)) {
+      picked.push(item);
+    }
+  }
+  return picked;
+}
+
 const toNumber = (value: string) => (value.trim() === '' ? undefined : Number(value));
 
 const doctorName = (doctor: PhysicianOption) => `Dr. ${doctor.firstName} ${doctor.lastName}`;
+
+/** Every required input has a usable value, so Register Patient can turn solid. */
+function registrationReady(
+  form: AddPatientFormResult,
+  roomNumber: string,
+  rooms: Parameters<typeof roomProblem>[1],
+  toWard: boolean,
+  needsOrder: boolean,
+) {
+  const firstName = form.firstName.trim();
+  const lastName = form.lastName.trim();
+  const contactName = form.contactPersonName.trim();
+  if (!firstName || !lastName || !NAME_PATTERN.test(firstName) || !NAME_PATTERN.test(lastName)) return false;
+  if (ageError(form.age) || !form.gender) return false;
+  if (!form.chiefComplaints.length) return false;
+  if (REQUIRED_TEXT.some(([key]) => !String(form[key]).trim())) return false;
+  if (!NAME_PATTERN.test(contactName)) return false;
+  if (!/^\d{11}$/.test(form.contactNumber) || !/^\d{11}$/.test(form.contactPersonNumber)) return false;
+  if (!form.insurance || (form.insurance === 'OTHER' && !form.insuranceOther.trim())) return false;
+  const religion = form.religion === RELIGION_OTHER ? form.religionOther.trim() : form.religion;
+  if (!religion || !form.triageLevel || !form.physicianId) return false;
+  if (!form.consultingPhysicianIds.length) return false;
+  if (needsOrder && !form.registrationOrder.trim()) return false;
+  if (toWard && (!normalizeRoom(roomNumber) || roomProblem(roomNumber, rooms))) return false;
+  return true;
+}
 
 export function AddPatientModal({
   onClose,
@@ -288,6 +321,7 @@ export function AddPatientModal({
   /** 'Admission' when the class needs a physician order. */
   const orderName = classOption.order;
   const showAgeError = ageTouched && ageMessage !== null;
+  const ready = registrationReady(form, roomNumber, rooms, toWard, Boolean(orderName));
 
   useEffect(() => {
     if (!ownerId) return;
@@ -367,7 +401,7 @@ export function AddPatientModal({
       setError('Please select the patient’s sex.');
       return;
     }
-    const complaints = form.chiefComplaints.filter(Boolean);
+    const complaints = form.chiefComplaints.filter((complaint) => CHIEF_COMPLAINTS.includes(complaint));
     if (!complaints.length) {
       setError('Please select the chief complaint.');
       return;
@@ -389,6 +423,10 @@ export function AddPatientModal({
       setError('Contact number must contain exactly 11 digits.');
       return;
     }
+    if (!form.insurance) {
+      setError('Please select the patient’s insurance.');
+      return;
+    }
     if (!form.religion) {
       setError('Please select the patient’s religion.');
       return;
@@ -403,8 +441,20 @@ export function AddPatientModal({
       setError('Please specify the patient’s insurance.');
       return;
     }
+    if (!form.triageLevel) {
+      setError('Please select the triage level.');
+      return;
+    }
     if (!form.physicianId) {
       setError('Please select the attending physician.');
+      return;
+    }
+    if (!form.consultingPhysicianIds.length) {
+      setError(
+        pendingDoctorId
+          ? 'Click Add to include the consulting physician.'
+          : 'Please add a consulting physician.',
+      );
       return;
     }
     const registrationOrder = form.registrationOrder.trim();
@@ -584,13 +634,16 @@ export function AddPatientModal({
                   placeholder="e.g. 0917 123 4567"
                 />
               </Field>
-              <Field label="Insurance">
+              <Field label="Insurance" required>
                 <select
-                  style={s.input}
+                  style={s.select}
                   value={form.insurance}
                   onChange={(e) => setField('insurance', toInsurance(e.target.value))}
+                  required
                 >
-                  <option value="">Select insurance</option>
+                  <option value="" disabled>
+                    Select insurance
+                  </option>
                   {Object.entries(INSURANCE_LABEL).map(([value, label]) => (
                     <option key={value} value={value}>
                       {label}
@@ -611,7 +664,7 @@ export function AddPatientModal({
               </Field>
               <Field label="Religion" required>
                 <select
-                  style={s.input}
+                  style={s.select}
                   value={form.religion}
                   onChange={(e) => setField('religion', e.target.value)}
                   required
@@ -704,7 +757,9 @@ export function AddPatientModal({
 
           <Section icon={SECTION_ICONS.triage} title="Triage Assessment" hint="Priority level and initial vital signs">
             <div style={{ marginBottom: 14 }}>
-              <span style={s.label}>Emergency Severity Index (ESI)</span>
+              <span style={s.label}>
+                Emergency Severity Index (ESI)<span style={s.required}>*</span>
+              </span>
               <div style={s.triageLevels} role="radiogroup" aria-label="Emergency Severity Index (ESI)">
                 {TRIAGE_LEVELS.map((info) => {
                   const active = form.triageLevel === info.level;
@@ -721,8 +776,7 @@ export function AddPatientModal({
                           ? { backgroundColor: info.background, borderColor: info.color, color: info.color }
                           : {}),
                       }}
-                      // Clicking the chosen level again clears it.
-                      onClick={() => setField('triageLevel', active ? null : info.level)}
+                      onClick={() => setField('triageLevel', info.level)}
                     >
                       <span style={s.triageLevelNumber}>Level {info.level}</span>
                       <span style={s.triageLevelName}>{info.name}</span>
@@ -749,32 +803,10 @@ export function AddPatientModal({
               <span style={s.label}>
                 Chief Complaint<span style={s.required}>*</span>
               </span>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
-                {form.chiefComplaints.map((value, slot) => (
-                  <select
-                    key={slot}
-                    style={s.select}
-                    value={value}
-                    aria-label={`Chief complaint ${slot + 1}`}
-                    required={slot === 0}
-                    onChange={(e) =>
-                      setField(
-                        'chiefComplaints',
-                        form.chiefComplaints.map((other, i) => (i === slot ? e.target.value : other)),
-                      )
-                    }
-                  >
-                    <option value="">{slot === 0 ? 'Select complaint' : 'None'}</option>
-                    {CHIEF_COMPLAINTS.filter(
-                      (complaint) => complaint === value || !form.chiefComplaints.includes(complaint),
-                    ).map((complaint) => (
-                      <option key={complaint} value={complaint}>
-                        {complaint}
-                      </option>
-                    ))}
-                  </select>
-                ))}
-              </div>
+              <ChiefComplaintPicker
+                value={form.chiefComplaints}
+                onChange={(chiefComplaints) => setField('chiefComplaints', chiefComplaints)}
+              />
             </div>
             <div style={{ marginTop: 14 }}>
               <Field label="Notes" required>
@@ -803,7 +835,9 @@ export function AddPatientModal({
             </Field>
 
             <div style={{ marginTop: 16 }}>
-              <span style={s.label}>Consulting Physicians</span>
+              <span style={s.label}>
+                Consulting Physicians<span style={s.required}>*</span>
+              </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {form.consultingPhysicianIds.length ? (
                   form.consultingPhysicianIds.map((id) => {
@@ -841,6 +875,7 @@ export function AddPatientModal({
                   disabled={!availableToAdd.length}
                   placeholder={availableToAdd.length ? 'Select a consulting physician' : 'No other physicians available'}
                   ariaLabel="Consulting physician to add"
+                  required={form.consultingPhysicianIds.length === 0}
                 />
                 <button
                   type="button"
@@ -891,7 +926,7 @@ export function AddPatientModal({
                 </Field>
                 <Field label="Order Given As" required>
                   <select
-                    style={s.input}
+                    style={s.select}
                     value={form.registrationOrderChannel}
                     onChange={(e) => setField('registrationOrderChannel', e.target.value as OrderChannel)}
                   >
@@ -920,14 +955,173 @@ export function AddPatientModal({
           </button>
           <button
             type="submit"
-            style={{ ...ui.primaryBtn, height: 40, padding: '0 20px', opacity: saving ? 0.7 : 1 }}
-            disabled={saving}
+            style={{
+              ...ui.primaryBtn,
+              height: 40,
+              padding: '0 20px',
+              backgroundColor: ready ? TEAL : '#bfdbfe',
+              cursor: ready && !saving ? 'pointer' : 'not-allowed',
+            }}
+            disabled={!ready || saving}
           >
             {saving ? 'Registering...' : 'Register Patient'}
           </button>
         </footer>
       </form>
     </div>
+  );
+}
+
+function ChiefComplaintPicker({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  const toggle = (complaint: string) => {
+    onChange(
+      value.includes(complaint) ? value.filter((item) => item !== complaint) : [...value, complaint],
+    );
+  };
+
+  return (
+    <div ref={rootRef}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((current) => !current)}
+        style={{
+          ...s.select,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          textAlign: 'left',
+          backgroundImage: 'none',
+          paddingRight: 12,
+          borderColor: open ? '#2563eb' : '#cbd5e1',
+          boxShadow: open ? '0 0 0 3px rgba(37, 99, 235, 0.15)' : 'none',
+        }}
+      >
+        <span style={{ color: value.length ? '#0f172a' : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {value.length ? `${value.length} selected` : 'Select complaint'}
+        </span>
+        <DropdownChevron />
+      </button>
+      {open && (
+        <div
+          role="group"
+          aria-label="Chief complaints"
+          style={{
+            marginTop: 6,
+            maxHeight: 220,
+            overflowY: 'auto',
+            padding: 6,
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 10,
+            boxShadow: '0 8px 20px rgba(15, 23, 42, 0.08)',
+          }}
+        >
+          {CHIEF_COMPLAINTS.map((complaint) => (
+            <label
+              key={complaint}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '7px 8px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontSize: 13,
+                color: '#0f172a',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={value.includes(complaint)}
+                onChange={() => toggle(complaint)}
+                style={{ accentColor: '#2563eb', width: 15, height: 15, margin: 0 }}
+              />
+              {complaint}
+            </label>
+          ))}
+        </div>
+      )}
+      {value.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+          {value.map((complaint) => (
+            <span
+              key={complaint}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 28,
+                maxWidth: '100%',
+                padding: '0 4px 0 10px',
+                borderRadius: 999,
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1e3a8a',
+                fontSize: 12,
+                fontWeight: 600,
+                lineHeight: 1,
+              }}
+            >
+              <span style={{ lineHeight: 1 }}>{complaint}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${complaint}`}
+                title={`Remove ${complaint}`}
+                onClick={() => toggle(complaint)}
+                style={{
+                  width: 18,
+                  height: 18,
+                  padding: 0,
+                  border: 'none',
+                  borderRadius: 999,
+                  backgroundColor: '#dbeafe',
+                  color: '#1d4ed8',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+                  <path d="M1.2 1.2 6.8 6.8M6.8 1.2 1.2 6.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Same 16px mark as the drawn chevron on `s.select`, inset 12px from the right edge. */
+function DropdownChevron() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0, display: 'block' }}>
+      <path d="M6.5 9.5 12 15l5.5-5.5" fill="none" stroke="#0f172a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

@@ -11,6 +11,7 @@ import type {
   Claim,
   ClaimRecord,
   EligibleSummary,
+  AccountProfile,
   AuthUser,
   PhysicianRequest,
   ActivityTrend,
@@ -35,6 +36,7 @@ import type {
 // --- Auth ---
 export const authApi = {
   session: () => api.get<{ authenticated: boolean }>('/auth/session'),
+  profile: () => api.get<AccountProfile>('/auth/profile'),
   login: (userId: string, password: string) =>
     api.post<{ accessToken: string; refreshToken: string; user: AuthUser; mustResetPassword: boolean }>(
       '/auth/login',

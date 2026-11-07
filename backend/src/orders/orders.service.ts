@@ -273,6 +273,28 @@ export class OrdersService {
       throw new BadRequestException('An order’s status cannot be moved back once it has progressed');
     }
 
+    const nextComment =
+      dto.nurseComment !== undefined ? dto.nurseComment.trim() || null : order.nurseComment;
+    if (order.type === OrderType.DISCHARGE && dto.status === OrderStatus.FINISHED) {
+      if (!nextComment) {
+        throw new BadRequestException('Add a note before marking the discharge order done');
+      }
+      const unfinished = await this.prisma.physicianOrder.count({
+        where: {
+          admissionId: order.admissionId,
+          active: true,
+          id: { not: order.id },
+          dateCreated: { lte: order.dateCreated },
+          status: { not: OrderStatus.FINISHED },
+        },
+      });
+      if (unfinished > 0) {
+        throw new BadRequestException(
+          'Finish every order written before the discharge order before this patient can be discharged',
+        );
+      }
+    }
+
     const changed = dto.status !== order.status;
     const updated = await this.prisma.physicianOrder.update({
       where: { id },
@@ -325,7 +347,37 @@ export class OrdersService {
       });
     }
 
+    if (order.type === OrderType.DISCHARGE && updated.status === OrderStatus.FINISHED && updated.nurseComment) {
+      await this.dischargeAfterOrder(order.admissionId, nurseId);
+    }
+
     return updated;
+  }
+
+  /** Carrying out a discharge order ends the admission. A second nurse finds it already discharged. */
+  private async dischargeAfterOrder(admissionId: string, nurseId: string) {
+    const admission = await this.prisma.patientAdmission.findUnique({ where: { id: admissionId } });
+    if (!admission || admission.dischargeDate) return;
+
+    const dischargeDate = new Date();
+    const { count } = await this.prisma.patientAdmission.updateMany({
+      where: { id: admissionId, dischargeDate: null },
+      data: { dischargeDate },
+    });
+    if (count === 0) return;
+
+    const patientName = await this.auditLog.patientName({ patientId: admission.patientId });
+    await this.auditLog.record({
+      userId: nurseId,
+      action: 'REGISTER_PATIENT',
+      details: {
+        summary: `Discharged ${patientName}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Discharged', dischargeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })],
+        ]),
+      },
+    });
   }
 
   /**

@@ -53,6 +53,7 @@ const mockPrismaService = {
   },
   physicianOrder: {
     count: jest.fn(),
+    findFirst: jest.fn(),
   },
   admissionPhysician: {
     create: jest.fn(),
@@ -806,23 +807,63 @@ describe("Patients Module", () => {
         patientClass: PatientClass.INPATIENT,
       };
 
+      const doneDischargeOrder = {
+        id: "discharge-1",
+        status: OrderStatus.FINISHED,
+        nurseComment: "Sent home",
+        dateCreated: new Date("2026-03-02T08:00:00"),
+      };
+
       beforeEach(() => {
         (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(admitted);
         (prismaService.patientAdmission.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
-        (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(1);
+        (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(doneDischargeOrder);
+        (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(0);
       });
 
-      it("should discharge once a discharge order exists", async () => {
+      it("should discharge once the discharge order is done and earlier orders are finished", async () => {
         const result = await service.dischargeAdmission(mockAdmissionId, mockUser.id);
 
-        expect(prismaService.physicianOrder.count).toHaveBeenCalledWith({
+        expect(prismaService.physicianOrder.findFirst).toHaveBeenCalledWith({
           where: { admissionId: mockAdmissionId, type: OrderType.DISCHARGE, active: true },
+          orderBy: { dateCreated: "desc" },
+        });
+        expect(prismaService.physicianOrder.count).toHaveBeenCalledWith({
+          where: {
+            admissionId: mockAdmissionId,
+            active: true,
+            id: { not: "discharge-1" },
+            dateCreated: { lte: doneDischargeOrder.dateCreated },
+            status: { not: OrderStatus.FINISHED },
+          },
         });
         expect(prismaService.patientAdmission.updateMany).toHaveBeenCalledWith({
           where: { id: mockAdmissionId, dischargeDate: null },
           data: { dischargeDate: expect.any(Date) },
         });
         expect(result.dischargeDate).toBeInstanceOf(Date);
+      });
+
+      it("should refuse to discharge while an earlier order is still open", async () => {
+        (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(2);
+
+        await expect(service.dischargeAdmission(mockAdmissionId, mockUser.id)).rejects.toThrow(
+          "Finish every order written before the discharge order before this patient can be discharged",
+        );
+        expect(prismaService.patientAdmission.updateMany).not.toHaveBeenCalled();
+      });
+
+      it("should refuse to discharge before the discharge order is marked done", async () => {
+        (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({
+          ...doneDischargeOrder,
+          status: OrderStatus.ONGOING,
+          nurseComment: null,
+        });
+
+        await expect(service.dischargeAdmission(mockAdmissionId, mockUser.id)).rejects.toThrow(
+          "Mark the discharge order done and add a note before discharging this patient",
+        );
+        expect(prismaService.patientAdmission.updateMany).not.toHaveBeenCalled();
       });
 
       it.each([PatientClass.INPATIENT, PatientClass.OBSERVATION, PatientClass.EMERGENCY])(
@@ -832,7 +873,7 @@ describe("Patients Module", () => {
             ...admitted,
             patientClass,
           });
-          (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(0);
+          (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(null);
 
           await expect(service.dischargeAdmission(mockAdmissionId, mockUser.id)).rejects.toThrow(
             "A physician must write a discharge order before the patient can be discharged",
@@ -846,11 +887,11 @@ describe("Patients Module", () => {
           ...admitted,
           patientClass: PatientClass.OUTPATIENT,
         });
-        (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(0);
+        (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(null);
 
         await service.dischargeAdmission(mockAdmissionId, mockUser.id);
 
-        expect(prismaService.physicianOrder.count).not.toHaveBeenCalled();
+        expect(prismaService.physicianOrder.findFirst).not.toHaveBeenCalled();
         expect(prismaService.patientAdmission.updateMany).toHaveBeenCalled();
       });
 
