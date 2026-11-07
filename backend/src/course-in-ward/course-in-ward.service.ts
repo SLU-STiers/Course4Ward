@@ -14,6 +14,7 @@ import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/a
 import { OrdersService } from '../orders/orders.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OllamaClient, OllamaReference, SummaryModel } from './ollama-client';
+import { assertFormattingOnlyInstructions } from './summary-instructions';
 
 /**
  * The source orders every summary the API returns carries: they give its day,
@@ -325,6 +326,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     requestedById: string | null,
     day?: string | null,
     model: SummaryModel = 'standard',
+    instructions?: string,
   ) {
     const targetDay = day ?? dayKeyOf(new Date())!;
     const [patient, targetOrders] = await Promise.all([
@@ -338,7 +340,15 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const groups = await this.callAiSummarizer(targetOrders, undefined, model);
+    // Generate takes the same FORMATTING-only instructions as Regenerate: they
+    // steer how the orders are worded, never what they say.
+    const extraInstructions = instructions?.trim() || undefined;
+    assertFormattingOnlyInstructions(
+      extraInstructions,
+      targetOrders.map((order) => order.orderContent),
+    );
+
+    const groups = await this.callAiSummarizer(targetOrders, extraInstructions, model);
 
     const summaries = [];
     for (const [index, group] of groups.entries()) {
@@ -370,6 +380,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
             ['AI model', MODEL_LABEL[model]],
             ['Orders summarized', targetOrders.length],
             ['Summaries saved', summaries.length],
+            ['Extra instructions', extraInstructions],
           ]),
         },
       });
@@ -582,10 +593,19 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('No orders found to regenerate this summary');
     }
 
+    // The extra instructions are FORMATTING instructions: they steer how the
+    // orders are worded, never what they say. A request to add clinical content
+    // is rejected here instead of reaching the AI (see summary-instructions.ts).
+    const extraInstructions = instructions?.trim() || undefined;
+    assertFormattingOnlyInstructions(
+      extraInstructions,
+      sourceOrders.map((order) => order.orderContent),
+    );
+
     // Keep the summary filed under the day it already covers: when the source
     // orders span more than one day, take that day's group.
     const summaryDay = dayKeyOf(existing.summaryDate);
-    const groups = await this.callAiSummarizer(sourceOrders, instructions, model);
+    const groups = await this.callAiSummarizer(sourceOrders, extraInstructions, model);
     const group = groups.find((candidate) => candidate.day === summaryDay) ?? groups[0];
     if (!group?.summary) {
       throw new BadRequestException('No orders found to regenerate this summary');
@@ -613,7 +633,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
           ['Patient', patientName],
           ['Summary day', dayLabel(updated.summaryDate)],
           ['AI model', MODEL_LABEL[model]],
-          ['Extra instructions', instructions?.trim()],
+          ['Extra instructions', extraInstructions],
         ]),
         changes: [{ field: 'Summary text', from: existing.summaryContent, to: group.summary }],
       },
@@ -815,6 +835,33 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       where: { patientId },
       orderBy: { summaryDate: 'desc' },
       include: SUMMARY_ORDERS,
+    });
+  }
+
+  /**
+   * Every summary still waiting for this physician's approval, across all the
+   * patients they are responsible for (attending or consulting physician on
+   * any admission). A discharged patient stays in this list until the last
+   * day's Course in the Ward is approved, so nothing is lost when the ward
+   * list moves on to active patients.
+   */
+  findPendingForPhysician(physicianId: string) {
+    return this.prisma.courseInWard.findMany({
+      where: {
+        status: { not: SummaryStatus.APPROVED },
+        patient: {
+          admissions: {
+            some: {
+              OR: [
+                { physicianId },
+                { additionalPhysicians: { some: { physicianId } } },
+              ],
+            },
+          },
+        },
+      },
+      orderBy: { summaryDate: 'desc' },
+      select: { id: true, patientId: true, summaryDate: true, status: true },
     });
   }
 }
