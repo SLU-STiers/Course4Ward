@@ -8,10 +8,11 @@ import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../../components/ui';
 import { patientTableStyles } from '../../components/patientList/PatientTable';
 import { DashboardIcon, ExportIcon, RequestsIcon } from '../../components/icons/NavIcons';
-import { AiActionButton, AiSummaryCard } from '../../components/ai/AiSummaryCard';
+import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
 import { ORDER_TEXT_STYLE, SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { signOut } from '../../services/signOut';
+import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
 import { toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
@@ -56,7 +57,9 @@ export function ClaimsProcessorDashboard() {
   const [patientStatus, setPatientStatus] = useState<PatientStatus>('all');
   const [previewPatient, setPreviewPatient] = useState<CF4Patient | null>(null);
   const [selectedOrderDate, setSelectedOrderDate] = useState('');
-  const [evaluator, setEvaluator] = useState('Dr. Mike Mentzer');
+  // Signed-in claims processor: the CF4's "Prepared by".
+  const user = useAuthStore((s) => s.user);
+  const evaluator = user ? `${user.firstName} ${user.lastName}` : 'Claims Processor';
 
   // Export → Course in the Ward Summary review step
   const [exportSource, setExportSource] = useState<ExportSource>('new-cf4');
@@ -969,26 +972,6 @@ export function ClaimsProcessorDashboard() {
                   badgeLabel={overviewRequest?.status ?? 'No claims'}
                   text={overviewRequest?.summaryText}
                   emptyMessage="Select a persisted claim to review its AI summary."
-                  actions={
-                    <>
-                      <select
-                        value={evaluator}
-                        onChange={(e) => setEvaluator(e.target.value)}
-                        style={overviewStyles.evaluatorSelect}
-                        aria-label="Evaluator"
-                      >
-                        <option>{overviewRequest?.doctor ?? 'Attending physician'}</option>
-                      </select>
-                      <AiActionButton
-                        disabled={!overviewRequest}
-                        onClick={() =>
-                          overviewRequest && claimsApi.notifyPhysician(overviewRequest.id)
-                        }
-                      >
-                        Submit
-                      </AiActionButton>
-                    </>
-                  }
                 />
               </div>
             </div>
