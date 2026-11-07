@@ -5,6 +5,9 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 const mockPrismaService = {
+  user: {
+    findMany: jest.fn(),
+  },
   notification: {
     create: jest.fn(),
     findMany: jest.fn(),
@@ -61,6 +64,36 @@ describe("NotificationsService", () => {
           message: "Body",
           requestId: null,
         },
+      });
+    });
+
+    describe("notifyAdmins", () => {
+      it("notifies each active administrator", async () => {
+        (prisma.user.findMany as jest.Mock).mockResolvedValue([
+          { id: "admin-1" },
+          { id: "admin-2" },
+        ]);
+        (prisma.notification.create as jest.Mock).mockResolvedValue(notification);
+
+        await service.notifyAdmins({
+          title: "New patient registered",
+          message: "Jane Doe was registered as Outpatient.",
+        });
+
+        expect(prisma.user.findMany).toHaveBeenCalledWith({
+          where: { role: "ADMIN", isActive: true },
+          select: { id: true },
+        });
+        expect(prisma.notification.create).toHaveBeenCalledTimes(2);
+        expect(prisma.notification.create).toHaveBeenCalledWith({
+          data: {
+            userId: "admin-1",
+            type: "GENERAL",
+            title: "New patient registered",
+            message: "Jane Doe was registered as Outpatient.",
+            requestId: null,
+          },
+        });
       });
     });
 

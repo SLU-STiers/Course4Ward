@@ -551,45 +551,6 @@ export const styles: Record<string, CSSProperties> = {
     maxHeight: '360px',
     flex: 1,
   },
-  jsonPreview: {
-    margin: 0,
-    padding: '16px',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    fontSize: '11.5px',
-    lineHeight: 1.6,
-    color: '#0f172a',
-    backgroundColor: '#f8fafc',
-    overflow: 'auto',
-    maxHeight: '360px',
-    flex: 1,
-  },
-  /** Segmented JSON / PDF switch that sits in the summary panel header. */
-  summaryPanelTabs: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-    padding: '2px',
-    borderRadius: '8px',
-    backgroundColor: '#e2e8f0',
-  },
-  summaryTab: {
-    border: 'none',
-    /* `backgroundColor`, never the `background` shorthand — it is merged with
-       `summaryTabActive`, and mixing the two warns on every rerender. */
-    backgroundColor: 'transparent',
-    borderRadius: '6px',
-    /* Explicit padding — index.css has a global `button { padding: 8px 12px }`. */
-    padding: '5px 10px',
-    fontSize: '11px',
-    fontWeight: 700,
-    color: '#475569',
-    cursor: 'pointer',
-  },
-  summaryTabActive: {
-    backgroundColor: '#ffffff',
-    color: '#0f172a',
-    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.12)',
-  },
   /** Wrapper that lets a click-catching button sit over the PDF iframe. */
   pdfPreviewShell: {
     position: 'relative',

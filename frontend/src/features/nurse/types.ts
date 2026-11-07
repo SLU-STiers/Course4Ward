@@ -80,7 +80,7 @@ export type OrderSet = {
   order?: PhysicianOrder;
 };
 /** A patient class label (see PATIENT_CLASS_LABEL), or Discharged. */
-export type AdmissionStatus = 'Emergency' | 'Outpatient' | 'Observation' | 'Admitted' | 'Discharged';
+export type AdmissionStatus = 'Emergency' | 'Observation' | 'Admitted' | 'Discharged';
 export type AdmissionRecord = {
   id: string;
   name: string;

@@ -100,7 +100,7 @@ export function NotificationPanel({
                 <BellOff size={22} aria-hidden="true" />
                 <span>You&rsquo;re all caught up.</span>
                 <span className="ui-notifications__hint">
-                  Reminders sent by claims processors show up here.
+                  Patient registrations and other important updates show up here.
                 </span>
               </>
             )}
@@ -163,4 +163,3 @@ function QuotedMessage({ text }: { text: string }) {
     </span>
   );
 }
-

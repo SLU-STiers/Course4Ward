@@ -67,6 +67,16 @@ export class ClaimsService {
       },
     });
 
+    if (!approved) {
+      await this.notifications.create({
+        userId: physicianId,
+        type: NotificationType.REVIEW_REQUESTED,
+        title: 'Course in the Ward review requested',
+        message: `A claims processor opened a request for ${patientName}'s summary (${dayLabel(summary.summaryDate)}). Please review and approve it.`,
+        requestId: claim.id,
+      });
+    }
+
     return claim;
   }
 
@@ -92,7 +102,7 @@ export class ClaimsService {
 
   findAll() {
     return this.prisma.summaryApprovalRequest.findMany({
-      orderBy: { id: 'desc' },
+      orderBy: { requestedAt: 'desc' },
       include: {
         summary: {
           include: {
@@ -102,6 +112,7 @@ export class ClaimsService {
               include: {
                 admission: {
                   select: {
+                    id: true,
                     admissionDate: true,
                     dischargeDate: true,
                     // The claim review shows the patient's triage assessment.
@@ -173,6 +184,10 @@ export class ClaimsService {
           ['Summary day', dayLabel(summary.summaryDate)],
         ]),
       },
+    });
+    await this.notifications.notifyUsers([request.processorId], {
+      title: 'Course in the Ward summary approved',
+      message: `The physician approved ${patientName}'s summary for ${dayLabel(summary.summaryDate)}. It is ready for CF4 processing.`,
     });
     return { ...updatedRequest, summary };
   }
@@ -258,6 +273,10 @@ export class ClaimsService {
           ['Summary day', dayLabel(claim.summary.summaryDate)],
         ]),
       },
+    });
+    await this.notifications.notifyUsers([claim.physicianId], {
+      title: 'CF4 generated',
+      message: `A PhilHealth CF4 was generated for ${fullName(claim.summary.patient)}'s summary for ${dayLabel(claim.summary.summaryDate)}.`,
     });
 
     // The actual CF4 document (PDF) would be rendered here from

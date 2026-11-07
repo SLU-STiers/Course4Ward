@@ -8,6 +8,7 @@ import { PatientsController } from "../patients/patients.controller";
 import { PatientsService } from "../patients/patients.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { WardAccessService } from "../wards/ward-access.service";
 import {
   CommunicationChannel,
@@ -68,6 +69,11 @@ const mockAuditLogService = {
   patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
   userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
 } as unknown as jest.Mocked<AuditLogService>;
+
+const mockNotificationsService = {
+  notifyAdmins: jest.fn().mockResolvedValue([]),
+  notifyUsers: jest.fn().mockResolvedValue([]),
+} as unknown as jest.Mocked<NotificationsService>;
 
 describe("Patients Module", () => {
   let controller: PatientsController;
@@ -222,6 +228,7 @@ describe("Patients Module", () => {
         PatientsService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
         // Ward limits have their own tests (ward-access.test.ts); pass everything through here.
         {
           provide: WardAccessService,
@@ -302,6 +309,10 @@ describe("Patients Module", () => {
           userId: mockUser.id,
           action: "PATIENT_CREATED",
         }));
+        expect(mockNotificationsService.notifyAdmins).toHaveBeenCalledWith({
+          title: "New patient registered",
+          message: "John Doe was registered as Outpatient.",
+        });
         expect(result).toEqual(mockPatientSimple);
       });
 

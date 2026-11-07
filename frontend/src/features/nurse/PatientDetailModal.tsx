@@ -42,15 +42,15 @@ export function PatientDetailModal({
   chart: PatientChart & { classSince?: string };
   onClose: () => void;
   status?: AdmissionStatus;
-  /** Discharges the patient, or ends an outpatient visit. */
+  /** Discharges the patient. */
   onDischarge?: () => void;
   /** Set while discharge is not allowed yet, e.g. no physician discharge order. */
   dischargeBlockedReason?: string;
-  /** Places an emergency patient / outpatient under observation. */
+  /** Places an emergency patient under observation. */
   onObserve?: () => void;
   /** Set while observation is not allowed yet, e.g. no physician observation order. */
   observeBlockedReason?: string;
-  /** Formally admits an emergency / outpatient / observation patient to the ward. */
+  /** Formally admits an emergency / observation patient to the ward. */
   onAdmit?: () => void;
   /** Set while admission is not allowed yet, e.g. no physician admission order. */
   admitBlockedReason?: string;
@@ -141,7 +141,6 @@ export function PatientDetailModal({
                     Discharged: ui.badgeDischarged,
                     Emergency: ui.badgeEr,
                     Observation: ui.badgeObservation,
-                    Outpatient: ui.badgeOutpatient,
                     Admitted: ui.badgeAdmitted,
                   }[badge]
                 }
@@ -334,9 +333,7 @@ export function PatientDetailModal({
           )}
           {canDischarge && onDischarge && (
             <ActionButton
-              label={
-                actionBusy ? 'Working...' : badge === 'Outpatient' ? 'End Visit' : 'Discharge Patient'
-              }
+              label={actionBusy ? 'Working...' : 'Discharge Patient'}
               blockedReason={dischargeBlockedReason}
               busy={actionBusy}
               onClick={onDischarge}

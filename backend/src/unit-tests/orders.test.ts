@@ -51,6 +51,8 @@ const mockAuditLogService = {
 
 const mockNotificationsService = {
   create: jest.fn(),
+  notifyUsers: jest.fn().mockResolvedValue([]),
+  notifyNursesInWard: jest.fn().mockResolvedValue([]),
 } as unknown as jest.Mocked<NotificationsService>;
 
 describe('OrdersService', () => {
@@ -465,6 +467,7 @@ describe('OrdersService', () => {
       (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
         patientId: 'patient-123',
         physicianId: 'doctor-789',
+        additionalPhysicians: [],
         patient: { firstName: 'Juan', lastName: 'Cruz' },
       });
       (prismaService.courseInWard.findFirst as jest.Mock).mockResolvedValue({ id: 'summary-1' });
@@ -475,29 +478,28 @@ describe('OrdersService', () => {
         where: { patientId: 'patient-123', summaryDate: { gte: expect.any(Date), lt: expect.any(Date) } },
         select: { id: true },
       });
-      expect(mockNotificationsService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'doctor-789', title: 'Order finished after summary' }),
+      expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
+        ['doctor-789', 'doctor-123'],
+        expect.objectContaining({ title: 'Order finished after summary' }),
       );
     });
 
-    it('should not notify when the day has no summary yet, or the order is already summarized', async () => {
+    it('should notify the care team when an order is finished before a summary exists', async () => {
       (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(mockOrder);
       (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
         patientId: 'patient-123',
         physicianId: 'doctor-789',
+        additionalPhysicians: [],
         patient: { firstName: 'Juan', lastName: 'Cruz' },
       });
       (prismaService.courseInWard.findFirst as jest.Mock).mockResolvedValue(null);
       (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(mockOrder);
       await service.updateStatus('order-123', { status: OrderStatus.FINISHED }, 'nurse-123');
 
-      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({
-        ...mockOrder,
-        summarizationId: 'summary-1',
-      });
-      await service.updateStatus('order-123', { status: OrderStatus.FINISHED }, 'nurse-123');
-
-      expect(mockNotificationsService.create).not.toHaveBeenCalled();
+      expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
+        ['doctor-789', 'doctor-123'],
+        expect.objectContaining({ title: 'Order finished' }),
+      );
     });
 
     it('should keep the executor stamp when only the note changes', async () => {

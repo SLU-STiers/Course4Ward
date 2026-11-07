@@ -20,7 +20,13 @@ import { OrderExecutionPanel } from './OrderExecutionPanel';
 import { OnBehalfOrderForm } from './OnBehalfOrderForm';
 import { OtherWardLabel, SECTION_ICONS, Section, contactDetailsOf } from './PatientModalParts';
 import type { AdmissionStatus, NursePatient, OrderSet } from './types';
-import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf, wardLocation } from './patientClass';
+import {
+  ADMISSION_STATUSES,
+  STATUS_TONE,
+  admissionStatusOf,
+  isNurseVisiblePatient,
+  wardLocation,
+} from './patientClass';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
 import type { CourseInWard, Patient, PhysicianOrder } from '../../types';
 
@@ -131,7 +137,7 @@ export function ManagementPortalView() {
 
   const loadPatients = useCallback(() => {
     return patientsApi.list().then(({ data }) => {
-      const mapped = data.map(mapPatient);
+      const mapped = data.filter(isNurseVisiblePatient).map(mapPatient);
       setPatients(mapped);
       return mapped;
     });

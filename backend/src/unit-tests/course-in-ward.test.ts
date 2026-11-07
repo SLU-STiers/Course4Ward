@@ -8,6 +8,7 @@ import { OrdersService } from '../orders/orders.service';
 import { ConfigService } from '@nestjs/config';
 import { OrderStatus, Sex, SummaryStatus } from '@prisma/client';
 import { AxiosError } from 'axios';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // Mock the OllamaClient BEFORE importing the service. Every `new OllamaClient()`
 // returns this ONE object, so the instance the service builds in its
@@ -40,10 +41,12 @@ const mockPrismaService = {
     create: jest.fn(),
     findFirst: jest.fn(),
     findUnique: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     update: jest.fn(),
     findMany: jest.fn(),
   },
   summaryApprovalRequest: {
+    findMany: jest.fn().mockResolvedValue([]),
     updateMany: jest.fn(),
   },
   summaryVersion: {
@@ -70,6 +73,11 @@ const mockConfigService = {
   get: jest.fn(),
 };
 
+const mockNotificationsService = {
+  notifyRole: jest.fn().mockResolvedValue([]),
+  notifyUsers: jest.fn().mockResolvedValue([]),
+};
+
 describe('CourseInWardService', () => {
   let service: CourseInWardService;
   let prismaService: PrismaService;
@@ -81,6 +89,21 @@ describe('CourseInWardService', () => {
   beforeEach(async () => {
     // Reset all mocks
     jest.clearAllMocks();
+    mockPrismaService.courseInWard.findUniqueOrThrow.mockImplementation(
+      async ({ where }: { where: { id: string } }) => {
+        const results: Array<{ value: unknown }> = [
+          ...mockPrismaService.courseInWard.update.mock.results,
+          ...mockPrismaService.courseInWard.create.mock.results,
+        ];
+        for (const result of results.reverse()) {
+          const value = await result.value;
+          if (value && typeof value === 'object' && 'id' in value && value.id === where.id) {
+            return value;
+          }
+        }
+        return { id: where.id };
+      },
+    );
 
     // Get the mock instance that will be used
     mockOllamaClient = new OllamaClient() as jest.Mocked<OllamaClient>;
@@ -104,6 +127,7 @@ describe('CourseInWardService', () => {
           provide: ConfigService,
           useValue: mockConfigService,
         },
+        { provide: NotificationsService, useValue: mockNotificationsService },
         // Provide the mock OllamaClient
         {
           provide: OllamaClient,
@@ -474,6 +498,9 @@ describe('CourseInWardService', () => {
       // Arrange
       mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
       mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockPrismaService.summaryApprovalRequest.findMany.mockResolvedValueOnce([
+        { processorId: 'processor-123' },
+      ]);
       mockAuditLogService.record.mockResolvedValue({});
 
       // Act
@@ -494,6 +521,13 @@ describe('CourseInWardService', () => {
         userId: mockPhysicianId,
         action: 'SUMMARY_EDITED_MANUAL',
       }));
+      expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
+        ['processor-123'],
+        expect.objectContaining({
+          title: 'Course in the Ward summary updated',
+          message: expect.stringContaining('Juan Dela Cruz'),
+        }),
+      );
       expect(result).toEqual(mockUpdatedSummary);
     });
 
@@ -652,6 +686,9 @@ describe('CourseInWardService', () => {
       mockOrdersService.findOrdersForDay.mockResolvedValue(mockOrders);
       mockOllamaClient.summarizeBatch.mockResolvedValue(mockAiResponse);
       mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
+      mockPrismaService.summaryApprovalRequest.findMany.mockResolvedValueOnce([
+        { processorId: 'processor-123' },
+      ]);
       mockAuditLogService.record.mockResolvedValue({});
       mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
 
@@ -683,6 +720,13 @@ describe('CourseInWardService', () => {
         userId: mockPhysicianId,
         action: 'SUMMARY_REGENERATED_AI',
       }));
+      expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
+        ['processor-123'],
+        expect.objectContaining({
+          title: 'Course in the Ward summary updated',
+          message: expect.stringContaining('Juan Dela Cruz'),
+        }),
+      );
       expect(result).toEqual(mockUpdatedSummary);
     });
 
@@ -913,8 +957,21 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.findMany).toHaveBeenCalledWith({
         where: { patientId: mockPatientId },
         orderBy: { summaryDate: 'desc' },
-        // The linked orders tell the UI which order day each summary covers.
-        include: { orders: { select: { id: true, dateCreated: true } } },
+        include: {
+          orders: {
+            orderBy: { dateCreated: 'asc' },
+            select: {
+              id: true,
+              orderContent: true,
+              type: true,
+              status: true,
+              dateCreated: true,
+              executedAt: true,
+              orderedBy: { select: { firstName: true, lastName: true } },
+              executedBy: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
       });
       expect(result).toEqual(mockSummaries);
       expect(result.length).toBe(2);
@@ -932,7 +989,21 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.courseInWard.findMany).toHaveBeenCalledWith({
         where: { patientId: mockPatientId },
         orderBy: { summaryDate: 'desc' },
-        include: { orders: { select: { id: true, dateCreated: true } } },
+        include: {
+          orders: {
+            orderBy: { dateCreated: 'asc' },
+            select: {
+              id: true,
+              orderContent: true,
+              type: true,
+              status: true,
+              dateCreated: true,
+              executedAt: true,
+              orderedBy: { select: { firstName: true, lastName: true } },
+              executedBy: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
       });
     });
   });

@@ -15,6 +15,9 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
 
   return {
     id: claim.id,
+    submittedAt,
+    summaryDate: claim.summary.summaryDate,
+    admissionId: order?.admission.id ?? '',
     doctor: order ? `${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Attending physician',
     date: formatDateMedium(submittedAt),
     time: formatTimeMedium(submittedAt),
@@ -55,6 +58,8 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
   return {
     id: claim.id,
     claimId: claim.id,
+    claimIds: [claim.id],
+    admissionId: admission?.id ?? '',
     name: fullName(patient),
     patientId: patient.id,
     gender: sexLabel(patient.gender),
@@ -64,6 +69,30 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
     admissionDateRaw: toDateInputValue(new Date(admissionDate)),
     daysInCare: daysInCare(admissionDate, dischargeDate),
     status,
-    selected: false,
+    approved: claim.summary.status === 'APPROVED' && Boolean(claim.summary.approvedStatus),
   };
+}
+
+/** One export row represents one admission and includes every daily claim. */
+export function groupApprovedPatients(patients: CF4Patient[]): CF4Patient[] {
+  const grouped = new Map<string, CF4Patient>();
+
+  for (const patient of patients) {
+    const key = patient.admissionId
+      ? `${patient.patientId}:${patient.admissionId}`
+      : `${patient.patientId}:${patient.admissionDateRaw}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.claimIds.push(patient.claimId);
+      existing.approved = existing.approved && patient.approved;
+    } else {
+      grouped.set(key, {
+        ...patient,
+        id: key,
+        claimIds: [patient.claimId],
+      });
+    }
+  }
+
+  return [...grouped.values()].filter((patient) => patient.approved);
 }

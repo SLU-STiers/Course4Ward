@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import type { InsuranceType, PatientClass, PhysicianOption, Sex, TriageLevel } from '../../types';
+import type { InsuranceType, PhysicianOption, Sex, TriageLevel } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { formatDateMedium } from '../../lib/format';
 import { INSURANCE_LABEL, SEX_LABEL } from '../../lib/patient';
@@ -16,25 +16,12 @@ import { PhysicianWardSelect } from './PhysicianWardSelect';
 /** How the physician gave the order; '' = written / signed order. */
 type OrderChannel = '' | 'VERBAL' | 'CALL' | 'SMS' | 'OTHER';
 
-/**
- * Registration choices; the order a class needs is entered with it. Emergency
- * is not offered for now: new patients default to Outpatient. Observation is
- * never a starting class: the physician orders it after seeing the patient and
- * the nurse then moves them with Observe.
- */
-const CLASS_OPTIONS: { value: PatientClass; label: string; hint: string; order?: string }[] = [
-  {
-    value: 'OUTPATIENT',
-    label: 'Outpatient',
-    hint: 'Triaged and seen by the physician, who may order observation or admission. End the visit from the patient details when done.',
-  },
-  {
-    value: 'INPATIENT',
-    label: 'Inpatient',
-    hint: "Straight to the ward (direct admission, trauma, scheduled surgery). Needs the physician's admission order.",
-    order: 'Admission',
-  },
-];
+const REGISTRATION_CLASS = {
+  value: 'INPATIENT',
+  label: 'Inpatient',
+  hint: "Needs the physician's admission order before the patient is registered.",
+  order: 'Admission',
+} as const;
 
 const ORDER_CHANNELS: [OrderChannel, string][] = [
   ['', 'Written / signed order'],
@@ -95,12 +82,7 @@ export type AddPatientFormResult = {
   age: string;
   /** '' until the nurse picks one: there is deliberately no default. */
   gender: Sex | '';
-  /**
-   * OUTPATIENT needs no order. INPATIENT (direct admission, trauma,
-   * scheduled surgery) needs the physician's admission order, entered below
-   * on their behalf.
-   */
-  patientClass: PatientClass;
+  patientClass: 'INPATIENT';
   registrationOrder: string;
   registrationOrderChannel: OrderChannel;
   physicianId: string;
@@ -137,7 +119,7 @@ const emptyForm = (): AddPatientFormResult => ({
   lastName: '',
   age: '',
   gender: '',
-  patientClass: 'OUTPATIENT',
+  patientClass: 'INPATIENT' as const,
   registrationOrder: '',
   registrationOrderChannel: '',
   physicianId: '',
@@ -210,6 +192,7 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
     const form = {
       ...emptyForm(),
       ...draft.form,
+      patientClass: 'INPATIENT' as const,
       firstName: sanitizeName(typeof draft.form?.firstName === 'string' ? draft.form.firstName : ''),
       lastName: sanitizeName(typeof draft.form?.lastName === 'string' ? draft.form.lastName : ''),
       age: String(draft.form?.age ?? ''),
@@ -231,10 +214,6 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
         return typeof value === 'string' && CHIEF_COMPLAINTS.includes(value) ? value : '';
       }),
     };
-    // A draft may hold a class the form no longer offers (e.g. Emergency).
-    if (!CLASS_OPTIONS.some((option) => option.value === form.patientClass)) {
-      form.patientClass = emptyForm().patientClass;
-    }
     // Fields of older versions of this form.
     for (const legacy of ['admissionStatus', 'admissionOrder', 'admissionOrderChannel']) {
       delete (form as Partial<Record<string, unknown>>)[legacy];
@@ -303,8 +282,7 @@ export function AddPatientModal({
   const [saving, setSaving] = useState(false);
 
   const ageMessage = ageError(form.age);
-  const classOption =
-    CLASS_OPTIONS.find((option) => option.value === form.patientClass) ?? CLASS_OPTIONS[0];
+  const classOption = REGISTRATION_CLASS;
   const toWard = form.patientClass === 'INPATIENT';
   const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(toWard);
   /** 'Admission' when the class needs a physician order. */
@@ -431,7 +409,7 @@ export function AddPatientModal({
     }
     const registrationOrder = form.registrationOrder.trim();
     if (orderName && !registrationOrder) {
-      setError(`Enter the physician's ${orderName.toLowerCase()} order, or register the patient as Outpatient.`);
+      setError(`Enter the physician's ${orderName.toLowerCase()} order.`);
       return;
     }
     if (toWard) {
@@ -509,14 +487,7 @@ export function AddPatientModal({
             <div style={s.titleRow}>
               <h3 style={s.title}>Add Patient</h3>
               <span
-                style={
-                  {
-                    EMERGENCY: ui.badgeEr,
-                    OUTPATIENT: ui.badgeOutpatient,
-                    OBSERVATION: ui.badgeObservation,
-                    INPATIENT: ui.badgeAdmitted,
-                  }[form.patientClass]
-                }
+                style={ui.badgeAdmitted}
               >
                 {classOption.label}
               </span>
@@ -676,33 +647,6 @@ export function AddPatientModal({
                     required
                   />
                 </Field>
-              </div>
-              {/* Full row, one segment per class. */}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <span style={s.label}>
-                  Admission Status<span style={s.required}>*</span>
-                </span>
-                <div
-                  style={{ ...s.segmented, gridTemplateColumns: `repeat(${CLASS_OPTIONS.length}, 1fr)` }}
-                  role="radiogroup"
-                  aria-label="Admission status"
-                >
-                  {CLASS_OPTIONS.map(({ value, label }) => {
-                    const active = form.patientClass === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        style={{ ...s.segment, ...(active ? s.segmentActive : {}) }}
-                        onClick={() => setField('patientClass', value)}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
             </div>
             <p style={{ margin: '10px 0 0', fontSize: 12, color: '#64748b' }}>

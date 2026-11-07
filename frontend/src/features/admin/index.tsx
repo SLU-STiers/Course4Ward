@@ -1,6 +1,6 @@
 /** Part of the admin dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from '../../services/domainApi';
@@ -15,16 +15,14 @@ import { DashboardIcon, RequestsIcon, UsersIcon } from '../../components/icons/N
 import { AccountsPanel } from './AccountsPanel';
 import { DashboardView } from './DashboardView';
 import { RequestsView } from './RequestsView';
-import type { ResetRequestRow } from './types';
 
 export function AdminPanel() {
   const [activeNav, setActiveNav] = useState<'dashboard' | 'users' | 'requests'>('dashboard');
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const knownRequestIds = useRef<Set<string> | null>(null);
 
-  // Newest pending requests only: enough to spot new ones for notifications,
-  // while `total` gives the real pending count however many there are.
+  // The pending count drives the Requests tab badge; alerts are delivered by
+  // the shared in-app notification bell.
   const { data: pendingResetPage } = useQuery({
     queryKey: ['reset-requests', 'pending-poll'],
     queryFn: () =>
@@ -33,33 +31,6 @@ export function AdminPanel() {
         .then((response) => response.data),
     refetchInterval: 5000,
   });
-
-  const pendingResetRequests: ResetRequestRow[] = useMemo(
-    () => pendingResetPage?.items ?? [],
-    [pendingResetPage],
-  );
-
-  useEffect(() => {
-    const currentRequestIds = new Set<string>(
-      pendingResetRequests.map((request) => String(request.id)),
-    );
-
-    if (knownRequestIds.current === null) {
-      knownRequestIds.current = currentRequestIds;
-      return;
-    }
-
-    const newRequest = pendingResetRequests.find(
-      (request) => !knownRequestIds.current?.has(request.id),
-    );
-    knownRequestIds.current = currentRequestIds;
-
-    if (newRequest && 'Notification' in window && Notification.permission === 'granted') {
-      new Notification('New password reset request', {
-        body: `${newRequest.user.firstName} ${newRequest.user.lastName} submitted a request.`,
-      });
-    }
-  }, [pendingResetRequests]);
 
   const pendingCount = pendingResetPage?.total ?? 0;
   const requestsBadge =
@@ -98,12 +69,7 @@ export function AdminPanel() {
       header={
         <PageHeader
           title="Admin"
-          actions={
-            <NotificationBell
-              count={pendingCount}
-              onClick={() => setActiveNav('requests')}
-            />
-          }
+          actions={<NotificationBell />}
         />
       }
     >

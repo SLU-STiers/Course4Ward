@@ -8,10 +8,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { OrderStatus, Prisma, SummaryStatus } from '@prisma/client';
+import { OrderStatus, Prisma, Role, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { OllamaClient, OllamaReference, SummaryModel } from './ollama-client';
 
 /**
@@ -130,6 +131,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     private auditLog: AuditLogService,
     private ordersService: OrdersService,
     private config: ConfigService,
+    private notifications: NotificationsService,
   ) {
     this.aiServiceUrl = this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000';
     this.ollamaClient = new OllamaClient(this.aiServiceUrl);
@@ -373,6 +375,15 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
+    await Promise.all(
+      summaries.map((summary) =>
+        this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
+          title: 'Course in the Ward summary ready',
+          message: `${fullName(patient)} has a new Course in the Ward summary for ${dayLabel(summary.summaryDate)} ready for claims review.`,
+        }),
+      ),
+    );
+
     return summaries;
   }
 
@@ -511,6 +522,17 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async notifyClaimProcessors(summaryId: string, message: string) {
+    const claims = await this.prisma.summaryApprovalRequest.findMany({
+      where: { summaryId },
+      select: { processorId: true },
+    });
+    await this.notifications.notifyUsers(
+      claims.map(({ processorId }) => processorId),
+      { title: 'Course in the Ward summary updated', message },
+    );
+  }
+
   // "Resummarized Physician's Orders" -- option 1: physician manually edits
   async editSummary(id: string, editedText: string, physicianId: string) {
     const existing = await this.findOne(id);
@@ -536,6 +558,11 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         changes: [{ field: 'Summary text', from: existing.summaryContent, to: editedText }],
       },
     });
+
+    await this.notifyClaimProcessors(
+      id,
+      `${patientName}'s summary for ${dayLabel(existing.summaryDate)} was edited and needs physician approval again.`,
+    );
 
     return this.withOrders(updated.id);
   }
@@ -592,6 +619,11 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    await this.notifyClaimProcessors(
+      id,
+      `${patientName}'s summary for ${dayLabel(updated.summaryDate)} was regenerated and needs physician approval again.`,
+    );
+
     return this.withOrders(updated.id);
   }
 
@@ -638,6 +670,10 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
     // Approving from the workspace also answers any claim that was waiting on
     // this summary, so the claims processor can move on to CF4.
+    const waitingClaims = await this.prisma.summaryApprovalRequest.findMany({
+      where: { summaryId: id, status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] } },
+      select: { processorId: true },
+    });
     await this.prisma.summaryApprovalRequest.updateMany({
       where: { summaryId: id, status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] } },
       data: { status: 'VALIDATED' },
@@ -658,6 +694,19 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         ]),
       },
     });
+
+    const processorIds = waitingClaims.map(({ processorId }) => processorId);
+    if (processorIds.length) {
+      await this.notifications.notifyUsers(processorIds, {
+        title: 'Course in the Ward summary approved',
+        message: `${patientName}'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for CF4 processing.`,
+      });
+    } else {
+      await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
+        title: 'Course in the Ward summary approved',
+        message: `${patientName}'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for claims review.`,
+      });
+    }
 
     return this.withOrders(approved.id);
   }
@@ -711,6 +760,11 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         changes: [{ field: 'Summary text', from: existing.summaryContent, to: version.content }],
       },
     });
+
+    await this.notifyClaimProcessors(
+      id,
+      `${patientName}'s summary for ${dayLabel(updated.summaryDate)} was restored to an earlier version and needs physician approval again.`,
+    );
 
     return this.withOrders(updated.id);
   }

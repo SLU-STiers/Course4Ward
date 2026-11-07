@@ -70,15 +70,6 @@ export const ui: Record<string, CSSProperties> = {
     fontSize: 11,
     fontWeight: 700,
   },
-  badgeOutpatient: {
-    display: 'inline-block',
-    backgroundColor: '#e0f2fe',
-    color: '#0369a1',
-    padding: '4px 10px',
-    borderRadius: 999,
-    fontSize: 11,
-    fontWeight: 700,
-  },
   badgeEr: {
     display: 'inline-block',
     backgroundColor: '#ffedd5',

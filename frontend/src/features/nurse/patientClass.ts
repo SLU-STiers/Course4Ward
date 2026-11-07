@@ -8,11 +8,15 @@ import type { AdmissionStatus } from './types';
 /** Every status a nurse list can show, in filter order. */
 export const ADMISSION_STATUSES: AdmissionStatus[] = [
   'Emergency',
-  'Outpatient',
   'Observation',
   'Admitted',
   'Discharged',
 ];
+
+/** Outpatient admissions are not part of the nurse module's patient lists. */
+export function isNurseVisiblePatient(patient: Pick<Patient, 'restricted' | 'admissions'>): boolean {
+  return patient.restricted || patient.admissions?.[0]?.patientClass !== 'OUTPATIENT';
+}
 
 /** "Surgery · Room 206" — all a nurse is told about a patient outside their wards. */
 export function wardLocation(patient: Pick<Patient, 'wardName' | 'roomNumber'>) {
@@ -32,7 +36,6 @@ export function admissionStatusOf(
 /** Badge tone of each status in the tables. */
 export const STATUS_TONE: Record<AdmissionStatus, StatusValue> = {
   Emergency: 'danger',
-  Outpatient: 'info',
   Observation: 'pending',
   Admitted: 'admitted',
   Discharged: 'discharged',

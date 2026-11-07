@@ -12,7 +12,13 @@ import { PatientDetailModal } from './PatientDetailModal';
 import { OtherWardLabel, contactDetailsOf } from './PatientModalParts';
 import { triageForDisplay } from '../../lib/triage';
 import type { AdmissionRecord } from './types';
-import { ADMISSION_STATUSES, STATUS_TONE, admissionStatusOf, wardLocation } from './patientClass';
+import {
+  ADMISSION_STATUSES,
+  STATUS_TONE,
+  admissionStatusOf,
+  isNurseVisiblePatient,
+  wardLocation,
+} from './patientClass';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { Patient, PhysicianOrder } from '../../types';
 
@@ -60,8 +66,9 @@ export function PatientView() {
     patientsApi
       .list()
       .then(({ data }) => {
-        setPatients(data);
-        setRecords(data.map(toRecord));
+        const visiblePatients = data.filter(isNurseVisiblePatient);
+        setPatients(visiblePatients);
+        setRecords(visiblePatients.map(toRecord));
       })
       .catch(() => {
         setPatients([]);
@@ -162,9 +169,7 @@ export function PatientView() {
         : `Waiting for the physician's ${name} order`;
   const observeBlockedReason = waitingFor('OBSERVATION', 'observation');
   const admitBlockedReason = waitingFor('ADMISSION', 'admission');
-  // An outpatient visit is simply ended; everyone else needs a discharge order.
-  const dischargeBlockedReason =
-    viewingRecord?.status === 'Outpatient' ? undefined : waitingFor('DISCHARGE', 'discharge');
+  const dischargeBlockedReason = waitingFor('DISCHARGE', 'discharge');
 
   const openViewing = (name: string) => {
     setActionError(null);
@@ -326,16 +331,14 @@ export function PatientView() {
           }
           dischargeBlockedReason={dischargeBlockedReason}
           onObserve={
-            viewingRecord && (viewingRecord.status === 'Emergency' || viewingRecord.status === 'Outpatient')
+            viewingRecord && viewingRecord.status === 'Emergency'
               ? () => runAdmissionAction(() => patientsApi.observe(viewingRecord.id))
               : undefined
           }
           observeBlockedReason={observeBlockedReason}
           onAdmit={
             viewingRecord &&
-            (viewingRecord.status === 'Emergency' ||
-              viewingRecord.status === 'Outpatient' ||
-              viewingRecord.status === 'Observation')
+            (viewingRecord.status === 'Emergency' || viewingRecord.status === 'Observation')
               ? () => runAdmissionAction(() => patientsApi.admit(viewingRecord.id))
               : undefined
           }
