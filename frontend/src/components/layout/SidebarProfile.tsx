@@ -12,11 +12,13 @@ export interface SidebarProfileProps {
   /** Role label. Falls back to `subtitle` when the sidebar already shows the role. */
   roleLabel?: string;
   /**
-   * Ward names for this account. `null` while they are still loading.
-   * Omit the prop when this role has no ward assignment.
+   * Assigned names for this account. `null` while they are still loading.
+   * Omit the prop when this role has no assignment row.
    */
   wards?: string[] | null;
-  /** Shown in the ward row when the assignment could not be loaded. */
+  /** Row title for `wards`. Nurses use Ward; physicians use Specialty. */
+  assignmentLabel?: string;
+  /** Shown in the assignment row when the list could not be loaded. */
   wardUnavailable?: boolean;
 }
 
@@ -29,6 +31,7 @@ export function SidebarProfile({
   accountId,
   roleLabel,
   wards,
+  assignmentLabel = 'Ward',
   wardUnavailable = false,
 }: SidebarProfileProps) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -104,14 +107,14 @@ export function SidebarProfile({
             </div>
             {wards !== undefined ? (
               <div className="ui-account__row">
-                <dt>Ward</dt>
+                <dt>{assignmentLabel}</dt>
                 <dd>
                   {wardUnavailable ? (
-                    <span className="ui-account__muted">Ward could not be loaded</span>
+                    <span className="ui-account__muted">{assignmentLabel} could not be loaded</span>
                   ) : wards === null ? (
-                    <span className="ui-account__muted">Loading ward...</span>
+                    <span className="ui-account__muted">Loading {assignmentLabel.toLowerCase()}...</span>
                   ) : wards.length === 0 ? (
-                    <span className="ui-account__muted">No ward assigned</span>
+                    <span className="ui-account__muted">No {assignmentLabel.toLowerCase()} assigned</span>
                   ) : (
                     <span className="ui-account__wards">
                       {wards.map((ward) => (

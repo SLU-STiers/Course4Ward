@@ -52,6 +52,7 @@ export function PhysicianDashboard() {
             subtitle={user?.userId ?? 'Physician account'}
             accountId={user?.userId}
             roleLabel="Physician"
+            assignmentLabel="Specialty"
             wards={accountLoading ? null : (account?.wards ?? []).map((ward) => ward.name)}
             wardUnavailable={accountError}
             onLogout={handleLogout}

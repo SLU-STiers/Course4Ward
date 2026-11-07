@@ -648,6 +648,366 @@ td {
   background: transparent;
 }
 
+/* Physician overview filters: each card keeps its own color, and the selected one fills in. */
+.physician-overview-stat {
+  --stat-soft: #eff6ff;
+  --stat-hover: #dbeafe;
+  --stat-solid: #2563eb;
+  --stat-solid-hover: #1d4ed8;
+  --stat-ink: #1e3a8a;
+  --stat-line: #bfdbfe;
+  --stat-shadow: rgba(37, 99, 235, 0.34);
+  border-radius: 22px;
+  padding: 20px 22px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 96px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  border: 2px solid var(--stat-line);
+  background: var(--stat-soft);
+  color: var(--stat-ink);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+.physician-overview-stat:hover {
+  background: var(--stat-hover);
+  border-color: var(--stat-solid);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px var(--stat-shadow);
+}
+.physician-overview-stat[aria-pressed="true"] {
+  background: var(--stat-solid);
+  border-color: var(--stat-solid);
+  color: #ffffff;
+  box-shadow: 0 14px 28px var(--stat-shadow);
+  transform: translateY(-2px);
+}
+.physician-overview-stat[aria-pressed="true"]:hover {
+  background: var(--stat-solid-hover);
+  border-color: var(--stat-solid-hover);
+}
+.physician-overview-stat:focus-visible {
+  outline: 3px solid var(--stat-solid);
+  outline-offset: 3px;
+}
+.physician-overview-stat__icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.physician-overview-stat__label {
+  font-size: 13px;
+  font-weight: 700;
+}
+.physician-overview-stat__value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  margin-top: 2px;
+}
+.physician-overview-stat--admitted {
+  --stat-soft: #f0fdf4;
+  --stat-hover: #dcfce7;
+  --stat-solid: #16a34a;
+  --stat-solid-hover: #15803d;
+  --stat-ink: #14532d;
+  --stat-line: #86efac;
+  --stat-shadow: rgba(22, 163, 74, 0.32);
+}
+.physician-overview-stat--discharged {
+  --stat-soft: #fef2f2;
+  --stat-hover: #fee2e2;
+  --stat-solid: #dc2626;
+  --stat-solid-hover: #b91c1c;
+  --stat-ink: #7f1d1d;
+  --stat-line: #fca5a5;
+  --stat-shadow: rgba(220, 38, 38, 0.3);
+}
+
+.physician-todo__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.physician-todo__filters {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #f1f5f9;
+}
+.physician-todo__filter {
+  height: 22px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 22px;
+  cursor: pointer;
+}
+.physician-todo__filter--admitted[aria-pressed="true"] {
+  background: #dcfce7;
+  color: #166534;
+}
+.physician-todo__filter--discharged[aria-pressed="true"] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.physician-todo__hint {
+  margin: 0;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 700;
+}
+.physician-todo__actions {
+  display: flex;
+  gap: 8px;
+}
+.physician-todo__picker {
+  position: relative;
+}
+.physician-todo__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 38px;
+  padding: 0 10px 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.physician-todo__trigger:hover,
+.physician-todo__trigger[aria-expanded="true"] {
+  border-color: #2563eb;
+}
+.physician-todo__trigger[aria-expanded="true"] {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.physician-todo__trigger-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.physician-todo__chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #334155;
+}
+.physician-todo__search {
+  width: 100%;
+  height: 32px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: 12px;
+}
+.physician-todo__search:focus {
+  outline: none;
+  border-color: #93c5fd;
+  background: #ffffff;
+}
+.physician-todo__menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+.physician-todo__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #0f172a;
+}
+.physician-todo__option:hover {
+  background: #f8fafc;
+}
+.physician-todo__option input,
+.physician-todo__check {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #2563eb;
+  flex-shrink: 0;
+}
+.physician-todo__check {
+  margin-top: 0;
+}
+.physician-todo__note-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: #334155;
+  cursor: pointer;
+}
+.physician-todo__option-name {
+  flex: 1;
+  min-width: 0;
+}
+.physician-todo__option-meta {
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 700;
+}
+.physician-todo__divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: #e2e8f0;
+}
+.physician-todo__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.physician-todo__editor-row {
+  display: flex;
+  gap: 8px;
+}
+.physician-todo__select {
+  appearance: none;
+  width: 100%;
+  height: 38px;
+  margin: 0;
+  padding: 0 36px 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23334155' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.5 9.5 12 15l5.5-5.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px 16px;
+  color: #0f172a;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 38px;
+}
+.physician-todo__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.physician-todo__section {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+.physician-todo__section--selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+.physician-todo__picked {
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+}
+.physician-todo__section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+}
+.physician-todo__count {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.physician-todo__notes {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.physician-todo__stamp {
+  display: block;
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.physician-todo__note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+.physician-todo__empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
 /* ---------- Sidebar navigation items ---------- */
 .ui-nav-item {
   display: flex;

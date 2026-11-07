@@ -95,11 +95,6 @@ export function ManageView({
   const [summaryDayFilter, setSummaryDayFilter] = useState<string | null>(null);
 
   // This tab only manages patients who are currently in the ward.
-  const admittedPatients = useMemo(
-    () => patients.filter((p) => p.status === "admitted"),
-    [patients],
-  );
-
   const loadPatients = useCallback(() => {
     patientsApi
       .assignedToMe()
@@ -108,7 +103,7 @@ export function ManageView({
         setPatients(mapped);
         setSelectedId((current) => {
           if (current) return current;
-          return mapped.find((p) => p.status === "admitted")?.id ?? "";
+          return mapped.find((p) => p.status === "admitted")?.id ?? mapped[0]?.id ?? "";
         });
       })
       .catch(() => setPatients([]))
@@ -128,10 +123,11 @@ export function ManageView({
 
   // Shared search / filter / sort / pagination state for the patient list.
   const table = useTableState<DashboardPatient>({
-    items: admittedPatients,
+    items: patients,
     pageSize: 8,
     searchFields: (p) => [p.name, p.gender],
     filterPredicates: {
+      status: (p, value) => p.status === (value === "discharged" ? "discharged" : "admitted"),
       gender: (p, value) => value === "all" || p.gender.toLowerCase() === value,
       age: (p, value) =>
         value === "all" ||
@@ -144,16 +140,16 @@ export function ManageView({
         ) ?? true),
       admitted: (p, value) => admissionMatches(p, value),
     },
-    initialFilters: { gender: "all", age: "all", days: "all", admitted: "all" },
+    initialFilters: { status: "admitted", gender: "all", age: "all", days: "all", admitted: "all" },
     sorters: {
       name: (p) => p.name,
-      admitted: (p) => p.admissionDateRaw,
+      admitted: (p) => p.admittedAt ?? "",
       triage: (p) => triageQueueKey(p.triageLevel, p.admittedAt),
       days: (p) => p.daysInCare,
       age: (p) => p.age ?? -1,
     },
-    // Most urgent first, longest waiting first within a level.
-    initialSort: { field: "triage", direction: "descending" },
+    // Newest admission first.
+    initialSort: { field: "admitted", direction: "descending" },
   });
 
   // Keep the selection on a patient that still matches the active filters.
@@ -179,11 +175,13 @@ export function ManageView({
         const loadedDays = new Set(
           ordersResponse.data.map((order) => orderDayValue(order.dateCreated)),
         );
-        setOrderDateFilter((previous) =>
-          previous && !loadedDays.has(previous) && previous !== toDateKey(new Date())
-            ? null
-            : previous,
-        );
+        const stillOpen = selected.admissions?.some((admission) => !admission.dischargeDate);
+        setOrderDateFilter((previous) => {
+          if (!previous || loadedDays.has(previous)) return previous;
+          // An open admission keeps today selected so a new order can be written into it.
+          if (stillOpen && previous === toDateKey(new Date())) return previous;
+          return null;
+        });
         // One Course in the Ward per order day; the panel picks the day to show.
         setSummariesByPatient((previous) => ({
           ...previous,
@@ -314,6 +312,7 @@ export function ManageView({
     if (activeOrderDate) setSummaryDayFilter(activeOrderDate);
   }, [activeOrderDate]);
 
+  const statusFilter = table.filters.status === "discharged" ? "discharged" : "admitted";
   const admissionFilter = table.filters.admitted ?? "all";
   const customRange = parseCustomRange(admissionFilter);
   const admissionPreset = admissionFilter.startsWith("custom:")
@@ -321,7 +320,10 @@ export function ManageView({
     : admissionFilter;
   const activeFilterCount = MANAGE_FILTER_KEYS.filter((key) => {
     const value = table.filters[key];
-    return value !== undefined && value !== "" && value !== "all";
+    if (value === undefined || value === "") return false;
+    // Admitted is the list's starting view, so it does not count as an extra filter.
+    if (key === "status") return value !== "admitted";
+    return value !== "all";
   }).length;
 
   const openPatient = (id: string) => {
@@ -575,6 +577,16 @@ export function ManageView({
             }}
             filters={[
               {
+                label: "Status",
+                title: "Admission status",
+                options: [
+                  { value: "admitted", label: "Admitted" },
+                  { value: "discharged", label: "Discharged" },
+                ],
+                value: statusFilter,
+                onChange: (value) => table.setFilter("status", value),
+              },
+              {
                 label: "Sex",
                 title: "Sex",
                 options: [
@@ -687,6 +699,9 @@ export function ManageView({
                   <th style={patientTableStyles.th}>Sex</th>
                   <th style={patientTableStyles.th}>Age</th>
                   <th style={patientTableStyles.th}>Admitted</th>
+                  {statusFilter === "discharged" && (
+                    <th style={patientTableStyles.th}>Discharged</th>
+                  )}
                   <th style={patientTableStyles.th}>Days in care</th>
                   <th style={patientTableStyles.th}>Status</th>
                 </tr>
@@ -736,6 +751,11 @@ export function ManageView({
                       <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
                         {p.admissionDate}
                       </td>
+                      {statusFilter === "discharged" && (
+                        <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                          {p.dischargeDate}
+                        </td>
+                      )}
                       <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
                         {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
                       </td>
@@ -749,11 +769,11 @@ export function ManageView({
                   <tr>
                     <td
                       style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                      colSpan={7}
+                      colSpan={statusFilter === "discharged" ? 8 : 7}
                     >
-                      {admittedPatients.length === 0
-                        ? "You have no admitted patients assigned to you."
-                        : "No admitted patients match the current filters."}
+                      {patients.length === 0
+                        ? "You have no patients assigned to you."
+                        : "No patients match the current filters."}
                     </td>
                   </tr>
                 )}
@@ -824,7 +844,7 @@ export function ManageView({
                   emptyMessage={
                     selectedOrders === undefined
                       ? "Loading doctor’s orders…"
-                      : activeOrderDate === todayKey
+                      : hasOpenAdmission && activeOrderDate === todayKey
                         ? "No orders yet today. Add one below."
                         : activeOrderDate
                           ? `No orders on ${selectedDateLabel}.`
@@ -841,6 +861,7 @@ export function ManageView({
                     );
                   }}
                   footer={
+                    hasOpenAdmission ? (
                     <>
                       <textarea
                         value={draft}
@@ -916,6 +937,7 @@ export function ManageView({
                         </button>
                       </div>
                     </>
+                    ) : undefined
                   }
                 />
               </Panel>

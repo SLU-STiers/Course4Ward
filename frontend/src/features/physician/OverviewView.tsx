@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { StatusBadge, TriageBadge } from '../../components/ui';
-import { overview, TEAL } from './styles';
+import { overview } from './styles';
 
 import { CalendarWidget } from './CalendarWidget';
 import { BedIcon, HeartIcon, WheelchairIcon } from './icons';
@@ -73,26 +73,26 @@ export function OverviewView() {
     <div style={overview.page}>
       <div style={overview.statsRow}>
         <StatCard
-          color={TEAL}
+          tone="total"
           label="Total Patients"
           value={String(patients.length)}
-          icon={<HeartIcon />}
+          icon={<HeartIcon color="#2563eb" />}
           active={filter === "all"}
           onClick={() => setFilterAndReset("all")}
         />
         <StatCard
-          color={TEAL}
+          tone="admitted"
           label="Admitted Patients"
           value={String(admittedCount)}
-          icon={<BedIcon />}
+          icon={<BedIcon color="#16a34a" />}
           active={filter === "admitted"}
           onClick={() => setFilterAndReset("admitted")}
         />
         <StatCard
-          color={TEAL}
+          tone="discharged"
           label="Discharged Patients"
           value={String(dischargedCount)}
-          icon={<WheelchairIcon />}
+          icon={<WheelchairIcon color="#dc2626" />}
           active={filter === "discharged"}
           onClick={() => setFilterAndReset("discharged")}
         />
@@ -131,6 +131,7 @@ export function OverviewView() {
                   <th style={overview.th}>Triage</th>
                   <th style={overview.th}>Sex</th>
                   <th style={overview.th}>Admitted</th>
+                  {filter === "discharged" && <th style={overview.th}>Discharged</th>}
                   <th style={overview.th}>Days in care</th>
                   <th style={overview.th}>Status</th>
                 </tr>
@@ -165,6 +166,11 @@ export function OverviewView() {
                   <td style={{ ...overview.td, color: "#64748b" }}>
                     {p.admissionDate}
                   </td>
+                  {filter === "discharged" && (
+                    <td style={{ ...overview.td, color: "#64748b" }}>
+                      {p.dischargeDate}
+                    </td>
+                  )}
                   <td style={{ ...overview.td, color: "#64748b" }}>
                     {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
                   </td>
@@ -187,14 +193,14 @@ export function OverviewView() {
   );
 }
 function StatCard({
-  color,
+  tone,
   label,
   value,
   icon,
   active,
   onClick,
 }: {
-  color: string;
+  tone: "total" | "admitted" | "discharged";
   label: string;
   value: string;
   icon: React.ReactNode;
@@ -204,26 +210,18 @@ function StatCard({
   return (
     <button
       type="button"
+      className={
+        tone === "total"
+          ? "physician-overview-stat"
+          : `physician-overview-stat physician-overview-stat--${tone}`
+      }
+      aria-pressed={active}
       onClick={onClick}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = color;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = color;
-      }}
-      style={{
-        ...overview.statCard,
-        backgroundColor: color,
-        boxShadow: active
-          ? "0 10px 28px rgba(16, 78, 101, 0.38)"
-          : "0 10px 24px rgba(16, 78, 101, 0.22)",
-        transform: active ? "translateY(-1px)" : "none",
-      }}
     >
-      <div style={overview.statIcon}>{icon}</div>
+      <div className="physician-overview-stat__icon">{icon}</div>
       <div>
-        <div style={overview.statLabel}>{label}</div>
-        <div style={overview.statValue}>{value}</div>
+        <div className="physician-overview-stat__label">{label}</div>
+        <div className="physician-overview-stat__value">{value}</div>
       </div>
     </button>
   );

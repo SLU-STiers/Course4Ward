@@ -29,7 +29,7 @@ export const DAYS_IN_CARE_BANDS: {
   { value: "medium", label: "4 – 7 days", test: (days) => days >= 4 && days <= 7 },
   { value: "long", label: "8+ days", test: (days) => days >= 8 },
 ];
-export const MANAGE_FILTER_KEYS = ["gender", "age", "days", "admitted"];
+export const MANAGE_FILTER_KEYS = ["status", "gender", "age", "days", "admitted"];
 export function parseCustomRange(value: string) {
   if (!value.startsWith("custom:")) return { from: "", to: "" };
   const [, from = "", to = ""] = value.split(":");

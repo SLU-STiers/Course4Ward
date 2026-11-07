@@ -47,7 +47,7 @@ const STATUS_CONFIG: Record<StatusValue, StatusConfig> = {
   rejected: { tone: 'danger', label: 'Rejected' },
   failed: { tone: 'danger', label: 'Failed' },
   danger: { tone: 'danger', label: 'Error' },
-  discharged: { tone: 'neutral', label: 'Discharged' },
+  discharged: { tone: 'danger', label: 'Discharged' },
   info: { tone: 'info', label: 'Info' },
   neutral: { tone: 'neutral', label: '—' },
 };
