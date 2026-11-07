@@ -218,6 +218,9 @@ export function ManageView({
     initialSort: { field: "admitted", direction: "descending" },
   });
 
+  // Opening a patient from the Overview sets the opening status filter through
+  // `initialStatus` (the view is re-keyed), so no follow-up effect is needed.
+
   // Keep the selection on a patient that still matches the active filters.
   const selected =
     table.filtered.find((p) => p.id === selectedId) ??
