@@ -8,7 +8,7 @@ import type { Cf4SummaryDraft, ExportSource } from './types';
 import { styles } from './styles';
 
 type Cf4SummaryPreviewProps = {
-  /** Every admission queued for CF4 generation, in the order the table showed it. */
+  /** Every patient queued for CF4 generation, in the order the table showed it. */
   drafts: Cf4SummaryDraft[];
   /** Index of the patient currently on screen. */
   index: number;
@@ -40,7 +40,7 @@ function initialsOf(name: string): string {
 
 /**
  * Review step between picking patients and generating the CF4: steps through
- * every queued admission and shows all approved daily Course in the Ward
+ * every queued patient and shows all approved daily Course in the Ward
  * entries alongside the collated document before anything is persisted.
  */
 export function Cf4SummaryPreview({
@@ -189,8 +189,8 @@ export function Cf4SummaryPreview({
         </span>
         <span style={styles.summarySourceHint}>
           {total > 1
-            ? `Review each selected admission below — one collated CF4 document is generated per admission, with all approved summary days included.`
-            : 'Review all approved daily summaries for this admission. Confirming generates one collated CF4 document.'}
+            ? `Review each selected patient below — one collated CF4 document is generated per patient, with all approved summary days across admissions included.`
+            : 'Review all approved daily summaries for this patient. Confirming generates one collated CF4 document.'}
         </span>
       </div>
 
@@ -280,8 +280,8 @@ export function Cf4SummaryPreview({
               <span style={styles.summaryMetaValue}>{patient.age ?? '—'}</span>
             </div>
             <div style={styles.summaryMetaField}>
-              <span style={styles.summaryMetaLabel}>Admitted</span>
-              <span style={styles.summaryMetaValue}>{patient.admissionDate}</span>
+              <span style={styles.summaryMetaLabel}>Coverage period</span>
+              <span style={styles.summaryMetaValue}>{patient.coveragePeriod}</span>
             </div>
             <div style={styles.summaryMetaField}>
               <span style={styles.summaryMetaLabel}>Days in care</span>
@@ -302,7 +302,7 @@ export function Cf4SummaryPreview({
           <div style={styles.summaryPanelHeader}>
             <span style={styles.summaryPanelTitle}>Course in the Ward</span>
             <span style={styles.summaryPanelMeta}>
-              {requests.length} approved day{requests.length === 1 ? '' : 's'}
+              {requests.length} approved day{requests.length === 1 ? '' : 's'} across admissions
             </span>
           </div>
           <div style={styles.summaryPanelBody}>
