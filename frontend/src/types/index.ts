@@ -156,6 +156,7 @@ export interface PhysicianNote {
   notesArray: string;
   physicianId: string;
   patientId: string;
+  completed: boolean;
   createdAt: string;
   reminderAt?: string | null;
 }

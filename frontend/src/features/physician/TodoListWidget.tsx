@@ -7,8 +7,6 @@ import type { PhysicianNote } from '../../types';
 import type { DashboardPatient } from './types';
 import { overview } from './styles';
 
-type NoteItem = PhysicianNote & { done: boolean };
-
 function Chevron() {
   return (
     <svg className="physician-todo__chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -31,7 +29,7 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
   const [viewAll, setViewAll] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [focusedPatientId, setFocusedPatientId] = useState('');
-  const [notesByPatient, setNotesByPatient] = useState<Record<string, NoteItem[]>>({});
+  const [notesByPatient, setNotesByPatient] = useState<Record<string, PhysicianNote[]>>({});
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState(false);
@@ -71,14 +69,7 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
       ),
     ).then((entries) => {
       if (cancelled) return;
-      setNotesByPatient((previous) => {
-        const next: Record<string, NoteItem[]> = {};
-        for (const [patientId, notes] of entries) {
-          const kept = new Map((previous[patientId] ?? []).map((note) => [note.id, note.done]));
-          next[patientId] = notes.map((note) => ({ ...note, done: kept.get(note.id) ?? false }));
-        }
-        return next;
-      });
+      setNotesByPatient(Object.fromEntries(entries));
     });
     return () => {
       cancelled = true;
@@ -139,7 +130,7 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
     setEditingId(null);
   };
 
-  const replaceNote = (patientId: string, next: NoteItem) => {
+  const replaceNote = (patientId: string, next: PhysicianNote) => {
     setNotesByPatient((previous) => ({
       ...previous,
       [patientId]: (previous[patientId] ?? []).map((note) => (note.id === next.id ? { ...note, ...next } : note)),
@@ -154,7 +145,7 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
     if (!content || !patientId) return;
     if (editingId) {
       notesApi.update(editingId, { content }).then(({ data }) => {
-        replaceNote(patientId, { ...data, done: false });
+        replaceNote(patientId, data);
         resetEditor();
         setEditingMode(false);
       }).catch(() => undefined);
@@ -163,7 +154,7 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
     notesApi.create({ patientId, content }).then(({ data }) => {
       setNotesByPatient((previous) => ({
         ...previous,
-        [patientId]: [{ ...data, done: false }, ...(previous[patientId] ?? [])],
+        [patientId]: [data, ...(previous[patientId] ?? [])],
       }));
       resetEditor();
       setEditingMode(false);
@@ -178,6 +169,24 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
       }));
       if (editingId === id) resetEditor();
     }).catch(() => undefined);
+  };
+
+  const toggleCompleted = (patientId: string, note: PhysicianNote) => {
+    const completed = !note.completed;
+    setNotesByPatient((previous) => ({
+      ...previous,
+      [patientId]: (previous[patientId] ?? []).map((item) =>
+        item.id === note.id ? { ...item, completed } : item,
+      ),
+    }));
+    notesApi.update(note.id, { completed }).catch(() => {
+      setNotesByPatient((previous) => ({
+        ...previous,
+        [patientId]: (previous[patientId] ?? []).map((item) =>
+          item.id === note.id ? { ...item, completed: note.completed } : item,
+        ),
+      }));
+    });
   };
 
   const choosePatient = (id: string) => {
@@ -381,19 +390,12 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
                                 <input
                                   className="physician-todo__check"
                                   type="checkbox"
-                                  checked={note.done}
-                                  onChange={() =>
-                                    setNotesByPatient((previous) => ({
-                                      ...previous,
-                                      [patient.id]: (previous[patient.id] ?? []).map((item) =>
-                                        item.id === note.id ? { ...item, done: !item.done } : item,
-                                      ),
-                                    }))
-                                  }
+                                  checked={note.completed}
+                                  onChange={() => toggleCompleted(patient.id, note)}
                                 />
                               )}
                               <span>
-                                <span style={note.done ? { textDecoration: 'line-through', color: '#94a3b8' } : undefined}>
+                                <span style={note.completed ? { textDecoration: 'line-through', color: '#94a3b8' } : undefined}>
                                   {note.notesArray}
                                 </span>
                                 <time className="physician-todo__stamp" dateTime={note.createdAt}>

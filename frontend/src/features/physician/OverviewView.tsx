@@ -15,7 +15,7 @@ import type { DashboardPatient, OverviewFilter } from './types';
 
 export function OverviewView() {
   const [page, setPage] = useState(0);
-  const [filter, setFilter] = useState<OverviewFilter>("admitted");
+  const [filter, setFilter] = useState<OverviewFilter>("all");
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 

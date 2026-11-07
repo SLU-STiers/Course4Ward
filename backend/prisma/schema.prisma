@@ -352,6 +352,7 @@ model PhysicianNote {
   notesArray  String
   physicianId String
   patientId   String
+  completed   Boolean   @default(false)
   createdAt   DateTime  @default(now())
   reminderAt  DateTime?
 

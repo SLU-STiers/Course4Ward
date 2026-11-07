@@ -104,7 +104,7 @@ export const ordersApi = {
 export const notesApi = {
   create: (data: { patientId: string; content: string; reminderAt?: string }) =>
     api.post<PhysicianNote>('/notes', data),
-  update: (id: string, data: { content?: string; reminderAt?: string | null }) =>
+  update: (id: string, data: { content?: string; reminderAt?: string | null; completed?: boolean }) =>
     api.patch<PhysicianNote>(`/notes/${id}`, data),
   remove: (id: string) => api.delete(`/notes/${id}`),
   forPatient: (patientId: string) => api.get<PhysicianNote[]>(`/notes/patient/${patientId}`),
