@@ -6,6 +6,16 @@ const SUMMARY_MODELS: SummaryModel[] = ['standard', 'fine_tuned'];
 const MODEL_DESCRIPTION =
   'Which AI writes the summary: `standard` (base model + RAG references, the default) or `fine_tuned`.';
 
+/**
+ * Formats how the summary is written, never what it says; see
+ * `assertFormattingOnlyInstructions` for what the API rejects.
+ */
+const INSTRUCTIONS_DESCRIPTION =
+  'Optional FORMATTING instructions for the AI, e.g. "mention the IV fluids first". ' +
+  'They may change wording, order, grouping and length only: an instruction that asks ' +
+  'for clinical content the orders do not contain (a new order, medication, dose, ' +
+  'diagnosis or result) is rejected with a 400.';
+
 export class GenerateSummaryDto {
   @ApiProperty()
   @IsUUID()
@@ -21,6 +31,12 @@ export class GenerateSummaryDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'day must be a YYYY-MM-DD date' })
   day?: string;
 
+  @ApiProperty({ required: false, description: INSTRUCTIONS_DESCRIPTION })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  instructions?: string;
+
   @ApiProperty({ required: false, enum: SUMMARY_MODELS, description: MODEL_DESCRIPTION })
   @IsOptional()
   @IsIn(SUMMARY_MODELS)
@@ -34,10 +50,7 @@ export class EditSummaryDto {
 }
 
 export class RegenerateSummaryDto {
-  @ApiProperty({
-    required: false,
-    description: 'Optional extra instructions for the AI, e.g. "mention the IV fluids first".',
-  })
+  @ApiProperty({ required: false, description: INSTRUCTIONS_DESCRIPTION })
   @IsOptional()
   @IsString()
   @MaxLength(1000)
