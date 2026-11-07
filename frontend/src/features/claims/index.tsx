@@ -450,7 +450,7 @@ export function ClaimsProcessorDashboard() {
                               {req.patient.name}
                             </span>
                             <span style={{ fontSize: 11, color: '#64748b' }}>
-                              ID {req.patient.patientId} · {req.patient.age} years · {req.patient.gender}
+                              {req.patient.age} years · {req.patient.gender}
                             </span>
                             <span style={{ fontSize: 11, color: '#64748b' }}>
                               Admitted {req.patient.admissionDate} · Dr. {req.doctor}
