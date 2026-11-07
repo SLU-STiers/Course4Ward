@@ -29,6 +29,7 @@ import type {
   WardRoom,
   SummaryVersion,
   SummaryModel,
+  PendingSummary,
   PhysicianOption,
 } from '../types';
 
@@ -111,15 +112,30 @@ export const notesApi = {
 
 // --- Course in the Ward (AI summaries) ---
 export const courseInWardApi = {
-  /** Summarize one order day (today when `day` is omitted); returns that day's summary rows. */
-  generate: (patientId: string, day?: string, model: SummaryModel = 'standard') =>
-    api.post<CourseInWard[]>(
-      '/course-in-ward/generate',
-      day ? { patientId, day, model } : { patientId, model },
-    ),
+  /**
+   * Summarize one order day (today when `day` is omitted); returns that day's
+   * summary rows. `instructions` are FORMATTING instructions only -- the API
+   * rejects any request for clinical content the orders do not contain.
+   */
+  generate: (
+    patientId: string,
+    day?: string,
+    model: SummaryModel = 'standard',
+    instructions?: string,
+  ) =>
+    api.post<CourseInWard[]>('/course-in-ward/generate', {
+      patientId,
+      ...(day ? { day } : {}),
+      model,
+      ...(instructions?.trim() ? { instructions: instructions.trim() } : {}),
+    }),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
-  /** `instructions`: optional extra prompt for the AI (blank = none). */
+  /**
+   * `instructions`: optional FORMATTING instructions for the AI (blank = none).
+   * The API rejects instructions that ask for clinical content the orders do
+   * not contain, so only wording/order/grouping/length hints belong here.
+   */
   regenerate: (id: string, instructions?: string, model: SummaryModel = 'standard') =>
     api.post<CourseInWard>(
       `/course-in-ward/${id}/regenerate`,
@@ -133,6 +149,8 @@ export const courseInWardApi = {
     api.post<CourseInWard>(`/course-in-ward/${id}/versions/${versionId}/restore`),
   forPatient: (patientId: string) =>
     api.get<CourseInWard[]>(`/course-in-ward/patient/${patientId}`),
+  /** Summaries of the physician's patients that still need approving (discharged included). */
+  pending: () => api.get<PendingSummary[]>('/course-in-ward/pending'),
 };
 
 // --- Claims ---

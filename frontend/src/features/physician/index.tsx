@@ -13,10 +13,14 @@ import { DashboardIcon, ManageIcon, RequestsIcon } from '../../components/icons/
 import { ManageView } from './ManageView';
 import { OverviewView } from './OverviewView';
 import { RequestsView } from './RequestsView';
-import type { TabType } from './types';
+import type { DashboardPatient, ManageStatusFilter, TabType } from './types';
 
 export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
+  /** Status filter the Manage list opens on; a row click sets the patient's own. */
+  const [manageStatus, setManageStatus] = useState<ManageStatusFilter>("admitted");
+  /** Patient the Manage tab should open straight into (Overview row click). */
+  const [focusPatientId, setFocusPatientId] = useState<string | null>(null);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
@@ -25,12 +29,26 @@ export function PhysicianDashboard() {
     navigate("/login");
   };
 
+  /** A dashboard row opens its patient directly in Manage, filters intact. */
+  const openPatient = (patient: DashboardPatient) => {
+    setFocusPatientId(patient.id);
+    setManageStatus(patient.status);
+    setActiveTab("manage");
+  };
+
   return (
     <Layout
       navbarProps={{
         ariaLabel: "Physician navigation",
         activeId: activeTab,
-        onNavigate: (id) => setActiveTab(id as TabType),
+        onNavigate: (id) => {
+          // Reaching Manage from the nav always starts on the admitted patients.
+          if (id === "manage") {
+            setManageStatus("admitted");
+            setFocusPatientId(null);
+          }
+          setActiveTab(id as TabType);
+        },
         items: [
           { id: "overview", label: "Overview", icon: <DashboardIcon /> },
           { id: "manage", label: "Manage", icon: <ManageIcon /> },
@@ -52,8 +70,14 @@ export function PhysicianDashboard() {
         />
       }
     >
-      {activeTab === "overview" && <OverviewView />}
-      {activeTab === "manage" && <ManageView />}
+      {activeTab === "overview" && <OverviewView onOpenPatient={openPatient} />}
+      {activeTab === "manage" && (
+        <ManageView
+          key={`${manageStatus}:${focusPatientId ?? "none"}`}
+          initialStatus={manageStatus}
+          initialPatientId={focusPatientId ?? undefined}
+        />
+      )}
       {activeTab === "requests" && <RequestsView />}
     </Layout>
   );

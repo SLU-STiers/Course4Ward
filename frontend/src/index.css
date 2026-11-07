@@ -1617,6 +1617,61 @@ td {
 .ui-badge--neutral { background: var(--c4w-color-neutral-soft, #f1f5f9); color: var(--c4w-color-neutral, #475569); border-color: var(--c4w-color-neutral-border, #e2e8f0); }
 .ui-badge--flagged { background: var(--c4w-color-flagged-soft, #ede9fe); color: var(--c4w-color-flagged, #7c3aed); border-color: var(--c4w-color-flagged-border, #ddd6fe); }
 
+/* ---------- Pending approvals (physician Manage list) ----------
+   A patient whose Course in the Ward entries are still unapproved carries this
+   chip under their name. It stays quiet — one small pill with the count — and
+   the exact days live in the popover it opens. */
+.ui-approve-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--c4w-color-warning-border, #fde68a);
+  border-radius: var(--c4w-radius-badge, 9999px);
+  background: var(--c4w-color-warning-soft, #fef3c7);
+  color: var(--c4w-color-warning, #b45309);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--c4w-transition-interaction);
+}
+
+.ui-approve-chip:hover {
+  background: var(--c4w-color-warning-border, #fde68a);
+  border-color: var(--c4w-color-warning, #b45309);
+}
+
+.ui-approve-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--c4w-shadow-focus, 0 0 0 3px rgba(37, 99, 235, 0.28));
+}
+
+.ui-approve-chip svg { flex-shrink: 0; }
+
+/* The day list the chip opens: one row per unapproved order day. */
+.ui-approve-days { gap: 2px; }
+.ui-approve-days .ui-menu__heading { margin-bottom: 6px; }
+.ui-approve-days .ui-menu__option {
+  justify-content: space-between;
+  font-size: 0.8125rem;
+}
+.ui-approve-days__meta {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--c4w-color-text-muted, #64748b);
+}
+.ui-approve-days__hint {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--c4w-color-text-muted, #64748b);
+}
+
 /* ---------- Modal ---------- */
 .ui-modal__backdrop {
   position: fixed;

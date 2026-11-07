@@ -12,7 +12,12 @@ import { triageQueueKey } from '../../lib/triage';
 import { TodoListWidget } from './TodoListWidget';
 import type { DashboardPatient, OverviewFilter } from './types';
 
-export function OverviewView() {
+export function OverviewView({
+  onOpenPatient,
+}: {
+  /** A row click: open that patient's record (orders and summary) in Manage. */
+  onOpenPatient?: (patient: DashboardPatient) => void;
+}) {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>("admitted");
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
@@ -130,7 +135,25 @@ export function OverviewView() {
               </thead>
               <tbody>
               {rows.map((p) => (
-                <tr key={p.id}>
+                <tr
+                  key={p.id}
+                  onClick={() => onOpenPatient?.(p)}
+                  title={`Open ${p.name} in Manage`}
+                  tabIndex={onOpenPatient ? 0 : undefined}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpenPatient?.(p);
+                    }
+                  }}
+                  style={{ cursor: onOpenPatient ? "pointer" : undefined }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#f8fafc";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }}
+                >
                   <td style={{ ...overview.td, width: 22 }}>
                     <span
                       style={{

@@ -172,6 +172,18 @@ export interface CourseInWard {
   version?: number;
 }
 
+/**
+ * A Course in the Ward still waiting for the physician's approval. The API
+ * returns one row per unapproved summary, across every patient assigned to the
+ * signed-in physician (discharged patients included).
+ */
+export interface PendingSummary {
+  id: string;
+  patientId: string;
+  summaryDate: string;
+  status: SummaryStatus;
+}
+
 /** An earlier text of a Course in the Ward, kept when it was regenerated or edited. */
 export interface SummaryVersion {
   id: string;

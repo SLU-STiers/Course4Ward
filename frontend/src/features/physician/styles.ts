@@ -379,6 +379,23 @@ export const manage: Record<string, CSSProperties> = {
     fontSize: 12,
     color: "#64748b",
   },
+  /** Status dot + name stack in the Manage list's patient cell. */
+  patientCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+  patientCellStack: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 3,
+    minWidth: 0,
+  },
+  /** Keeps the approval chip's popover out of the row's click target. */
+  pendingChipWrap: {
+    display: "inline-flex",
+  },
   tableScroll: {
     flex: "1 1 auto",
     minHeight: 0,

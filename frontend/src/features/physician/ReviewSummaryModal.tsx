@@ -136,7 +136,8 @@ export function ReviewSummaryModal({
   };
 
   // Generate a day that has no summary yet, or regenerate the day's summary
-  // from every order of that day.
+  // from every order of that day. The instructions are FORMATTING only: the API
+  // rejects any that ask for clinical content the orders do not contain.
   const generateDay = () => {
     setBusy('generating');
     setError(null);
@@ -144,7 +145,9 @@ export function ReviewSummaryModal({
       ? courseInWardApi
           .regenerate(daySummary.id, regenInstructions, summaryModel)
           .then(({ data }) => [{ ...daySummary, ...data }])
-      : courseInWardApi.generate(patientId, activeDay, summaryModel).then(({ data }) => data);
+      : courseInWardApi
+          .generate(patientId, activeDay, summaryModel, regenInstructions)
+          .then(({ data }) => data);
     void call
       .then((updated) => {
         replaceSummary(updated);
@@ -372,11 +375,12 @@ export function ReviewSummaryModal({
             {error && <div style={review.errorText}>{error}</div>}
 
 
-            {daySummary && !editing && (
+            {!editing && (
               <input
                 type="text"
-                placeholder="Additional instructions for Regenerate (optional)"
-                aria-label="Additional instructions for Regenerate"
+                placeholder="Formatting instructions (optional)"
+                aria-label="Formatting instructions for Generate or Regenerate"
+                title="Formatting instructions only: wording, order, grouping, length. The AI never adds orders, medications, doses or results that are not already in the orders."
                 maxLength={1000}
                 value={regenInstructions}
                 disabled={busy !== null}
