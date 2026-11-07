@@ -312,7 +312,7 @@ describe("Patients Module", () => {
         }));
         expect(mockNotificationsService.notifyAdmins).toHaveBeenCalledWith({
           title: "New patient registered",
-          message: "John Doe was registered as Outpatient.",
+          message: "**John Doe** was registered as Outpatient.",
         });
         expect(result).toEqual(mockPatientSimple);
       });

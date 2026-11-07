@@ -24,6 +24,12 @@ const mockPrismaService = {
   courseInWard: {
     findFirst: jest.fn(),
   },
+  ward: {
+    findFirst: jest.fn(),
+  },
+  user: {
+    findUnique: jest.fn(),
+  },
   $executeRaw: jest.fn(),
 } as unknown as jest.Mocked<PrismaService>;
 
@@ -91,6 +97,11 @@ describe('OrdersService', () => {
     // Embedding is best-effort and fire-and-forget; keep it off the network.
     jest.spyOn(service as any, 'persistOrderEmbedding').mockResolvedValue(undefined);
     (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(openAdmission);
+    (prismaService.ward.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaService.user.findUnique as jest.Mock).mockResolvedValue({
+      firstName: 'Angela',
+      lastName: 'Reyes',
+    });
   });
 
   describe('create', () => {
@@ -481,7 +492,13 @@ describe('OrdersService', () => {
       });
       expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
         ['doctor-789', 'doctor-123'],
-        expect.objectContaining({ title: 'Order finished after summary' }),
+        expect.objectContaining({
+          title: 'Order finished after summary',
+          message: expect.stringContaining(
+            '**Angela Reyes** accomplished an order for **Juan Dela Cruz**',
+          ),
+          patientId: 'patient-123',
+        }),
       );
     });
 
@@ -499,7 +516,11 @@ describe('OrdersService', () => {
 
       expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
         ['doctor-789', 'doctor-123'],
-        expect.objectContaining({ title: 'Order finished' }),
+        {
+          title: 'Order accomplished',
+          message: '**Angela Reyes** accomplished an order for **Juan Dela Cruz**.',
+          patientId: 'patient-123',
+        },
       );
     });
 
@@ -546,6 +567,14 @@ describe('OrdersService', () => {
 
       const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
       expect(data.nurseComment).toBeNull();
+      expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
+        ['doctor-123', 'doctor-456'],
+        {
+          title: 'Order started',
+          message: '**Angela Reyes** started an order for **Juan Dela Cruz**.',
+          patientId: undefined,
+        },
+      );
     });
 
     it('should discharge the patient when the discharge order is finished with a note and earlier orders are done', async () => {

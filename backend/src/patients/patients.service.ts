@@ -290,11 +290,11 @@ export class PatientsService {
     await Promise.all([
       this.notifications.notifyAdmins({
         title: 'New patient registered',
-        message: `${patientName} was registered as ${CLASS_NAME[patientClass]}.`,
+        message: `**${patientName}** was registered as ${CLASS_NAME[patientClass]}.`,
       }),
       this.notifications.notifyUsers(requiredIds, {
         title: 'New patient assigned to your care',
-        message: `${patientName} was registered as ${CLASS_NAME[patientClass]} and assigned to your care team.`,
+        message: `**${patientName}** was registered as ${CLASS_NAME[patientClass]} and assigned to your care team.`,
       }),
     ]);
 

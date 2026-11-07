@@ -154,14 +154,14 @@ export const claimsApi = {
 
 // --- Notifications (header bell) ---
 export const notificationsApi = {
-  /** `scope: 'history'` returns the full log, cleared items included. */
+  /** `inbox` is unread. `history` is marked as read. */
   list: (options?: { scope?: NotificationScope; take?: number }) =>
     api.get<AppNotification[]>('/notifications', { params: options }),
   unreadCount: () => api.get<{ count: number }>('/notifications/unread-count'),
   /** Returns the recalculated unread count for the badge. */
   markRead: (id: string) => api.patch<{ count: number }>(`/notifications/${id}/read`),
   markAllRead: () => api.post<{ count: number }>('/notifications/read-all'),
-  /** Clears the inbox; the items stay in the history. */
+  /** Deletes every notification for the signed-in user. */
   clear: () => api.post<{ count: number }>('/notifications/clear'),
 };
 

@@ -10,7 +10,7 @@ import { useTableState } from '../../hooks/useTableState';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 
 /** The patient list changes less often than an open patient's orders. */
-const PATIENT_POLL_MS = 15000;
+const PATIENT_POLL_MS = ORDER_POLL_MS;
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
 import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
 import { triageForDisplay, triageUrgency } from '../../lib/triage';
@@ -132,10 +132,19 @@ function summaryDayKey(summary: CourseInWard): string {
   return days[0] ?? toDateKey(summary.summaryDate);
 }
 
-export function ManagementPortalView() {
+export function ManagementPortalView({
+  focusPatient,
+}: {
+  /** Set when a notification should open this patient's chart. */
+  focusPatient?: { id: string; key: number } | null;
+}) {
   const [patients, setPatients] = useState<NursePatient[]>([]);
   /** The patient open in the View modal. */
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (focusPatient) setSelectedId(focusPatient.id);
+  }, [focusPatient]);
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});

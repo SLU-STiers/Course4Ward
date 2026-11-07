@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react';
 
-/** How often screens refresh orders that another role may have changed. */
-export const ORDER_POLL_MS = 5000;
+/**
+ * How often the nurse and physician screens pick up each other's changes.
+ * Short enough that a new order or a finished status shows up without a reload.
+ */
+export const ORDER_POLL_MS = 3000;
 
 /**
  * Calls `callback` every `intervalMs` while `enabled` and the tab is visible,

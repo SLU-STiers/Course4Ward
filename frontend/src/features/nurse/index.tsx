@@ -18,6 +18,7 @@ import type { TabType } from './types';
 
 export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('management');
+  const [focusPatient, setFocusPatient] = useState<{ id: string; key: number } | null>(null);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
@@ -58,11 +59,18 @@ export function NurseDashboard() {
       header={
         <PageHeader
           title="Nurse"
-          actions={<NotificationBell />}
+          actions={
+            <NotificationBell
+              onOpenPatient={(patientId) => {
+                setActiveTab('management');
+                setFocusPatient({ id: patientId, key: Date.now() });
+              }}
+            />
+          }
         />
       }
     >
-      {activeTab === 'management' && <ManagementPortalView />}
+      {activeTab === 'management' && <ManagementPortalView focusPatient={focusPatient} />}
       {activeTab === 'patient' && <PatientView />}
     </Layout>
   );

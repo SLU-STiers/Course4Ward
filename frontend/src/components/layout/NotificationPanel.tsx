@@ -1,4 +1,4 @@
-import { BellOff, BellRing, History } from 'lucide-react';
+import { BellOff, BellRing, ChevronRight, History } from 'lucide-react';
 
 import { formatRelativeTime } from '../../lib/format';
 import type { AppNotification, NotificationScope } from '../../types';
@@ -7,9 +7,8 @@ import type { AppNotification, NotificationScope } from '../../types';
  * Contents of the header bell popover: one row per notification, newest
  * first, split into the inbox and a full history.
  *
- * - Clicking a row marks it read.
- * - "Clear" empties the inbox (the rows move to the history, nothing is lost).
- * - The history tab is the permanent log, cleared items included.
+ * - Notifications lists unread items. History lists items marked as read.
+ * - Clicking a row marks it read. An order notification also opens that patient.
  *
  * Styling lives in the `.ui-notification*` block of `index.css` so the panel
  * matches the shared popover/menu surface rather than re-stating tokens here.
@@ -19,17 +18,19 @@ export function NotificationPanel({
   onScopeChange,
   items,
   loading,
-  onMarkRead,
+  onSelect,
   onMarkAllRead,
-  onClear,
+  onClearAll,
+  canClear,
 }: {
   scope: NotificationScope;
   onScopeChange: (scope: NotificationScope) => void;
   items: AppNotification[];
   loading: boolean;
-  onMarkRead: (id: string) => void;
+  onSelect: (item: AppNotification) => void;
   onMarkAllRead: () => void;
-  onClear: () => void;
+  onClearAll: () => void;
+  canClear: boolean;
 }) {
   const isHistory = scope === 'history';
   const unread = items.filter((item) => !item.isRead).length;
@@ -46,11 +47,18 @@ export function NotificationPanel({
           ) : null}
         </div>
 
-        {!isHistory && items.length > 0 ? (
-          <button type="button" className="ui-notifications__action" onClick={onClear}>
-            Clear
-          </button>
-        ) : null}
+        <div className="ui-notifications__actions">
+          {!isHistory && unread > 0 ? (
+            <button type="button" className="ui-notifications__action" onClick={onMarkAllRead}>
+              Mark all as read
+            </button>
+          ) : null}
+          {canClear ? (
+            <button type="button" className="ui-notifications__action ui-notifications__action--muted" onClick={onClearAll}>
+              Clear all
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <div className="ui-notifications__tabs" role="tablist" aria-label="Notification views">
@@ -74,12 +82,6 @@ export function NotificationPanel({
         </button>
       </div>
 
-      {!isHistory && unread > 0 ? (
-        <button type="button" className="ui-notifications__bulk" onClick={onMarkAllRead}>
-          Mark all as read
-        </button>
-      ) : null}
-
       <div className="ui-notifications__list">
         {loading && items.length === 0 ? (
           <p className="ui-notifications__state">Loading notifications…</p>
@@ -90,17 +92,17 @@ export function NotificationPanel({
             {isHistory ? (
               <>
                 <History size={22} aria-hidden="true" />
-                <span>No history yet.</span>
+                <span>No read notifications yet.</span>
                 <span className="ui-notifications__hint">
-                  Cleared notifications are kept here.
+                  Read notifications stay here for the day, then they are removed.
                 </span>
               </>
             ) : (
               <>
                 <BellOff size={22} aria-hidden="true" />
-                <span>You&rsquo;re all caught up.</span>
+                <span>No new notifications.</span>
                 <span className="ui-notifications__hint">
-                  Patient registrations and other important updates show up here.
+                  New orders and ward updates show up here.
                 </span>
               </>
             )}
@@ -112,7 +114,7 @@ export function NotificationPanel({
             key={item.id}
             type="button"
             className={`ui-notification${item.isRead ? '' : ' is-unread'}`}
-            onClick={() => onMarkRead(item.id)}
+            onClick={() => onSelect(item)}
           >
             <span className="ui-notification__icon" aria-hidden="true">
               <BellRing size={15} />
@@ -121,19 +123,18 @@ export function NotificationPanel({
             <span className="ui-notification__body">
               <span className="ui-notification__top">
                 <span className="ui-notification__title">{item.title}</span>
-                <span className="ui-notification__meta">
-                  {item.clearedAt ? (
-                    <span className="ui-notification__cleared">Cleared</span>
-                  ) : null}
-                  <span className="ui-notification__time">
-                    {formatRelativeTime(item.createdAt)}
-                  </span>
+                <span className="ui-notification__time">
+                  {formatRelativeTime(item.createdAt)}
                 </span>
               </span>
-              <QuotedMessage text={item.message} />
+              <NotificationMessage text={item.message} />
             </span>
 
-            {item.isRead ? null : <span className="ui-notification__dot" aria-hidden="true" />}
+            {item.patientId ? (
+              <ChevronRight className="ui-notification__go" size={16} aria-hidden="true" />
+            ) : item.isRead ? null : (
+              <span className="ui-notification__dot" aria-hidden="true" />
+            )}
           </button>
         ))}
       </div>
@@ -141,25 +142,35 @@ export function NotificationPanel({
   );
 }
 
+/** Older rows named the patient in plain text. New rows wrap the name in ** **. */
+function markPatientName(text: string) {
+  if (text.includes('**')) return text;
+  const marked = text
+    .replace(/^(An order for )(.+?)( for nursing review\.)$/, '$1**$2**$3')
+    .replace(/^(Dr\. .+ entered an order for )(.+?)(\.)$/, '$1**$2**$3')
+    .replace(/^(.+?)( was registered as )/, '**$1**$2');
+  return marked;
+}
+
 /**
- * The claims processor's own words are quoted inside the message, and they are
- * the part that has to stand out — so anything between double quotes is
- * rendered bold.
+ * Patient names are wrapped in ** ** and a claims note in "quotes". Both
+ * render bold, without the markers themselves.
  */
-function QuotedMessage({ text }: { text: string }) {
-  const segments = text.split('"');
+function NotificationMessage({ text }: { text: string }) {
+  const parts = markPatientName(text).split(/(\*\*[^*]+\*\*|"[^"]*")/g);
 
   return (
     <span className="ui-notification__message">
-      {segments.map((segment, index) =>
-        index % 2 === 1 ? (
+      {parts.map((part, index) => {
+        const marked = part.startsWith('**') && part.endsWith('**') && part.length > 4;
+        const quoted = part.startsWith('"') && part.endsWith('"') && part.length > 2;
+        if (!marked && !quoted) return <span key={index}>{part}</span>;
+        return (
           <strong key={index} className="ui-notification__quote">
-            {segment}
+            {part.slice(marked ? 2 : 1, marked ? -2 : -1)}
           </strong>
-        ) : (
-          <span key={index}>{segment}</span>
-        ),
-      )}
+        );
+      })}
     </span>
   );
 }

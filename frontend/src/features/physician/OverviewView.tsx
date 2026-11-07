@@ -1,7 +1,8 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { StatusBadge, TriageBadge } from '../../components/ui';
 import { overview, TEAL } from './styles';
 
@@ -18,12 +19,18 @@ export function OverviewView() {
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 
-  useEffect(() => {
+  const loadPatients = useCallback(() => {
     patientsApi
       .assignedToMe()
       .then(({ data }) => setPatients(data.map(mapPatient)))
       .catch(() => setPatients([]));
   }, []);
+
+  useEffect(() => {
+    loadPatients();
+  }, [loadPatients]);
+
+  usePolling(loadPatients, ORDER_POLL_MS);
 
   const admittedCount = patients.filter((p) => p.status === "admitted").length;
   const dischargedCount = patients.filter(

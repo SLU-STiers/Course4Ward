@@ -1,6 +1,6 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, History, Pencil, RefreshCw } from 'lucide-react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
@@ -46,7 +46,12 @@ const SUMMARY_BADGE: Record<CourseInWard["status"], string> = {
   APPROVED: "Approved",
 };
 
-export function ManageView() {
+export function ManageView({
+  focusPatient,
+}: {
+  /** Set when a notification should open this patient's chart. */
+  focusPatient?: { id: string; key: number } | null;
+}) {
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState("");
@@ -95,18 +100,31 @@ export function ManageView() {
     [patients],
   );
 
-  useEffect(() => {
+  const loadPatients = useCallback(() => {
     patientsApi
       .assignedToMe()
       .then(({ data }) => {
         const mapped = data.map(mapPatient);
         setPatients(mapped);
-        const firstAdmitted = mapped.find((p) => p.status === "admitted");
-        if (firstAdmitted) setSelectedId(firstAdmitted.id);
+        setSelectedId((current) => {
+          if (current) return current;
+          return mapped.find((p) => p.status === "admitted")?.id ?? "";
+        });
       })
       .catch(() => setPatients([]))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadPatients();
+  }, [loadPatients]);
+
+  // A nurse admits, moves, or discharges from their own screen.
+  usePolling(loadPatients, ORDER_POLL_MS);
+
+  useEffect(() => {
+    if (focusPatient?.id) setSelectedId(focusPatient.id);
+  }, [focusPatient]);
 
   // Shared search / filter / sort / pagination state for the patient list.
   const table = useTableState<DashboardPatient>({
@@ -320,10 +338,18 @@ export function ManageView() {
     setOrdersByPatient((previous) => ({ ...previous, [patientId]: data }));
   };
 
-  // Nurses update order statuses from their own screen; pick those up live.
+  // Nurses carry out orders from their own screen; pick the status and note up live.
   usePolling(
     () => {
-      if (selected) reloadOrders(selected.id).catch(() => undefined);
+      if (!selected) return;
+      reloadOrders(selected.id).catch(() => undefined);
+      if (editingSummary || generatingSummary || regeneratingSummary || savingSummaryEdit) return;
+      courseInWardApi
+        .forPatient(selected.id)
+        .then(({ data }) =>
+          setSummariesByPatient((previous) => ({ ...previous, [selected.id]: data })),
+        )
+        .catch(() => undefined);
     },
     ORDER_POLL_MS,
     Boolean(selected),

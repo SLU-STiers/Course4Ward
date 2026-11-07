@@ -45,7 +45,7 @@ export class NotificationsController {
     return this.notificationsService.markAllRead(user.id);
   }
 
-  /** Clears the inbox into the history. */
+  /** Deletes every notification for the signed-in user. */
   @Post('clear')
   clear(@CurrentUser() user: any) {
     return this.notificationsService.clear(user.id);

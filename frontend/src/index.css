@@ -2012,7 +2012,13 @@ td {
   cursor: pointer;
   transition: var(--c4w-transition-interaction);
 }
+.ui-notifications__actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .ui-notifications__action:hover { background: var(--c4w-color-primary-soft, #eff6ff); }
+.ui-notifications__action--muted { color: var(--c4w-color-text-muted, #64748b); }
+.ui-notifications__action--muted:hover {
+  background: var(--c4w-color-danger-soft, #fee2e2);
+  color: var(--c4w-color-danger, #b91c1c);
+}
 
 /* Inbox / History switch. */
 .ui-notifications__tabs {
@@ -2022,6 +2028,8 @@ td {
   border-bottom: 1px solid var(--c4w-color-border, #e2e8f0);
 }
 .ui-notifications__tab {
+  flex: 1;
+  text-align: center;
   padding: 7px 12px 9px;
   border: none;
   border-bottom: 2px solid transparent;
@@ -2164,6 +2172,13 @@ td {
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
+.ui-notification__go {
+  flex-shrink: 0;
+  margin-top: 6px;
+  color: var(--c4w-color-text-subtle, #94a3b8);
+}
+.ui-notification:hover .ui-notification__go { color: var(--c4w-color-primary, #2563eb); }
+
 .ui-notification__dot {
   position: absolute;
   top: 14px;

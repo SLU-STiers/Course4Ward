@@ -19,6 +19,7 @@ import {
   isNurseVisiblePatient,
   wardLocation,
 } from './patientClass';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { Patient, PhysicianOrder } from '../../types';
 
@@ -79,6 +80,8 @@ export function PatientView() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  usePolling(reload, ORDER_POLL_MS);
 
   const table = useTableState<AdmissionRecord>({
     items: records,
@@ -151,6 +154,14 @@ export function PatientView() {
       cancelled = true;
     };
   }, [viewingPatientId]);
+
+  usePolling(() => {
+    if (!viewingPatientId) return;
+    ordersApi
+      .forPatient(viewingPatientId)
+      .then(({ data }) => setViewingOrders({ patientId: viewingPatientId, orders: data }))
+      .catch(() => undefined);
+  }, ORDER_POLL_MS, Boolean(viewingPatientId));
 
   const loadedOrders =
     viewingOrders && viewingOrders.patientId === viewingPatientId ? viewingOrders.orders : null;

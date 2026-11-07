@@ -379,7 +379,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       summaries.map((summary) =>
         this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
           title: 'Course in the Ward summary ready',
-          message: `${fullName(patient)} has a new Course in the Ward summary for ${dayLabel(summary.summaryDate)} ready for claims review.`,
+          message: `**${fullName(patient)}** has a new Course in the Ward summary for ${dayLabel(summary.summaryDate)} ready for claims review.`,
         }),
       ),
     );
@@ -699,12 +699,12 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     if (processorIds.length) {
       await this.notifications.notifyUsers(processorIds, {
         title: 'Course in the Ward summary approved',
-        message: `${patientName}'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for CF4 processing.`,
+        message: `**${patientName}**'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for CF4 processing.`,
       });
     } else {
       await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
         title: 'Course in the Ward summary approved',
-        message: `${patientName}'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for claims review.`,
+        message: `**${patientName}**'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for claims review.`,
       });
     }
 

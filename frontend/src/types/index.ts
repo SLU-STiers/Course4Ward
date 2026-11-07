@@ -13,6 +13,8 @@ export interface AppNotification {
   message: string;
   /** Claim / summary approval request this notification points at, if any. */
   requestId?: string | null;
+  /** Patient chart this notification opens, when any. */
+  patientId?: string | null;
   isRead: boolean;
   createdAt: string;
   /** Set when the bell was cleared — the item then only shows in history. */

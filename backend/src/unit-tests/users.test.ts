@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -23,12 +24,20 @@ describe('UsersService', () => {
     ward: {
       count: jest.fn(),
     },
+    patientAdmission: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
 
   const mockAuditLogService = {
     record: jest.fn(),
     patientName: jest.fn().mockResolvedValue('Juan Dela Cruz'),
     userLabel: jest.fn().mockResolvedValue('Ana Reyes (DOC001)'),
+  };
+
+  const mockNotificationsService = {
+    create: jest.fn(),
+    notifyUsers: jest.fn().mockResolvedValue([]),
   };
 
   beforeEach(async () => {
@@ -39,6 +48,7 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
@@ -207,6 +217,80 @@ describe('UsersService', () => {
           }),
         }),
       );
+    });
+
+    it('tells a nurse when their ward assignment changes', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        userId: 'NRS001',
+        firstName: 'Angela',
+        lastName: 'Reyes',
+        role: Role.NURSE,
+        isActive: true,
+        wards: [{ ward: { name: 'Emergency' } }],
+        physicianWards: [],
+      });
+      mockPrismaService.ward.count.mockResolvedValue(2);
+      mockPrismaService.user.update.mockResolvedValue({
+        id: 'user-1',
+        userId: 'NRS001',
+        firstName: 'Angela',
+        lastName: 'Reyes',
+        role: Role.NURSE,
+        isActive: true,
+        wards: [{ ward: { name: 'Surgery' } }, { ward: { name: 'Medical ICU' } }],
+        physicianWards: [],
+      });
+
+      await service.update('user-1', { wardIds: ['ward-surgery', 'ward-micu'] }, 'admin-1');
+
+      expect(mockNotificationsService.create).toHaveBeenCalledWith({
+        userId: 'user-1',
+        title: 'Ward assignment updated',
+        message: 'You have been transferred to Medical ICU and Surgery.',
+      });
+    });
+
+    it('tells the care-team physician when a nurse is transferred onto their patient ward', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        id: 'nurse-1',
+        firstName: 'Angela',
+        lastName: 'Reyes',
+        role: Role.NURSE,
+        isActive: true,
+        wards: [{ ward: { id: 'ward-er', name: 'Emergency' } }],
+        physicianWards: [],
+      });
+      mockPrismaService.ward.count.mockResolvedValue(1);
+      mockPrismaService.user.update.mockResolvedValue({
+        id: 'nurse-1',
+        firstName: 'Angela',
+        lastName: 'Reyes',
+        role: Role.NURSE,
+        isActive: true,
+        wards: [{ ward: { id: 'ward-coronary', name: 'Coronary', holdsUnroomed: false } }],
+        physicianWards: [],
+      });
+      mockPrismaService.patientAdmission.findMany.mockResolvedValue([
+        {
+          physicianId: 'doctor-1',
+          additionalPhysicians: [{ physicianId: 'doctor-2' }],
+          patient: { id: 'patient-1', firstName: 'Rosa', lastName: 'Villanueva' },
+        },
+      ]);
+
+      await service.update('nurse-1', { wardIds: ['ward-coronary'] }, 'admin-1');
+
+      expect(mockPrismaService.patientAdmission.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { dischargeDate: null, room: { wardId: 'ward-coronary' } },
+        }),
+      );
+      expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(['doctor-1', 'doctor-2'], {
+        title: 'Nurse transferred',
+        message: '**Angela Reyes** was transferred to Coronary and will take the shift for **Rosa Villanueva**.',
+        patientId: 'patient-1',
+      });
     });
 
     it('replaces a physician specialty set on update', async () => {
