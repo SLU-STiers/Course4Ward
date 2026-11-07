@@ -1,7 +1,6 @@
 /** Part of the nurse dashboard — room dropdown with a floor filter; free rooms are pickable, occupied ones are flagged. */
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import { ChevronDown } from 'lucide-react';
 import { Popover } from '../../components/ui/Popover';
 import { patientsApi } from '../../services/domainApi';
 import type { WardRoom } from '../../types';
@@ -138,10 +137,12 @@ export function RoomPicker({
                 disabled={disabled}
                 aria-invalid={problem ? true : undefined}
               >
-                <span style={{ color: chosen ? '#0f172a' : '#94a3b8' }}>
+                <span style={{ color: chosen ? '#0f172a' : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {chosen ? roomLabel(chosen) : 'Select a room'}
                 </span>
-                <ChevronDown size={16} color="#64748b" aria-hidden="true" />
+                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0, display: 'block' }}>
+                  <path d="M6.5 9.5 12 15l5.5-5.5" fill="none" stroke="#0f172a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
             }
           >

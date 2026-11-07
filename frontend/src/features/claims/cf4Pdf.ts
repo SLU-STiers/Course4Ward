@@ -241,8 +241,19 @@ function patientSection(ctx: Ctx, draft: Cf4SummaryDraft): void {
       },
     },
     { w: CONTENT_W * 0.3, label: '9. a. Date Admitted', value: patient.admissionDate },
-    { w: CONTENT_W * 0.3, label: '10. a. Date Discharged' },
+    {
+      w: CONTENT_W * 0.3,
+      label: '10. a. Date Discharged',
+      value: patient.dischargeDateRaw
+        ? formatDateMedium(patient.dischargeDateRaw)
+        : patient.status === 'admitted' ? 'Present' : '',
+    },
   ], 30);
+  fieldRow(ctx, [{
+    w: CONTENT_W,
+    label: 'Admission period included in this document',
+    value: patient.coveragePeriod,
+  }], 24);
 }
 
 function tableHeader(ctx: Ctx): void {
@@ -369,7 +380,7 @@ function certification(ctx: Ctx, physician: string, evaluator: string): void {
 // ── Entry point ────────────────────────────────────────────────────────────
 
 /**
- * Builds one CF4 supporting document for an admission's daily summaries.
+ * Builds one CF4 supporting document for a patient's daily summaries across admissions.
  *
  * @param draft Patient + the persisted summary the document is projected from.
  * @param source Which export workflow produced the draft.

@@ -1,7 +1,9 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { authApi } from '../../services/domainApi';
 import { useAuthStore } from '../../store/authStore';
 import { signOut } from '../../services/signOut';
 import { Layout } from '../../components/layout/Layout';
@@ -19,10 +21,19 @@ export function PhysicianDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   /** Status filter the Manage list opens on; a row click sets the patient's own. */
   const [manageStatus, setManageStatus] = useState<ManageStatusFilter>("admitted");
-  /** Patient the Manage tab should open straight into (Overview row click). */
-  const [focusPatientId, setFocusPatientId] = useState<string | null>(null);
+  /**
+   * Patient the Manage tab should open straight into. `key` remounts the view so
+   * the same patient can be opened again from a notification.
+   */
+  const [focusPatient, setFocusPatient] = useState<{ id: string; key: number } | null>(null);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+
+  const { data: account, isLoading: accountLoading, isError: accountError } = useQuery({
+    queryKey: ['auth-profile', user?.id],
+    queryFn: () => authApi.profile().then((response) => response.data),
+    enabled: Boolean(user),
+  });
 
   const handleLogout = () => {
     signOut('MANUAL');
@@ -31,8 +42,8 @@ export function PhysicianDashboard() {
 
   /** A dashboard row opens its patient directly in Manage, filters intact. */
   const openPatient = (patient: DashboardPatient) => {
-    setFocusPatientId(patient.id);
     setManageStatus(patient.status);
+    setFocusPatient({ id: patient.id, key: Date.now() });
     setActiveTab("manage");
   };
 
@@ -45,7 +56,7 @@ export function PhysicianDashboard() {
           // Reaching Manage from the nav always starts on the admitted patients.
           if (id === "manage") {
             setManageStatus("admitted");
-            setFocusPatientId(null);
+            setFocusPatient(null);
           }
           setActiveTab(id as TabType);
         },
@@ -59,6 +70,11 @@ export function PhysicianDashboard() {
             initials={`${user?.firstName?.[0] ?? 'D'}${user?.lastName?.[0] ?? 'R'}`}
             name={user ? `Dr. ${user.firstName} ${user.lastName}` : 'Physician'}
             subtitle={user?.userId ?? 'Physician account'}
+            accountId={user?.userId}
+            roleLabel="Physician"
+            assignmentLabel="Specialty"
+            wards={accountLoading ? null : (account?.wards ?? []).map((ward) => ward.name)}
+            wardUnavailable={accountError}
             onLogout={handleLogout}
           />
         ),
@@ -66,16 +82,23 @@ export function PhysicianDashboard() {
       header={
         <PageHeader
           title="Physician"
-          actions={<NotificationBell />}
+          actions={
+            <NotificationBell
+              onOpenPatient={(patientId) => {
+                setActiveTab('manage');
+                setFocusPatient({ id: patientId, key: Date.now() });
+              }}
+            />
+          }
         />
       }
     >
       {activeTab === "overview" && <OverviewView onOpenPatient={openPatient} />}
       {activeTab === "manage" && (
         <ManageView
-          key={`${manageStatus}:${focusPatientId ?? "none"}`}
+          key={`${manageStatus}:${focusPatient?.id ?? "none"}:${focusPatient?.key ?? 0}`}
           initialStatus={manageStatus}
-          initialPatientId={focusPatientId ?? undefined}
+          initialPatientId={focusPatient?.id ?? undefined}
         />
       )}
       {activeTab === "requests" && <RequestsView />}

@@ -4,11 +4,9 @@ import { Bell } from 'lucide-react';
 import { Popover } from '../ui';
 import { notificationsApi } from '../../services/domainApi';
 import { useAuthStore } from '../../store/authStore';
+import { ORDER_POLL_MS } from '../../hooks/usePolling';
 import type { AppNotification, NotificationScope } from '../../types';
 import { NotificationPanel } from './NotificationPanel';
-
-/** How often the badge re-checks for notifications while the app is open. */
-const POLL_INTERVAL_MS = 30_000;
 
 export interface NotificationBellProps {
   className?: string;
@@ -19,6 +17,8 @@ export interface NotificationBellProps {
    */
   count?: number | string;
   onClick?: () => void;
+  /** Opens the patient chart behind an order notification. */
+  onOpenPatient?: (patientId: string) => void;
 }
 
 /**
@@ -28,12 +28,12 @@ export interface NotificationBellProps {
  * A dashboard that passes its own `count`/`onClick` keeps exactly the old
  * local behaviour: a plain badge that triggers that dashboard's own action.
  */
-export function NotificationBell({ className, count, onClick }: NotificationBellProps) {
+export function NotificationBell({ className, count, onClick, onOpenPatient }: NotificationBellProps) {
   if (onClick || count !== undefined) {
     return <LocalBell className={className} count={count} onClick={onClick} />;
   }
 
-  return <NotificationBellPopover className={className} />;
+  return <NotificationBellPopover className={className} onOpenPatient={onOpenPatient} />;
 }
 
 /** Badge-only bell driven by the caller (admin pending requests). */
@@ -67,7 +67,13 @@ function LocalBell({ className, count = 0, onClick }: NotificationBellProps) {
  * the notification panel on click, so a reminder sent from the claims
  * processor appears without a reload.
  */
-function NotificationBellPopover({ className }: { className?: string }) {
+function NotificationBellPopover({
+  className,
+  onOpenPatient,
+}: {
+  className?: string;
+  onOpenPatient?: (patientId: string) => void;
+}) {
   const accessToken = useAuthStore((state) => state.accessToken);
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<NotificationScope>('inbox');
@@ -89,8 +95,8 @@ function NotificationBellPopover({ className }: { className?: string }) {
   useEffect(() => {
     refreshCount();
 
-    const timer = window.setInterval(refreshCount, POLL_INTERVAL_MS);
-    // Returning to the tab should be immediate, not up to 30s stale.
+    const timer = window.setInterval(refreshCount, ORDER_POLL_MS);
+    // Returning to the tab should be immediate, not a poll interval late.
     const onFocus = () => refreshCount();
     window.addEventListener('focus', onFocus);
 
@@ -127,6 +133,21 @@ function NotificationBellPopover({ className }: { className?: string }) {
     if (next) loadItems();
   };
 
+  // New items from the other role appear in an already-open panel.
+  useEffect(() => {
+    if (!open || scope !== 'inbox') return;
+    const timer = window.setInterval(() => {
+      notificationsApi
+        .list({ scope: 'inbox' })
+        .then(({ data }) => {
+          setInbox(data);
+          setUnread(data.filter((item) => !item.isRead).length);
+        })
+        .catch(() => undefined);
+    }, ORDER_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [open, scope]);
+
   const handleScopeChange = (next: NotificationScope) => {
     setScope(next);
     if (next === 'history') loadHistory();
@@ -135,37 +156,42 @@ function NotificationBellPopover({ className }: { className?: string }) {
   // Both actions update the badge optimistically and fall back to the server
   // list if the request fails, so the panel can never disagree with the API.
   const markRead = (id: string) => {
-    const wasUnreadInInbox = inbox.some((item) => item.id === id && !item.isRead);
-    const wasUnreadInHistory = history.some((item) => item.id === id && !item.isRead);
-    if (!wasUnreadInInbox && !wasUnreadInHistory) return;
+    const item = inbox.find((entry) => entry.id === id && !entry.isRead);
+    if (!item) return;
 
-    setInbox((prev) => prev.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
-    setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
-    if (wasUnreadInInbox) setUnread((prev) => Math.max(0, prev - 1));
-
+    setInbox((prev) => prev.filter((entry) => entry.id !== id));
+    setHistory((prev) => [{ ...item, isRead: true }, ...prev.filter((entry) => entry.id !== id)]);
+    setUnread((prev) => Math.max(0, prev - 1));
     notificationsApi.markRead(id).catch(loadItems);
   };
 
   const markAllRead = () => {
     if (!inbox.some((item) => !item.isRead)) return;
 
-    setInbox((prev) => prev.map((item) => ({ ...item, isRead: true })));
-    setHistory((prev) => prev.map((item) => ({ ...item, isRead: true })));
+    const read = inbox.map((item) => ({ ...item, isRead: true }));
+    setHistory((prev) => [...read, ...prev.filter((item) => !read.some((entry) => entry.id === item.id))]);
+    setInbox([]);
     setUnread(0);
     notificationsApi.markAllRead().catch(loadItems);
   };
 
-  /**
-   * Clears the bell. Nothing is deleted: the rows move into the history, so
-   * the cached history is dropped and refetched on the next visit.
-   */
-  const clearInbox = () => {
-    if (inbox.length === 0) return;
-
+  const clearAll = () => {
+    if (inbox.length === 0 && history.length === 0) return;
     setInbox([]);
     setHistory([]);
     setUnread(0);
-    notificationsApi.clear().catch(loadItems);
+    notificationsApi.clear().catch(() => {
+      loadItems();
+      loadHistory();
+    });
+  };
+
+  const select = (item: AppNotification) => {
+    if (!item.isRead) markRead(item.id);
+    if (item.patientId && onOpenPatient) {
+      setOpen(false);
+      onOpenPatient(item.patientId);
+    }
   };
 
   const label = unread > 99 ? '99+' : String(unread);
@@ -196,9 +222,10 @@ function NotificationBellPopover({ className }: { className?: string }) {
         onScopeChange={handleScopeChange}
         items={scope === 'history' ? history : inbox}
         loading={scope === 'history' ? historyLoading : loading}
-        onMarkRead={markRead}
+        onSelect={select}
         onMarkAllRead={markAllRead}
-        onClear={clearInbox}
+        onClearAll={clearAll}
+        canClear={inbox.length > 0 || history.length > 0}
       />
     </Popover>
   );

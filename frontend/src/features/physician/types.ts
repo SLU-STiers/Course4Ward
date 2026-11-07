@@ -21,8 +21,8 @@ export type DashboardPatient = {
   admissionDate: string;
   /** Raw ISO admission date — used for filtering/sorting, never displayed. */
   admissionDateRaw: string;
-  /** Formatted discharge date of the current admission; null while admitted. */
-  dischargeDate: string | null;
+  /** Display discharge date, or "—" while the patient is still admitted. */
+  dischargeDate: string;
   /** Full ISO admission timestamp (or null) — triage queue tie-break. */
   admittedAt: string | null;
   daysInCare: number;

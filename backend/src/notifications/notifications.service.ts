@@ -10,13 +10,22 @@ export interface CreateNotificationInput {
   type?: NotificationType;
   /** Summary approval request this notification points at, when any. */
   requestId?: string | null;
+  /** Patient chart to open when the recipient follows this notification. */
+  patientId?: string | null;
 }
 
 /**
- * `inbox` is what the bell shows — everything the user has not cleared yet.
- * `history` is the full log, cleared items included.
+ * `inbox` is new notifications (still unread).
+ * `history` is only what the user has marked as read.
  */
 export type NotificationScope = 'inbox' | 'history';
+
+/** Local midnight. Read notifications from before this moment are removed. */
+function startOfToday() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
 
 /** The bell panel shows a short list; older items stay in the database. */
 const DEFAULT_TAKE = 20;
@@ -68,21 +77,23 @@ export class NotificationsService {
         title: input.title,
         message: input.message,
         requestId: input.requestId ?? null,
+        patientId: input.patientId ?? null,
       },
     });
   }
 
-  /** Newest first. */
-  listForUser(
+  /** Newest first. Read notifications from previous days are removed first. */
+  async listForUser(
     userId: string,
     options: { scope?: NotificationScope; take?: number } = {},
   ) {
+    await this.expireRead(userId);
     const isHistory = options.scope === 'history';
     const fallback = isHistory ? DEFAULT_HISTORY_TAKE : DEFAULT_TAKE;
     const take = Math.min(Math.max(options.take ?? fallback, 1), MAX_TAKE);
 
     return this.prisma.notification.findMany({
-      where: isHistory ? { userId } : { userId, clearedAt: null },
+      where: { userId, isRead: isHistory },
       orderBy: { createdAt: 'desc' },
       take,
     });
@@ -90,8 +101,9 @@ export class NotificationsService {
 
   /** Number that drives the badge next to the bell. */
   async unreadCount(userId: string) {
+    await this.expireRead(userId);
     const count = await this.prisma.notification.count({
-      where: { userId, isRead: false, clearedAt: null },
+      where: { userId, isRead: false },
     });
     return { count };
   }
@@ -103,7 +115,7 @@ export class NotificationsService {
   async markRead(id: string, userId: string) {
     const { count } = await this.prisma.notification.updateMany({
       where: { id, userId, isRead: false },
-      data: { isRead: true },
+      data: { isRead: true, readAt: new Date() },
     });
 
     if (!count) {
@@ -116,22 +128,27 @@ export class NotificationsService {
 
   async markAllRead(userId: string) {
     await this.prisma.notification.updateMany({
-      where: { userId, isRead: false, clearedAt: null },
-      data: { isRead: true },
+      where: { userId, isRead: false },
+      data: { isRead: true, readAt: new Date() },
     });
     return { count: 0 };
   }
 
-  /**
-   * Empties the bell without losing anything: every inbox row is stamped with
-   * `clearedAt` (and marked read), so it leaves the badge and the inbox but
-   * stays in the notification history.
-   */
+  /** Removes every notification for this user, read and unread. */
   async clear(userId: string) {
-    await this.prisma.notification.updateMany({
-      where: { userId, clearedAt: null },
-      data: { clearedAt: new Date(), isRead: true },
-    });
+    await this.prisma.notification.deleteMany({ where: { userId } });
     return { count: 0 };
+  }
+
+  /** Read notifications stay for the day they were marked read, then they are removed. */
+  private expireRead(userId: string) {
+    const start = startOfToday();
+    return this.prisma.notification.deleteMany({
+      where: {
+        userId,
+        isRead: true,
+        OR: [{ readAt: { lt: start } }, { readAt: null, createdAt: { lt: start } }],
+      },
+    });
   }
 }

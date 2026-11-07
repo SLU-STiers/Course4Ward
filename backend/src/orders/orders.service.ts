@@ -66,6 +66,7 @@ export class OrdersService {
     const admission = await this.prisma.patientAdmission.findUnique({
       where: { id: dto.admissionId },
       select: {
+        patientId: true,
         dischargeDate: true,
         patientClass: true,
         physicianId: true,
@@ -136,24 +137,23 @@ export class OrdersService {
 
     const notification = {
       title: 'New physician order',
-      message: `A ${humanize(type).toLowerCase()} order for ${patientName} is ready for nursing review.`,
+      message: `An order for **${patientName}** for nursing review.`,
+      patientId: admission.patientId,
     };
     if (enteredByRole === Role.PHYSICIAN) {
       await Promise.all([
         this.notifications.notifyUsers([...careTeam].filter((id) => id !== enteredById), {
-          ...notification,
           title: 'New care-team order',
-          message: `Dr. ${physicianName} entered a ${humanize(type).toLowerCase()} order for ${patientName}.`,
+          message: `Dr. ${physicianName} entered an order for **${patientName}**.`,
+          patientId: admission.patientId,
         }),
-        admission.room?.wardId
-          ? this.notifications.notifyNursesInWard(admission.room.wardId, notification)
-          : Promise.resolve([]),
+        this.notifyWardNurses(admission.room, notification),
       ]);
     } else {
       await this.notifications.notifyUsers([...careTeam], {
         ...notification,
         title: 'Order entered on your behalf',
-        message: `A ${humanize(type).toLowerCase()} order for ${patientName} was entered on your behalf.`,
+        message: `A ${humanize(type).toLowerCase()} order for **${patientName}** was entered on your behalf.`,
       });
     }
 
@@ -163,6 +163,23 @@ export class OrdersService {
     void this.persistOrderEmbedding(order.id, order.orderContent);
 
     return order;
+  }
+
+  /** Nurses on the patient's ward, or the unroomed ward when the patient has no room. */
+  private async notifyWardNurses(
+    room: { wardId: string | null } | null,
+    input: { title: string; message: string; patientId: string },
+  ) {
+    const wardId =
+      room?.wardId ??
+      (
+        await this.prisma.ward.findFirst({
+          where: { holdsUnroomed: true },
+          select: { id: true },
+        })
+      )?.id;
+    if (!wardId) return [];
+    return this.notifications.notifyNursesInWard(wardId, input);
   }
 
   /**
@@ -273,6 +290,28 @@ export class OrdersService {
       throw new BadRequestException('An order’s status cannot be moved back once it has progressed');
     }
 
+    const nextComment =
+      dto.nurseComment !== undefined ? dto.nurseComment.trim() || null : order.nurseComment;
+    if (order.type === OrderType.DISCHARGE && dto.status === OrderStatus.FINISHED) {
+      if (!nextComment) {
+        throw new BadRequestException('Add a note before marking the discharge order done');
+      }
+      const unfinished = await this.prisma.physicianOrder.count({
+        where: {
+          admissionId: order.admissionId,
+          active: true,
+          id: { not: order.id },
+          dateCreated: { lte: order.dateCreated },
+          status: { not: OrderStatus.FINISHED },
+        },
+      });
+      if (unfinished > 0) {
+        throw new BadRequestException(
+          'Finish every order written before the discharge order before this patient can be discharged',
+        );
+      }
+    }
+
     const changed = dto.status !== order.status;
     const updated = await this.prisma.physicianOrder.update({
       where: { id },
@@ -285,6 +324,11 @@ export class OrdersService {
     });
 
     const patientName = await this.auditLog.patientName({ admissionId: order.admissionId });
+    const nurse = await this.prisma.user.findUnique({
+      where: { id: nurseId },
+      select: { firstName: true, lastName: true },
+    });
+    const nurseName = fullName(nurse, 'A nurse');
     const changes = [
       { field: 'Status', from: humanize(order.status), to: humanize(updated.status) },
       { field: 'Nurse note', from: order.nurseComment ?? '—', to: updated.nurseComment ?? '—' },
@@ -305,12 +349,14 @@ export class OrdersService {
       },
     });
 
+    const noteChanged = (order.nurseComment ?? null) !== (updated.nurseComment ?? null);
     if (changed && dto.status === OrderStatus.FINISHED) {
-      await this.notifyFinishedAfterSummary(order);
-    } else if (changed) {
+      await this.notifyFinishedAfterSummary(order, nurseName, patientName);
+    } else if (changed || noteChanged) {
       const admission = await this.prisma.patientAdmission.findUnique({
         where: { id: order.admissionId },
         select: {
+          patientId: true,
           physicianId: true,
           additionalPhysicians: { select: { physicianId: true } },
         },
@@ -320,12 +366,45 @@ export class OrdersService {
         ...(admission?.additionalPhysicians.map(({ physicianId }) => physicianId) ?? []),
       ].filter((id): id is string => Boolean(id));
       await this.notifications.notifyUsers(physicianIds, {
-        title: 'Order status updated',
-        message: `A nurse updated an order for ${patientName} to ${humanize(updated.status).toLowerCase()}.`,
+        title: changed ? 'Order started' : 'Order note added',
+        message: changed
+          ? `**${nurseName}** started an order for **${patientName}**.`
+          : `**${nurseName}** added a note on an order for **${patientName}**.`,
+        patientId: admission?.patientId,
       });
     }
 
+    if (order.type === OrderType.DISCHARGE && updated.status === OrderStatus.FINISHED && updated.nurseComment) {
+      await this.dischargeAfterOrder(order.admissionId, nurseId);
+    }
+
     return updated;
+  }
+
+  /** Carrying out a discharge order ends the admission. A second nurse finds it already discharged. */
+  private async dischargeAfterOrder(admissionId: string, nurseId: string) {
+    const admission = await this.prisma.patientAdmission.findUnique({ where: { id: admissionId } });
+    if (!admission || admission.dischargeDate) return;
+
+    const dischargeDate = new Date();
+    const { count } = await this.prisma.patientAdmission.updateMany({
+      where: { id: admissionId, dischargeDate: null },
+      data: { dischargeDate },
+    });
+    if (count === 0) return;
+
+    const patientName = await this.auditLog.patientName({ patientId: admission.patientId });
+    await this.auditLog.record({
+      userId: nurseId,
+      action: 'REGISTER_PATIENT',
+      details: {
+        summary: `Discharged ${patientName}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Discharged', dischargeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })],
+        ]),
+      },
+    });
   }
 
   /**
@@ -333,12 +412,16 @@ export class OrdersService {
    * exists for that day, highlight that it needs regeneration. Best effort --
    * never fails the nurse's status update.
    */
-  private async notifyFinishedAfterSummary(order: {
-    id: string;
-    admissionId: string;
-    orderedById: string;
-    dateCreated: Date;
-  }) {
+  private async notifyFinishedAfterSummary(
+    order: {
+      id: string;
+      admissionId: string;
+      orderedById: string;
+      dateCreated: Date;
+    },
+    nurseName: string,
+    patientName: string,
+  ) {
     try {
       const created = new Date(order.dateCreated);
       const start = new Date(created.getFullYear(), created.getMonth(), created.getDate());
@@ -367,11 +450,12 @@ export class OrdersService {
         order.orderedById,
       ].filter((id): id is string => Boolean(id));
       await this.notifications.notifyUsers(physicianIds, {
-        title: summary ? 'Order finished after summary' : 'Order finished',
+        title: summary ? 'Order finished after summary' : 'Order accomplished',
         message: summary
-          ? `An order for ${admission.patient.firstName} ${admission.patient.lastName} on ${day} ` +
-            `was finished after that day's Course in the Ward was written. Regenerate the summary to include it.`
-          : `A nurse finished an order for ${admission.patient.firstName} ${admission.patient.lastName} on ${day}.`,
+          ? `**${nurseName}** accomplished an order for **${patientName}** on ${day} ` +
+            `after that day's Course in the Ward was written. Regenerate the summary to include it.`
+          : `**${nurseName}** accomplished an order for **${patientName}**.`,
+        patientId: admission.patientId,
       });
     } catch (err) {
       this.logger.warn(

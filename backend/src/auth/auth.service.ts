@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { Prisma, ResetStatus } from '@prisma/client';
+import { Prisma, ResetStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, detailItems, fullName } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -84,6 +84,41 @@ export class AuthService {
         role: user.role,
         mustResetPassword: user.mustResetPassword,
       },
+    };
+  }
+
+  /** The signed-in account, including the wards a nurse or physician is actually assigned to. */
+  async accountProfile(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        userId: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        wards: { select: { ward: { select: { id: true, name: true } } } },
+        physicianWards: { select: { ward: { select: { id: true, name: true } } } },
+      },
+    });
+    if (!user) throw new NotFoundException('Account not found');
+
+    const assigned =
+      user.role === Role.NURSE
+        ? user.wards
+        : user.role === Role.PHYSICIAN
+          ? user.physicianWards
+          : [];
+
+    return {
+      id: user.id,
+      userId: user.userId,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      wards: assigned
+        .map(({ ward }) => ward)
+        .sort((a, b) => a.name.localeCompare(b.name)),
     };
   }
 

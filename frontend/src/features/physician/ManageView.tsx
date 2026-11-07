@@ -1,6 +1,6 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ClipboardCheck, History, Pencil, RefreshCw } from 'lucide-react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { courseInWardApi, ordersApi, patientsApi } from '../../services/domainApi';
@@ -114,54 +114,69 @@ export function ManageView({
    */
   const [summaryDayFilter, setSummaryDayFilter] = useState<string | null>(null);
 
-  // Discharged patients stay in this list: their last Course in the Ward may
-  // still be a draft the physician has to approve before claims can use it.
-
   /** Unapproved summaries per patient, refreshed after every summary write. */
-  const refreshPendingSummaries = () =>
-    courseInWardApi
-      .pending()
-      .then(({ data }) => {
-        const byPatient: Record<string, PendingSummary[]> = {};
-        for (const item of data) {
-          (byPatient[item.patientId] ??= []).push(item);
-        }
-        // Oldest day first — those have waited longest for a signature.
-        for (const list of Object.values(byPatient)) {
-          list.sort(
-            (a, b) =>
-              new Date(a.summaryDate).getTime() -
-              new Date(b.summaryDate).getTime(),
-          );
-        }
-        setPendingByPatient(byPatient);
-      })
-      .catch(() => undefined);
+  const refreshPendingSummaries = useCallback(
+    () =>
+      courseInWardApi
+        .pending()
+        .then(({ data }) => {
+          const byPatient: Record<string, PendingSummary[]> = {};
+          for (const item of data) {
+            (byPatient[item.patientId] ??= []).push(item);
+          }
+          // Oldest day first — those have waited longest for a signature.
+          for (const list of Object.values(byPatient)) {
+            list.sort(
+              (a, b) =>
+                new Date(a.summaryDate).getTime() -
+                new Date(b.summaryDate).getTime(),
+            );
+          }
+          setPendingByPatient(byPatient);
+        })
+        .catch(() => undefined),
+    [],
+  );
 
-  useEffect(() => {
+  /** The patient the Overview opened this view on; applied on the first load. */
+  const initialPick = useRef<string | undefined>(initialPatientId);
+
+  // A nurse admits, discharges or moves a patient from their own screen, so the
+  // list — and the pending-approval counts — are re-read on a timer as well.
+  const loadPatients = useCallback(() => {
     patientsApi
       .assignedToMe()
       .then(({ data }) => {
         const mapped = data.map(mapPatient);
         setPatients(mapped);
-        // A patient picked on the Overview opens directly; otherwise start on
-        // the first row the opening status shows.
-        const picked =
-          initialPatientId && mapped.some((p) => p.id === initialPatientId)
-            ? initialPatientId
-            : mapped.find(
-                (p) => initialStatus === "all" || p.status === initialStatus,
-              )?.id;
-        if (picked) setSelectedId(picked);
+        setSelectedId((current) => {
+          // The patient the Overview (or a notification) opened wins, once.
+          if (initialPick.current) {
+            const pick = initialPick.current;
+            initialPick.current = undefined;
+            if (mapped.some((p) => p.id === pick)) return pick;
+          }
+          if (current) return current;
+          return (
+            mapped.find(
+              (p) => initialStatus === "all" || p.status === initialStatus,
+            )?.id ??
+            mapped[0]?.id ??
+            ""
+          );
+        });
       })
       .catch(() => setPatients([]))
       .finally(() => setLoading(false));
     void refreshPendingSummaries();
-    // `initialStatus` / `initialPatientId` are the tab's opening state only;
-    // they come from the Overview that opened this view, so they are read once
-    // on mount (the view is re-keyed when they change).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialStatus, refreshPendingSummaries]);
+
+  useEffect(() => {
+    loadPatients();
+  }, [loadPatients]);
+
+  // Nurses admit, discharge or move patients from their own screen.
+  usePolling(loadPatients, ORDER_POLL_MS);
 
   // Shared search / filter / sort / pagination state for the patient list.
   const table = useTableState<DashboardPatient>({
@@ -199,8 +214,8 @@ export function ManageView({
       days: (p) => p.daysInCare,
       age: (p) => p.age ?? -1,
     },
-    // Most urgent first, longest waiting first within a level.
-    initialSort: { field: "triage", direction: "descending" },
+    // Newest admission first.
+    initialSort: { field: "admitted", direction: "descending" },
   });
 
   // Keep the selection on a patient that still matches the active filters.
@@ -226,11 +241,13 @@ export function ManageView({
         const loadedDays = new Set(
           ordersResponse.data.map((order) => orderDayValue(order.dateCreated)),
         );
-        setOrderDateFilter((previous) =>
-          previous && !loadedDays.has(previous) && previous !== toDateKey(new Date())
-            ? null
-            : previous,
-        );
+        const stillOpen = selected.admissions?.some((admission) => !admission.dischargeDate);
+        setOrderDateFilter((previous) => {
+          if (!previous || loadedDays.has(previous)) return previous;
+          // An open admission keeps today selected so a new order can be written into it.
+          if (stillOpen && previous === toDateKey(new Date())) return previous;
+          return null;
+        });
         // One Course in the Ward per order day; the panel picks the day to show.
         setSummariesByPatient((previous) => ({
           ...previous,
@@ -366,6 +383,9 @@ export function ManageView({
   const admissionPreset = admissionFilter.startsWith("custom:")
     ? "custom"
     : admissionFilter;
+  /** The Discharged column only earns its width when discharged rows are shown. */
+  const showDischargedColumn =
+    table.filters.status === "discharged" || table.filters.status === "all";
   const activeFilterCount = MANAGE_FILTER_KEYS.filter((key) => {
     const value = table.filters[key];
     if (value === undefined || value === "" || value === "all") return false;
@@ -418,10 +438,18 @@ export function ManageView({
     setOrdersByPatient((previous) => ({ ...previous, [patientId]: data }));
   };
 
-  // Nurses update order statuses from their own screen; pick those up live.
+  // Nurses carry out orders from their own screen; pick the status and note up live.
   usePolling(
     () => {
-      if (selected) reloadOrders(selected.id).catch(() => undefined);
+      if (!selected) return;
+      reloadOrders(selected.id).catch(() => undefined);
+      if (editingSummary || generatingSummary || regeneratingSummary || savingSummaryEdit) return;
+      courseInWardApi
+        .forPatient(selected.id)
+        .then(({ data }) =>
+          setSummariesByPatient((previous) => ({ ...previous, [selected.id]: data })),
+        )
+        .catch(() => undefined);
     },
     ORDER_POLL_MS,
     Boolean(selected),
@@ -784,6 +812,9 @@ export function ManageView({
                   <th style={patientTableStyles.th}>Sex</th>
                   <th style={patientTableStyles.th}>Age</th>
                   <th style={patientTableStyles.th}>Admitted</th>
+                  {showDischargedColumn && (
+                    <th style={patientTableStyles.th}>Discharged</th>
+                  )}
                   <th style={patientTableStyles.th}>Days in care</th>
                   <th style={patientTableStyles.th}>Status</th>
                 </tr>
@@ -889,6 +920,11 @@ export function ManageView({
                       <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
                         {p.admissionDate}
                       </td>
+                      {showDischargedColumn && (
+                        <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
+                          {p.dischargeDate}
+                        </td>
+                      )}
                       <td style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}>
                         {p.daysInCare} {p.daysInCare === 1 ? "day" : "days"}
                       </td>
@@ -902,7 +938,7 @@ export function ManageView({
                   <tr>
                     <td
                       style={{ ...patientTableStyles.td, ...patientTableStyles.cell }}
-                      colSpan={7}
+                      colSpan={showDischargedColumn ? 8 : 7}
                     >
                       {patients.length === 0
                         ? "You have no patients assigned to you."
@@ -977,7 +1013,7 @@ export function ManageView({
                   emptyMessage={
                     selectedOrders === undefined
                       ? "Loading doctor’s orders…"
-                      : activeOrderDate === todayKey
+                      : hasOpenAdmission && activeOrderDate === todayKey
                         ? "No orders yet today. Add one below."
                         : activeOrderDate
                           ? `No orders on ${selectedDateLabel}.`
@@ -1078,9 +1114,11 @@ export function ManageView({
                       <>
                         <p style={manage.listHint}>
                           {selected.name} was discharged
-                          {selected.dischargeDate ? ` on ${selected.dischargeDate}` : ""} —
-                          no further orders can be filed. Their summary can still be
-                          approved below.
+                          {selected.dischargeDate && selected.dischargeDate !== "—"
+                            ? ` on ${selected.dischargeDate}`
+                            : ""}{" "}
+                          — no further orders can be filed. Their summary can still
+                          be approved below.
                         </p>
                         {orderError && (
                           <span role="alert" style={manage.orderError}>{orderError}</span>

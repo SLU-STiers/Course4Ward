@@ -13,6 +13,8 @@ export interface AppNotification {
   message: string;
   /** Claim / summary approval request this notification points at, if any. */
   requestId?: string | null;
+  /** Patient chart this notification opens, when any. */
+  patientId?: string | null;
   isRead: boolean;
   createdAt: string;
   /** Set when the bell was cleared — the item then only shows in history. */
@@ -29,6 +31,11 @@ export interface AuthUser {
   lastName: string;
   role: Role;
   mustResetPassword?: boolean;
+}
+
+/** Signed-in account, including the wards a nurse or physician is assigned to. */
+export interface AccountProfile extends AuthUser {
+  wards: { id: string; name: string }[];
 }
 
 /** Backend `Sex`; `null` on records registered before it was required. */
@@ -149,6 +156,7 @@ export interface PhysicianNote {
   notesArray: string;
   physicianId: string;
   patientId: string;
+  completed: boolean;
   createdAt: string;
   reminderAt?: string | null;
 }

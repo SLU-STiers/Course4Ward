@@ -14,7 +14,7 @@ import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { signOut } from '../../services/signOut';
 import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
-import { toDateKey } from '../../lib/format';
+import { formatDateMedium, toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
 
 import { groupApprovedPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
@@ -39,6 +39,7 @@ export function ClaimsProcessorDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [requests, setRequests] = useState<SummarizationRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<SummarizationRequest | null>(null);
+  const [expandedRequestGroups, setExpandedRequestGroups] = useState<Set<string>>(new Set());
   const [requestPage, setRequestPage] = useState(1);
   const [requestSortField, setRequestSortField] = useState<RequestSortField>('date');
   const [requestSortDirection, setRequestSortDirection] = useState<SortDirection>('descending');
@@ -65,7 +66,7 @@ export function ClaimsProcessorDashboard() {
 
   // Export → Course in the Ward Summary review step
   const [exportSource, setExportSource] = useState<ExportSource>('new-cf4');
-  /** Every admission queued for CF4 generation, in the order it was shown. */
+  /** Every patient queued for CF4 generation, in the order it was shown. */
   const [summaryDrafts, setSummaryDrafts] = useState<Cf4SummaryDraft[]>([]);
   const [summaryIndex, setSummaryIndex] = useState(0);
   const [existingPatientId, setExistingPatientId] = useState('');
@@ -122,11 +123,22 @@ export function ClaimsProcessorDashboard() {
         );
     return requestSortDirection === 'ascending' ? comparison : -comparison;
   });
+  const requestGroupsByPatient = new Map<string, SummarizationRequest[]>();
+  for (const request of sortedRequests) {
+    const key = request.patient.patientId;
+    const group = requestGroupsByPatient.get(key);
+    if (group) group.push(request);
+    else requestGroupsByPatient.set(key, [request]);
+  }
+  const groupedRequests = [...requestGroupsByPatient].map(([id, groupRequests]) => ({
+    id,
+    requests: groupRequests,
+  }));
   const requestPageSize = 8;
-  const requestPageCount = Math.max(1, Math.ceil(sortedRequests.length / requestPageSize));
+  const requestPageCount = Math.max(1, Math.ceil(groupedRequests.length / requestPageSize));
   const safeRequestPage = Math.min(requestPage, requestPageCount);
   const requestStart = (safeRequestPage - 1) * requestPageSize;
-  const visibleRequests = sortedRequests.slice(requestStart, requestStart + requestPageSize);
+  const visibleRequestGroups = groupedRequests.slice(requestStart, requestStart + requestPageSize);
   const requestPages = Array.from({ length: requestPageCount }, (_, index) => index + 1);
 
   const filteredCf4Patients = cf4Patients.filter(
@@ -270,7 +282,7 @@ export function ClaimsProcessorDashboard() {
     setExportSubView(view);
   };
 
-  /* Each export draft covers one admission and all approved daily summaries. */
+  /* Each export draft covers one patient and all approved daily summaries. */
   const handleProceedToSummary = (source: ExportSource) => {
     if (source === 'existing-cf4' && !uploadedFile) {
       setExportError('Upload an existing CF4 PDF before proceeding.');
@@ -284,7 +296,7 @@ export function ClaimsProcessorDashboard() {
 
     if (!queued.length) {
       setExportError(
-        'Select at least one approved admission first.',
+        'Select at least one approved patient first.',
       );
       return;
     }
@@ -303,7 +315,7 @@ export function ClaimsProcessorDashboard() {
     setExportSubView('summary');
   };
 
-  /* Each admission is exported once, after generating every included daily claim. */
+  /* Each patient is exported once, after generating every included daily claim. */
   const handleConfirmSummary = async () => {
     if (!summaryDrafts.length) return;
     setConfirmingSummary(true);
@@ -435,58 +447,123 @@ export function ClaimsProcessorDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleRequests.map((req) => (
-                      <tr key={req.id} style={styles.tr}>
-                        <td style={styles.td}>
-                          <div style={styles.dateCell}>
-                            <span style={styles.dateText}>{req.date}</span>
-                            <span style={styles.dateSeparator} />
-                            <span style={styles.timeText}>{req.time}</span>
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                              {req.patient.name}
-                            </span>
-                            <span style={{ fontSize: 11, color: '#64748b' }}>
-                              {req.patient.age} years · {req.patient.gender}
-                            </span>
-                            <span style={{ fontSize: 11, color: '#64748b' }}>
-                              Admitted {req.patient.admissionDate} · Dr. {req.doctor}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={styles.td}>
-                          <StatusBadge
-                            showDot
-                            status={
-                              req.status === 'Pending Review'
-                                ? 'pending'
-                                : req.status === 'Approved'
-                                  ? 'approved'
-                                  : 'rejected'
-                            }
-                            label={req.status}
-                          />
-                        </td>
-                        <td style={{ ...styles.td, ...styles.requestActionCell }}>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => setSelectedRequest(req)}
-                          >
-                            Review
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {visibleRequestGroups.map((group) => {
+                      const latestRequest = group.requests.reduce((latest, request) =>
+                        new Date(request.submittedAt) > new Date(latest.submittedAt) ? request : latest,
+                      );
+                      const admissionCount = new Set(
+                        group.requests.map((request) => request.admissionId || request.patient.admissionDate),
+                      ).size;
+                      const pendingCount = group.requests.filter((req) => req.status === 'Pending Review').length;
+                      const rejectedCount = group.requests.filter((req) => req.status === 'Rejected').length;
+                      const groupStatus = pendingCount
+                        ? 'Pending Review'
+                        : rejectedCount
+                          ? 'Rejected'
+                          : 'Approved';
+                      const expanded = expandedRequestGroups.has(group.id);
+                      return (
+                        <React.Fragment key={group.id}>
+                          <tr style={styles.tr}>
+                            <td style={styles.td}>
+                              <div style={styles.dateCell}>
+                                <span style={styles.dateText}>{latestRequest.date}</span>
+                                <span style={styles.dateSeparator} />
+                                <span style={styles.timeText}>{latestRequest.time}</span>
+                              </div>
+                            </td>
+                            <td style={styles.td}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                                  {latestRequest.patient.name}
+                                </span>
+                                <span style={{ fontSize: 11, color: '#64748b' }}>
+                                  {latestRequest.patient.age} years · {latestRequest.patient.gender}
+                                </span>
+                                <span style={{ fontSize: 11, color: '#64748b' }}>
+                                  {group.requests.length} daily {group.requests.length === 1 ? 'summary' : 'summaries'} · {admissionCount} {admissionCount === 1 ? 'admission' : 'admissions'}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={styles.td}>
+                              <StatusBadge
+                                showDot
+                                status={
+                                  groupStatus === 'Pending Review'
+                                    ? 'pending'
+                                    : groupStatus === 'Approved'
+                                      ? 'approved'
+                                      : 'rejected'
+                                }
+                                label={groupStatus}
+                              />
+                            </td>
+                            <td style={{ ...styles.td, ...styles.requestActionCell }}>
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                aria-expanded={expanded}
+                                aria-controls={`request-group-${group.id}`}
+                                onClick={() => setExpandedRequestGroups((previous) => {
+                                  const next = new Set(previous);
+                                  if (next.has(group.id)) next.delete(group.id);
+                                  else next.add(group.id);
+                                  return next;
+                                })}
+                              >
+                                {expanded ? 'Hide days' : `View ${group.requests.length} day${group.requests.length === 1 ? '' : 's'}`}
+                              </Button>
+                            </td>
+                          </tr>
+                          {expanded && (
+                            <tr>
+                              <td colSpan={4} style={{ ...styles.td, backgroundColor: '#f8fafc' }}>
+                                <div id={`request-group-${group.id}`} style={{ display: 'grid', gap: 8 }}>
+                                  {group.requests.map((req) => (
+                                    <div key={req.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 10px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                        <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+                                          Summary day: {formatDateMedium(req.summaryDate)}
+                                        </span>
+                                        <span style={{ fontSize: 11, color: '#64748b' }}>
+                                          Admitted {req.patient.admissionDate} · Submitted {req.date} · Dr. {req.doctor}
+                                        </span>
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <StatusBadge
+                                          showDot
+                                          status={
+                                            req.status === 'Pending Review'
+                                              ? 'pending'
+                                              : req.status === 'Approved'
+                                                ? 'approved'
+                                                : 'rejected'
+                                          }
+                                          label={req.status}
+                                        />
+                                        <Button
+                                          variant="primary"
+                                          size="sm"
+                                          onClick={() => setSelectedRequest(req)}
+                                        >
+                                          Review
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
 
                 <div style={styles.paginationRow}>
                   <span style={styles.paginationText}>
-                    Showing {sortedRequests.length ? requestStart + 1 : 0} to {Math.min(requestStart + requestPageSize, sortedRequests.length)} of {sortedRequests.length} requests
+                    Showing {groupedRequests.length ? requestStart + 1 : 0} to {Math.min(requestStart + requestPageSize, groupedRequests.length)} of {groupedRequests.length} patients ({sortedRequests.length} daily summaries)
                   </span>
                   <div style={styles.paginationControls}>
                     <button type="button" style={styles.pageArrowBtn} disabled={safeRequestPage === 1} onClick={() => setRequestPage((page) => Math.max(1, page - 1))}>‹</button>
@@ -631,7 +708,12 @@ export function ClaimsProcessorDashboard() {
                             <td style={styles.td}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <span style={{ ...patientTableStyles.dot, backgroundColor: p.color }} />
-                                <span style={patientTableStyles.name}>{p.name}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  <span style={patientTableStyles.name}>{p.name}</span>
+                                  <span style={{ fontSize: 11, color: '#64748b' }}>
+                                    {p.claimIds.length} {p.claimIds.length === 1 ? 'daily summary' : 'daily summaries'} · {p.coveragePeriod}
+                                  </span>
+                                </div>
                               </div>
                             </td>
                             <td style={{ ...styles.td, ...patientTableStyles.cell }}>
@@ -675,7 +757,7 @@ export function ClaimsProcessorDashboard() {
                     <span style={styles.paginationText}>
                       Showing {sortedExportPatients.length ? exportPatientStart + 1 : 0} to{' '}
                       {Math.min(exportPatientStart + patientPageSize, sortedExportPatients.length)} of{' '}
-                      {sortedExportPatients.length} approved admissions
+                      {sortedExportPatients.length} approved patients
                     </span>
                     <div style={styles.paginationControls}>
                       <button type="button" style={styles.pageArrowBtn} disabled={safeExportPatientPage === 1} onClick={() => setExportPatientPage((page) => Math.max(1, page - 1))}>‹</button>
@@ -695,8 +777,8 @@ export function ClaimsProcessorDashboard() {
                   <div style={styles.newCf4FooterRowSpread}>
                     <span style={styles.selectionCount}>
                       {selectedPatientCount
-                        ? `${selectedPatientCount} admission${selectedPatientCount === 1 ? '' : 's'} selected`
-                        : 'No admissions selected yet'}
+                        ? `${selectedPatientCount} patient${selectedPatientCount === 1 ? '' : 's'} selected`
+                        : 'No patients selected yet'}
                     </span>
                     <div style={styles.newCf4FooterActions}>
                       <button
@@ -746,7 +828,7 @@ export function ClaimsProcessorDashboard() {
                       <option value="">Select the patient this CF4 belongs to…</option>
                       {eligibleExportPatients.map((patient) => (
                         <option key={patient.id} value={patient.id}>
-                          {patient.name} · {patient.patientId} · {patient.claimIds.length} day{patient.claimIds.length === 1 ? '' : 's'}
+                          {patient.name} · {patient.patientId} · {patient.claimIds.length} day{patient.claimIds.length === 1 ? '' : 's'} · {patient.coveragePeriod}
                         </option>
                       ))}
                     </select>

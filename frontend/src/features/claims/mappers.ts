@@ -53,6 +53,11 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
   const admission = claim.summary.orders[0]?.admission;
   const admissionDate = admission?.admissionDate ?? claim.summary.summaryDate;
   const dischargeDate = admission?.dischargeDate;
+  const admissionDateRaw = toDateInputValue(new Date(admissionDate));
+  const summaryDateRaw = toDateInputValue(new Date(claim.summary.summaryDate));
+  const dischargeDateRaw = dischargeDate
+    ? toDateInputValue(new Date(dischargeDate))
+    : null;
   const status = admissionStatus(dischargeDate);
 
   return {
@@ -66,33 +71,77 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
     age: computeAge(patient.dateOfBirth),
     color: statusColor(status),
     admissionDate: formatDateMedium(admissionDate),
-    admissionDateRaw: toDateInputValue(new Date(admissionDate)),
+    admissionDateRaw,
+    coverageEndDateRaw: dischargeDateRaw && dischargeDateRaw > summaryDateRaw
+      ? dischargeDateRaw
+      : summaryDateRaw,
+    dischargeDateRaw,
+    coveragePeriod: '',
     daysInCare: daysInCare(admissionDate, dischargeDate),
     status,
     approved: claim.summary.status === 'APPROVED' && Boolean(claim.summary.approvedStatus),
   };
 }
 
-/** One export row represents one admission and includes every daily claim. */
+/** One export row represents a patient and includes all their daily claims. */
 export function groupApprovedPatients(patients: CF4Patient[]): CF4Patient[] {
-  const grouped = new Map<string, CF4Patient>();
+  const grouped = new Map<string, {
+    patient: CF4Patient;
+    admissions: Map<string, CF4Patient>;
+  }>();
 
   for (const patient of patients) {
-    const key = patient.admissionId
-      ? `${patient.patientId}:${patient.admissionId}`
-      : `${patient.patientId}:${patient.admissionDateRaw}`;
+    const key = patient.patientId;
     const existing = grouped.get(key);
     if (existing) {
-      existing.claimIds.push(patient.claimId);
-      existing.approved = existing.approved && patient.approved;
+      existing.patient.claimIds.push(patient.claimId);
+      existing.patient.approved = existing.patient.approved && patient.approved;
+      if (patient.admissionDateRaw < existing.patient.admissionDateRaw) {
+        existing.patient.admissionDate = patient.admissionDate;
+        existing.patient.admissionDateRaw = patient.admissionDateRaw;
+      }
+      if (patient.coverageEndDateRaw > existing.patient.coverageEndDateRaw) {
+        existing.patient.coverageEndDateRaw = patient.coverageEndDateRaw;
+      }
+      if (patient.status === 'admitted') {
+        existing.patient.status = 'admitted';
+        existing.patient.color = patient.color;
+        existing.patient.dischargeDateRaw = null;
+      } else if (
+        existing.patient.status === 'discharged' &&
+        patient.dischargeDateRaw &&
+        (!existing.patient.dischargeDateRaw ||
+          patient.dischargeDateRaw > existing.patient.dischargeDateRaw)
+      ) {
+        existing.patient.dischargeDateRaw = patient.dischargeDateRaw;
+      }
+      const admissionKey = patient.admissionId || patient.admissionDateRaw;
+      if (!existing.admissions.has(admissionKey)) {
+        existing.admissions.set(admissionKey, patient);
+      }
     } else {
       grouped.set(key, {
-        ...patient,
-        id: key,
-        claimIds: [patient.claimId],
+        patient: {
+          ...patient,
+          id: key,
+          claimIds: [patient.claimId],
+        },
+        admissions: new Map([[patient.admissionId || patient.admissionDateRaw, patient]]),
       });
     }
   }
 
-  return [...grouped.values()].filter((patient) => patient.approved);
+  return [...grouped.values()]
+    .map(({ patient, admissions }) => {
+      const status = patient.status;
+      const start = patient.admissionDate;
+      const end = formatDateMedium(new Date(`${patient.coverageEndDateRaw}T12:00:00`));
+      patient.coveragePeriod = `${start}${patient.admissionDateRaw === patient.coverageEndDateRaw ? '' : ` – ${end}`}${status === 'admitted' ? ' (Present)' : ' (Discharged)'}`;
+      patient.daysInCare = [...admissions.values()].reduce(
+        (total, admission) => total + admission.daysInCare,
+        0,
+      );
+      return patient;
+    })
+    .filter((patient) => patient.approved);
 }

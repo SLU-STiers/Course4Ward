@@ -11,6 +11,7 @@ import type {
   Claim,
   ClaimRecord,
   EligibleSummary,
+  AccountProfile,
   AuthUser,
   PhysicianRequest,
   ActivityTrend,
@@ -36,6 +37,7 @@ import type {
 // --- Auth ---
 export const authApi = {
   session: () => api.get<{ authenticated: boolean }>('/auth/session'),
+  profile: () => api.get<AccountProfile>('/auth/profile'),
   login: (userId: string, password: string) =>
     api.post<{ accessToken: string; refreshToken: string; user: AuthUser; mustResetPassword: boolean }>(
       '/auth/login',
@@ -103,7 +105,7 @@ export const ordersApi = {
 export const notesApi = {
   create: (data: { patientId: string; content: string; reminderAt?: string }) =>
     api.post<PhysicianNote>('/notes', data),
-  update: (id: string, data: { content?: string; reminderAt?: string | null }) =>
+  update: (id: string, data: { content?: string; reminderAt?: string | null; completed?: boolean }) =>
     api.patch<PhysicianNote>(`/notes/${id}`, data),
   remove: (id: string) => api.delete(`/notes/${id}`),
   forPatient: (patientId: string) => api.get<PhysicianNote[]>(`/notes/patient/${patientId}`),
@@ -170,14 +172,14 @@ export const claimsApi = {
 
 // --- Notifications (header bell) ---
 export const notificationsApi = {
-  /** `scope: 'history'` returns the full log, cleared items included. */
+  /** `inbox` is unread. `history` is marked as read. */
   list: (options?: { scope?: NotificationScope; take?: number }) =>
     api.get<AppNotification[]>('/notifications', { params: options }),
   unreadCount: () => api.get<{ count: number }>('/notifications/unread-count'),
   /** Returns the recalculated unread count for the badge. */
   markRead: (id: string) => api.patch<{ count: number }>(`/notifications/${id}/read`),
   markAllRead: () => api.post<{ count: number }>('/notifications/read-all'),
-  /** Clears the inbox; the items stay in the history. */
+  /** Deletes every notification for the signed-in user. */
   clear: () => api.post<{ count: number }>('/notifications/clear'),
 };
 

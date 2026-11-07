@@ -19,6 +19,7 @@ import {
   isNurseVisiblePatient,
   wardLocation,
 } from './patientClass';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { Patient, PhysicianOrder } from '../../types';
 
@@ -79,6 +80,8 @@ export function PatientView() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  usePolling(reload, ORDER_POLL_MS);
 
   const table = useTableState<AdmissionRecord>({
     items: records,
@@ -152,6 +155,14 @@ export function PatientView() {
     };
   }, [viewingPatientId]);
 
+  usePolling(() => {
+    if (!viewingPatientId) return;
+    ordersApi
+      .forPatient(viewingPatientId)
+      .then(({ data }) => setViewingOrders({ patientId: viewingPatientId, orders: data }))
+      .catch(() => undefined);
+  }, ORDER_POLL_MS, Boolean(viewingPatientId));
+
   const loadedOrders =
     viewingOrders && viewingOrders.patientId === viewingPatientId ? viewingOrders.orders : null;
   const hasActiveOrder = (type: PhysicianOrder['type']) =>
@@ -169,7 +180,30 @@ export function PatientView() {
         : `Waiting for the physician's ${name} order`;
   const observeBlockedReason = waitingFor('OBSERVATION', 'observation');
   const admitBlockedReason = waitingFor('ADMISSION', 'admission');
-  const dischargeBlockedReason = waitingFor('DISCHARGE', 'discharge');
+  const dischargeOrder = loadedOrders?.find(
+    (order) =>
+      order.admissionId === viewingAdmission?.id && order.active !== false && order.type === 'DISCHARGE',
+  );
+  const earlierOrderOpen = Boolean(
+    dischargeOrder &&
+      loadedOrders?.some((order) => {
+        if (order.id === dischargeOrder.id || order.active === false) return false;
+        if (order.admissionId !== dischargeOrder.admissionId) return false;
+        return (
+          new Date(order.dateCreated).getTime() <= new Date(dischargeOrder.dateCreated).getTime() &&
+          order.status !== 'FINISHED'
+        );
+      }),
+  );
+  const dischargeBlockedReason = !loadedOrders
+    ? 'Checking physician orders...'
+    : !dischargeOrder
+      ? "Waiting for the physician's discharge order"
+      : dischargeOrder.status !== 'FINISHED' || !dischargeOrder.nurseComment
+        ? 'Mark the discharge order done and add a note to discharge this patient'
+        : earlierOrderOpen
+          ? 'Finish every order written before the discharge order first'
+          : undefined;
 
   const openViewing = (name: string) => {
     setActionError(null);

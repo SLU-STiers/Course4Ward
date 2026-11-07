@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InsuranceType, OrderEnteredBy, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
+import { InsuranceType, OrderEnteredBy, OrderStatus, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AuditLogService,
@@ -290,11 +290,11 @@ export class PatientsService {
     await Promise.all([
       this.notifications.notifyAdmins({
         title: 'New patient registered',
-        message: `${patientName} was registered as ${CLASS_NAME[patientClass]}.`,
+        message: `**${patientName}** was registered as ${CLASS_NAME[patientClass]}.`,
       }),
       this.notifications.notifyUsers(requiredIds, {
         title: 'New patient assigned to your care',
-        message: `${patientName} was registered as ${CLASS_NAME[patientClass]} and assigned to your care team.`,
+        message: `**${patientName}** was registered as ${CLASS_NAME[patientClass]} and assigned to your care team.`,
       }),
     ]);
 
@@ -530,13 +530,35 @@ export class PatientsService {
     if (admission.dischargeDate) {
       throw new ConflictException('This patient is already discharged');
     }
-    if (
-      admission.patientClass !== PatientClass.OUTPATIENT &&
-      !(await this.hasActiveOrder(id, OrderType.DISCHARGE))
-    ) {
-      throw new BadRequestException(
-        'A physician must write a discharge order before the patient can be discharged',
-      );
+    if (admission.patientClass !== PatientClass.OUTPATIENT) {
+      const dischargeOrder = await this.prisma.physicianOrder.findFirst({
+        where: { admissionId: id, type: OrderType.DISCHARGE, active: true },
+        orderBy: { dateCreated: 'desc' },
+      });
+      if (!dischargeOrder) {
+        throw new BadRequestException(
+          'A physician must write a discharge order before the patient can be discharged',
+        );
+      }
+      if (dischargeOrder.status !== OrderStatus.FINISHED || !dischargeOrder.nurseComment) {
+        throw new BadRequestException(
+          'Mark the discharge order done and add a note before discharging this patient',
+        );
+      }
+      const unfinished = await this.prisma.physicianOrder.count({
+        where: {
+          admissionId: id,
+          active: true,
+          id: { not: dischargeOrder.id },
+          dateCreated: { lte: dischargeOrder.dateCreated },
+          status: { not: OrderStatus.FINISHED },
+        },
+      });
+      if (unfinished > 0) {
+        throw new BadRequestException(
+          'Finish every order written before the discharge order before this patient can be discharged',
+        );
+      }
     }
 
     // Guarded so two nurses discharging at once cannot move the date.
