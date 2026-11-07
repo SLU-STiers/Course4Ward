@@ -13,7 +13,7 @@ import { triageQueueKey } from '../../lib/triage';
 import { TodoListWidget } from './TodoListWidget';
 import type { DashboardPatient, OverviewFilter } from './types';
 
-export function OverviewView() {
+export function OverviewView({ onOpenPatient }: { onOpenPatient?: (patientId: string) => void }) {
   const [page, setPage] = useState(0);
   const [filter, setFilter] = useState<OverviewFilter>("all");
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
@@ -138,7 +138,11 @@ export function OverviewView() {
               </thead>
               <tbody>
               {rows.map((p) => (
-                <tr key={p.id}>
+                <tr
+                  key={p.id}
+                  onClick={() => onOpenPatient?.(p.id)}
+                  style={{ cursor: onOpenPatient ? 'pointer' : undefined }}
+                >
                   <td style={{ ...overview.td, width: 22 }}>
                     <span
                       style={{

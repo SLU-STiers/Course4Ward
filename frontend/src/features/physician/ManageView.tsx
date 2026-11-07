@@ -152,6 +152,15 @@ export function ManageView({
     initialSort: { field: "admitted", direction: "descending" },
   });
 
+  // A patient opened from Overview may be discharged, so the list filter follows them.
+  useEffect(() => {
+    if (!focusPatient?.id) return;
+    const patient = patients.find((item) => item.id === focusPatient.id);
+    if (patient && table.filters.status !== patient.status) {
+      table.setFilter('status', patient.status);
+    }
+  }, [focusPatient, patients, table.filters.status, table.setFilter]);
+
   // Keep the selection on a patient that still matches the active filters.
   const selected =
     table.filtered.find((p) => p.id === selectedId) ??

@@ -73,7 +73,14 @@ export function PhysicianDashboard() {
         />
       }
     >
-      {activeTab === "overview" && <OverviewView />}
+      {activeTab === "overview" && (
+        <OverviewView
+          onOpenPatient={(patientId) => {
+            setActiveTab('manage');
+            setFocusPatient({ id: patientId, key: Date.now() });
+          }}
+        />
+      )}
       {activeTab === "manage" && <ManageView focusPatient={focusPatient} />}
       {activeTab === "requests" && <RequestsView />}
     </Layout>
