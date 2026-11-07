@@ -62,15 +62,21 @@ export interface CF4Patient {
   admissionDate: string;
   /** `YYYY-MM-DD` — the key used for sorting and date-range filters. */
   admissionDateRaw: string;
-  /** Whole days since admission, counted inclusively. */
+  /** Latest summary or discharge date included in the patient-wide CF4. */
+  coverageEndDateRaw: string;
+  /** Latest discharge date across admissions, or `null` if an admission is ongoing. */
+  dischargeDateRaw: string | null;
+  /** Date span covered by the included admissions and summaries. */
+  coveragePeriod: string;
+  /** Whole days in care, counted inclusively and summed across admissions. */
   daysInCare: number;
   status: Exclude<PatientStatus, 'all'>;
   approved: boolean;
 }
 
-/** One admission queued for the Course in the Ward Summary review step. */
+/** One patient queued for the Course in the Ward Summary review step. */
 export interface Cf4SummaryDraft {
   patient: CF4Patient;
-  /** All physician-approved daily summaries from the selected admission. */
+  /** All physician-approved daily summaries from the patient's admissions. */
   requests: SummarizationRequest[];
 }
