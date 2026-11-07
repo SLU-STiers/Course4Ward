@@ -1826,17 +1826,95 @@ td {
   white-space: nowrap;
 }
 .ui-sidebar-profile__logout { flex-shrink: 0; }
-.ui-sidebar-profile__account-details { margin: 0; }
-.ui-sidebar-profile__account-details > div + div { margin-top: 1rem; }
-.ui-sidebar-profile__account-details dt {
-  color: var(--c4w-color-text-subtle, #64748b);
-  font-size: 0.75rem;
+.ui-account__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-bottom: 1rem;
+  padding: 0.875rem;
+  border: 1px solid var(--c4w-color-border, #e2e8f0);
+  border-radius: 14px;
+  background: var(--c4w-color-surface-muted, #f8fafc);
 }
-.ui-sidebar-profile__account-details dd {
-  margin: 0.25rem 0 0;
+.ui-account__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--c4w-color-primary-soft, #eff6ff);
+  color: var(--c4w-color-primary, #2563eb);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.ui-account__who { min-width: 0; }
+.ui-account__name {
+  margin: 0;
+  overflow: hidden;
   color: var(--c4w-color-text-primary, #0f172a);
+  font-size: 1rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-account__role {
+  margin: 0.125rem 0 0;
+  color: var(--c4w-color-text-muted, #64748b);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.ui-account__rows {
+  margin: 0;
+  border: 1px solid var(--c4w-color-border, #e2e8f0);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ui-account__row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 0.875rem;
+}
+.ui-account__row + .ui-account__row {
+  border-top: 1px solid var(--c4w-color-divider, #f1f5f9);
+}
+.ui-account__row dt {
+  margin: 0;
+  color: var(--c4w-color-text-muted, #64748b);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.ui-account__row dd {
+  margin: 0;
+  color: var(--c4w-color-text-primary, #0f172a);
+  font-size: 0.875rem;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+.ui-account__wards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.ui-account__ward {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: var(--c4w-color-primary-soft, #eff6ff);
+  color: var(--c4w-color-primary, #1d4ed8);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.ui-account__muted {
+  color: var(--c4w-color-text-subtle, #94a3b8);
+  font-weight: 600;
 }
 
 .ui-notification-bell {

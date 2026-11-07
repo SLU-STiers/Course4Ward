@@ -7,6 +7,17 @@ export interface SidebarProfileProps {
   subtitle: string;
   onLogout: () => void;
   avatarSrc?: string;
+  /** Hospital login id, shown separately from the role. */
+  accountId?: string;
+  /** Role label. Falls back to `subtitle` when the sidebar already shows the role. */
+  roleLabel?: string;
+  /**
+   * Ward names for this account. `null` while they are still loading.
+   * Omit the prop when this role has no ward assignment.
+   */
+  wards?: string[] | null;
+  /** Shown in the ward row when the assignment could not be loaded. */
+  wardUnavailable?: boolean;
 }
 
 export function SidebarProfile({
@@ -15,6 +26,10 @@ export function SidebarProfile({
   subtitle,
   onLogout,
   avatarSrc = '/144523.png',
+  accountId,
+  roleLabel,
+  wards,
+  wardUnavailable = false,
 }: SidebarProfileProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -62,16 +77,55 @@ export function SidebarProfile({
           </Button>
         }
       >
-        <dl className="ui-sidebar-profile__account-details">
-          <div>
-            <dt>Name</dt>
-            <dd>{name}</dd>
+        <div className="ui-account">
+          <div className="ui-account__identity">
+            <div className="ui-account__avatar" aria-hidden="true">
+              {!imageFailed ? (
+                <img className="ui-sidebar-profile__image" src={avatarSrc} alt="" />
+              ) : (
+                <span className="ui-sidebar-profile__initials">{initials}</span>
+              )}
+            </div>
+            <div className="ui-account__who">
+              <p className="ui-account__name">{name}</p>
+              <p className="ui-account__role">{roleLabel ?? subtitle}</p>
+            </div>
           </div>
-          <div>
-            <dt>Role / account</dt>
-            <dd>{subtitle}</dd>
-          </div>
-        </dl>
+          <dl className="ui-account__rows">
+            {accountId ? (
+              <div className="ui-account__row">
+                <dt>User ID</dt>
+                <dd>{accountId}</dd>
+              </div>
+            ) : null}
+            <div className="ui-account__row">
+              <dt>Role</dt>
+              <dd>{roleLabel ?? subtitle}</dd>
+            </div>
+            {wards !== undefined ? (
+              <div className="ui-account__row">
+                <dt>Ward</dt>
+                <dd>
+                  {wardUnavailable ? (
+                    <span className="ui-account__muted">Ward could not be loaded</span>
+                  ) : wards === null ? (
+                    <span className="ui-account__muted">Loading ward...</span>
+                  ) : wards.length === 0 ? (
+                    <span className="ui-account__muted">No ward assigned</span>
+                  ) : (
+                    <span className="ui-account__wards">
+                      {wards.map((ward) => (
+                        <span key={ward} className="ui-account__ward">
+                          {ward}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
       </Modal>
       <Modal
         open={logoutOpen}

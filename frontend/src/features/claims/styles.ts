@@ -656,15 +656,6 @@ export const overviewStyles: Record<string, CSSProperties> = {
     color: '#ffffff',
     fontWeight: 700,
   },
-  evaluatorSelect: {
-    width: '118px',
-    padding: '5px 8px',
-    border: '1px solid #9cc8ff',
-    borderRadius: '6px',
-    color: '#0066cc',
-    backgroundColor: '#ffffff',
-    fontSize: '11px',
-  },
   rightColumn: {
     display: 'flex',
     flexDirection: 'column',

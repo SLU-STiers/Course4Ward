@@ -94,6 +94,19 @@ function displayStatus(patient: NursePatient): AdmissionStatus {
   });
 }
 
+/** A discharge order stays locked until every active order written before it is finished. */
+function unfinishedBeforeDischarge(order: PhysicianOrder, sets: OrderSet[]) {
+  if (order.type !== 'DISCHARGE') return undefined;
+  const at = new Date(order.dateCreated).getTime();
+  const open = sets.some((set) => {
+    const other = set.order;
+    if (!other || other.id === order.id || other.active === false) return false;
+    if (other.admissionId !== order.admissionId) return false;
+    return new Date(other.dateCreated).getTime() <= at && other.status !== 'FINISHED';
+  });
+  return open ? 'Finish every order written before this discharge order first.' : undefined;
+}
+
 function mapOrder(order: PhysicianOrder): OrderSet {
   const date = new Date(order.dateCreated);
   return {
@@ -333,7 +346,17 @@ export function ManagementPortalView() {
               <div style={{ ...ui.orderContent, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
               {order &&
                 (canEnterOrders ? (
-                  <OrderExecutionPanel key={order.id} order={order} onSaved={replaceOrder} />
+                  <OrderExecutionPanel
+                    key={order.id}
+                    order={order}
+                    finishBlocked={unfinishedBeforeDischarge(order, orderSets)}
+                    onSaved={(saved) => {
+                      replaceOrder(saved);
+                      if (saved.type === 'DISCHARGE' && saved.status === 'FINISHED' && saved.nurseComment) {
+                        loadPatients();
+                      }
+                    }}
+                  />
                 ) : (
                   <OrderStatusSummary order={order} />
                 ))}

@@ -31,6 +31,11 @@ export interface AuthUser {
   mustResetPassword?: boolean;
 }
 
+/** Signed-in account, including the wards a nurse or physician is assigned to. */
+export interface AccountProfile extends AuthUser {
+  wards: { id: string; name: string }[];
+}
+
 /** Backend `Sex`; `null` on records registered before it was required. */
 export type Sex = 'MALE' | 'FEMALE' | 'OTHER';
 
