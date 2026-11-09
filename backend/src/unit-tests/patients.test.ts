@@ -93,6 +93,7 @@ describe("Patients Module", () => {
   const mockPatient = {
     id: mockPatientId,
     firstName: "John",
+    middleName: null,
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
@@ -186,6 +187,7 @@ describe("Patients Module", () => {
   const mockPatientSimple = {
     id: mockPatientId,
     firstName: "John",
+    middleName: null,
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
@@ -290,6 +292,7 @@ describe("Patients Module", () => {
           expect.objectContaining({
             data: expect.objectContaining({
               firstName: mockCreatePatientDto.firstName,
+              middleName: null,
               lastName: mockCreatePatientDto.lastName,
               gender: mockCreatePatientDto.gender,
               dateOfBirth: new Date(mockCreatePatientDto.dateOfBirth),
@@ -314,6 +317,21 @@ describe("Patients Module", () => {
           message: "John Doe was registered as Outpatient.",
         });
         expect(result).toEqual(mockPatientSimple);
+      });
+
+      it("should store a supplied middle name", async () => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+
+        await service.create(
+          { ...mockCreatePatientDto, middleName: "  Maria  " },
+          mockUser.id,
+        );
+
+        expect(prismaService.patient.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ middleName: "Maria" }),
+          }),
+        );
       });
 
       it("should attach additional physicians to the admission", async () => {
@@ -449,6 +467,7 @@ describe("Patients Module", () => {
       it("should accept valid names and 11-digit contact numbers", async () => {
         const dto = plainToInstance(CreatePatientDto, {
           firstName: "Juan",
+          middleName: "Maria",
           lastName: "Dela Cruz",
           gender: Sex.MALE,
           physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
@@ -456,6 +475,19 @@ describe("Patients Module", () => {
           contactPersonName: "Maria O’Connor",
           contactPersonNumber: "09187654321",
         });
+        expect(await validate(dto)).toHaveLength(0);
+      });
+
+      it("should allow an empty optional middle name", async () => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          middleName: "   ",
+          lastName: "Dela Cruz",
+          gender: Sex.MALE,
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+        });
+
+        expect(dto.middleName).toBeUndefined();
         expect(await validate(dto)).toHaveLength(0);
       });
 
