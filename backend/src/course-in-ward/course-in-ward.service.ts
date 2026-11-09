@@ -15,6 +15,7 @@ import { OrdersService } from '../orders/orders.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OllamaClient, OllamaReference, SummaryModel } from './ollama-client';
 import { assertFormattingOnlyInstructions } from './summary-instructions';
+import { CARE_TEAM_ADMISSION_SELECT, assertAttending, summaryAdmission } from './summary-access';
 
 /**
  * The source orders every summary the API returns carries: they give its day,
@@ -25,6 +26,7 @@ const SUMMARY_ORDERS = {
     orderBy: { dateCreated: 'asc' },
     select: {
       id: true,
+      admissionId: true,
       dateCreated: true,
       orderContent: true,
       status: true,
@@ -678,6 +680,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   // Physician approves the summary they deem accurate
   async approve(id: string, physicianId: string) {
     await this.findOne(id);
+    await assertAttending(this.prisma, id, physicianId);
     const approved = await this.prisma.courseInWard.update({
       where: { id },
       data: {
@@ -826,42 +829,70 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
    * returns this, or the client's copy would lose its orders (and its day)
    * until the next full reload.
    */
-  private withOrders(id: string) {
-    return this.prisma.courseInWard.findUniqueOrThrow({ where: { id }, include: SUMMARY_ORDERS });
-  }
-
-  findForPatient(patientId: string) {
-    return this.prisma.courseInWard.findMany({
-      where: { patientId },
-      orderBy: { summaryDate: 'desc' },
+  private async withOrders(id: string) {
+    const summary = await this.prisma.courseInWard.findUniqueOrThrow({
+      where: { id },
       include: SUMMARY_ORDERS,
     });
+    return (await this.withAttending([summary]))[0];
   }
 
   /**
-   * Every summary still waiting for this physician's approval, across all the
-   * patients they are responsible for (attending or consulting physician on
-   * any admission). A discharged patient stays in this list until the last
-   * day's Course in the Ward is approved, so nothing is lost when the ward
-   * list moves on to active patients.
+   * Adds `attendingPhysicianId` -- the only physician who may approve the
+   * summary -- so the UI can offer Approve to that physician alone.
    */
-  findPendingForPhysician(physicianId: string) {
-    return this.prisma.courseInWard.findMany({
+  private async withAttending<
+    T extends { patientId: string; summaryDate: Date; orders?: { admissionId?: string | null }[] },
+  >(summaries: T[]): Promise<(T & { attendingPhysicianId: string | null })[]> {
+    if (!summaries.length) return [];
+    const admissions = await this.prisma.patientAdmission.findMany({
+      where: { patientId: { in: [...new Set(summaries.map((s) => s.patientId))] } },
+      select: { ...CARE_TEAM_ADMISSION_SELECT, patientId: true },
+    });
+    return summaries.map((summary) => ({
+      ...summary,
+      attendingPhysicianId:
+        summaryAdmission(
+          summary,
+          admissions.filter((a) => a.patientId === summary.patientId),
+        )?.physicianId ?? null,
+    }));
+  }
+
+  async findForPatient(patientId: string) {
+    return this.withAttending(
+      await this.prisma.courseInWard.findMany({
+        where: { patientId },
+        orderBy: { summaryDate: 'desc' },
+        include: SUMMARY_ORDERS,
+      }),
+    );
+  }
+
+  /**
+   * Every summary still waiting for this physician's approval: the unapproved
+   * summaries of admissions they attend (only the attending physician can
+   * approve). A discharged patient stays in this list until the last day's
+   * Course in the Ward is approved, so nothing is lost when the ward list
+   * moves on to active patients.
+   */
+  async findPendingForPhysician(physicianId: string) {
+    const candidates = await this.prisma.courseInWard.findMany({
       where: {
         status: { not: SummaryStatus.APPROVED },
-        patient: {
-          admissions: {
-            some: {
-              OR: [
-                { physicianId },
-                { additionalPhysicians: { some: { physicianId } } },
-              ],
-            },
-          },
-        },
+        patient: { admissions: { some: { physicianId } } },
       },
       orderBy: { summaryDate: 'desc' },
-      select: { id: true, patientId: true, summaryDate: true, status: true },
+      select: {
+        id: true,
+        patientId: true,
+        summaryDate: true,
+        status: true,
+        orders: { select: { admissionId: true }, take: 1 },
+      },
     });
+    return (await this.withAttending(candidates))
+      .filter((summary) => summary.attendingPhysicianId === physicianId)
+      .map(({ id, patientId, summaryDate, status }) => ({ id, patientId, summaryDate, status }));
   }
 }

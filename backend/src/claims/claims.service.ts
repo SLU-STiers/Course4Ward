@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { triageSelect } from '../patients/patients.service';
+import { assertAttending, loadSummaryAdmission } from '../course-in-ward/summary-access';
 
 @Injectable()
 export class ClaimsService {
@@ -35,14 +36,18 @@ export class ClaimsService {
       throw new ConflictException('A claim already exists for this summary');
     }
 
-    const firstOrder = summary.orders[0];
-    const physicianId =
-      summary.validatorId ?? firstOrder?.admission.physicianId ?? firstOrder?.orderedById;
+    const approved = summary.status === SummaryStatus.APPROVED && Boolean(summary.approvedStatus);
+
+    // Only the attending physician can approve, so an open request goes to them
+    // (never to whoever happened to write the first order).
+    const attendingId =
+      summary.orders[0]?.admission.physicianId ??
+      (await loadSummaryAdmission(this.prisma, courseInWardId))?.physicianId ??
+      null;
+    const physicianId = approved ? summary.validatorId ?? attendingId : attendingId;
     if (!physicianId) {
       throw new BadRequestException('Summary has no attending physician to validate it');
     }
-
-    const approved = summary.status === SummaryStatus.APPROVED && Boolean(summary.approvedStatus);
     const claim = await this.prisma.summaryApprovalRequest.create({
       data: {
         summaryId: courseInWardId,
@@ -156,6 +161,7 @@ export class ClaimsService {
       where: { id, physicianId },
     });
     if (!request) throw new NotFoundException('Physician request not found');
+    await assertAttending(this.prisma, request.summaryId, physicianId);
 
     const [summary, updatedRequest] = await this.prisma.$transaction([
       this.prisma.courseInWard.update({
