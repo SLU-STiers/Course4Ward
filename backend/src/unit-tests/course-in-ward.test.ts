@@ -18,7 +18,7 @@ const mockOllamaInstance = {
   summarizeBatch: jest.fn(),
   health: jest.fn(),
   // No embeddings in unit tests: RAG retrieval falls back to no references.
-  embed: jest.fn().mockRejectedValue(new Error('embeddings disabled in tests')),
+  embedTexts: jest.fn().mockRejectedValue(new Error('embeddings disabled in tests')),
 };
 jest.mock('../course-in-ward/ollama-client', () => {
   return {
@@ -758,11 +758,11 @@ describe('CourseInWardService', () => {
       mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
       mockAuditLogService.record.mockResolvedValue({});
       mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
-      mockOllamaClient.embed.mockClear();
+      mockOllamaClient.embedTexts.mockClear();
 
       await service.regenerateSummary(mockSummaryId, mockPhysicianId, undefined, 'fine_tuned');
 
-      expect(mockOllamaClient.embed).not.toHaveBeenCalled();
+      expect(mockOllamaClient.embedTexts).not.toHaveBeenCalled();
       expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith(
         expect.any(Array),
         expect.objectContaining({ model: 'fine_tuned', references: [] }),

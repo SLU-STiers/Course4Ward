@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { OrderStatus, Prisma, Role, SummaryStatus } from '@prisma/client';
+import { AiCallKind, OrderStatus, Prisma, Role, SummaryStatus } from '@prisma/client';
+import { AiTrigger, timeAiCall } from './ai-metrics';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
@@ -154,6 +155,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     orders: any[],
     instructions?: string,
     model: SummaryModel = 'standard',
+    trigger: AiTrigger = 'manual',
   ): Promise<DaySummaryGroup[]> {
     if (!orders || orders.length === 0) {
       this.logger.warn('[ai] callAiSummarizer received no orders');
@@ -205,12 +207,27 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
     let response;
     try {
-      response = await this.ollamaClient.summarizeBatch(admissions, {
-        temperature: 0.1,
-        references,
-        instructions,
-        model,
-      });
+      response = await timeAiCall(
+        this.prisma,
+        { kind: AiCallKind.SUMMARY, model, trigger, itemCount: orders.length },
+        () =>
+          this.ollamaClient.summarizeBatch(admissions, {
+            temperature: 0.1,
+            references,
+            instructions,
+            model,
+          }),
+        (result) => {
+          const failures = result.results.filter((group) => !group.success);
+          return {
+            success: result.failed === 0 && failures.length === 0,
+            outputChars: result.results.reduce((sum, group) => sum + (group.summary?.length ?? 0), 0),
+            referenceCount: references.length,
+            topSimilarity: references[0]?.similarity ?? null,
+            error: failures.map((group) => group.error).filter(Boolean).join('; ') || null,
+          };
+        },
+      );
     } catch (err) {
       this.logger.warn(`[ai] summarize request failed: ${(err as Error).message}`);
       throw new BadRequestException(describeAiError(err, this.aiServiceUrl));
@@ -261,7 +278,13 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     limit = 3,
   ): Promise<OllamaReference[]> {
     try {
-      const queryVector = await this.ollamaClient.embed(queryText);
+      const { embeddings } = await timeAiCall(
+        this.prisma,
+        { kind: AiCallKind.EMBEDDING, model: 'embedding', trigger: 'rag-query' },
+        () => this.ollamaClient.embedTexts([queryText]),
+        (result) => ({ model: result.model }),
+      );
+      const queryVector = embeddings[0];
       if (!queryVector || queryVector.length !== EMBEDDING_DIM) {
         this.logger.warn(
           `[rag] unexpected query embedding dimension: ${queryVector?.length ?? 0}`,
@@ -329,6 +352,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     day?: string | null,
     model: SummaryModel = 'standard',
     instructions?: string,
+    trigger: AiTrigger = 'manual',
   ) {
     const targetDay = day ?? dayKeyOf(new Date())!;
     const [patient, targetOrders] = await Promise.all([
@@ -350,7 +374,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       targetOrders.map((order) => order.orderContent),
     );
 
-    const groups = await this.callAiSummarizer(targetOrders, extraInstructions, model);
+    const groups = await this.callAiSummarizer(targetOrders, extraInstructions, model, trigger);
 
     const summaries = [];
     for (const [index, group] of groups.entries()) {
@@ -465,7 +489,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     let done = 0;
     for (const [patientId, physicianId] of patients) {
       try {
-        await this.generateSummary(patientId, physicianId, day);
+        await this.generateSummary(patientId, physicianId, day, 'standard', undefined, 'batch');
         done++;
       } catch (err) {
         this.logger.warn(`[batch] patient ${patientId}: ${(err as Error).message}`);
@@ -607,7 +631,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     // Keep the summary filed under the day it already covers: when the source
     // orders span more than one day, take that day's group.
     const summaryDay = dayKeyOf(existing.summaryDate);
-    const groups = await this.callAiSummarizer(sourceOrders, extraInstructions, model);
+    const groups = await this.callAiSummarizer(sourceOrders, extraInstructions, model, 'regenerate');
     const group = groups.find((candidate) => candidate.day === summaryDay) ?? groups[0];
     if (!group?.summary) {
       throw new BadRequestException('No orders found to regenerate this summary');
