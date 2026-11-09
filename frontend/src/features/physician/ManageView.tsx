@@ -17,6 +17,7 @@ import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrders
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { ORDER_TYPE_OPTIONS, orderTypeLabel } from '../../components/orders/orderType';
 import { useTableState } from '../../hooks/useTableState';
+import { useSessionState } from '../../hooks/useSessionState';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import {
   formatDateLongFromKey,
@@ -26,6 +27,7 @@ import { apiErrorMessage } from '../../lib/apiError';
 import { manage } from './styles';
 
 import { ADMISSION_FILTER_PRESETS, AGE_BANDS, DAYS_IN_CARE_BANDS, MANAGE_FILTER_KEYS, PATIENT_STATUS_OPTIONS, SUMMARY_FILTER_OPTIONS, admissionMatches, customRangeValue, orderDayValue, parseCustomRange } from './filters';
+import { MANAGE_SELECTED_STATE, MANAGE_TABLE_STATE } from './listState';
 import { mapPatient } from './patient';
 import { TriageSummaryBar } from './TriageSummaryBar';
 import { SummaryHistory } from './SummaryHistory';
@@ -70,7 +72,8 @@ export function ManageView({
 }) {
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState("");
+  /** Kept across tab switches: coming back reopens the patient last charted. */
+  const [selectedId, setSelectedId] = useSessionState(MANAGE_SELECTED_STATE, "");
   /** Unapproved summaries per patient id — discharged patients stay listed. */
   const [pendingByPatient, setPendingByPatient] = useState<
     Record<string, PendingSummary[]>
@@ -169,7 +172,7 @@ export function ManageView({
       .catch(() => setPatients([]))
       .finally(() => setLoading(false));
     void refreshPendingSummaries();
-  }, [initialStatus, refreshPendingSummaries]);
+  }, [initialStatus, refreshPendingSummaries, setSelectedId]);
 
   useEffect(() => {
     loadPatients();
@@ -178,10 +181,12 @@ export function ManageView({
   // Nurses admit, discharge or move patients from their own screen.
   usePolling(loadPatients, ORDER_POLL_MS);
 
-  // Shared search / filter / sort / pagination state for the patient list.
+  // Shared search / filter / sort / pagination state for the patient list,
+  // remembered by key so a tab switch comes back to the same view.
   const table = useTableState<DashboardPatient>({
     items: patients,
     pageSize: 8,
+    stateKey: MANAGE_TABLE_STATE,
     searchFields: (p) => [p.name, p.gender],
     filterPredicates: {
       status: (p, value) => value === "all" || p.status === value,

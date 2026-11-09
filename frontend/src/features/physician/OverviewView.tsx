@@ -3,11 +3,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
+import { useSessionState } from '../../hooks/useSessionState';
 import { StatusBadge, TriageBadge } from '../../components/ui';
 import { overview } from './styles';
 
 import { CalendarWidget } from './CalendarWidget';
 import { BedIcon, HeartIcon, WheelchairIcon } from './icons';
+import { OVERVIEW_FILTER_STATE, OVERVIEW_PAGE_STATE } from './listState';
 import { mapPatient } from './patient';
 import { triageQueueKey } from '../../lib/triage';
 import { TodoListWidget } from './TodoListWidget';
@@ -19,8 +21,10 @@ export function OverviewView({
   /** A row click: open that patient's record (orders and summary) in Manage. */
   onOpenPatient?: (patient: DashboardPatient) => void;
 }) {
-  const [page, setPage] = useState(0);
-  const [filter, setFilter] = useState<OverviewFilter>("all");
+  // The status filter and page are remembered: switching tabs and coming back
+  // returns to the same list instead of the default "all" view.
+  const [page, setPage] = useSessionState(OVERVIEW_PAGE_STATE, 0);
+  const [filter, setFilter] = useSessionState<OverviewFilter>(OVERVIEW_FILTER_STATE, "all");
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 

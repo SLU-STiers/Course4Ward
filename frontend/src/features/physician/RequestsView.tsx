@@ -8,6 +8,7 @@ import { patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
 import { requests } from './styles';
 
+import { REQUESTS_TABLE_STATE } from './listState';
 import { ReviewSummaryModal } from './ReviewSummaryModal';
 
 export function RequestsView() {
@@ -29,10 +30,12 @@ export function RequestsView() {
     request.status === "PENDING" ||
     request.status === "PHYSICIAN_VALIDATION_REQUESTED";
 
-  // Shared search / filter / sort / pagination state.
+  // Shared search / filter / sort / pagination state, remembered so leaving
+  // the tab and coming back keeps the list where it was.
   const table = useTableState<PhysicianRequest>({
     items,
     pageSize: 5,
+    stateKey: REQUESTS_TABLE_STATE,
     searchFields: (request) => [
       `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
       `${request.processor.firstName} ${request.processor.lastName}`,

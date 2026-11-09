@@ -12,6 +12,8 @@ import { SidebarProfile } from '../../components/layout/SidebarProfile';
 import { PageHeader } from '../../components/ui';
 
 import { DashboardIcon, ManageIcon, RequestsIcon } from '../../components/icons/NavIcons';
+import { presetTableState } from '../../hooks/useTableState';
+import { MANAGE_TABLE_STATE } from './listState';
 import { ManageView } from './ManageView';
 import { OverviewView } from './OverviewView';
 import { RequestsView } from './RequestsView';
@@ -42,6 +44,9 @@ export function PhysicianDashboard() {
 
   /** A dashboard row opens its patient directly in Manage, filters intact. */
   const openPatient = (patient: DashboardPatient) => {
+    // The Manage list follows the patient's status, but the sort order and the
+    // other filters the physician left it on are kept.
+    presetTableState(MANAGE_TABLE_STATE, { filters: { status: patient.status } });
     setManageStatus(patient.status);
     setFocusPatient({ id: patient.id, key: Date.now() });
     setActiveTab("manage");
@@ -53,7 +58,9 @@ export function PhysicianDashboard() {
         ariaLabel: "Physician navigation",
         activeId: activeTab,
         onNavigate: (id) => {
-          // Reaching Manage from the nav always starts on the admitted patients.
+          // Plain tab switching keeps Manage's search, filters, sort and page
+          // exactly as they were left; only the patient a notification or an
+          // Overview row opened is cleared.
           if (id === "manage") {
             setManageStatus("admitted");
             setFocusPatient(null);
