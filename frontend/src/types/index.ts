@@ -47,6 +47,7 @@ export type InsuranceType = 'PHILHEALTH' | 'HMO' | 'PRIVATE' | 'NONE' | 'OTHER';
 export interface Patient {
   id: string;
   firstName: string;
+  middleName?: string | null;
   lastName: string;
   gender: Sex | null;
   dateOfBirth: string;

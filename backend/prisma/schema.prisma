@@ -178,6 +178,7 @@ model UserIdCounter {
 model Patient {
   id                   String         @id @default(uuid())
   firstName            String
+  middleName           String?
   lastName             String
   gender               Sex?
   dateOfBirth          DateTime?
