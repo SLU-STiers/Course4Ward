@@ -224,9 +224,12 @@ export function BarList({
 export function ColumnChart({
   points,
   emptyLabel = 'Nothing to chart yet',
+  unit,
 }: {
   points: Array<{ key: string; count: number }>;
   emptyLabel?: string;
+  /** What a bar's value counts, for its tooltip (default: actions). */
+  unit?: string;
 }) {
   if (!points.length) return <p style={styles.reportEmpty}>{emptyLabel}</p>;
 
@@ -276,7 +279,7 @@ export function ColumnChart({
                 rx={2}
                 fill="var(--c4w-color-primary, #2563eb)"
               >
-                <title>{`${point.key}: ${point.count} ${point.count === 1 ? 'action' : 'actions'}`}</title>
+                <title>{`${point.key}: ${point.count} ${unit ?? (point.count === 1 ? 'action' : 'actions')}`}</title>
               </rect>
               {index % labelStride === 0 ? (
                 <text x={centre} y={VIEW_H - 6} textAnchor="middle" fontSize={TICK_FONT} fill="#64748b">

@@ -370,6 +370,55 @@ export interface CountBucket<K extends string = string> {
 
 export type TrendBucket = 'day' | 'week' | 'month';
 
+/** Timing aggregate of AI calls; durations in ms over successful calls only. */
+export interface AiCallStats {
+  calls: number;
+  failures: number;
+  /** Orders summarized / texts embedded by the successful calls. */
+  items: number;
+  avgMs: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  maxMs: number | null;
+  avgOutputChars: number | null;
+  avgReferences: number | null;
+  avgTopSimilarity: number | null;
+}
+
+export interface AiCallSection extends AiCallStats {
+  byModel: Array<AiCallStats & { key: string }>;
+  byTrigger: Array<AiCallStats & { key: string }>;
+}
+
+/** `GET /admin/reports/ai`. */
+export interface AiStats {
+  bucket: TrendBucket;
+  summarization: AiCallSection;
+  embedding: AiCallSection;
+  /** Current state of the embedding / RAG corpus (not range-scoped). */
+  corpus: {
+    ordersTotal: number;
+    ordersEmbedded: number;
+    ragOrders: number;
+    approvedSummaries: number;
+    dimension: number | null;
+  };
+  trend: Array<{
+    period: string;
+    summaries: number;
+    avgSummaryMs: number | null;
+    embeddings: number;
+    avgEmbeddingMs: number | null;
+  }>;
+  recentFailures: Array<{
+    createdAt: string;
+    kind: 'SUMMARY' | 'EMBEDDING';
+    model: string;
+    trigger: string;
+    error: string | null;
+  }>;
+}
+
 export interface ActivityTrendPoint {
   /** Bucket start as a UTC calendar date (`YYYY-MM-DD`) — render as-is. */
   period: string;
