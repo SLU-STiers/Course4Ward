@@ -944,6 +944,7 @@ td {
   overflow-y: auto;
 }
 .physician-todo__section {
+  flex: 0 0 auto;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #f8fafc;
