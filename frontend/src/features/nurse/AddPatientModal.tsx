@@ -76,6 +76,7 @@ const CHIEF_COMPLAINTS = [
 
 export type AddPatientFormResult = {
   firstName: string;
+  middleName: string;
   lastName: string;
   /** Kept as typed text so an empty field is distinguishable from age 0 (newborn). */
   age: string;
@@ -114,6 +115,7 @@ export type AddPatientFormResult = {
 };
 const emptyForm = (): AddPatientFormResult => ({
   firstName: '',
+  middleName: '',
   lastName: '',
   age: '',
   gender: '',
@@ -192,6 +194,7 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       ...draft.form,
       patientClass: 'INPATIENT' as const,
       firstName: sanitizeName(typeof draft.form?.firstName === 'string' ? draft.form.firstName : ''),
+      middleName: sanitizeName(typeof draft.form?.middleName === 'string' ? draft.form.middleName : ''),
       lastName: sanitizeName(typeof draft.form?.lastName === 'string' ? draft.form.lastName : ''),
       age: String(draft.form?.age ?? ''),
       gender: toSex(draft.form?.gender),
@@ -383,12 +386,17 @@ export function AddPatientModal({
     setError(null);
 
     const firstName = form.firstName.trim();
+    const middleName = form.middleName.trim();
     const lastName = form.lastName.trim();
     if (!firstName || !lastName) {
       setError('Please enter the patient’s first and last name.');
       return;
     }
     if (!NAME_PATTERN.test(firstName) || !NAME_PATTERN.test(lastName)) {
+      setError('Patient names may contain letters, spaces, hyphens, apostrophes, and periods only.');
+      return;
+    }
+    if (middleName && !NAME_PATTERN.test(middleName)) {
       setError('Patient names may contain letters, spaces, hyphens, apostrophes, and periods only.');
       return;
     }
@@ -476,6 +484,7 @@ export function AddPatientModal({
     try {
       await patientsApi.create({
         firstName,
+        middleName: middleName || undefined,
         lastName,
         age: Number(form.age),
         gender: form.gender,
@@ -569,6 +578,15 @@ export function AddPatientModal({
                   placeholder="e.g. Juan"
                   maxLength={150}
                   required
+                />
+              </Field>
+              <Field label="Middle Name">
+                <input
+                  style={s.input}
+                  value={form.middleName}
+                  onChange={(e) => setField('middleName', sanitizeName(e.target.value))}
+                  placeholder="Optional"
+                  maxLength={150}
                 />
               </Field>
               <Field label="Last Name" required>

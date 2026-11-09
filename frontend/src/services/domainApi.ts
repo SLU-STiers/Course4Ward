@@ -15,6 +15,7 @@ import type {
   AuthUser,
   PhysicianRequest,
   ActivityTrend,
+  AiStats,
   AdminUserInput,
   AuditLogAggregate,
   AuditLogAggregateQuery,
@@ -30,6 +31,7 @@ import type {
   WardRoom,
   SummaryVersion,
   SummaryModel,
+  PendingSummary,
   PhysicianOption,
 } from '../types';
 
@@ -113,15 +115,30 @@ export const notesApi = {
 
 // --- Course in the Ward (AI summaries) ---
 export const courseInWardApi = {
-  /** Summarize one order day (today when `day` is omitted); returns that day's summary rows. */
-  generate: (patientId: string, day?: string, model: SummaryModel = 'standard') =>
-    api.post<CourseInWard[]>(
-      '/course-in-ward/generate',
-      day ? { patientId, day, model } : { patientId, model },
-    ),
+  /**
+   * Summarize one order day (today when `day` is omitted); returns that day's
+   * summary rows. `instructions` are FORMATTING instructions only -- the API
+   * rejects any request for clinical content the orders do not contain.
+   */
+  generate: (
+    patientId: string,
+    day?: string,
+    model: SummaryModel = 'standard',
+    instructions?: string,
+  ) =>
+    api.post<CourseInWard[]>('/course-in-ward/generate', {
+      patientId,
+      ...(day ? { day } : {}),
+      model,
+      ...(instructions?.trim() ? { instructions: instructions.trim() } : {}),
+    }),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
-  /** `instructions`: optional extra prompt for the AI (blank = none). */
+  /**
+   * `instructions`: optional FORMATTING instructions for the AI (blank = none).
+   * The API rejects instructions that ask for clinical content the orders do
+   * not contain, so only wording/order/grouping/length hints belong here.
+   */
   regenerate: (id: string, instructions?: string, model: SummaryModel = 'standard') =>
     api.post<CourseInWard>(
       `/course-in-ward/${id}/regenerate`,
@@ -135,6 +152,8 @@ export const courseInWardApi = {
     api.post<CourseInWard>(`/course-in-ward/${id}/versions/${versionId}/restore`),
   forPatient: (patientId: string) =>
     api.get<CourseInWard[]>(`/course-in-ward/patient/${patientId}`),
+  /** Summaries of the physician's patients that still need approving (discharged included). */
+  pending: () => api.get<PendingSummary[]>('/course-in-ward/pending'),
 };
 
 // --- Claims ---
@@ -185,6 +204,8 @@ export const adminApi = {
     api.get<ReportSummary>('/admin/reports/summary', { params }),
   activityTrend: (params?: ReportRangeParams & { bucket?: TrendBucket }) =>
     api.get<ActivityTrend>('/admin/reports/activity-trend', { params }),
+  /** AI summarization / embedding timings and embedding coverage. */
+  aiStats: (params?: ReportRangeParams) => api.get<AiStats>('/admin/reports/ai', { params }),
   /** One page of reset requests, filtered and sorted server-side. */
   getResetRequests: (params?: PasswordResetQuery) =>
     api.get<PasswordResetRequestPage>('/admin/password-reset-requests', { params }),

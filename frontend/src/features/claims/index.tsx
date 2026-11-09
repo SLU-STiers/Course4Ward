@@ -478,7 +478,7 @@ export function ClaimsProcessorDashboard() {
                                   {latestRequest.patient.name}
                                 </span>
                                 <span style={{ fontSize: 11, color: '#64748b' }}>
-                                  ID {latestRequest.patient.patientId} · {latestRequest.patient.age} years · {latestRequest.patient.gender}
+                                  {latestRequest.patient.age} years · {latestRequest.patient.gender}
                                 </span>
                                 <span style={{ fontSize: 11, color: '#64748b' }}>
                                   {group.requests.length} daily {group.requests.length === 1 ? 'summary' : 'summaries'} · {admissionCount} {admissionCount === 1 ? 'admission' : 'admissions'}

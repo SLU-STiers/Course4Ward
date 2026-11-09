@@ -5,6 +5,12 @@ import type { Patient, TriageLevel } from '../../types';
 export type TabType = "overview" | "manage" | "requests";
 type PatientStatus = "admitted" | "discharged";
 export type OverviewFilter = "all" | PatientStatus;
+/**
+ * Status filter of the Manage list. The list holds every assigned patient —
+ * discharged ones stay reachable so their last Course in the Ward can still be
+ * read and approved.
+ */
+export type ManageStatusFilter = OverviewFilter;
 export type DashboardPatient = {
   id: string;
   name: string;

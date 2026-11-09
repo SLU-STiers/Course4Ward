@@ -212,6 +212,9 @@ export function ManagementPortalView({
   const table = useTableState<NursePatient>({
     items: patients,
     pageSize: 8,
+    // Remembered for the session, so switching dashboard tabs comes back to the
+    // same search / filter / sort / page.
+    stateKey: 'nurse.management.table',
     searchFields: (patient) => [patient.name, patient.patientId, patient.recordId],
     filterPredicates: {
       status: (patient, value) => value === 'all' || (!patient.restricted && displayStatus(patient) === value),

@@ -3,8 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateShort, formatTimeMedium } from '../../lib/format';
 import { notesApi } from '../../services/domainApi';
+import { useSessionState } from '../../hooks/useSessionState';
 import type { PhysicianNote } from '../../types';
 import type { DashboardPatient } from './types';
+import {
+  TODO_FOCUS_STATE,
+  TODO_SELECTED_STATE,
+  TODO_STATUS_STATE,
+  TODO_VIEW_ALL_STATE,
+} from './listState';
 import { overview } from './styles';
 
 function Chevron() {
@@ -25,10 +32,15 @@ export function TodoListWidget({ patients }: { patients: DashboardPatient[] }) {
     [patients],
   );
   const rosterKey = roster.map((patient) => patient.id).join(',');
-  const [statusFilter, setStatusFilter] = useState<'admitted' | 'discharged'>('admitted');
-  const [viewAll, setViewAll] = useState(true);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [focusedPatientId, setFocusedPatientId] = useState('');
+  // Which patients the widget is working on survives a tab switch, so the
+  // physician does not have to re-pick them after checking another tab.
+  const [statusFilter, setStatusFilter] = useSessionState<'admitted' | 'discharged'>(
+    TODO_STATUS_STATE,
+    'admitted',
+  );
+  const [viewAll, setViewAll] = useSessionState(TODO_VIEW_ALL_STATE, true);
+  const [selectedIds, setSelectedIds] = useSessionState<string[]>(TODO_SELECTED_STATE, []);
+  const [focusedPatientId, setFocusedPatientId] = useSessionState(TODO_FOCUS_STATE, '');
   const [notesByPatient, setNotesByPatient] = useState<Record<string, PhysicianNote[]>>({});
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');

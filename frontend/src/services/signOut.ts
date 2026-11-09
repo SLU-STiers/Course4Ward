@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { api } from './api';
 import { useAuthStore } from '../store/authStore';
+import { clearSessionState } from '../lib/sessionState';
 
 /** Why a session ended; the admin Activity Logs show the two differently. */
 export type LogoutReason = 'MANUAL' | 'IDLE_TIMEOUT';
@@ -25,4 +26,7 @@ export function signOut(reason: LogoutReason) {
       .catch(() => undefined);
   }
   logout();
+  // Remembered list state (searches, filters) belongs to the account that set
+  // it and must not greet the next person who signs in on this browser.
+  clearSessionState();
 }

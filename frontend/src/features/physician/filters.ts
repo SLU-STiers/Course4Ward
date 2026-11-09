@@ -29,7 +29,18 @@ export const DAYS_IN_CARE_BANDS: {
   { value: "medium", label: "4 – 7 days", test: (days) => days >= 4 && days <= 7 },
   { value: "long", label: "8+ days", test: (days) => days >= 8 },
 ];
-export const MANAGE_FILTER_KEYS = ["status", "gender", "age", "days", "admitted"];
+/** Admitted / discharged. Discharged patients stay in the Manage list. */
+export const PATIENT_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "All patients" },
+  { value: "admitted", label: "Admitted" },
+  { value: "discharged", label: "Discharged" },
+];
+/** Whether the patient still has a Course in the Ward waiting to be approved. */
+export const SUMMARY_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "Any summary" },
+  { value: "pending", label: "Summary needs approval" },
+];
+export const MANAGE_FILTER_KEYS = ["status", "gender", "age", "days", "admitted", "summaries"];
 export function parseCustomRange(value: string) {
   if (!value.startsWith("custom:")) return { from: "", to: "" };
   const [, from = "", to = ""] = value.split(":");

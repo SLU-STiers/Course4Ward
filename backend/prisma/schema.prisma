@@ -69,7 +69,6 @@ enum OrderStatus {
   @@map("order_status")
 }
 
-
 enum OrderEnteredBy {
   PHYSICIAN
   NURSE_ON_BEHALF
@@ -87,7 +86,6 @@ enum ResetStatus {
   REJECTED
   EXPIRED
 }
-
 
 enum ActionType {
   LOGIN
@@ -165,35 +163,36 @@ model User {
   /// Wards a nurse works in; a nurse sees full patient details only there.
   wards                      NurseWard[]
   /// Wards / specialties a physician is assigned to.
-  physicianWards              PhysicianWard[]
+  physicianWards             PhysicianWard[]
 
   @@map("users")
 }
 
 model UserIdCounter {
-  role        Role @id
-  nextNumber  Int  @default(1)
+  role       Role @id
+  nextNumber Int  @default(1)
 
   @@map("user_id_counters")
 }
 
 model Patient {
-  id          String    @id @default(uuid())
-  firstName   String
-  lastName    String
-  gender      Sex?
-  dateOfBirth DateTime?
-  contactNumber String?
-  address       String?
-  insurance     InsuranceType?
+  id                   String         @id @default(uuid())
+  firstName            String
+  middleName           String?
+  lastName             String
+  gender               Sex?
+  dateOfBirth          DateTime?
+  contactNumber        String?
+  address              String?
+  insurance            InsuranceType?
   /// The specific insurance when `insurance` is OTHER.
-  insuranceOther String?
-  religion      String?
+  insuranceOther       String?
+  religion             String?
   contactPersonName    String?
   contactPersonNumber  String?
   contactPersonAddress String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
   admissions    PatientAdmission[]
   notes         PhysicianNote[]
@@ -203,21 +202,21 @@ model Patient {
 }
 
 model PatientAdmission {
-  id                String    @id @default(uuid())
-  admissionDate     DateTime
-  dischargeDate     DateTime?
-  patientClass      PatientClass @default(EMERGENCY)
+  id                   String               @id @default(uuid())
+  admissionDate        DateTime
+  dischargeDate        DateTime?
+  patientClass         PatientClass         @default(EMERGENCY)
   /// When the admission entered its current class (e.g. start of observation).
-  classSince        DateTime     @default(now())
-  initialAssessment String?
-  patientId         String
-  physicianId       String?      
+  classSince           DateTime             @default(now())
+  initialAssessment    String?
+  patientId            String
+  physicianId          String?
   /// The ward room of an admitted patient; freed once the admission is discharged.
-  roomId            String?
-  patient           Patient @relation(fields: [patientId], references: [id])
-  physician         User?   @relation(fields: [physicianId], references: [id])
-  room              Room?   @relation(fields: [roomId], references: [id])
-  orders PhysicianOrder[]
+  roomId               String?
+  patient              Patient              @relation(fields: [patientId], references: [id])
+  physician            User?                @relation(fields: [physicianId], references: [id])
+  room                 Room?                @relation(fields: [roomId], references: [id])
+  orders               PhysicianOrder[]
   additionalPhysicians AdmissionPhysician[]
   triage               TriageAssessment?
 
@@ -227,12 +226,12 @@ model PatientAdmission {
 
 /// A ward room. Occupied while an undischarged admission is assigned to it.
 model Room {
-  id         String   @id @default(uuid())
-  number     String   @unique
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  wardId     String?
-  ward       Ward?    @relation(fields: [wardId], references: [id])
+  id        String   @id @default(uuid())
+  number    String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  wardId    String?
+  ward      Ward?    @relation(fields: [wardId], references: [id])
 
   admissions PatientAdmission[]
 
@@ -249,8 +248,8 @@ model Ward {
   holdsUnroomed Boolean  @default(false)
   createdAt     DateTime @default(now())
 
-  rooms  Room[]
-  nurses NurseWard[]
+  rooms      Room[]
+  nurses     NurseWard[]
   physicians PhysicianWard[]
 
   @@map("wards")
@@ -259,8 +258,8 @@ model Ward {
 model PhysicianWard {
   physicianId String
   wardId      String
-  physician   User @relation(fields: [physicianId], references: [id], onDelete: Cascade)
-  ward        Ward @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  physician   User   @relation(fields: [physicianId], references: [id], onDelete: Cascade)
+  ward        Ward   @relation(fields: [wardId], references: [id], onDelete: Cascade)
 
   @@id([physicianId, wardId])
   @@index([wardId])
@@ -270,8 +269,8 @@ model PhysicianWard {
 model NurseWard {
   nurseId String
   wardId  String
-  nurse   User @relation(fields: [nurseId], references: [id], onDelete: Cascade)
-  ward    Ward @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  nurse   User   @relation(fields: [nurseId], references: [id], onDelete: Cascade)
+  ward    Ward   @relation(fields: [wardId], references: [id], onDelete: Cascade)
 
   @@id([nurseId, wardId])
   @@index([wardId])
@@ -316,21 +315,21 @@ model AdmissionPhysician {
 }
 
 model PhysicianOrder {
-  id             String                      @id @default(uuid())
+  id             String                       @id @default(uuid())
   orderContent   String
-  type           OrderType                   @default(DEFAULT)
-  status         OrderStatus                 @default(TO_ACCOMPLISH)
-  nurseComment   String?                     
-  executedById   String?                     
-  executedAt     DateTime?                   
-  dateCreated    DateTime                    @default(now())
-  dateUpdated    DateTime?                   @updatedAt
+  type           OrderType                    @default(DEFAULT)
+  status         OrderStatus                  @default(TO_ACCOMPLISH)
+  nurseComment   String?
+  executedById   String?
+  executedAt     DateTime?
+  dateCreated    DateTime                     @default(now())
+  dateUpdated    DateTime?                    @updatedAt
   orderEmbedding Unsupported("vector(1024)")?
   admissionId    String
   orderedById    String
   encodedById    String
-  enteredByRole  OrderEnteredBy              @default(PHYSICIAN)
-  active         Boolean                     @default(true)
+  enteredByRole  OrderEnteredBy               @default(PHYSICIAN)
+  active         Boolean                      @default(true)
 
   communicationChannel CommunicationChannel?
 
@@ -343,7 +342,7 @@ model PhysicianOrder {
   summary    CourseInWard?    @relation(fields: [summarizationId], references: [id])
 
   @@index([admissionId, dateCreated])
-  @@index([executedById])   
+  @@index([executedById])
   @@map("physician_orders")
 }
 
@@ -364,17 +363,17 @@ model PhysicianNote {
 }
 
 model CourseInWard {
-  id              String               @id @default(uuid())
-  summaryContent  String
-  summaryDate     DateTime             @default(now())
-  approvedStatus  Boolean?
-  status          SummaryStatus        @default(DRAFT_AI)
-  validatorId     String?
-  validatedAt     DateTime?
-  patientId       String
+  id             String        @id @default(uuid())
+  summaryContent String
+  summaryDate    DateTime      @default(now())
+  approvedStatus Boolean?
+  status         SummaryStatus @default(DRAFT_AI)
+  validatorId    String?
+  validatedAt    DateTime?
+  patientId      String
 
-  philhealthCf4Status    PhilHealthCF4Status @default(PENDING)   
-  philhealthCf4DecidedAt DateTime?                               
+  philhealthCf4Status    PhilHealthCF4Status @default(PENDING)
+  philhealthCf4DecidedAt DateTime?
 
   patient    Patient                  @relation(fields: [patientId], references: [id])
   approvedBy User?                    @relation("ApprovedBy", fields: [validatorId], references: [id])
@@ -418,15 +417,15 @@ model SummaryApprovalRequest {
 }
 
 model PasswordResetRequest {
-  id          String      @id @default(uuid())
-  userId      String
-  ipAddress   String?
-  token       String      @unique
+  id                String      @id @default(uuid())
+  userId            String
+  ipAddress         String?
+  token             String      @unique
   temporaryPassword String?
-  requestedAt DateTime    @default(now())
-  expiresAt   DateTime
-  resolvedAt  DateTime?
-  status      ResetStatus @default(PENDING)
+  requestedAt       DateTime    @default(now())
+  expiresAt         DateTime
+  resolvedAt        DateTime?
+  status            ResetStatus @default(PENDING)
 
   user User @relation(fields: [userId], references: [id])
 
@@ -475,4 +474,34 @@ model Notification {
   @@index([userId, clearedAt])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+enum AiCallKind {
+  SUMMARY
+  EMBEDDING
+}
+
+/// One timed call to the AI service, for the admin AI statistics. Written
+/// best-effort by `course-in-ward/ai-metrics.ts`; never read by clinical code.
+model AiCallMetric {
+  id             String     @id @default(uuid())
+  kind           AiCallKind
+  /// `standard` / `fine_tuned` for summaries; the embedding model's name for embeddings.
+  model          String
+  /// What caused the call: manual | regenerate | batch | order | rag-query.
+  trigger        String
+  durationMs     Int
+  success        Boolean
+  /// Orders summarized, or texts embedded.
+  itemCount      Int        @default(1)
+  /// Characters of summary text returned (summaries only).
+  outputChars    Int?
+  /// RAG references handed to the model, and the best one's cosine similarity (summaries only).
+  referenceCount Int?
+  topSimilarity  Float?
+  error          String?
+  createdAt      DateTime   @default(now())
+
+  @@index([kind, createdAt])
+  @@map("ai_call_metrics")
 }

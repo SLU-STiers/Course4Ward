@@ -379,6 +379,23 @@ export const manage: Record<string, CSSProperties> = {
     fontSize: 12,
     color: "#64748b",
   },
+  /** Status dot + name stack in the Manage list's patient cell. */
+  patientCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+  },
+  patientCellStack: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 3,
+    minWidth: 0,
+  },
+  /** Keeps the approval chip's popover out of the row's click target. */
+  pendingChipWrap: {
+    display: "inline-flex",
+  },
   tableScroll: {
     flex: "1 1 auto",
     minHeight: 0,
@@ -591,6 +608,7 @@ export const manage: Record<string, CSSProperties> = {
   aiActionRow: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, width: "100%" },
   /** Pushes the primary action (Approve / Save) to the right edge. */
   aiActionSpacer: { flex: "1 1 auto" },
+  approveNote: { fontSize: 12, color: "#64748b" },
   /**
    * "Compare versions" popup (SummaryHistory): version cards on the left, the
    * selected one's composition on the right. Each pane scrolls on its own, so

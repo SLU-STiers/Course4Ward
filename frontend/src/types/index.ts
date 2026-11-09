@@ -47,6 +47,7 @@ export type InsuranceType = 'PHILHEALTH' | 'HMO' | 'PRIVATE' | 'NONE' | 'OTHER';
 export interface Patient {
   id: string;
   firstName: string;
+  middleName?: string | null;
   lastName: string;
   gender: Sex | null;
   dateOfBirth: string;
@@ -178,6 +179,20 @@ export interface CourseInWard {
   approvedById?: string | null;
   approvedAt?: string | null;
   version?: number;
+  /** Attending physician of the summary's admission: the only one who may approve it. */
+  attendingPhysicianId?: string | null;
+}
+
+/**
+ * A Course in the Ward still waiting for the physician's approval. The API
+ * returns one row per unapproved summary, across every patient assigned to the
+ * signed-in physician (discharged patients included).
+ */
+export interface PendingSummary {
+  id: string;
+  patientId: string;
+  summaryDate: string;
+  status: SummaryStatus;
 }
 
 /** An earlier text of a Course in the Ward, kept when it was regenerated or edited. */
@@ -355,6 +370,55 @@ export interface CountBucket<K extends string = string> {
 }
 
 export type TrendBucket = 'day' | 'week' | 'month';
+
+/** Timing aggregate of AI calls; durations in ms over successful calls only. */
+export interface AiCallStats {
+  calls: number;
+  failures: number;
+  /** Orders summarized / texts embedded by the successful calls. */
+  items: number;
+  avgMs: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  maxMs: number | null;
+  avgOutputChars: number | null;
+  avgReferences: number | null;
+  avgTopSimilarity: number | null;
+}
+
+export interface AiCallSection extends AiCallStats {
+  byModel: Array<AiCallStats & { key: string }>;
+  byTrigger: Array<AiCallStats & { key: string }>;
+}
+
+/** `GET /admin/reports/ai`. */
+export interface AiStats {
+  bucket: TrendBucket;
+  summarization: AiCallSection;
+  embedding: AiCallSection;
+  /** Current state of the embedding / RAG corpus (not range-scoped). */
+  corpus: {
+    ordersTotal: number;
+    ordersEmbedded: number;
+    ragOrders: number;
+    approvedSummaries: number;
+    dimension: number | null;
+  };
+  trend: Array<{
+    period: string;
+    summaries: number;
+    avgSummaryMs: number | null;
+    embeddings: number;
+    avgEmbeddingMs: number | null;
+  }>;
+  recentFailures: Array<{
+    createdAt: string;
+    kind: 'SUMMARY' | 'EMBEDDING';
+    model: string;
+    trigger: string;
+    error: string | null;
+  }>;
+}
 
 export interface ActivityTrendPoint {
   /** Bucket start as a UTC calendar date (`YYYY-MM-DD`) — render as-is. */
