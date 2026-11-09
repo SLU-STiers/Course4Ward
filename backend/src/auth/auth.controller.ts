@@ -57,6 +57,12 @@ export class AuthController {
     return { authenticated: true, user };
   }
 
+  @Get('profile')
+  @UseGuards(JwtAuthGuard)
+  profile(@CurrentUser() user: { id: string }) {
+    return this.authService.accountProfile(user.id);
+  }
+
   @Post('password-reset/request')
   async requestReset(
     @Body() dto: RequestPasswordResetDto,

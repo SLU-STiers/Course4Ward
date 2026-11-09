@@ -385,4 +385,39 @@ describe('AuthService', () => {
       expect(findManyArgs().select.status).toBe(true);
     });
   });
+
+  describe('accountProfile', () => {
+    it('returns a nurse’s assigned wards by name', async () => {
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue({
+        id: 'user-123',
+        userId: 'NRS001',
+        firstName: 'Angela',
+        lastName: 'Reyes',
+        role: 'NURSE',
+        wards: [
+          { ward: { id: 'w2', name: 'Medical' } },
+          { ward: { id: 'w1', name: 'Emergency' } },
+        ],
+        physicianWards: [{ ward: { id: 'w9', name: 'Surgery' } }],
+      });
+
+      await expect(service.accountProfile('user-123')).resolves.toEqual({
+        id: 'user-123',
+        userId: 'NRS001',
+        firstName: 'Angela',
+        lastName: 'Reyes',
+        role: 'NURSE',
+        wards: [
+          { id: 'w1', name: 'Emergency' },
+          { id: 'w2', name: 'Medical' },
+        ],
+      });
+    });
+
+    it('throws when the account is missing', async () => {
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.accountProfile('missing')).rejects.toThrow('Account not found');
+    });
+  });
 });

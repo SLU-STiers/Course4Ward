@@ -13,6 +13,8 @@ export interface AppNotification {
   message: string;
   /** Claim / summary approval request this notification points at, if any. */
   requestId?: string | null;
+  /** Patient chart this notification opens, when any. */
+  patientId?: string | null;
   isRead: boolean;
   createdAt: string;
   /** Set when the bell was cleared — the item then only shows in history. */
@@ -29,6 +31,11 @@ export interface AuthUser {
   lastName: string;
   role: Role;
   mustResetPassword?: boolean;
+}
+
+/** Signed-in account, including the wards a nurse or physician is assigned to. */
+export interface AccountProfile extends AuthUser {
+  wards: { id: string; name: string }[];
 }
 
 /** Backend `Sex`; `null` on records registered before it was required. */
@@ -150,6 +157,7 @@ export interface PhysicianNote {
   notesArray: string;
   physicianId: string;
   patientId: string;
+  completed: boolean;
   createdAt: string;
   reminderAt?: string | null;
 }
@@ -171,6 +179,18 @@ export interface CourseInWard {
   approvedById?: string | null;
   approvedAt?: string | null;
   version?: number;
+}
+
+/**
+ * A Course in the Ward still waiting for the physician's approval. The API
+ * returns one row per unapproved summary, across every patient assigned to the
+ * signed-in physician (discharged patients included).
+ */
+export interface PendingSummary {
+  id: string;
+  patientId: string;
+  summaryDate: string;
+  status: SummaryStatus;
 }
 
 /** An earlier text of a Course in the Ward, kept when it was regenerated or edited. */

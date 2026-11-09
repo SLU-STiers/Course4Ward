@@ -35,6 +35,7 @@ export class NotesService {
         ...(dto.reminderAt !== undefined
           ? { reminderAt: dto.reminderAt ? new Date(dto.reminderAt) : null }
           : {}),
+        ...(dto.completed !== undefined ? { completed: dto.completed } : {}),
       },
     });
   }

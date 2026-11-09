@@ -11,6 +11,7 @@ import type {
   Claim,
   ClaimRecord,
   EligibleSummary,
+  AccountProfile,
   AuthUser,
   PhysicianRequest,
   ActivityTrend,
@@ -29,12 +30,14 @@ import type {
   WardRoom,
   SummaryVersion,
   SummaryModel,
+  PendingSummary,
   PhysicianOption,
 } from '../types';
 
 // --- Auth ---
 export const authApi = {
   session: () => api.get<{ authenticated: boolean }>('/auth/session'),
+  profile: () => api.get<AccountProfile>('/auth/profile'),
   login: (userId: string, password: string) =>
     api.post<{ accessToken: string; refreshToken: string; user: AuthUser; mustResetPassword: boolean }>(
       '/auth/login',
@@ -102,7 +105,7 @@ export const ordersApi = {
 export const notesApi = {
   create: (data: { patientId: string; content: string; reminderAt?: string }) =>
     api.post<PhysicianNote>('/notes', data),
-  update: (id: string, data: { content?: string; reminderAt?: string | null }) =>
+  update: (id: string, data: { content?: string; reminderAt?: string | null; completed?: boolean }) =>
     api.patch<PhysicianNote>(`/notes/${id}`, data),
   remove: (id: string) => api.delete(`/notes/${id}`),
   forPatient: (patientId: string) => api.get<PhysicianNote[]>(`/notes/patient/${patientId}`),
@@ -111,15 +114,30 @@ export const notesApi = {
 
 // --- Course in the Ward (AI summaries) ---
 export const courseInWardApi = {
-  /** Summarize one order day (today when `day` is omitted); returns that day's summary rows. */
-  generate: (patientId: string, day?: string, model: SummaryModel = 'standard') =>
-    api.post<CourseInWard[]>(
-      '/course-in-ward/generate',
-      day ? { patientId, day, model } : { patientId, model },
-    ),
+  /**
+   * Summarize one order day (today when `day` is omitted); returns that day's
+   * summary rows. `instructions` are FORMATTING instructions only -- the API
+   * rejects any request for clinical content the orders do not contain.
+   */
+  generate: (
+    patientId: string,
+    day?: string,
+    model: SummaryModel = 'standard',
+    instructions?: string,
+  ) =>
+    api.post<CourseInWard[]>('/course-in-ward/generate', {
+      patientId,
+      ...(day ? { day } : {}),
+      model,
+      ...(instructions?.trim() ? { instructions: instructions.trim() } : {}),
+    }),
   edit: (id: string, editedText: string) =>
     api.patch<CourseInWard>(`/course-in-ward/${id}/edit`, { editedText }),
-  /** `instructions`: optional extra prompt for the AI (blank = none). */
+  /**
+   * `instructions`: optional FORMATTING instructions for the AI (blank = none).
+   * The API rejects instructions that ask for clinical content the orders do
+   * not contain, so only wording/order/grouping/length hints belong here.
+   */
   regenerate: (id: string, instructions?: string, model: SummaryModel = 'standard') =>
     api.post<CourseInWard>(
       `/course-in-ward/${id}/regenerate`,
@@ -133,6 +151,8 @@ export const courseInWardApi = {
     api.post<CourseInWard>(`/course-in-ward/${id}/versions/${versionId}/restore`),
   forPatient: (patientId: string) =>
     api.get<CourseInWard[]>(`/course-in-ward/patient/${patientId}`),
+  /** Summaries of the physician's patients that still need approving (discharged included). */
+  pending: () => api.get<PendingSummary[]>('/course-in-ward/pending'),
 };
 
 // --- Claims ---
@@ -152,14 +172,14 @@ export const claimsApi = {
 
 // --- Notifications (header bell) ---
 export const notificationsApi = {
-  /** `scope: 'history'` returns the full log, cleared items included. */
+  /** `inbox` is unread. `history` is marked as read. */
   list: (options?: { scope?: NotificationScope; take?: number }) =>
     api.get<AppNotification[]>('/notifications', { params: options }),
   unreadCount: () => api.get<{ count: number }>('/notifications/unread-count'),
   /** Returns the recalculated unread count for the badge. */
   markRead: (id: string) => api.patch<{ count: number }>(`/notifications/${id}/read`),
   markAllRead: () => api.post<{ count: number }>('/notifications/read-all'),
-  /** Clears the inbox; the items stay in the history. */
+  /** Deletes every notification for the signed-in user. */
   clear: () => api.post<{ count: number }>('/notifications/clear'),
 };
 

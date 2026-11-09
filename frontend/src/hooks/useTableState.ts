@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { readSessionState, writeSessionState } from '../lib/sessionState';
 
 export type SortDirection = 'ascending' | 'descending';
 
@@ -26,6 +27,12 @@ export interface TableStateConfig<T> {
    */
   sorters?: Record<string, (item: T) => string | number>;
   initialSort?: SortState;
+  /**
+   * Remembers the query, filters, sorting and page under this key, so a view
+   * that unmounts (a dashboard tab switch) comes back exactly as it was left.
+   * Omit it and the table behaves like plain component state.
+   */
+  stateKey?: string;
 }
 
 export interface TableState<T> {
@@ -57,6 +64,32 @@ export interface TableState<T> {
 const DEFAULT_SORT: SortState = { field: '', direction: 'ascending' };
 
 /**
+ * Seeds a remembered table before its view mounts — the case where a click in
+ * another tab decides what the table should show (a dashboard row opening its
+ * patient in Manage on that patient's status). Everything the preset omits is
+ * left as the user had it, so a sort choice survives the jump.
+ */
+export function presetTableState(
+  stateKey: string,
+  preset: {
+    query?: string;
+    /** Replaces the whole filter set; keys left out fall back to "all". */
+    filters?: Record<string, string>;
+    sort?: SortState;
+    page?: number;
+  },
+): void {
+  writeSessionState(`${stateKey}:query`, preset.query ?? '');
+  writeSessionState(`${stateKey}:page`, preset.page ?? 1);
+  if (preset.filters) writeSessionState(`${stateKey}:filters`, preset.filters);
+  if (preset.sort) writeSessionState(`${stateKey}:sort`, preset.sort);
+}
+
+function restoreTableState<V>(stateKey: string | undefined, suffix: string, fallback: V): V {
+  return stateKey ? readSessionState(`${stateKey}:${suffix}`, fallback) : fallback;
+}
+
+/**
  * Shared search / filter / sort / pagination state for every data table.
  *
  * Usage:
@@ -84,13 +117,33 @@ export function useTableState<T>(config: TableStateConfig<T>): TableState<T> {
     initialFilters = {},
     sorters = {},
     initialSort = DEFAULT_SORT,
+    stateKey,
   } = config;
   const pageSize = Math.max(1, configuredPageSize);
 
-  const [query, setQueryState] = useState(initialQuery);
-  const [filters, setFilters] = useState<Record<string, string>>(initialFilters);
-  const [sort, setSortState] = useState<SortState>(initialSort);
-  const [page, setPageState] = useState(1);
+  // A remembered table opens on the state it was left in. Restoring through
+  // `useState` initialisers (rather than a custom hook) keeps the setters the
+  // stable functions the callbacks below depend on.
+  const [query, setQueryState] = useState(() =>
+    restoreTableState(stateKey, 'query', initialQuery),
+  );
+  const [filters, setFilters] = useState<Record<string, string>>(() =>
+    restoreTableState(stateKey, 'filters', initialFilters),
+  );
+  const [sort, setSortState] = useState<SortState>(() =>
+    restoreTableState(stateKey, 'sort', initialSort),
+  );
+  const [page, setPageState] = useState(() =>
+    restoreTableState(stateKey, 'page', 1),
+  );
+
+  useEffect(() => {
+    if (!stateKey) return;
+    writeSessionState(`${stateKey}:query`, query);
+    writeSessionState(`${stateKey}:filters`, filters);
+    writeSessionState(`${stateKey}:sort`, sort);
+    writeSessionState(`${stateKey}:page`, page);
+  }, [stateKey, query, filters, sort, page]);
 
   const setQuery = useCallback((next: string) => {
     setQueryState(next);

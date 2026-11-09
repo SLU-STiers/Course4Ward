@@ -353,6 +353,7 @@ model PhysicianNote {
   notesArray  String
   physicianId String
   patientId   String
+  completed   Boolean   @default(false)
   createdAt   DateTime  @default(now())
   reminderAt  DateTime?
 
@@ -459,7 +460,11 @@ model Notification {
   message   String
   /// The summary approval request this notification points at, when any.
   requestId String?
+  /// Patient chart to open when the recipient follows this notification.
+  patientId String?
   isRead    Boolean          @default(false)
+  /// When the recipient marked it read. Read rows from earlier days are removed.
+  readAt    DateTime?
   createdAt DateTime         @default(now())
   /// Set when the user clears the bell. The row leaves the inbox (and the
   /// badge) but stays visible in the notification history.

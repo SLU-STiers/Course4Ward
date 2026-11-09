@@ -4,6 +4,7 @@ import {
   StandardFonts,
 } from 'pdf-lib';
 
+import { formatDateMedium } from '../../lib/format';
 import { buildCf4Pdf } from './cf4Pdf';
 import type { Cf4SummaryDraft } from './types';
 
@@ -36,6 +37,14 @@ function valueForTemplateField(
     normalized.includes('patientgender')
   ) {
     return patient.gender;
+  }
+  if (
+    (normalized.includes('discharge') || normalized.includes('discharged')) &&
+    normalized.includes('date')
+  ) {
+    return patient.dischargeDateRaw
+      ? formatDateMedium(patient.dischargeDateRaw)
+      : patient.status === 'admitted' ? 'Present' : undefined;
   }
   if (
     (normalized.includes('admission') || normalized.includes('admitted')) &&

@@ -10,7 +10,7 @@ import { useTableState } from '../../hooks/useTableState';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 
 /** The patient list changes less often than an open patient's orders. */
-const PATIENT_POLL_MS = 15000;
+const PATIENT_POLL_MS = ORDER_POLL_MS;
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
 import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
 import { triageForDisplay, triageUrgency } from '../../lib/triage';
@@ -94,6 +94,19 @@ function displayStatus(patient: NursePatient): AdmissionStatus {
   });
 }
 
+/** A discharge order stays locked until every active order written before it is finished. */
+function unfinishedBeforeDischarge(order: PhysicianOrder, sets: OrderSet[]) {
+  if (order.type !== 'DISCHARGE') return undefined;
+  const at = new Date(order.dateCreated).getTime();
+  const open = sets.some((set) => {
+    const other = set.order;
+    if (!other || other.id === order.id || other.active === false) return false;
+    if (other.admissionId !== order.admissionId) return false;
+    return new Date(other.dateCreated).getTime() <= at && other.status !== 'FINISHED';
+  });
+  return open ? 'Finish every order written before this discharge order first.' : undefined;
+}
+
 function mapOrder(order: PhysicianOrder): OrderSet {
   const date = new Date(order.dateCreated);
   return {
@@ -119,10 +132,19 @@ function summaryDayKey(summary: CourseInWard): string {
   return days[0] ?? toDateKey(summary.summaryDate);
 }
 
-export function ManagementPortalView() {
+export function ManagementPortalView({
+  focusPatient,
+}: {
+  /** Set when a notification should open this patient's chart. */
+  focusPatient?: { id: string; key: number } | null;
+}) {
   const [patients, setPatients] = useState<NursePatient[]>([]);
   /** The patient open in the View modal. */
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (focusPatient) setSelectedId(focusPatient.id);
+  }, [focusPatient]);
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
@@ -190,6 +212,9 @@ export function ManagementPortalView() {
   const table = useTableState<NursePatient>({
     items: patients,
     pageSize: 8,
+    // Remembered for the session, so switching dashboard tabs comes back to the
+    // same search / filter / sort / page.
+    stateKey: 'nurse.management.table',
     searchFields: (patient) => [patient.name, patient.patientId, patient.recordId],
     filterPredicates: {
       status: (patient, value) => value === 'all' || (!patient.restricted && displayStatus(patient) === value),
@@ -333,7 +358,17 @@ export function ManagementPortalView() {
               <div style={{ ...ui.orderContent, whiteSpace: 'pre-wrap' }}>{entry.content}</div>
               {order &&
                 (canEnterOrders ? (
-                  <OrderExecutionPanel key={order.id} order={order} onSaved={replaceOrder} />
+                  <OrderExecutionPanel
+                    key={order.id}
+                    order={order}
+                    finishBlocked={unfinishedBeforeDischarge(order, orderSets)}
+                    onSaved={(saved) => {
+                      replaceOrder(saved);
+                      if (saved.type === 'DISCHARGE' && saved.status === 'FINISHED' && saved.nurseComment) {
+                        loadPatients();
+                      }
+                    }}
+                  />
                 ) : (
                   <OrderStatusSummary order={order} />
                 ))}

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
+import { clearSessionState } from '../lib/sessionState';
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3000',
@@ -70,6 +71,7 @@ api.interceptors.response.use(
     const wasAuthenticatedRequest = Boolean(error.config?.headers?.Authorization);
     if (error.response?.status === 401 && wasAuthenticatedRequest) {
       useAuthStore.getState().logout();
+      clearSessionState();
       window.location.href = '/login';
     }
     return Promise.reject(error);

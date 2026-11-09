@@ -15,6 +15,7 @@ const mockPrismaService = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
+    count: jest.fn(),
   },
   patientAdmission: {
     findUnique: jest.fn(),
@@ -22,6 +23,12 @@ const mockPrismaService = {
   },
   courseInWard: {
     findFirst: jest.fn(),
+  },
+  ward: {
+    findFirst: jest.fn(),
+  },
+  user: {
+    findUnique: jest.fn(),
   },
   $executeRaw: jest.fn(),
 } as unknown as jest.Mocked<PrismaService>;
@@ -90,6 +97,11 @@ describe('OrdersService', () => {
     // Embedding is best-effort and fire-and-forget; keep it off the network.
     jest.spyOn(service as any, 'persistOrderEmbedding').mockResolvedValue(undefined);
     (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(openAdmission);
+    (prismaService.ward.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaService.user.findUnique as jest.Mock).mockResolvedValue({
+      firstName: 'Angela',
+      lastName: 'Reyes',
+    });
   });
 
   describe('create', () => {
@@ -480,7 +492,13 @@ describe('OrdersService', () => {
       });
       expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
         ['doctor-789', 'doctor-123'],
-        expect.objectContaining({ title: 'Order finished after summary' }),
+        expect.objectContaining({
+          title: 'Order finished after summary',
+          message: expect.stringContaining(
+            '**Angela Reyes** accomplished an order for **Juan Dela Cruz**',
+          ),
+          patientId: 'patient-123',
+        }),
       );
     });
 
@@ -498,7 +516,11 @@ describe('OrdersService', () => {
 
       expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
         ['doctor-789', 'doctor-123'],
-        expect.objectContaining({ title: 'Order finished' }),
+        {
+          title: 'Order accomplished',
+          message: '**Angela Reyes** accomplished an order for **Juan Dela Cruz**.',
+          patientId: 'patient-123',
+        },
       );
     });
 
@@ -545,6 +567,83 @@ describe('OrdersService', () => {
 
       const { data } = (prismaService.physicianOrder.update as jest.Mock).mock.calls[0][0];
       expect(data.nurseComment).toBeNull();
+      expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
+        ['doctor-123', 'doctor-456'],
+        {
+          title: 'Order started',
+          message: '**Angela Reyes** started an order for **Juan Dela Cruz**.',
+          patientId: undefined,
+        },
+      );
+    });
+
+    it('should discharge the patient when the discharge order is finished with a note and earlier orders are done', async () => {
+      const dischargeOrder = {
+        ...mockOrder,
+        type: OrderType.DISCHARGE,
+        dateCreated: new Date('2026-03-02T08:00:00'),
+      };
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(dischargeOrder);
+      (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(0);
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue({
+        ...dischargeOrder,
+        status: OrderStatus.FINISHED,
+        nurseComment: 'Sent home with instructions',
+      });
+      (prismaService.patientAdmission.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+      await service.updateStatus(
+        'order-123',
+        { status: OrderStatus.FINISHED, nurseComment: 'Sent home with instructions' },
+        'nurse-123',
+      );
+
+      expect(prismaService.physicianOrder.count).toHaveBeenCalledWith({
+        where: {
+          admissionId: 'admission-123',
+          active: true,
+          id: { not: 'order-123' },
+          dateCreated: { lte: dischargeOrder.dateCreated },
+          status: { not: OrderStatus.FINISHED },
+        },
+      });
+      expect(prismaService.patientAdmission.updateMany).toHaveBeenCalledWith({
+        where: { id: 'admission-123', dischargeDate: null },
+        data: { dischargeDate: expect.any(Date) },
+      });
+    });
+
+    it('should refuse to finish a discharge order while an earlier order is still open', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        type: OrderType.DISCHARGE,
+      });
+      (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(1);
+
+      await expect(
+        service.updateStatus(
+          'order-123',
+          { status: OrderStatus.FINISHED, nurseComment: 'Ready to go' },
+          'nurse-123',
+        ),
+      ).rejects.toThrow(
+        'Finish every order written before the discharge order before this patient can be discharged',
+      );
+      expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
+      expect(prismaService.patientAdmission.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to finish a discharge order without a note', async () => {
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({
+        ...mockOrder,
+        type: OrderType.DISCHARGE,
+      });
+
+      await expect(
+        service.updateStatus('order-123', { status: OrderStatus.FINISHED, nurseComment: '  ' }, 'nurse-123'),
+      ).rejects.toThrow('Add a note before marking the discharge order done');
+      expect(prismaService.physicianOrder.count).not.toHaveBeenCalled();
+      expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for a missing or inactive order', async () => {

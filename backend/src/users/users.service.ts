@@ -9,10 +9,11 @@ import {
   detailItems,
   fullName,
 } from '../audit-log/audit-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
-type WardLinks = { ward: { name: string } }[];
+type WardLinks = { ward: { id?: string; name: string; holdsUnroomed?: boolean } }[];
 
 /** The account's ward / specialty names, as one comparable line. */
 function wardNames(user: { wards?: WardLinks; physicianWards?: WardLinks }): string {
@@ -22,11 +23,26 @@ function wardNames(user: { wards?: WardLinks; physicianWards?: WardLinks }): str
 
 const yesNo = (value: boolean) => (value ? 'Yes' : 'No');
 
+function formatList(names: string[]) {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+/** What the nurse reads after an admin changes their ward assignment. */
+function wardTransferMessage(previous: string, names: string[]) {
+  if (!names.length) return 'You are no longer assigned to a ward.';
+  const list = formatList(names);
+  if (previous === 'None') return `You have been assigned to ${list}.`;
+  return `You have been transferred to ${list}.`;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
     private prisma: PrismaService,
     private auditLog: AuditLogService,
+    private notifications: NotificationsService,
   ) {}
 
   private readonly safeSelect = {
@@ -38,8 +54,8 @@ export class UsersService {
     isActive: true,
     mustResetPassword: true,
     createdAt: true,
-    wards: { select: { ward: { select: { id: true, name: true } } } },
-    physicianWards: { select: { ward: { select: { id: true, name: true } } } },
+    wards: { select: { ward: { select: { id: true, name: true, holdsUnroomed: true } } } },
+    physicianWards: { select: { ward: { select: { id: true, name: true, holdsUnroomed: true } } } },
   };
 
   /** Validate ward assignments for physicians and nurses. */
@@ -209,7 +225,67 @@ export class UsersService {
       },
     });
 
+    if (user.role === Role.NURSE && wardNames(existing) !== wardNames(user)) {
+      const names = (user.wards ?? []).map((link) => link.ward.name).sort((a, b) => a.localeCompare(b));
+      await this.notifications.create({
+        userId: user.id,
+        title: 'Ward assignment updated',
+        message: wardTransferMessage(wardNames(existing), names),
+      });
+      const previous = new Set(
+        (existing.wards ?? []).map((link) => link.ward.id).filter((id): id is string => Boolean(id)),
+      );
+      const added = (user.wards ?? [])
+        .map((link) => link.ward)
+        .filter((ward): ward is { id: string; name: string; holdsUnroomed: boolean } =>
+          Boolean(ward.id) && !previous.has(ward.id),
+        );
+      await this.notifyPhysiciansOfNurseTransfer(user, added);
+    }
+
     return user;
+  }
+
+  /**
+   * Physicians on a patient's care team hear when a nurse is moved onto that
+   * patient's ward and will cover the shift.
+   */
+  private async notifyPhysiciansOfNurseTransfer(
+    nurse: { firstName: string; lastName: string },
+    wards: { id: string; name: string; holdsUnroomed: boolean }[],
+  ) {
+    const nurseName = fullName(nurse);
+    await Promise.all(
+      wards.map(async (ward) => {
+        const admissions = await this.prisma.patientAdmission.findMany({
+          where: {
+            dischargeDate: null,
+            ...(ward.holdsUnroomed
+              ? { OR: [{ room: { wardId: ward.id } }, { roomId: null }] }
+              : { room: { wardId: ward.id } }),
+          },
+          select: {
+            physicianId: true,
+            additionalPhysicians: { select: { physicianId: true } },
+            patient: { select: { id: true, firstName: true, lastName: true } },
+          },
+        });
+        await Promise.all(
+          admissions.map((admission) => {
+            const physicianIds = [
+              admission.physicianId,
+              ...admission.additionalPhysicians.map(({ physicianId }) => physicianId),
+            ].filter((id): id is string => Boolean(id));
+            const patientName = fullName(admission.patient);
+            return this.notifications.notifyUsers(physicianIds, {
+              title: 'Nurse transferred',
+              message: `**${nurseName}** was transferred to ${ward.name} and will take the shift for **${patientName}**.`,
+              patientId: admission.patient.id,
+            });
+          }),
+        );
+      }),
+    );
   }
 
 }

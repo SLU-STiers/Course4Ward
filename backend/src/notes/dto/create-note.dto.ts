@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateNoteDto {
@@ -26,4 +26,9 @@ export class UpdateNoteDto {
   @IsOptional()
   @IsDateString()
   reminderAt?: string | null;
+
+  @ApiPropertyOptional({ description: 'Whether the physician has checked this note off' })
+  @IsOptional()
+  @IsBoolean()
+  completed?: boolean;
 }

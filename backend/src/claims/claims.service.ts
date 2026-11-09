@@ -72,7 +72,7 @@ export class ClaimsService {
         userId: physicianId,
         type: NotificationType.REVIEW_REQUESTED,
         title: 'Course in the Ward review requested',
-        message: `A claims processor opened a request for ${patientName}'s summary (${dayLabel(summary.summaryDate)}). Please review and approve it.`,
+        message: `A claims processor opened a request for **${patientName}**'s summary (${dayLabel(summary.summaryDate)}). Please review and approve it.`,
         requestId: claim.id,
       });
     }
@@ -187,7 +187,7 @@ export class ClaimsService {
     });
     await this.notifications.notifyUsers([request.processorId], {
       title: 'Course in the Ward summary approved',
-      message: `The physician approved ${patientName}'s summary for ${dayLabel(summary.summaryDate)}. It is ready for CF4 processing.`,
+      message: `The physician approved **${patientName}**'s summary for ${dayLabel(summary.summaryDate)}. It is ready for CF4 processing.`,
     });
     return { ...updatedRequest, summary };
   }
@@ -276,7 +276,7 @@ export class ClaimsService {
     });
     await this.notifications.notifyUsers([claim.physicianId], {
       title: 'CF4 generated',
-      message: `A PhilHealth CF4 was generated for ${fullName(claim.summary.patient)}'s summary for ${dayLabel(claim.summary.summaryDate)}.`,
+      message: `A PhilHealth CF4 was generated for **${fullName(claim.summary.patient)}**'s summary for ${dayLabel(claim.summary.summaryDate)}.`,
     });
 
     // The actual CF4 document (PDF) would be rendered here from

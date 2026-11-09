@@ -5,6 +5,12 @@ import type { Patient, TriageLevel } from '../../types';
 export type TabType = "overview" | "manage" | "requests";
 type PatientStatus = "admitted" | "discharged";
 export type OverviewFilter = "all" | PatientStatus;
+/**
+ * Status filter of the Manage list. The list holds every assigned patient —
+ * discharged ones stay reachable so their last Course in the Ward can still be
+ * read and approved.
+ */
+export type ManageStatusFilter = OverviewFilter;
 export type DashboardPatient = {
   id: string;
   name: string;
@@ -15,6 +21,8 @@ export type DashboardPatient = {
   admissionDate: string;
   /** Raw ISO admission date — used for filtering/sorting, never displayed. */
   admissionDateRaw: string;
+  /** Display discharge date, or "—" while the patient is still admitted. */
+  dischargeDate: string;
   /** Full ISO admission timestamp (or null) — triage queue tie-break. */
   admittedAt: string | null;
   daysInCare: number;

@@ -35,7 +35,13 @@ export class CourseInWardController {
   @Roles(Role.PHYSICIAN)
   generate(@Body() dto: GenerateSummaryDto, @CurrentUser() user: any) {
     // Returns one Course in the Ward per summarized order day (usually one).
-    return this.courseInWardService.generateSummary(dto.patientId, user.id, dto.day, dto.model);
+    return this.courseInWardService.generateSummary(
+      dto.patientId,
+      user.id,
+      dto.day,
+      dto.model,
+      dto.instructions,
+    );
   }
 
   @Patch(':id/edit')
@@ -52,6 +58,16 @@ export class CourseInWardController {
     @CurrentUser() user: any,
   ) {
     return this.courseInWardService.regenerateSummary(id, user.id, dto.instructions, dto.model);
+  }
+
+  /**
+   * Summaries of the physician's patients that still need approving, including
+   * patients who have already been discharged.
+   */
+  @Get('pending')
+  @Roles(Role.PHYSICIAN)
+  pending(@CurrentUser() user: any) {
+    return this.courseInWardService.findPendingForPhysician(user.id);
   }
 
   @Get(':id/versions')

@@ -13,6 +13,7 @@ const mockPrismaService = {
     findMany: jest.fn(),
     count: jest.fn(),
     updateMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
 } as unknown as jest.Mocked<PrismaService>;
 
@@ -63,6 +64,7 @@ describe("NotificationsService", () => {
           title: "Heads up",
           message: "Body",
           requestId: null,
+          patientId: null,
         },
       });
     });
@@ -92,6 +94,7 @@ describe("NotificationsService", () => {
             title: "New patient registered",
             message: "Jane Doe was registered as Outpatient.",
             requestId: null,
+            patientId: null,
           },
         });
       });
@@ -115,32 +118,33 @@ describe("NotificationsService", () => {
           title: "Review requested again",
           message: "Body",
           requestId: "claim-1",
+          patientId: null,
         },
       });
     });
   });
 
   describe("listForUser", () => {
-    it("should return only uncleared rows for the inbox, newest first", async () => {
+    it("should return only unread rows for notifications, newest first", async () => {
       (prisma.notification.findMany as jest.Mock).mockResolvedValue([notification]);
 
       const result = await service.listForUser(userId);
 
       expect(prisma.notification.findMany).toHaveBeenCalledWith({
-        where: { userId, clearedAt: null },
+        where: { userId, isRead: false },
         orderBy: { createdAt: "desc" },
         take: 20,
       });
       expect(result).toEqual([notification]);
     });
 
-    it("should include cleared rows in the history", async () => {
+    it("should return only read rows in the history", async () => {
       (prisma.notification.findMany as jest.Mock).mockResolvedValue([]);
 
       await service.listForUser(userId, { scope: "history" });
 
       expect(prisma.notification.findMany).toHaveBeenCalledWith({
-        where: { userId },
+        where: { userId, isRead: true },
         orderBy: { createdAt: "desc" },
         take: 50,
       });
@@ -162,13 +166,13 @@ describe("NotificationsService", () => {
   });
 
   describe("unreadCount", () => {
-    it("should ignore read and cleared rows", async () => {
+    it("should count unread rows", async () => {
       (prisma.notification.count as jest.Mock).mockResolvedValue(3);
 
       await expect(service.unreadCount(userId)).resolves.toEqual({ count: 3 });
 
       expect(prisma.notification.count).toHaveBeenCalledWith({
-        where: { userId, isRead: false, clearedAt: null },
+        where: { userId, isRead: false },
       });
     });
   });
@@ -184,7 +188,7 @@ describe("NotificationsService", () => {
 
       expect(prisma.notification.updateMany).toHaveBeenCalledWith({
         where: { id: "notification-1", userId, isRead: false },
-        data: { isRead: true },
+        data: { isRead: true, readAt: expect.any(Date) },
       });
     });
 
@@ -210,26 +214,38 @@ describe("NotificationsService", () => {
   });
 
   describe("markAllRead", () => {
-    it("should mark every uncleared row read and zero the badge", async () => {
+    it("should mark every unread row read and zero the badge", async () => {
       await expect(service.markAllRead(userId)).resolves.toEqual({ count: 0 });
 
       expect(prisma.notification.updateMany).toHaveBeenCalledWith({
-        where: { userId, isRead: false, clearedAt: null },
-        data: { isRead: true },
+        where: { userId, isRead: false },
+        data: { isRead: true, readAt: expect.any(Date) },
       });
     });
   });
 
   describe("clear", () => {
-    it("should archive the inbox instead of deleting it", async () => {
+    it("should delete every notification for the user", async () => {
       await expect(service.clear(userId)).resolves.toEqual({ count: 0 });
 
-      expect(prisma.notification.updateMany).toHaveBeenCalledTimes(1);
+      expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { userId } });
+    });
+  });
 
-      const [args] = (prisma.notification.updateMany as jest.Mock).mock.calls[0];
-      expect(args.where).toEqual({ userId, clearedAt: null });
-      expect(args.data.isRead).toBe(true);
-      expect(args.data.clearedAt).toBeInstanceOf(Date);
+  describe("expireRead", () => {
+    it("should drop read notifications from before today when the list is opened", async () => {
+      (prisma.notification.findMany as jest.Mock).mockResolvedValue([]);
+
+      await service.listForUser(userId, { scope: "history" });
+
+      const where = (prisma.notification.deleteMany as jest.Mock).mock.calls[0][0].where;
+      expect(where).toMatchObject({
+        userId,
+        isRead: true,
+      });
+      expect(where.OR[0].readAt.lt.getHours()).toBe(0);
+      expect(where.OR[0].readAt.lt.getMinutes()).toBe(0);
+      expect(where.OR[1].createdAt.lt.getTime()).toBe(where.OR[0].readAt.lt.getTime());
     });
   });
 });
