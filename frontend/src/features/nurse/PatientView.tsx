@@ -86,6 +86,9 @@ export function PatientView() {
   const table = useTableState<AdmissionRecord>({
     items: records,
     pageSize: 8,
+    // Remembered for the session, so switching dashboard tabs comes back to the
+    // same search / filter / sort / page.
+    stateKey: 'nurse.patient.table',
     searchFields: (record) => [record.id, record.name, record.location],
     filterPredicates: {
       status: (record, value) => value === 'all' || (!record.restricted && record.status === value),

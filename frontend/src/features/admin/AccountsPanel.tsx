@@ -48,6 +48,9 @@ export function AccountsPanel() {
   const table = useTableState<StaffAccount>({
     items: users ?? [],
     pageSize: Number.MAX_SAFE_INTEGER,
+    // Remembered for the session, so switching admin sections comes back to the
+    // same search / filter / sort.
+    stateKey: 'admin.accounts.table',
     searchFields: (user) => [
       user.userId,
       `${user.firstName} ${user.lastName}`,
