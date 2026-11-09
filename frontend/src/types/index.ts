@@ -178,6 +178,8 @@ export interface CourseInWard {
   approvedById?: string | null;
   approvedAt?: string | null;
   version?: number;
+  /** Attending physician of the summary's admission: the only one who may approve it. */
+  attendingPhysicianId?: string | null;
 }
 
 /**
