@@ -921,9 +921,11 @@ export function ManageView({
                                         >
                                           {formatDateLongFromKey(day)}
                                           <span className="ui-approve-days__meta">
-                                            {status === "DRAFT_EDITED"
-                                              ? "Edited"
-                                              : "AI draft"}
+                                            {status === "NO_SUMMARY"
+                                              ? "No summary yet"
+                                              : status === "DRAFT_EDITED"
+                                                ? "Edited"
+                                                : "AI draft"}
                                           </span>
                                         </button>
                                       ))}

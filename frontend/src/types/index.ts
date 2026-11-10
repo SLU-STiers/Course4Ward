@@ -225,7 +225,8 @@ export interface PendingSummary {
   id: string;
   patientId: string;
   summaryDate: string;
-  status: SummaryStatus;
+  /** `NO_SUMMARY`: finished orders that day but no Course in the Ward yet (`id` is synthetic). */
+  status: SummaryStatus | 'NO_SUMMARY';
 }
 
 /** An earlier text of a Course in the Ward, kept when it was regenerated or edited. */
@@ -303,6 +304,12 @@ export interface ClaimRecord {
       };
       orderedBy: { firstName: string; lastName: string };
     }>;
+  };
+  /** Days (`YYYY-MM-DD`) of this claim's stay that still block its CF4. */
+  stay?: {
+    missingDays: string[];
+    unrequestedDays: string[];
+    unapprovedDays: string[];
   };
 }
 

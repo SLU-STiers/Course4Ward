@@ -69,7 +69,7 @@ interface DaySummaryGroup {
 }
 
 /** Local `YYYY-MM-DD` key of a timestamp, matching how the UI buckets order days. */
-function dayKeyOf(value: Date | string | null | undefined): string | null {
+export function dayKeyOf(value: Date | string | null | undefined): string | null {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -1122,8 +1122,51 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         orders: { select: { admissionId: true }, take: 1 },
       },
     });
-    return (await this.withAttending(candidates))
+    const drafts = (await this.withAttending(candidates))
       .filter((summary) => summary.attendingPhysicianId === physicianId)
-      .map(({ id, patientId, summaryDate, status }) => ({ id, patientId, summaryDate, status }));
+      .map(({ id, patientId, summaryDate, status }) => ({
+        id,
+        patientId,
+        summaryDate,
+        status: status as SummaryStatus | 'NO_SUMMARY',
+      }));
+    return [...drafts, ...(await this.findUnsummarizedDays(physicianId))];
+  }
+
+  /**
+   * Days of this physician's admissions with finished orders but no Course in
+   * the Ward dated that day — the same "No summary" days Claims sees. One row
+   * per patient-day, `status: 'NO_SUMMARY'`, `id` synthetic (no summary exists).
+   */
+  private async findUnsummarizedDays(physicianId: string) {
+    const orders = await this.prisma.physicianOrder.findMany({
+      where: {
+        status: OrderStatus.FINISHED,
+        active: true,
+        summarizationId: null,
+        admission: { physicianId },
+      },
+      select: { dateCreated: true, admission: { select: { patientId: true } } },
+    });
+    if (!orders.length) return [];
+    const patientIds = [...new Set(orders.map((order) => order.admission.patientId))];
+    const summaries = await this.prisma.courseInWard.findMany({
+      where: { patientId: { in: patientIds } },
+      select: { patientId: true, summaryDate: true },
+    });
+    const summarized = new Set(summaries.map((s) => `${s.patientId}:${dayKeyOf(s.summaryDate)}`));
+    const rows = new Map<string, { id: string; patientId: string; summaryDate: Date; status: 'NO_SUMMARY' }>();
+    for (const order of orders) {
+      const day = dayKeyOf(order.dateCreated);
+      const key = `${order.admission.patientId}:${day}`;
+      if (!day || summarized.has(key) || rows.has(key)) continue;
+      rows.set(key, {
+        id: `no-summary:${key}`,
+        patientId: order.admission.patientId,
+        summaryDate: dayStart(day),
+        status: 'NO_SUMMARY',
+      });
+    }
+    return [...rows.values()];
   }
 }
