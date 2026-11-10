@@ -5,9 +5,7 @@ import type { TriageDisplay } from '../../lib/triage';
 
 
 export type TabType = 'overview' | 'requests' | 'export';
-export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4' | 'summary' | 'generated';
-/** Which export workflow a Course in the Ward Summary is being built from. */
-export type ExportSource = 'new-cf4' | 'existing-cf4';
+export type ExportSubView = 'selection' | 'new-cf4' | 'summary' | 'generated';
 export type PatientSortField = 'name' | 'admissionDate' | 'dischargeDate' | 'daysInCare' | 'age';
 export type SortDirection = 'ascending' | 'descending';
 export type RequestSortField = 'id' | 'date' | 'status';

@@ -1,8 +1,8 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Upload } from 'lucide-react';
+import { ArrowLeft, Check } from 'lucide-react';
 import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
@@ -25,7 +25,7 @@ import { EligibleSummariesCard } from './EligibleSummariesCard';
 import { Cf4SummaryPreview } from './Cf4SummaryPreview';
 import { buildCf4Document, cf4FileName, saveFile } from './cf4Document';
 import { apiErrorMessage } from '../../lib/apiError';
-import type { CF4Patient, Cf4SummaryDraft, ExportSource, ExportSubView, PatientSortField, PatientStatus, RequestSortField, SortDirection, SummarizationRequest, TabType } from './types';
+import type { CF4Patient, Cf4SummaryDraft, ExportSubView, PatientSortField, PatientStatus, RequestSortField, SortDirection, SummarizationRequest, TabType } from './types';
 
 /** Sort key for a patient-list column (numbers compare numerically). */
 function patientSortValue(patient: CF4Patient, field: PatientSortField): string | number {
@@ -72,11 +72,9 @@ export function ClaimsProcessorDashboard() {
   const evaluator = user ? `${user.firstName} ${user.lastName}` : 'Claims Processor';
 
   // Export → Course in the Ward Summary review step
-  const [exportSource, setExportSource] = useState<ExportSource>('new-cf4');
   /** Every patient queued for CF4 generation, in the order it was shown. */
   const [summaryDrafts, setSummaryDrafts] = useState<Cf4SummaryDraft[]>([]);
   const [summaryIndex, setSummaryIndex] = useState(0);
-  const [existingPatientId, setExistingPatientId] = useState('');
   const [exportError, setExportError] = useState('');
   const [confirmingSummary, setConfirmingSummary] = useState(false);
   const [exportNotice, setExportNotice] = useState('');
@@ -90,9 +88,6 @@ export function ClaimsProcessorDashboard() {
     : [];
 
   const navigate = useNavigate();
-
-  // Upload File State
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const loadClaims = useCallback(() => {
     claimsApi.findAll().then(({ data }) => {
@@ -291,8 +286,6 @@ export function ClaimsProcessorDashboard() {
     setGeneratedPage(1);
   };
 
-  /* The uploaded template is not kept after generation, so a re-download is
-     always rebuilt in the Course in the Ward format. */
   const handleRedownload = async (patient: CF4Patient) => {
     setRedownloadingId(patient.id);
     setExportError('');
@@ -301,8 +294,8 @@ export function ClaimsProcessorDashboard() {
         patient,
         requests.filter((request) => patient.claimIds.includes(request.id)),
       );
-      const { blob } = await buildCf4Document(draft, 'new-cf4', evaluator);
-      saveFile(blob, cf4FileName(draft, 'new-cf4'));
+      const { blob } = await buildCf4Document(draft, evaluator);
+      saveFile(blob, cf4FileName(draft));
     } catch (cause) {
       setExportError(
         `Could not download the CF4 for ${patient.name}: ${cause instanceof Error ? cause.message : 'please try again'}.`,
@@ -350,27 +343,6 @@ export function ClaimsProcessorDashboard() {
   /* Counts every queued row, including the ones on other pages. */
   const selectedPatientCount = selectedExportPatientIds.length;
 
-  const acceptTemplateFile = (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf') || file.type && file.type !== 'application/pdf') {
-      setUploadedFile(null);
-      setExportError('Choose a valid PDF file to use as the existing CF4 template.');
-      return;
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      setUploadedFile(null);
-      setExportError('The PDF must be 50 MB or smaller.');
-      return;
-    }
-    setExportError('');
-    setUploadedFile(file);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.currentTarget.value = '';
-    if (file) acceptTemplateFile(file);
-  };
-
   const goToExportSubView = (view: ExportSubView) => {
     setExportError('');
     if (view !== 'selection') setExportNotice('');
@@ -378,21 +350,13 @@ export function ClaimsProcessorDashboard() {
   };
 
   /* Each export draft covers one patient and all approved daily summaries. */
-  const handleProceedToSummary = (source: ExportSource) => {
-    if (source === 'existing-cf4' && !uploadedFile) {
-      setExportError('Upload an existing CF4 PDF before proceeding.');
-      return;
-    }
-
-    const queued =
-      source === 'new-cf4'
-        ? sortedExportPatients.filter((candidate) => selectedExportPatientIds.includes(candidate.id))
-        : eligibleExportPatients.filter((candidate) => candidate.id === existingPatientId);
+  const handleProceedToSummary = () => {
+    const queued = sortedExportPatients.filter((candidate) =>
+      selectedExportPatientIds.includes(candidate.id),
+    );
 
     if (!queued.length) {
-      setExportError(
-        'Select at least one approved patient first.',
-      );
+      setExportError('Select at least one approved patient first.');
       return;
     }
 
@@ -404,7 +368,6 @@ export function ClaimsProcessorDashboard() {
       )),
     );
     setSummaryIndex(0);
-    setExportSource(source);
     setExportSubView('summary');
   };
 
@@ -418,7 +381,7 @@ export function ClaimsProcessorDashboard() {
     if (!remaining.length) {
       setSummaryDrafts([]);
       setSummaryIndex(0);
-      goToExportSubView(exportSource);
+      goToExportSubView('new-cf4');
       return;
     }
     const removedIndex = summaryDrafts.findIndex((draft) => draft.patient.id === patientId);
@@ -435,7 +398,6 @@ export function ClaimsProcessorDashboard() {
     setExportError('');
     setExportNotice('');
 
-    const template = exportSource === 'existing-cf4' ? uploadedFile ?? undefined : undefined;
     const generated: Cf4SummaryDraft[] = [];
     const failures: string[] = [];
     const generatedClaimIds: string[] = [];
@@ -444,7 +406,7 @@ export function ClaimsProcessorDashboard() {
     for (const draft of chosenDrafts) {
       let pdf: Awaited<ReturnType<typeof buildCf4Document>>;
       try {
-        pdf = await buildCf4Document(draft, exportSource, evaluator, template, template?.name);
+        pdf = await buildCf4Document(draft, evaluator);
       } catch (cause) {
         failures.push(`${draft.patient.name}: ${cause instanceof Error ? cause.message : 'the PDF could not be built'}`);
         continue;
@@ -467,7 +429,7 @@ export function ClaimsProcessorDashboard() {
 
       generated.push(draft);
       try {
-        saveFile(pdf.blob, cf4FileName(draft, exportSource));
+        saveFile(pdf.blob, cf4FileName(draft));
       } catch {
         downloadFailed.push(draft.patient.name);
       }
@@ -510,8 +472,6 @@ export function ClaimsProcessorDashboard() {
     setPreviewPatient(null);
     setSummaryDrafts([]);
     setSummaryIndex(0);
-    setExistingPatientId('');
-    setUploadedFile(null);
     setExportSubView('selection');
     setExportNotice(notice);
   };
@@ -726,10 +686,9 @@ export function ClaimsProcessorDashboard() {
                     </p>
                   )}
                   <p style={styles.exportInstruction}>
-                    Select a workflow option to begin generating or editing CF4 PDF documents.
+                    Generate a new CF4 from approved Course in the Ward summaries, or download one that was already generated.
                   </p>
                   <div style={styles.exportOptionsGrid}>
-                    {/* NEW CF4 CARD */}
                     <div
                       style={styles.exportOptionCard}
                       onClick={() => goToExportSubView('new-cf4')}
@@ -742,30 +701,10 @@ export function ClaimsProcessorDashboard() {
                         </div>
                       </div>
                       <div style={styles.exportCardFooter}>
-                        Generate a fresh form from active ward data.
+                        Generate a fresh form from approved ward summaries.
                       </div>
                     </div>
 
-                    {/* EXISTING CF4 CARD */}
-                    <div
-                      style={styles.exportOptionCard}
-                      onClick={() => goToExportSubView('existing-cf4')}
-                    >
-                      <div style={styles.exportCardHeader}>Existing CF4 PDF</div>
-                      <div style={styles.exportCardIconArea}>
-                        <div style={styles.docIconBox}>
-                          <span style={{ fontSize: '32px' }}>📄</span>
-                          <span style={{ ...styles.plusIconBadge, ...styles.uploadIconBadge }}>
-                            <Upload size={10} strokeWidth={3} aria-hidden="true" />
-                          </span>
-                        </div>
-                      </div>
-                      <div style={styles.exportCardFooter}>
-                        Upload and populate an existing local PDF.
-                      </div>
-                    </div>
-
-                    {/* GENERATED CF4 CARD */}
                     <div
                       style={styles.exportOptionCard}
                       onClick={() => goToExportSubView('generated')}
@@ -1085,7 +1024,7 @@ export function ClaimsProcessorDashboard() {
                       <button
                         type="button"
                         style={styles.proceedBtn}
-                        onClick={() => handleProceedToSummary('new-cf4')}
+                        onClick={handleProceedToSummary}
                       >
                         Proceed to Summary
                       </button>
@@ -1094,140 +1033,16 @@ export function ClaimsProcessorDashboard() {
                 </div>
               )}
 
-              {/* SUBVIEW 3: EXISTING CF4 (UPLOAD FILE) */}
-              {exportSubView === 'existing-cf4' && (
-                <div style={styles.exportContainerCard}>
-                  <div style={styles.newCf4HeaderRow}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => goToExportSubView('selection')}
-                      leadingIcon={<ArrowLeft size={15} aria-hidden="true" />}
-                      style={{ justifySelf: 'start' }}
-                    >
-                      Back
-                    </Button>
-                    <h3 style={styles.newCf4Title}>Modify Existing CF4</h3>
-                    <span />
-                  </div>
-
-                  <div style={styles.exportPatientPicker}>
-                    <label style={styles.exportPatientLabel} htmlFor="existing-cf4-patient">
-                      Patient
-                    </label>
-                    <select
-                      id="existing-cf4-patient"
-                      style={styles.exportPatientSelect}
-                      value={existingPatientId}
-                      onChange={(event) => {
-                        setExistingPatientId(event.target.value);
-                        setExportError('');
-                      }}
-                    >
-                      <option value="">Select the patient this CF4 belongs to…</option>
-                      {eligibleExportPatients.map((patient) => (
-                        <option key={patient.id} value={patient.id}>
-                          {patient.name} · {patient.patientId} · {patient.claimIds.length} day{patient.claimIds.length === 1 ? '' : 's'} · {patient.coveragePeriod}
-                        </option>
-                      ))}
-                    </select>
-                    <span style={styles.exportPatientHint}>
-                      A patient must be selected before a Course in the Ward Summary can be created.
-                    </span>
-                  </div>
-
-                  <div style={styles.uploadHeaderArea}>
-                    <div style={styles.uploadCloudCircle}>
-                      <span style={{ fontSize: '24px' }}>☁️</span>
-                    </div>
-                    <div>
-                      <h4 style={styles.uploadTitle}>Upload files</h4>
-                      <p style={styles.uploadSubtitle}>
-                        Select and upload the files of your choice
-                      </p>
-                    </div>
-                  </div>
-
-                  <hr style={styles.uploadDivider} />
-
-                  <div
-                    style={styles.dragDropZone}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      const file = event.dataTransfer.files[0];
-                      if (file) acceptTemplateFile(file);
-                    }}
-                  >
-                    <p style={styles.dragDropTitle}>Choose a file or drag & drop it here</p>
-                    <p style={styles.dragDropSubtitle}>PDF, up to 50MB</p>
-                    <label style={styles.browseFileBtn}>
-                      Browse File
-                      <input
-                        type="file"
-                        accept=".pdf,application/pdf"
-                        style={{ display: 'none' }}
-                        onChange={handleFileUpload}
-                      />
-                    </label>
-                  </div>
-
-                  {uploadedFile && (
-                    <div style={styles.uploadedFileCard}>
-                      <div style={styles.pdfBadgeIcon}>PDF</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={styles.uploadedFileName}>{uploadedFile.name}</div>
-                        <div style={styles.uploadedFileMeta}>
-                          {(uploadedFile.size / 1024).toFixed(0)} KB · Ready to populate
-                        </div>
-                      </div>
-                      <button
-                        style={styles.removeFileBtn}
-                        onClick={() => setUploadedFile(null)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-
-                  {exportError && (
-                    <p style={{ ...styles.exportErrorBanner, marginTop: '20px' }} role="alert">
-                      {exportError}
-                    </p>
-                  )}
-
-                  <div style={{ ...styles.newCf4FooterRow, marginTop: 'auto' }}>
-                    <button
-                      style={styles.cancelBtn}
-                      onClick={() => goToExportSubView('selection')}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      style={styles.proceedBtn}
-                      onClick={() => handleProceedToSummary('existing-cf4')}
-                    >
-                      Proceed to Summary
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* SUBVIEW 4: COURSE IN THE WARD SUMMARY REVIEW */}
+              {/* SUBVIEW: COURSE IN THE WARD SUMMARY REVIEW */}
               {exportSubView === 'summary' && summaryDrafts.length > 0 && (
                 <Cf4SummaryPreview
                   drafts={summaryDrafts}
                   index={summaryIndex}
                   onIndexChange={setSummaryIndex}
-                  source={exportSource}
                   evaluator={evaluator}
-                  sourceFileName={
-                    exportSource === 'existing-cf4' ? uploadedFile?.name : undefined
-                  }
-                  sourceFile={exportSource === 'existing-cf4' ? uploadedFile ?? undefined : undefined}
                   error={exportError}
                   notice={exportNotice}
-                  onBack={() => goToExportSubView(exportSource)}
+                  onBack={() => goToExportSubView('new-cf4')}
                   onRemove={handleRemoveDraft}
                   onConfirm={(patientIds) => void handleConfirmSummary(patientIds)}
                   confirming={confirmingSummary}

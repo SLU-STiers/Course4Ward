@@ -24,7 +24,7 @@ import { jsPDF } from 'jspdf';
 
 import { formatDateMedium } from '../../lib/format';
 import { courseEntries, type CourseEntry } from './mappers';
-import type { Cf4SummaryDraft, ExportSource } from './types';
+import type { Cf4SummaryDraft } from './types';
 
 /** 8.5in — the CF4 is printed on Philippine long bond, not A4. */
 const PAGE_W = 612;
@@ -225,18 +225,11 @@ function letterhead(ctx: Ctx, generatedAt: string): void {
 }
 
 /** Provenance strip, sitting where the form's reminder box sits. */
-function notice(
-  ctx: Ctx,
-  patientName: string,
-  source: ExportSource,
-  sourceFileName?: string,
-): void {
+function notice(ctx: Ctx, patientName: string): void {
   const { doc } = ctx;
-  const workflow = source === 'new-cf4' ? 'New CF4 workflow' : 'Existing CF4 workflow';
   const text = [
     `Attach to the accomplished CF4 for ${patientName}.`,
-    `Generated from the physician-approved Course in the Ward for the whole stay · ${workflow}.`,
-    ...(sourceFileName ? [`Source file: ${sourceFileName}.`] : []),
+    'Generated from the physician-approved Course in the Ward for the whole stay.',
   ].join(' ');
 
   doc.setFont('helvetica', 'bold').setFontSize(6.2).setTextColor(INK);
@@ -375,7 +368,7 @@ function courseRow(ctx: Ctx, entry: CourseEntry): number {
   const { doc } = ctx;
   const bodyW = CONTENT_W - DATE_COL_W - 14;
   doc.setFont('helvetica', 'normal').setFontSize(8.5);
-  const lines = doc.splitTextToSize(entry.text, bodyW) as string[];
+  const lines = doc.splitTextToSize(entry.text || '—', bodyW) as string[];
 
   let index = 0;
   let continued = false;
@@ -479,16 +472,9 @@ function certification(ctx: Ctx, physician: string, evaluator: string): void {
  * Builds one CF4 supporting document for a patient's whole stay.
  *
  * @param draft Patient + the persisted summary the document is projected from.
- * @param source Which export workflow produced the draft.
  * @param evaluator Claims processor recorded as the evaluator of record.
- * @param sourceFileName Uploaded local PDF's name for the existing-CF4 flow.
  */
-export function buildCf4Pdf(
-  draft: Cf4SummaryDraft,
-  source: ExportSource,
-  evaluator: string,
-  sourceFileName?: string,
-): jsPDF {
+export function buildCf4Pdf(draft: Cf4SummaryDraft, evaluator: string): jsPDF {
   const { patient } = draft;
   const doc = new jsPDF({
     unit: 'pt',
@@ -505,7 +491,7 @@ export function buildCf4Pdf(
   });
 
   letterhead(ctx, new Date().toLocaleString());
-  notice(ctx, patient.name, source, sourceFileName);
+  notice(ctx, patient.name);
   patientSection(ctx, draft);
 
   bandWithNext(ctx, 'IV. COURSE IN THE WARD', BAND_H, 'Entire stay · attach laboratory/imaging results');
