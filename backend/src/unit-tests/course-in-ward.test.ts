@@ -1,6 +1,6 @@
 // unit-tests/course-in-ward.test.ts
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { summaryAdmission } from '../course-in-ward/summary-access';
 import { CourseInWardService, MAX_SUMMARY_VERSIONS } from '../course-in-ward/course-in-ward.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -328,6 +328,22 @@ describe('CourseInWardService', () => {
         },
       });
       expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
+    });
+
+    it('should not re-draft an approved day (its orders would leave the approved summary)', async () => {
+      // A late order on an approved day: one order is linked to the approved summary.
+      mockPrismaService.patient.findUnique.mockResolvedValue(mockPatient);
+      mockOrdersService.findOrdersForDay.mockResolvedValue([
+        { ...mockOrders[0], summary: { status: SummaryStatus.APPROVED } },
+        { ...mockOrders[1], summary: null },
+      ]);
+
+      await expect(
+        service.generateSummary(mockPatientId, mockRequestedById, '2026-03-04'),
+      ).rejects.toThrow(ConflictException);
+      expect(mockOllamaClient.summarizeBatch).not.toHaveBeenCalled();
+      expect(mockPrismaService.courseInWard.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.physicianOrder.updateMany).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if patient not found', async () => {

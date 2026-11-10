@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -365,14 +366,29 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     notifyClaims = true,
   ) {
     const targetDay = day ?? dayKeyOf(new Date())!;
-    const [patient, targetOrders] = await Promise.all([
+    const [patient, dayOrders] = await Promise.all([
       this.prisma.patient.findUnique({ where: { id: patientId } }),
       this.ordersService.findOrdersForDay(patientId, day ?? null),
     ]);
     if (!patient) throw new NotFoundException('Patient not found');
-    if (targetOrders.length === 0) {
+    if (dayOrders.length === 0) {
       throw new BadRequestException(
         `No finished orders recorded for this patient on ${targetDay}`,
+      );
+    }
+
+    // An admission-day that is already APPROVED is never re-drafted here: a new
+    // draft would re-link its orders away from the approved summary (and its
+    // claim). Late orders on such a day go through Regenerate on that summary.
+    const approvedAdmissions = new Set(
+      dayOrders
+        .filter((order) => order.summary?.status === SummaryStatus.APPROVED)
+        .map((order) => order.admissionId),
+    );
+    const targetOrders = dayOrders.filter((order) => !approvedAdmissions.has(order.admissionId));
+    if (targetOrders.length === 0) {
+      throw new ConflictException(
+        `The Course in the Ward for ${targetDay} is already approved; regenerate it to include new orders`,
       );
     }
 
@@ -504,6 +520,8 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(
           `[discharge] AI summary failed for admission ${admissionId} on ${day}: ${(err as Error).message}`,
         );
+        // Approved day: the physician regenerates it; a fallback draft would steal its orders.
+        if (err instanceof ConflictException) continue;
         const summary = await this.upsertDaySummary(
           admission.patientId,
           day,

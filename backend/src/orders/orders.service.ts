@@ -670,7 +670,10 @@ export class OrdersService {
         status: OrderStatus.FINISHED,
       },
       orderBy: { dateCreated: 'asc' },
-      include: { admission: { select: { id: true, admissionDate: true } } },
+      include: {
+        admission: { select: { id: true, admissionDate: true } },
+        summary: { select: { status: true } },
+      },
     });
   }
 
