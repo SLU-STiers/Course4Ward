@@ -2186,6 +2186,13 @@ td {
   /* The PDF viewer scrolls itself; the body must not add a second scrollbar. */
   overflow: hidden;
 }
+.claims-pdf-hit {
+  transition: background-color 0.15s ease;
+}
+.claims-pdf-hit:hover,
+.claims-pdf-hit:focus-visible {
+  background-color: rgba(15, 23, 42, 0.92) !important;
+}
 .ui-modal__pdf-frame {
   flex: 1;
   width: 100%;

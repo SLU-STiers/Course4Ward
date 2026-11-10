@@ -1,8 +1,12 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
+import { ArrowLeft, Check, Copy, Download, Maximize2, Minus, Plus, X } from 'lucide-react';
 
 import { Button, Modal, StatusBadge } from '../../components/ui';
+import { formatDateMedium } from '../../lib/format';
+import { buildCf4Document, cf4FileName, saveFile } from './cf4Document';
 import type { Cf4SummaryDraft, ExportSource } from './types';
 import { styles } from './styles';
 
@@ -22,10 +26,27 @@ type Cf4SummaryPreviewProps = {
   sourceFile?: File;
   /** Validation/confirmation message shown above the footer. */
   error?: string;
+  /** Success message after part of the batch was generated. */
+  notice?: string;
   onBack: () => void;
-  onConfirm: () => void;
+  /** Takes a patient out of this batch. */
+  onRemove: (patientId: string) => void;
+  /** Generates the CF4 for the chosen patients (`CF4Patient.id`). */
+  onConfirm: (patientIds: string[]) => void;
   confirming?: boolean;
 };
+
+/** Width share (percent) the Course in the Ward panel may take. */
+const SPLIT_MIN = 25;
+const SPLIT_MAX = 75;
+const COURSE_FONT_MIN = 11;
+const COURSE_FONT_MAX = 18;
+/** Below this width the panels stack instead of sitting side by side. */
+const STACK_QUERY = '(max-width: 900px)';
+
+function clampSplit(value: number): number {
+  return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, value));
+}
 
 /** `Juan Dela Cruz` → `JD`. */
 function initialsOf(name: string): string {
@@ -51,7 +72,9 @@ export function Cf4SummaryPreview({
   sourceFileName,
   sourceFile,
   error,
+  notice,
   onBack,
+  onRemove,
   onConfirm,
   confirming = false,
 }: Cf4SummaryPreviewProps) {
@@ -71,6 +94,50 @@ export function Cf4SummaryPreview({
   const [retryCount, setRetryCount] = useState(0);
   /** Full-screen PDF viewer, opened by clicking the inline preview. */
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  /** Patients ticked in the confirm dialog. */
+  const [chosenIds, setChosenIds] = useState<string[]>([]);
+  const chosen = drafts
+    .map((draft) => draft.patient.id)
+    .filter((id) => drafts.length === 1 || chosenIds.includes(id));
+  const [split, setSplit] = useState(50);
+  const [dragging, setDragging] = useState(false);
+  const [fontSize, setFontSize] = useState(13);
+  const [copied, setCopied] = useState(false);
+  const [stacked, setStacked] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(STACK_QUERY).matches,
+  );
+  const splitRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia(STACK_QUERY);
+    const update = () => setStacked(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+  };
+  const onDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragging || !splitRef.current) return;
+    const box = splitRef.current.getBoundingClientRect();
+    setSplit(clampSplit(((event.clientX - box.left) / box.width) * 100));
+  };
+  const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDragging(false);
+  };
 
   const total = drafts.length;
   const activeIndex = total ? Math.min(Math.max(index, 0), total - 1) : 0;
@@ -85,34 +152,16 @@ export function Cf4SummaryPreview({
     let cancelled = false;
     void (async () => {
       try {
-        if (source === 'existing-cf4') {
-          if (!sourceFile) throw new Error('Upload an existing CF4 PDF to populate.');
-          const { buildExistingCf4Pdf } = await import('./existingCf4Pdf');
-          const result = await buildExistingCf4Pdf(
-            active,
-            evaluator,
-            sourceFile,
-            sourceFileName ?? sourceFile.name,
-          );
-          const pdfBuffer = new ArrayBuffer(result.bytes.byteLength);
-          new Uint8Array(pdfBuffer).set(result.bytes);
-          const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
-          const url = URL.createObjectURL(blob);
-          if (!cancelled) {
-            setRendered({ draft: active, url, note: result.note });
-          } else {
-            URL.revokeObjectURL(url);
-          }
-          return;
-        }
-
-        const { buildCf4Pdf } = await import('./cf4Pdf');
-        const doc = buildCf4Pdf(active, source, evaluator);
-        const bytes = doc.output('arraybuffer');
-        const blob = new Blob([bytes], { type: 'application/pdf' });
+        const { blob, note } = await buildCf4Document(
+          active,
+          source,
+          evaluator,
+          sourceFile,
+          sourceFileName,
+        );
         const url = URL.createObjectURL(blob);
         if (!cancelled) {
-          setRendered({ draft: active, url });
+          setRendered({ draft: active, url, note });
         } else {
           URL.revokeObjectURL(url);
         }
@@ -151,15 +200,15 @@ export function Cf4SummaryPreview({
   const hasPrevious = activeIndex > 0;
   const hasNext = activeIndex < total - 1;
 
+  const handleCopy = () => {
+    void navigator.clipboard?.writeText(active.courseText).then(() => setCopied(true));
+  };
+
   /** Saves the exact document shown in the preview. */
   const handleDownload = () => {
     if (!pdfUrl) return;
-    const link = document.createElement('a');
     try {
-      link.href = pdfUrl;
-      link.download = `${source === 'existing-cf4' ? 'completed-cf4' : 'course-in-the-ward'}-${patient.patientId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
+      saveFile(pdfUrl, cf4FileName(active, source));
     } catch (cause) {
       setDownloadFailure({
         draft: active,
@@ -167,19 +216,23 @@ export function Cf4SummaryPreview({
           ? `Could not download the PDF: ${cause.message}`
           : 'Could not download the PDF. Please try again.',
       });
-    } finally {
-      link.remove();
     }
   };
 
   return (
     <div style={styles.exportContainerCard}>
       <div style={styles.newCf4HeaderRow}>
-        <button style={styles.backButton} onClick={onBack}>
-          &lt; Back to Selection
-        </button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onBack}
+          leadingIcon={<ArrowLeft size={15} aria-hidden="true" />}
+          style={{ justifySelf: 'start' }}
+        >
+          Back
+        </Button>
         <h3 style={styles.newCf4Title}>Course in the Ward Summary</h3>
-        <div style={{ width: '120px' }} />
+        <span />
       </div>
 
       <div style={styles.summarySourceRow}>
@@ -243,19 +296,34 @@ export function Cf4SummaryPreview({
 
           <div style={styles.summaryChips}>
             {drafts.map((draft, draftIndex) => (
-              <button
+              <span
                 key={draft.patient.id}
-                type="button"
-                aria-current={draftIndex === activeIndex}
                 style={
                   draftIndex === activeIndex
-                    ? { ...styles.summaryChip, ...styles.summaryChipActive }
-                    : styles.summaryChip
+                    ? { ...styles.summaryChip, ...styles.summaryChipActive, ...styles.summaryChipRemovable }
+                    : { ...styles.summaryChip, ...styles.summaryChipRemovable }
                 }
-                onClick={() => onIndexChange(draftIndex)}
               >
-                {draft.patient.name}
-              </button>
+                <button
+                  type="button"
+                  aria-current={draftIndex === activeIndex}
+                  style={styles.summaryChipLabel}
+                  disabled={confirming}
+                  onClick={() => onIndexChange(draftIndex)}
+                >
+                  {draft.patient.name}
+                </button>
+                <button
+                  type="button"
+                  style={styles.summaryChipClose}
+                  aria-label={`Remove ${draft.patient.name} from this CF4 batch`}
+                  title="Remove from this batch"
+                  disabled={confirming}
+                  onClick={() => onRemove(draft.patient.id)}
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </span>
             ))}
           </div>
         </>
@@ -267,10 +335,6 @@ export function Cf4SummaryPreview({
           <h4 style={styles.summaryPatientName}>{patient.name}</h4>
           <div style={styles.summaryPatientMeta}>
             <div style={styles.summaryMetaField}>
-              <span style={styles.summaryMetaLabel}>Patient ID</span>
-              <span style={styles.summaryMetaValue}>{patient.patientId}</span>
-            </div>
-            <div style={styles.summaryMetaField}>
               <span style={styles.summaryMetaLabel}>Sex</span>
               <span style={styles.summaryMetaValue}>{patient.gender}</span>
             </div>
@@ -279,8 +343,16 @@ export function Cf4SummaryPreview({
               <span style={styles.summaryMetaValue}>{patient.age ?? '—'}</span>
             </div>
             <div style={styles.summaryMetaField}>
-              <span style={styles.summaryMetaLabel}>Coverage period</span>
-              <span style={styles.summaryMetaValue}>{patient.coveragePeriod}</span>
+              <span style={styles.summaryMetaLabel}>Admitted</span>
+              <span style={styles.summaryMetaValue}>{patient.admissionDate}</span>
+            </div>
+            <div style={styles.summaryMetaField}>
+              <span style={styles.summaryMetaLabel}>Discharged</span>
+              <span style={styles.summaryMetaValue}>
+                {patient.dischargeDateRaw
+                  ? formatDateMedium(new Date(`${patient.dischargeDateRaw}T12:00:00`))
+                  : 'Still admitted'}
+              </span>
             </div>
             <div style={styles.summaryMetaField}>
               <span style={styles.summaryMetaLabel}>Days in care</span>
@@ -308,41 +380,141 @@ export function Cf4SummaryPreview({
         </div>
       </div>
 
-      <div style={styles.summaryGrid}>
-        <div style={styles.summaryPanel}>
+      <div
+        ref={splitRef}
+        style={{
+          ...styles.summarySplit,
+          flexDirection: stacked ? 'column' : 'row',
+          ...(stacked ? { height: 'auto', resize: 'none' } : null),
+        }}
+      >
+        <div
+          style={{
+            ...styles.summaryPanel,
+            ...(stacked ? styles.summaryPanelStacked : { flexBasis: `${split}%` }),
+          }}
+        >
           <div style={styles.summaryPanelHeader}>
             <span style={styles.summaryPanelTitle}>Course in the Ward</span>
-            <span style={styles.summaryPanelMeta}>{patient.coveragePeriod}</span>
+            <div style={styles.summaryPanelActions}>
+              <span style={styles.summaryPanelMeta}>{patient.coveragePeriod}</span>
+              <button
+                type="button"
+                className="ui-icon-btn"
+                aria-label="Smaller text"
+                disabled={fontSize <= COURSE_FONT_MIN}
+                onClick={() => setFontSize((size) => size - 1)}
+              >
+                <Minus size={14} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="ui-icon-btn"
+                aria-label="Larger text"
+                disabled={fontSize >= COURSE_FONT_MAX}
+                onClick={() => setFontSize((size) => size + 1)}
+              >
+                <Plus size={14} aria-hidden="true" />
+              </button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCopy}
+                disabled={!active.courseText}
+                leadingIcon={
+                  copied
+                    ? <Check size={14} aria-hidden="true" />
+                    : <Copy size={14} aria-hidden="true" />
+                }
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
           </div>
-          <div style={{ ...styles.summaryPanelBody, whiteSpace: 'pre-wrap' }}>
-            {active.courseText}
+          <div
+            className="ui-scroll"
+            style={{ ...styles.summaryPanelBody, fontSize: `${fontSize}px` }}
+          >
+            {active.courseText || 'No approved summaries for this stay.'}
           </div>
         </div>
 
-        <div style={styles.summaryPanel}>
+        {!stacked && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panels"
+            aria-valuemin={SPLIT_MIN}
+            aria-valuemax={SPLIT_MAX}
+            aria-valuenow={Math.round(split)}
+            tabIndex={0}
+            style={{
+              ...styles.summarySplitDivider,
+              ...(dragging ? styles.summarySplitDividerActive : null),
+            }}
+            onPointerDown={startDrag}
+            onPointerMove={onDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onDoubleClick={() => setSplit(50)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') setSplit((value) => clampSplit(value - 5));
+              if (event.key === 'ArrowRight') setSplit((value) => clampSplit(value + 5));
+            }}
+          >
+            <span style={styles.summarySplitGrip} aria-hidden="true" />
+          </div>
+        )}
+
+        <div
+          style={{
+            ...styles.summaryPanel,
+            ...(stacked ? styles.summaryPanelStacked : { flexBasis: `${100 - split}%` }),
+          }}
+        >
           <div style={styles.summaryPanelHeader}>
             <span style={styles.summaryPanelTitle}>Collated PDF Preview</span>
-            <Button size="sm" variant="ghost" onClick={handleDownload} disabled={!pdf}>
-              Download PDF
-            </Button>
+            <div style={styles.summaryPanelActions}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setViewerOpen(true)}
+                disabled={!pdf}
+                leadingIcon={<Maximize2 size={14} aria-hidden="true" />}
+              >
+                View full PDF
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleDownload}
+                disabled={!pdf}
+                leadingIcon={<Download size={14} aria-hidden="true" />}
+              >
+                Download
+              </Button>
+            </div>
           </div>
 
           {pdfUrl ? (
-            /* An <iframe> swallows clicks, so a transparent button sits over it
-               to open the enlarged viewer. */
             <div style={styles.pdfPreviewShell}>
               <iframe
                 title={`CF4 preview for ${patient.name}`}
-                src={pdfUrl}
-                style={styles.pdfPreviewFrame}
+                src={`${pdfUrl}#toolbar=0&navpanes=0&view=FitH`}
+                style={{
+                  ...styles.pdfPreviewFrame,
+                  pointerEvents: dragging ? 'none' : 'auto',
+                }}
               />
               <button
                 type="button"
-                style={styles.pdfPreviewHitArea}
-                aria-label={`Open the full-size CF4 preview for ${patient.name}`}
+                className="claims-pdf-hit"
+                style={styles.pdfPreviewHint}
+                aria-label={`View the whole CF4 PDF for ${patient.name}`}
                 onClick={() => setViewerOpen(true)}
               >
-                <span style={styles.pdfPreviewHint}>Click to enlarge</span>
+                <Maximize2 size={12} aria-hidden="true" />
+                View whole PDF
               </button>
             </div>
           ) : (
@@ -351,18 +523,33 @@ export function Cf4SummaryPreview({
             </div>
           )}
           {pdf?.note && (
-            <p role="status" style={styles.summaryPanelMeta}>{pdf.note}</p>
+            <p role="status" style={styles.pdfPreviewNote}>{pdf.note}</p>
           )}
         </div>
       </div>
+      {!stacked && (
+        <p style={styles.summarySplitHint}>
+          Drag the divider to resize the panels, or the bottom-right corner to change their height.
+        </p>
+      )}
 
       <Modal
         open={viewerOpen && Boolean(pdfUrl)}
         onClose={() => setViewerOpen(false)}
         size="xl"
         className="ui-modal--pdf"
-        title="Course in the Ward — CF4 supporting document"
-        description="Scroll to view every page. Click outside the document to close."
+        title={`Course in the Ward — ${patient.name}`}
+        description="Scroll, zoom, or print from the viewer toolbar. Click outside the document to close."
+        footer={
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleDownload}
+            leadingIcon={<Download size={14} aria-hidden="true" />}
+          >
+            Download PDF
+          </Button>
+        }
       >
         {pdfUrl ? (
           <iframe
@@ -373,16 +560,131 @@ export function Cf4SummaryPreview({
         ) : null}
       </Modal>
 
+      {notice ? <p style={{ ...styles.exportSuccessBanner, margin: '16px 0 0' }} role="status">{notice}</p> : null}
       {error ? <p style={styles.exportErrorBanner}>{error}</p> : null}
 
       <div style={styles.summaryFooterRow}>
-        <button style={styles.cancelBtn} onClick={onBack}>
+        <button style={styles.cancelBtn} onClick={onBack} disabled={confirming}>
           Back
         </button>
-        <Button variant="primary" loading={confirming} onClick={onConfirm}>
+        <Button
+          variant="primary"
+          loading={confirming}
+          disabled={confirming}
+          onClick={() => {
+            setChosenIds(drafts.map((draft) => draft.patient.id));
+            setConfirmOpen(true);
+          }}
+        >
           {total > 1 ? `Confirm & Generate ${total} CF4s` : 'Confirm & Generate CF4'}
         </Button>
       </div>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => { if (!confirming) setConfirmOpen(false); }}
+        size={total > 1 ? 'md' : 'sm'}
+        closeOnBackdrop={!confirming}
+        title={total > 1 ? 'Choose whose CF4 to generate' : 'Generate CF4?'}
+        description={
+          total > 1
+            ? 'Checked patients are marked as CF4 generated and their PDFs download. Unchecked patients stay in this batch.'
+            : 'The claims are marked as CF4 generated and the Course in the Ward PDF downloads automatically.'
+        }
+        footer={
+          <>
+            {total > 1 && (
+              <span style={styles.confirmFooterNote}>
+                {chosen.length
+                  ? `${chosen.length} PDF${chosen.length === 1 ? '' : 's'} will download`
+                  : 'Select at least one patient'}
+              </span>
+            )}
+            <Button variant="secondary" disabled={confirming} onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              loading={confirming}
+              disabled={!chosen.length}
+              leadingIcon={<Download size={14} aria-hidden="true" />}
+              onClick={() => {
+                setConfirmOpen(false);
+                onConfirm(chosen);
+              }}
+            >
+              {total > 1 ? `Generate & Download (${chosen.length})` : 'Generate & Download'}
+            </Button>
+          </>
+        }
+      >
+        {total > 1 ? (
+          <div style={styles.confirmChooser}>
+            <label style={styles.confirmSelectAll}>
+              <span style={styles.confirmSelectAllLeft}>
+                <input
+                  type="checkbox"
+                  style={styles.confirmCheckbox}
+                  checked={chosen.length === total}
+                  ref={(input) => {
+                    if (input) input.indeterminate = chosen.length > 0 && chosen.length < total;
+                  }}
+                  onChange={(event) =>
+                    setChosenIds(event.target.checked ? drafts.map((draft) => draft.patient.id) : [])
+                  }
+                />
+                Select all
+              </span>
+              <span style={styles.confirmCount}>{chosen.length} of {total} selected</span>
+            </label>
+            <ul style={styles.confirmList} className="ui-scroll">
+              {drafts.map((draft) => {
+                const checked = chosen.includes(draft.patient.id);
+                const days = draft.patient.claimIds.length;
+                return (
+                  <li key={draft.patient.id}>
+                    <label
+                      style={checked ? { ...styles.confirmOption, ...styles.confirmOptionChecked } : styles.confirmOption}
+                    >
+                      <input
+                        type="checkbox"
+                        style={styles.confirmCheckbox}
+                        checked={checked}
+                        onChange={() =>
+                          setChosenIds((ids) =>
+                            ids.includes(draft.patient.id)
+                              ? ids.filter((id) => id !== draft.patient.id)
+                              : [...ids, draft.patient.id],
+                          )
+                        }
+                      />
+                      <span style={styles.confirmAvatar}>{initialsOf(draft.patient.name)}</span>
+                      <span style={styles.confirmOptionText}>
+                        <span style={styles.confirmOptionName}>{draft.patient.name}</span>
+                        <span style={styles.confirmOptionMeta}>{draft.patient.coveragePeriod}</span>
+                      </span>
+                      <span style={styles.confirmOptionDays}>
+                        {days} {days === 1 ? 'day' : 'days'}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : (
+          <div style={{ ...styles.confirmOption, ...styles.confirmOptionChecked, cursor: 'default' }}>
+            <span style={styles.confirmAvatar}>{initialsOf(patient.name)}</span>
+            <span style={styles.confirmOptionText}>
+              <span style={styles.confirmOptionName}>{patient.name}</span>
+              <span style={styles.confirmOptionMeta}>{patient.coveragePeriod}</span>
+            </span>
+            <span style={styles.confirmOptionDays}>
+              {patient.claimIds.length} {patient.claimIds.length === 1 ? 'day' : 'days'}
+            </span>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { AiTrigger, timeAiCall } from './ai-metrics';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
+import { createClaimOnce } from '../claims/claim-once';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OllamaClient, OllamaReference, SummaryModel } from './ollama-client';
 import { assertFormattingOnlyInstructions } from './summary-instructions';
@@ -428,6 +429,9 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
+    this.ordersService.onDischarge((admissionId, nurseId) => {
+      void this.prepareClaimForDischargedAdmission(admissionId, nurseId);
+    });
     this.scheduleNightlyBatch();
     // Stays discharged before this handoff existed still need a summary, or the
     // claims processor never sees them.
@@ -438,11 +442,11 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
    * A claim is opened on a Course in the Ward, so a discharge has to leave one
    * summary per day of finished orders. The AI writes it when it is available;
    * otherwise the finished orders are filed as the draft the physician reviews.
-   * Claims processors are told once the stay is ready to request.
+   * Every day of the stay is then sent to Claims as an open claim.
    */
-  async prepareClaimForDischargedAdmission(admissionId: string) {
+  async prepareClaimForDischargedAdmission(admissionId: string, dischargedById?: string) {
     try {
-      await this.fileDischargedStay(admissionId);
+      await this.fileDischargedStay(admissionId, dischargedById);
     } catch (err) {
       this.logger.warn(
         `[discharge] could not prepare a claim for admission ${admissionId}: ${(err as Error).message}`,
@@ -450,7 +454,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async fileDischargedStay(admissionId: string) {
+  private async fileDischargedStay(admissionId: string, dischargedById?: string) {
     const admission = await this.prisma.patientAdmission.findUnique({
       where: { id: admissionId },
       select: {
@@ -503,20 +507,101 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const waiting = await this.prisma.courseInWard.count({
-      where: {
-        requests: { none: {} },
-        orders: { some: { admissionId } },
-      },
+    await this.sendStayToClaims(admission, dischargedById);
+  }
+
+  /**
+   * Opens a claim on every unclaimed day of a discharged stay, assigned to the
+   * active claims processor with the fewest open claims. Approved days start
+   * VALIDATED; the rest wait on the attending physician, who is asked once.
+   */
+  private async sendStayToClaims(
+    admission: {
+      id: string;
+      patientId: string;
+      physicianId: string | null;
+      patient: { firstName: string; lastName: string };
+    },
+    dischargedById?: string,
+  ) {
+    const summaries = await this.prisma.courseInWard.findMany({
+      where: { requests: { none: {} }, orders: { some: { admissionId: admission.id } } },
+      orderBy: { summaryDate: 'asc' },
+      select: { id: true, summaryDate: true, status: true, approvedStatus: true, validatorId: true },
     });
-    if (waiting === 0) return;
+    if (!summaries.length) return;
 
     const name = fullName(admission.patient);
-    await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
-      title: 'Discharged patient ready for a claim',
-      message: `**${name}** was discharged. ${waiting} Course in the Ward ${waiting === 1 ? 'day is' : 'days are'} ready for a claim request.`,
-      patientId: admission.patientId,
+    const processors = await this.prisma.user.findMany({
+      where: { role: Role.CLAIMS_PROCESSOR, isActive: true },
+      select: {
+        id: true,
+        _count: {
+          select: { summaryRequestsAsProcessor: { where: { status: { not: 'CF4_GENERATED' } } } },
+        },
+      },
     });
+    const processor = processors.sort(
+      (a, b) => a._count.summaryRequestsAsProcessor - b._count.summaryRequestsAsProcessor,
+    )[0];
+    if (!processor) {
+      this.logger.warn(`[discharge] no active claims processor to receive ${name}'s stay`);
+      return;
+    }
+
+    const claims = [];
+    for (const summary of summaries) {
+      const approved = summary.status === SummaryStatus.APPROVED && Boolean(summary.approvedStatus);
+      const physicianId = approved
+        ? summary.validatorId ?? admission.physicianId
+        : admission.physicianId;
+      // Left for a manual claim request, which reports the missing physician.
+      if (!physicianId) continue;
+      const created = await createClaimOnce(this.prisma, {
+        summaryId: summary.id,
+        physicianId,
+        processorId: processor.id,
+        status: approved ? 'VALIDATED' : 'PENDING',
+      });
+      if (created) claims.push({ claim: created, approved, day: summary.summaryDate });
+    }
+    if (!claims.length) return;
+
+    const pending = claims.filter((entry) => !entry.approved);
+    const days = (count: number) => `${count} Course in the Ward ${count === 1 ? 'day' : 'days'}`;
+
+    await this.auditLog.record({
+      userId: dischargedById ?? processor.id,
+      action: 'CLAIM_CREATED',
+      details: {
+        summary: `Sent ${name}'s discharged stay to Claims (${days(claims.length)})`,
+        items: detailItems([
+          ['Patient', name],
+          ['Days', claims.map((entry) => dayLabel(entry.day)).join(', ')],
+          ['Assigned processor', await this.auditLog.userLabel(processor.id)],
+          ['Waiting for physician', pending.length ? String(pending.length) : 'None'],
+        ]),
+      },
+    });
+
+    await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
+      title: 'Discharged patient sent to Claims',
+      message: `**${name}** was discharged. ${days(claims.length)} ${claims.length === 1 ? 'is' : 'are'} now in Claims Requests${
+        pending.length ? `, ${pending.length} waiting for physician approval` : ''
+      }.`,
+      patientId: admission.patientId,
+      requestId: claims[0].claim.id,
+    });
+
+    if (pending.length && admission.physicianId) {
+      await this.notifications.create({
+        userId: admission.physicianId,
+        type: NotificationType.REVIEW_REQUESTED,
+        title: 'Course in the Ward review requested',
+        message: `**${name}** was discharged. Approve ${days(pending.length)} so Claims can generate the CF4.`,
+        requestId: pending[0].claim.id,
+      });
+    }
   }
 
   /** Discharged stays that still have finished orders with no summary. */

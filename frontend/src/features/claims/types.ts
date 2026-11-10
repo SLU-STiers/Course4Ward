@@ -5,10 +5,10 @@ import type { TriageDisplay } from '../../lib/triage';
 
 
 export type TabType = 'overview' | 'requests' | 'export';
-export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4' | 'summary';
+export type ExportSubView = 'selection' | 'new-cf4' | 'existing-cf4' | 'summary' | 'generated';
 /** Which export workflow a Course in the Ward Summary is being built from. */
 export type ExportSource = 'new-cf4' | 'existing-cf4';
-export type PatientSortField = 'name' | 'admissionDate' | 'daysInCare' | 'age';
+export type PatientSortField = 'name' | 'admissionDate' | 'dischargeDate' | 'daysInCare' | 'age';
 export type SortDirection = 'ascending' | 'descending';
 export type RequestSortField = 'id' | 'date' | 'status';
 export type PatientStatus = 'all' | 'admitted' | 'discharged';
@@ -28,6 +28,8 @@ export interface SummarizationRequest {
     age: number;
     gender: string;
     admissionDate: string;
+    /** Display date, or `Present` while the stay is still open. */
+    dischargeDate: string;
   };
   summaryText: string;
   /** Registration and admission facts for the day this summary belongs to. */
@@ -74,6 +76,8 @@ export interface CF4Patient {
   daysInCare: number;
   status: Exclude<PatientStatus, 'all'>;
   approved: boolean;
+  /** Every claim of the stay is already `CF4_GENERATED`. */
+  cf4Generated: boolean;
 }
 
 /**

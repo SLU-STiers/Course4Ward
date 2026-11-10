@@ -5,6 +5,7 @@ import { Button, StatusBadge, type StatusValue } from '../../components/ui';
 import { formatDateMedium } from '../../lib/format';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { claimsApi } from '../../services/domainApi';
+import { apiErrorMessage } from '../../lib/apiError';
 import type { EligibleSummary, SummaryStatus } from '../../types';
 import { styles } from './styles';
 
@@ -55,15 +56,14 @@ export function EligibleSummariesCard({ onClaimCreated }: EligibleSummariesCardP
     setCreatingId(patientId);
     setError(null);
     try {
-      for (const summary of rows) {
-        await claimsApi.create(summary.id);
-      }
+      await claimsApi.createForStay(rows.map((summary) => summary.id));
       const claimed = new Set(rows.map((summary) => summary.id));
       setSummaries((previous) => previous?.filter((summary) => !claimed.has(summary.id)) ?? null);
       onClaimCreated();
-    } catch {
-      setError('Could not request a claim for that patient. Please try again.');
+    } catch (cause) {
+      setError(apiErrorMessage(cause, 'Could not request a claim for that patient. Please try again.'));
       load();
+      onClaimCreated();
     } finally {
       setCreatingId(null);
     }

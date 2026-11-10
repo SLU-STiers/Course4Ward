@@ -1,10 +1,9 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { TriageAssessmentPanel } from '../../components/patients/TriageAssessmentPanel';
-import { ORDER_TEXT_STYLE } from '../../components/orders/SubmittedOrdersTimeline';
+import { ORDER_TEXT_STYLE, SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
-import { formatDateMedium } from '../../lib/format';
+import { formatDateMedium, toDateKey } from '../../lib/format';
 
 import type { SummarizationRequest } from './types';
 
@@ -29,12 +28,42 @@ export function ReviewRequestModal({
   const [notificationMessage, setNotificationMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [selectedOrderDate, setSelectedOrderDate] = useState('');
   const message = notificationMessage.trim();
   const stay = useMemo(
     () => [...requests].sort((a, b) => new Date(a.summaryDate).getTime() - new Date(b.summaryDate).getTime()),
     [requests],
   );
+  const orders = useMemo(() => {
+    const seen = new Set<string>();
+    return stay.flatMap((day) => day.orders).filter((order) => {
+      if (seen.has(order.id)) return false;
+      seen.add(order.id);
+      return true;
+    });
+  }, [stay]);
+  const orderDates = useMemo(
+    () => [...new Set(orders.map((order) => toDateKey(order.dateCreated)).filter(Boolean))].sort(),
+    [orders],
+  );
+  const activeOrderDate = selectedOrderDate && orderDates.includes(selectedOrderDate) ? selectedOrderDate : '';
+  const visibleOrders = orders.filter(
+    (order) => !activeOrderDate || toDateKey(order.dateCreated) === activeOrderDate,
+  );
+  const shiftOrderDate = (direction: -1 | 1) => {
+    if (!orderDates.length) return;
+    if (!activeOrderDate) {
+      setSelectedOrderDate(direction < 0 ? orderDates[orderDates.length - 1] : orderDates[0]);
+      return;
+    }
+    const candidates = orderDates.filter((day) => (direction < 0 ? day < activeOrderDate : day > activeOrderDate));
+    if (!candidates.length) return;
+    setSelectedOrderDate(direction < 0 ? candidates[candidates.length - 1] : candidates[0]);
+  };
   const request = stay[0];
+  const discharged = stay.some((day) => day.patient.dischargeDate === 'Present')
+    ? 'Present'
+    : stay.at(-1)?.patient.dischargeDate ?? 'Present';
   const pendingCount = stay.filter((day) => day.status === 'Pending Review').length;
   const rejectedCount = stay.filter((day) => day.status === 'Rejected').length;
   const stayStatus = pendingCount ? 'Pending Review' : rejectedCount ? 'Rejected' : 'Approved';
@@ -62,10 +91,10 @@ export function ReviewRequestModal({
   if (!request) return null;
 
   const fields = [
-    { label: 'Patient ID', value: request.patient.patientId },
     { label: 'Age', value: request.patient.age },
-    { label: 'Gender', value: request.patient.gender },
-    { label: 'Admission Date', value: request.patient.admissionDate },
+    { label: 'Sex', value: request.patient.gender },
+    { label: 'Admitted', value: request.patient.admissionDate },
+    { label: 'Discharged', value: discharged },
   ];
 
   return (
@@ -113,65 +142,63 @@ export function ReviewRequestModal({
           </section>
 
           <section>
-            <h4 style={s.sectionLabel}>Triage Assessment</h4>
-            <div style={s.card}>
-              <TriageAssessmentPanel triage={request.triage} />
-            </div>
-          </section>
-
-          <section>
             <h4 style={s.sectionLabel}>Course in the Ward</h4>
             <div style={{ display: 'grid', gap: 12 }}>
-              {stay.map((day) => {
-                const seen = new Set<string>();
-                const orders = day.orders.filter((order) => {
-                  if (seen.has(order.id)) return false;
-                  seen.add(order.id);
-                  return true;
-                });
-                return (
-                  <div key={day.id} style={s.summaryCard}>
-                    <div style={s.summaryHeader}>
-                      <span style={s.summaryHeaderTitle}>{formatDateMedium(day.summaryDate)}</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={s.summaryMeta}>Dr. {day.doctor}</span>
-                        <span style={{ ...s.badge, ...STATUS_BADGE[day.status] }}>{day.status}</span>
-                      </span>
-                    </div>
-                    <div style={s.summaryContent}>{day.summaryText || 'No summary text for this day.'}</div>
-                    <div style={s.orders}>
-                      <div style={s.ordersLabel}>Physician orders</div>
-                      {orders.length === 0 ? (
-                        <p style={s.ordersEmpty}>No physician orders for this day.</p>
-                      ) : (
-                        orders.map((order) => (
-                          <div key={order.id} style={s.order}>
-                            <div style={s.orderMeta}>
-                              {formatDateMedium(order.dateCreated)} · Dr. {order.doctor}
-                            </div>
-                            <div style={ORDER_TEXT_STYLE}>{order.content}</div>
-                            <OrderStatusSummary order={order} />
-                          </div>
-                        ))
-                      )}
-                    </div>
+              {stay.map((day) => (
+                <div key={day.id} style={s.summaryCard}>
+                  <div style={s.summaryHeader}>
+                    <span style={s.summaryHeaderTitle}>{formatDateMedium(day.summaryDate)}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                      <span style={s.summaryMeta}>Dr. {day.doctor}</span>
+                      <span style={{ ...s.badge, ...STATUS_BADGE[day.status] }}>{day.status}</span>
+                    </span>
                   </div>
-                );
-              })}
+                  <div style={s.summaryContent}>
+                    <div style={{ ...s.ordersLabel, marginBottom: 8 }}>AI summary</div>
+                    {day.summaryText || 'No AI summary for this day.'}
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
 
-          <section style={s.checklist}>
-            <h4 style={{ ...s.sectionLabel, marginBottom: 8 }}>
-              <span aria-hidden="true">✓</span> Review Checklist
-            </h4>
-            <ul style={s.checklistList}>
-              <li>Verify that medications, dosages, and frequencies are accurate.</li>
-              <li>Ensure vital signs and patient condition are properly summarized.</li>
-              <li>Check if the summary aligns with PhilHealth documentation standards.</li>
-              <li>Confirm completeness and clarity of the course in the ward entry.</li>
-            </ul>
-          </section>
+          <SubmittedOrdersTimeline
+            dateValue={activeOrderDate}
+            onDateChange={setSelectedOrderDate}
+            onPrev={() => shiftOrderDate(-1)}
+            onNext={() => shiftOrderDate(1)}
+            prevDisabled={
+              !orderDates.length || Boolean(activeOrderDate && !orderDates.some((day) => day < activeOrderDate))
+            }
+            nextDisabled={
+              !orderDates.length || Boolean(activeOrderDate && !orderDates.some((day) => day > activeOrderDate))
+            }
+            prevLabel="Previous day with orders"
+            nextLabel="Next day with orders"
+            availableDays={orderDates}
+            onClear={() => setSelectedOrderDate('')}
+            clearLabel="Show all"
+            orders={visibleOrders.map((order) => ({
+              id: order.id,
+              dateCreated: order.dateCreated,
+              doctor: order.doctor,
+              content: order.content,
+            }))}
+            renderContent={(entry) => {
+              const order = visibleOrders.find((item) => item.id === entry.id);
+              return (
+                <>
+                  <div style={ORDER_TEXT_STYLE}>{entry.content}</div>
+                  {order ? <OrderStatusSummary order={order} /> : null}
+                </>
+              );
+            }}
+            emptyMessage={
+              activeOrderDate
+                ? 'No physician orders on this date.'
+                : 'No physician orders for this stay.'
+            }
+          />
 
           <section style={s.notificationCard}>
             <label htmlFor="review-notify-message" style={s.notificationTitle}>

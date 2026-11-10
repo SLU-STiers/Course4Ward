@@ -5,6 +5,7 @@ import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/a
 import { NotificationsService } from '../notifications/notifications.service';
 import { triageSelect } from '../patients/patients.service';
 import { assertAttending, loadSummaryAdmission } from '../course-in-ward/summary-access';
+import { createClaimOnce } from './claim-once';
 
 @Injectable()
 export class ClaimsService {
@@ -20,6 +21,58 @@ export class ClaimsService {
   // it (via the Requests view or the workspace). An already-approved summary
   // starts VALIDATED, so CF4 can be generated straight away.
   async createFromSummary(courseInWardId: string, claimsProcessorId: string) {
+    const opened = await this.openClaim(courseInWardId, claimsProcessorId);
+    if (!opened.approved) {
+      const processorName = await this.auditLog.userLabel(claimsProcessorId);
+      await this.notifications.create({
+        userId: opened.physicianId,
+        type: NotificationType.REVIEW_REQUESTED,
+        title: 'Course in the Ward review requested',
+        message: `**${processorName}** (Claims Processor) requested a review of **${opened.patientName}**'s Course in the Ward for ${dayLabel(opened.summaryDate)}.`,
+        requestId: opened.claim.id,
+      });
+    }
+    return opened.claim;
+  }
+
+  /**
+   * One request for a whole stay: opens a claim on every listed day not yet
+   * claimed, then asks each physician once for the days still waiting on them.
+   */
+  async createForStay(courseInWardIds: string[], claimsProcessorId: string) {
+    const opened: Awaited<ReturnType<ClaimsService['openClaim']>>[] = [];
+    for (const id of new Set(courseInWardIds)) {
+      try {
+        opened.push(await this.openClaim(id, claimsProcessorId));
+      } catch (err) {
+        if (!(err instanceof ConflictException)) throw err;
+      }
+    }
+    if (!opened.length) throw new ConflictException('Every day of this stay already has a claim');
+
+    const pendingByPhysician = new Map<string, typeof opened>();
+    for (const entry of opened) {
+      if (entry.approved) continue;
+      pendingByPhysician.set(entry.physicianId, [...(pendingByPhysician.get(entry.physicianId) ?? []), entry]);
+    }
+    if (pendingByPhysician.size) {
+      const processorName = await this.auditLog.userLabel(claimsProcessorId);
+      for (const [physicianId, entries] of pendingByPhysician) {
+        const days = entries.map((entry) => dayLabel(entry.summaryDate)).join(', ');
+        await this.notifications.create({
+          userId: physicianId,
+          type: NotificationType.REVIEW_REQUESTED,
+          title: 'Course in the Ward review requested',
+          message: `**${processorName}** (Claims Processor) requested a review of **${entries[0].patientName}**'s stay (${entries.length} ${entries.length === 1 ? 'day' : 'days'}: ${days}).`,
+          requestId: entries[0].claim.id,
+        });
+      }
+    }
+    return opened.map((entry) => entry.claim);
+  }
+
+  /** Validates and opens one day's claim, without notifying anyone. */
+  private async openClaim(courseInWardId: string, claimsProcessorId: string) {
     const summary = await this.prisma.courseInWard.findUnique({
       where: { id: courseInWardId },
       include: {
@@ -48,14 +101,13 @@ export class ClaimsService {
     if (!physicianId) {
       throw new BadRequestException('Summary has no attending physician to validate it');
     }
-    const claim = await this.prisma.summaryApprovalRequest.create({
-      data: {
-        summaryId: courseInWardId,
-        physicianId,
-        processorId: claimsProcessorId,
-        status: approved ? 'VALIDATED' : 'PENDING',
-      },
+    const claim = await createClaimOnce(this.prisma, {
+      summaryId: courseInWardId,
+      physicianId,
+      processorId: claimsProcessorId,
+      status: approved ? 'VALIDATED' : 'PENDING',
     });
+    if (!claim) throw new ConflictException('A claim already exists for this summary');
 
     const patientName = await this.auditLog.patientName({ summaryId: courseInWardId });
     await this.auditLog.record({
@@ -72,18 +124,7 @@ export class ClaimsService {
       },
     });
 
-    if (!approved) {
-      const processorName = await this.auditLog.userLabel(claimsProcessorId);
-      await this.notifications.create({
-        userId: physicianId,
-        type: NotificationType.REVIEW_REQUESTED,
-        title: 'Course in the Ward review requested',
-        message: `**${processorName}** (Claims Processor) requested a review of **${patientName}**'s Course in the Ward for ${dayLabel(summary.summaryDate)}.`,
-        requestId: claim.id,
-      });
-    }
-
-    return claim;
+    return { claim, approved, physicianId, patientName, summaryDate: summary.summaryDate };
   }
 
   /**

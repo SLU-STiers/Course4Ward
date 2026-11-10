@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Check, Upload } from 'lucide-react';
 import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
@@ -18,10 +19,12 @@ import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { formatDateMedium, toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
 
-import { buildStayDraft, groupApprovedPatients, groupStayPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
+import { buildStayDraft, groupApprovedPatients, groupGeneratedPatients, groupStayPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
 import { ReviewRequestModal } from './ReviewRequestModal';
 import { EligibleSummariesCard } from './EligibleSummariesCard';
 import { Cf4SummaryPreview } from './Cf4SummaryPreview';
+import { buildCf4Document, cf4FileName, saveFile } from './cf4Document';
+import { apiErrorMessage } from '../../lib/apiError';
 import type { CF4Patient, Cf4SummaryDraft, ExportSource, ExportSubView, PatientSortField, PatientStatus, RequestSortField, SortDirection, SummarizationRequest, TabType } from './types';
 
 /** Sort key for a patient-list column (numbers compare numerically). */
@@ -29,6 +32,7 @@ function patientSortValue(patient: CF4Patient, field: PatientSortField): string 
   if (field === 'age') return patient.age ?? 0;
   if (field === 'daysInCare') return patient.daysInCare;
   if (field === 'admissionDate') return patient.admissionDateRaw;
+  if (field === 'dischargeDate') return patient.dischargeDateRaw ?? '9999-12-31';
   return patient.name;
 }
 
@@ -48,14 +52,14 @@ export function ClaimsProcessorDashboard() {
   const [requestSortDirection, setRequestSortDirection] = useState<SortDirection>('descending');
   const [requestDateFrom, setRequestDateFrom] = useState('');
   const [requestDateTo, setRequestDateTo] = useState('');
-  const [requestStatus, setRequestStatus] = useState<'all' | SummarizationRequest['status']>('all');
+  const [requestStatus, setRequestStatus] = useState<'all' | SummarizationRequest['status']>('Pending Review');
 
   // CF4 Export State
   const [cf4Patients, setCf4Patients] = useState<CF4Patient[]>([]);
   const [patientSearch, setPatientSearch] = useState('');
   const [patientPage, setPatientPage] = useState(1);
   const [exportPatientPage, setExportPatientPage] = useState(1);
-  const [patientSortField, setPatientSortField] = useState<PatientSortField>('name');
+  const [patientSortField, setPatientSortField] = useState<PatientSortField>('dischargeDate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('ascending');
   const [admissionFrom, setAdmissionFrom] = useState('');
   const [admissionTo, setAdmissionTo] = useState('');
@@ -75,6 +79,10 @@ export function ClaimsProcessorDashboard() {
   const [existingPatientId, setExistingPatientId] = useState('');
   const [exportError, setExportError] = useState('');
   const [confirmingSummary, setConfirmingSummary] = useState(false);
+  const [exportNotice, setExportNotice] = useState('');
+  const [generatedPage, setGeneratedPage] = useState(1);
+  /** Patient whose generated CF4 is being rebuilt for download. */
+  const [redownloadingId, setRedownloadingId] = useState<string | null>(null);
   const stayRequests = previewPatient
     ? requests
         .filter((request) => previewPatient.claimIds.includes(request.id))
@@ -167,13 +175,12 @@ export function ClaimsProcessorDashboard() {
   const visibleRequestGroups = groupedRequests.slice(requestStart, requestStart + requestPageSize);
   const requestPages = Array.from({ length: requestPageCount }, (_, index) => index + 1);
 
+  /* A stay leaves the dashboard once its CF4 is generated; it lives on under Export → Generated CF4. */
   const filteredCf4Patients = groupStayPatients(cf4Patients).filter(
     (p) =>
+      !p.cf4Generated &&
       (p.name.toLowerCase().includes(patientSearch.toLowerCase()) ||
-      p.patientId.includes(patientSearch)) &&
-      (patientStatus === 'all' || p.status === patientStatus) &&
-      (!admissionFrom || p.admissionDateRaw >= admissionFrom) &&
-      (!admissionTo || p.admissionDateRaw <= admissionTo)
+        p.patientId.includes(patientSearch)),
   );
   const sortedCf4Patients = [...filteredCf4Patients].sort((a, b) => {
     const valueA = patientSortValue(a, patientSortField);
@@ -190,6 +197,17 @@ export function ClaimsProcessorDashboard() {
   const patientStart = (safePatientPage - 1) * patientPageSize;
   const visibleCf4Patients = sortedCf4Patients.slice(patientStart, patientStart + patientPageSize);
   const patientPages = Array.from({ length: patientPageCount }, (_, index) => index + 1);
+  const dashboardOrderKey = sortedCf4Patients
+    .map((patient) => `${patient.id}:${patient.claimIds.join('.')}`)
+    .join('|');
+  useEffect(() => {
+    const first = sortedCf4Patients[0] ?? null;
+    setPreviewPatient((current) => {
+      if (!first) return null;
+      const fresh = current ? sortedCf4Patients.find((patient) => patient.id === current.id) : undefined;
+      return fresh ?? first;
+    });
+  }, [dashboardOrderKey]);
   const eligibleExportPatients = groupApprovedPatients(cf4Patients);
   const filteredExportPatients = eligibleExportPatients.filter(
     (patient) =>
@@ -216,6 +234,30 @@ export function ClaimsProcessorDashboard() {
     exportPatientStart + patientPageSize,
   );
   const exportPatientPages = Array.from({ length: exportPatientPageCount }, (_, index) => index + 1);
+  const generatedPatients = groupGeneratedPatients(cf4Patients);
+  const sortedGeneratedPatients = generatedPatients
+    .filter(
+      (patient) =>
+        patient.name.toLowerCase().includes(patientSearch.toLowerCase()) ||
+        patient.patientId.toLowerCase().includes(patientSearch.toLowerCase()),
+    )
+    .sort((a, b) => {
+      const valueA = patientSortValue(a, patientSortField);
+      const valueB = patientSortValue(b, patientSortField);
+      const comparison =
+        typeof valueA === 'number' && typeof valueB === 'number'
+          ? valueA - valueB
+          : String(valueA).localeCompare(String(valueB), undefined, { numeric: true });
+      return sortDirection === 'ascending' ? comparison : -comparison;
+    });
+  const generatedPageCount = Math.max(1, Math.ceil(sortedGeneratedPatients.length / patientPageSize));
+  const safeGeneratedPage = Math.min(generatedPage, generatedPageCount);
+  const generatedStart = (safeGeneratedPage - 1) * patientPageSize;
+  const visibleGeneratedPatients = sortedGeneratedPatients.slice(
+    generatedStart,
+    generatedStart + patientPageSize,
+  );
+  const generatedPages = Array.from({ length: generatedPageCount }, (_, index) => index + 1);
   /* The days of the claim on screen that actually carry orders — the only stops
      the date arrows and the calendar offer. */
   const stayOrders = (() => {
@@ -246,6 +288,28 @@ export function ClaimsProcessorDashboard() {
     setPatientSearch(value);
     setPatientPage(1);
     setExportPatientPage(1);
+    setGeneratedPage(1);
+  };
+
+  /* The uploaded template is not kept after generation, so a re-download is
+     always rebuilt in the Course in the Ward format. */
+  const handleRedownload = async (patient: CF4Patient) => {
+    setRedownloadingId(patient.id);
+    setExportError('');
+    try {
+      const draft = buildStayDraft(
+        patient,
+        requests.filter((request) => patient.claimIds.includes(request.id)),
+      );
+      const { blob } = await buildCf4Document(draft, 'new-cf4', evaluator);
+      saveFile(blob, cf4FileName(draft, 'new-cf4'));
+    } catch (cause) {
+      setExportError(
+        `Could not download the CF4 for ${patient.name}: ${cause instanceof Error ? cause.message : 'please try again'}.`,
+      );
+    } finally {
+      setRedownloadingId(null);
+    }
   };
 
   const setRequestSearchAndResetPage = (value: string) => {
@@ -309,6 +373,7 @@ export function ClaimsProcessorDashboard() {
 
   const goToExportSubView = (view: ExportSubView) => {
     setExportError('');
+    if (view !== 'selection') setExportNotice('');
     setExportSubView(view);
   };
 
@@ -343,59 +408,112 @@ export function ClaimsProcessorDashboard() {
     setExportSubView('summary');
   };
 
-  /* Each patient is exported once, after generating every included daily claim. */
-  const handleConfirmSummary = async () => {
-    if (!summaryDrafts.length) return;
+  /* Each patient's PDF is built before any claim is marked, so a document that
+     cannot be produced never leaves claims flagged as CF4 generated. */
+  /* Taking a patient out of the batch also deselects them in the table. */
+  const handleRemoveDraft = (patientId: string) => {
+    const remaining = summaryDrafts.filter((draft) => draft.patient.id !== patientId);
+    setSelectedExportPatientIds((prev) => prev.filter((id) => id !== patientId));
+    setExportError('');
+    if (!remaining.length) {
+      setSummaryDrafts([]);
+      setSummaryIndex(0);
+      goToExportSubView(exportSource);
+      return;
+    }
+    const removedIndex = summaryDrafts.findIndex((draft) => draft.patient.id === patientId);
+    setSummaryDrafts(remaining);
+    setSummaryIndex((index) =>
+      Math.min(index > removedIndex ? index - 1 : index, remaining.length - 1),
+    );
+  };
+
+  const handleConfirmSummary = async (patientIds: string[]) => {
+    const chosenDrafts = summaryDrafts.filter((draft) => patientIds.includes(draft.patient.id));
+    if (!chosenDrafts.length || confirmingSummary) return;
     setConfirmingSummary(true);
     setExportError('');
+    setExportNotice('');
 
+    const template = exportSource === 'existing-cf4' ? uploadedFile ?? undefined : undefined;
     const generated: Cf4SummaryDraft[] = [];
-    const failed: string[] = [];
+    const failures: string[] = [];
     const generatedClaimIds: string[] = [];
-    for (const draft of summaryDrafts) {
-      let allClaimsGenerated = true;
+    const downloadFailed: string[] = [];
+
+    for (const draft of chosenDrafts) {
+      let pdf: Awaited<ReturnType<typeof buildCf4Document>>;
+      try {
+        pdf = await buildCf4Document(draft, exportSource, evaluator, template, template?.name);
+      } catch (cause) {
+        failures.push(`${draft.patient.name}: ${cause instanceof Error ? cause.message : 'the PDF could not be built'}`);
+        continue;
+      }
+
+      let failure = '';
       for (const claimId of draft.patient.claimIds) {
         try {
           await claimsApi.generateCf4(claimId);
           generatedClaimIds.push(claimId);
-        } catch {
-          allClaimsGenerated = false;
+        } catch (cause) {
+          failure = apiErrorMessage(cause, 'the Course in the Ward summary must be physician-approved');
           break;
         }
       }
-      if (allClaimsGenerated) generated.push(draft);
-      else failed.push(draft.patient.name);
+      if (failure) {
+        failures.push(`${draft.patient.name}: ${failure}`);
+        continue;
+      }
+
+      generated.push(draft);
+      try {
+        saveFile(pdf.blob, cf4FileName(draft, exportSource));
+      } catch {
+        downloadFailed.push(draft.patient.name);
+      }
+      /* Browsers drop rapid back-to-back downloads. */
+      if (chosenDrafts.length > 1) await new Promise((resolve) => window.setTimeout(resolve, 400));
     }
 
-    setRequests((prev) => prev.map((request) => (
-      generatedClaimIds.includes(request.id) ? { ...request, status: 'Approved' } : request
-    )));
+    if (generatedClaimIds.length) {
+      setRequests((prev) => prev.map((request) => (
+        generatedClaimIds.includes(request.id) ? { ...request, status: 'Approved' } : request
+      )));
+      setCf4Patients((prev) => prev.map((patient) => (
+        generatedClaimIds.includes(patient.claimId) ? { ...patient, cf4Generated: true } : patient
+      )));
+    }
     setSelectedExportPatientIds((prev) =>
       prev.filter((id) => !generated.some((draft) => draft.patient.id === id)),
     );
     setConfirmingSummary(false);
 
-    if (failed.length) {
-      setSummaryDrafts(summaryDrafts.filter((draft) => !generated.includes(draft)));
+    const names = generated.map((draft) => draft.patient.name);
+    const notice = !generated.length
+      ? ''
+      : `CF4 generated and downloaded for ${names.length === 1 ? names[0] : `${names.length} patients`}.${
+        downloadFailed.length
+          ? ` The download did not start for ${downloadFailed.join(', ')}; use Download PDF in the summary to save it again.`
+          : ''
+      }`;
+
+    /* Failed and unchosen patients stay in the batch for another try. */
+    const remaining = summaryDrafts.filter((draft) => !generated.includes(draft));
+    if (remaining.length) {
+      setSummaryDrafts(remaining);
       setSummaryIndex(0);
-      setExportError(
-        `Could not generate the CF4 for ${failed.join(', ')} — the Course in the Ward summary must be physician-approved.`,
-      );
+      setExportNotice(notice);
+      if (failures.length) setExportError(`Could not generate the CF4 for ${failures.join('; ')}.`);
       return;
     }
 
-    const count = generated.length;
     setPreviewPatient(null);
     setSummaryDrafts([]);
     setSummaryIndex(0);
     setExistingPatientId('');
     setUploadedFile(null);
     setExportSubView('selection');
-    alert(
-      count === 1
-        ? `CF4 generated for ${generated[0].patient.name}`
-        : `CF4 generated for ${count} patients.`,
-    );
+    setExportNotice(notice);
   };
 
   return (
@@ -447,7 +565,6 @@ export function ClaimsProcessorDashboard() {
                     { value: 'all', label: 'All' },
                     { value: 'Pending Review', label: 'Pending Review' },
                     { value: 'Approved', label: 'Approved' },
-                    { value: 'Rejected', label: 'Rejected' },
                   ],
                   value: requestStatus,
                   onChange: (value) => { setRequestStatus(value as typeof requestStatus); setRequestPage(1); },
@@ -533,7 +650,9 @@ export function ClaimsProcessorDashboard() {
                             <Button
                               variant="primary"
                               size="sm"
-                              onClick={() => setReviewStay(group.requests)}
+                              onClick={() => setReviewStay(
+                                requests.filter((request) => request.patient.patientId === group.id),
+                              )}
                             >
                               Review
                             </Button>
@@ -579,6 +698,24 @@ export function ClaimsProcessorDashboard() {
               {/* SUBVIEW 1: SELECTION */}
               {exportSubView === 'selection' && (
                 <div style={styles.exportContainerCard}>
+                  {exportNotice && (
+                    <p style={styles.exportSuccessBanner} role="status">
+                      <span>{exportNotice}</span>
+                      <span style={styles.newCf4FooterActions}>
+                        <Button size="sm" variant="secondary" onClick={() => goToExportSubView('generated')}>
+                          View generated CF4s
+                        </Button>
+                        <button
+                          type="button"
+                          className="ui-icon-btn"
+                          aria-label="Dismiss"
+                          onClick={() => setExportNotice('')}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    </p>
+                  )}
                   <p style={styles.exportInstruction}>
                     Select a workflow option to begin generating or editing CF4 PDF documents.
                   </p>
@@ -607,13 +744,166 @@ export function ClaimsProcessorDashboard() {
                     >
                       <div style={styles.exportCardHeader}>Existing CF4 PDF</div>
                       <div style={styles.exportCardIconArea}>
-                        <span style={{ fontSize: '48px', color: '#475569' }}>📁</span>
+                        <div style={styles.docIconBox}>
+                          <span style={{ fontSize: '32px' }}>📄</span>
+                          <span style={{ ...styles.plusIconBadge, ...styles.uploadIconBadge }}>
+                            <Upload size={10} strokeWidth={3} aria-hidden="true" />
+                          </span>
+                        </div>
                       </div>
                       <div style={styles.exportCardFooter}>
                         Upload and populate an existing local PDF.
                       </div>
                     </div>
+
+                    {/* GENERATED CF4 CARD */}
+                    <div
+                      style={styles.exportOptionCard}
+                      onClick={() => goToExportSubView('generated')}
+                    >
+                      <div style={styles.exportCardHeader}>Generated CF4</div>
+                      <div style={styles.exportCardIconArea}>
+                        <div style={styles.docIconBox}>
+                          <span style={{ fontSize: '32px' }}>📄</span>
+                          <span style={{ ...styles.plusIconBadge, ...styles.doneIconBadge }}>
+                            <Check size={10} strokeWidth={3} aria-hidden="true" />
+                          </span>
+                        </div>
+                      </div>
+                      <div style={styles.exportCardFooter}>
+                        Patients whose CF4 is done. Download them again anytime.
+                      </div>
+                    </div>
                   </div>
+                </div>
+              )}
+
+              {/* SUBVIEW: GENERATED CF4 */}
+              {exportSubView === 'generated' && (
+                <div style={styles.exportContainerCard}>
+                  <div style={styles.newCf4HeaderRow}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => goToExportSubView('selection')}
+                      leadingIcon={<ArrowLeft size={15} aria-hidden="true" />}
+                      style={{ justifySelf: 'start' }}
+                    >
+                      Back
+                    </Button>
+                    <h3 style={styles.newCf4Title}>Generated CF4</h3>
+                    <span />
+                  </div>
+
+                  <DataTableToolbar
+                    className="ui-toolbar--wrap"
+                    searchProps={{
+                      value: patientSearch,
+                      onChange: setPatientSearchAndResetPage,
+                      placeholder: 'Search patient',
+                      ariaLabel: 'Search generated patients',
+                    }}
+                    sortProps={{
+                      title: 'Sort patients by',
+                      options: [
+                        { value: 'dischargeDate', label: 'Discharge date' },
+                        { value: 'admissionDate', label: 'Admission date' },
+                        { value: 'daysInCare', label: 'Days in care' },
+                        { value: 'name', label: 'Patient name' },
+                      ],
+                      value: patientSortField,
+                      onChange: (value) => { setPatientSortField(value as PatientSortField); setGeneratedPage(1); },
+                      direction: sortDirection,
+                      onDirectionChange: (direction) => { setSortDirection(direction); setGeneratedPage(1); },
+                    }}
+                  />
+
+                  <div style={styles.patientTableWrapper}>
+                    <table style={{ ...styles.table, tableLayout: 'auto' }}>
+                      <thead>
+                        <tr style={styles.thRow}>
+                          <th style={styles.th}>Patient</th>
+                          <th style={styles.th}>Admitted</th>
+                          <th style={styles.th}>Discharged</th>
+                          <th style={styles.th}>Days in care</th>
+                          <th style={styles.th}>CF4</th>
+                          <th style={{ ...styles.th, textAlign: 'right' }} />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleGeneratedPatients.map((p) => (
+                          <tr key={p.id} style={styles.tr}>
+                            <td style={styles.td}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ ...patientTableStyles.dot, backgroundColor: p.color }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  <span style={patientTableStyles.name}>{p.name}</span>
+                                  <span style={{ fontSize: 11, color: '#64748b' }}>
+                                    {p.gender} · {p.age ?? '—'} yrs · {p.claimIds.length} {p.claimIds.length === 1 ? 'daily summary' : 'daily summaries'}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }}>
+                              {p.admissionDate}
+                            </td>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }}>
+                              {p.dischargeDateRaw
+                                ? formatDateMedium(new Date(`${p.dischargeDateRaw}T12:00:00`))
+                                : '—'}
+                            </td>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }}>
+                              {p.daysInCare} {p.daysInCare === 1 ? 'day' : 'days'}
+                            </td>
+                            <td style={styles.td}>
+                              <span style={styles.generatedBadge}>CF4 Generated</span>
+                            </td>
+                            <td style={{ ...styles.td, textAlign: 'right' }}>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                loading={redownloadingId === p.id}
+                                disabled={Boolean(redownloadingId)}
+                                onClick={() => void handleRedownload(p)}
+                              >
+                                Download PDF
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                        {!visibleGeneratedPatients.length && (
+                          <tr>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }} colSpan={6}>
+                              {generatedPatients.length
+                                ? 'No generated CF4 matches your search.'
+                                : 'No CF4 has been generated yet.'}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={styles.paginationRow}>
+                    <span style={styles.paginationText}>
+                      Showing {sortedGeneratedPatients.length ? generatedStart + 1 : 0} to{' '}
+                      {Math.min(generatedStart + patientPageSize, sortedGeneratedPatients.length)} of{' '}
+                      {sortedGeneratedPatients.length} generated patients
+                    </span>
+                    <div style={styles.paginationControls}>
+                      <button type="button" style={styles.pageArrowBtn} disabled={safeGeneratedPage === 1} onClick={() => setGeneratedPage((page) => Math.max(1, page - 1))}>‹</button>
+                      {generatedPages.map((page) => (
+                        <button type="button" key={page} style={{ ...styles.pageNumberBtn, ...(page === safeGeneratedPage ? styles.pageActive : {}) }} onClick={() => setGeneratedPage(page)}>{page}</button>
+                      ))}
+                      <button type="button" style={styles.pageArrowBtn} disabled={safeGeneratedPage === generatedPageCount} onClick={() => setGeneratedPage((page) => Math.min(generatedPageCount, page + 1))}>›</button>
+                    </div>
+                  </div>
+
+                  {exportError && (
+                    <p style={styles.exportErrorBanner} role="alert">
+                      {exportError}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -621,17 +911,21 @@ export function ClaimsProcessorDashboard() {
               {exportSubView === 'new-cf4' && (
                 <div style={styles.exportContainerCard}>
                   <div style={styles.newCf4HeaderRow}>
-                    <button
-                      style={styles.backButton}
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => goToExportSubView('selection')}
+                      leadingIcon={<ArrowLeft size={15} aria-hidden="true" />}
+                      style={{ justifySelf: 'start' }}
                     >
-                      &lt; Back to Selection
-                    </button>
+                      Back
+                    </Button>
                     <h3 style={styles.newCf4Title}>New CF4 Generation</h3>
-                    <div style={{ width: '120px' }} />
+                    <span />
                   </div>
 
                   <DataTableToolbar
+                    className="ui-toolbar--wrap"
                     searchProps={{
                       value: patientSearch,
                       onChange: setPatientSearchAndResetPage,
@@ -658,6 +952,7 @@ export function ClaimsProcessorDashboard() {
                     sortProps={{
                       title: 'Sort patients by',
                       options: [
+                        { value: 'dischargeDate', label: 'Discharge date' },
                         { value: 'admissionDate', label: 'Admission date' },
                         { value: 'daysInCare', label: 'Days in care' },
                         { value: 'age', label: 'Age' },
@@ -678,6 +973,7 @@ export function ClaimsProcessorDashboard() {
                           <th style={styles.th}>Sex</th>
                           <th style={styles.th}>Age</th>
                           <th style={styles.th}>Admitted</th>
+                          <th style={styles.th}>Discharged</th>
                           <th style={styles.th}>Days in care</th>
                           <th style={styles.th}>Status</th>
                           <th style={{ ...styles.th, textAlign: 'right' }} />
@@ -710,6 +1006,11 @@ export function ClaimsProcessorDashboard() {
                               {p.admissionDate}
                             </td>
                             <td style={{ ...styles.td, ...patientTableStyles.cell }}>
+                              {p.dischargeDateRaw
+                                ? formatDateMedium(new Date(`${p.dischargeDateRaw}T12:00:00`))
+                                : '—'}
+                            </td>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }}>
                               {p.daysInCare} {p.daysInCare === 1 ? 'day' : 'days'}
                             </td>
                             <td style={styles.td}>
@@ -728,7 +1029,7 @@ export function ClaimsProcessorDashboard() {
                         ))}
                         {!visibleExportPatients.length && (
                           <tr>
-                            <td style={{ ...styles.td, ...patientTableStyles.cell }} colSpan={7}>
+                            <td style={{ ...styles.td, ...patientTableStyles.cell }} colSpan={8}>
                               No approved patients match the current filters.
                             </td>
                           </tr>
@@ -766,12 +1067,14 @@ export function ClaimsProcessorDashboard() {
                     </span>
                     <div style={styles.newCf4FooterActions}>
                       <button
+                        type="button"
                         style={styles.cancelBtn}
                         onClick={() => goToExportSubView('selection')}
                       >
                         Cancel
                       </button>
                       <button
+                        type="button"
                         style={styles.proceedBtn}
                         onClick={() => handleProceedToSummary('new-cf4')}
                       >
@@ -786,14 +1089,17 @@ export function ClaimsProcessorDashboard() {
               {exportSubView === 'existing-cf4' && (
                 <div style={styles.exportContainerCard}>
                   <div style={styles.newCf4HeaderRow}>
-                    <button
-                      style={styles.backButton}
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => goToExportSubView('selection')}
+                      leadingIcon={<ArrowLeft size={15} aria-hidden="true" />}
+                      style={{ justifySelf: 'start' }}
                     >
-                      &lt; Back to Selection
-                    </button>
+                      Back
+                    </Button>
                     <h3 style={styles.newCf4Title}>Modify Existing CF4</h3>
-                    <div style={{ width: '120px' }} />
+                    <span />
                   </div>
 
                   <div style={styles.exportPatientPicker}>
@@ -911,8 +1217,10 @@ export function ClaimsProcessorDashboard() {
                   }
                   sourceFile={exportSource === 'existing-cf4' ? uploadedFile ?? undefined : undefined}
                   error={exportError}
+                  notice={exportNotice}
                   onBack={() => goToExportSubView(exportSource)}
-                  onConfirm={() => void handleConfirmSummary()}
+                  onRemove={handleRemoveDraft}
+                  onConfirm={(patientIds) => void handleConfirmSummary(patientIds)}
                   confirming={confirmingSummary}
                 />
               )}
@@ -932,26 +1240,10 @@ export function ClaimsProcessorDashboard() {
                     placeholder: 'Search patient',
                     ariaLabel: 'Search patients',
                   }}
-                  filterProps={{
-                    title: 'Filter patients',
-                    options: [
-                      { value: 'all', label: 'All' },
-                      { value: 'admitted', label: 'Admitted' },
-                      { value: 'discharged', label: 'Discharged' },
-                    ],
-                    value: patientStatus,
-                    onChange: (value) => { setPatientStatus(value as PatientStatus); setPatientPage(1); setExportPatientPage(1); },
-                    extra: (
-                      <>
-                        <span className="ui-menu__heading">Admission date</span>
-                        <input type="date" value={admissionFrom} onChange={(e) => { setAdmissionFrom(e.target.value); setPatientPage(1); setExportPatientPage(1); }} aria-label="Admission date from" />
-                        <input type="date" value={admissionTo} onChange={(e) => { setAdmissionTo(e.target.value); setPatientPage(1); setExportPatientPage(1); }} aria-label="Admission date to" />
-                      </>
-                    ),
-                  }}
                   sortProps={{
                     title: 'Sort patients by',
                     options: [
+                      { value: 'dischargeDate', label: 'Discharge date' },
                       { value: 'admissionDate', label: 'Admission date' },
                       { value: 'daysInCare', label: 'Days in care' },
                       { value: 'age', label: 'Age' },
@@ -979,7 +1271,10 @@ export function ClaimsProcessorDashboard() {
                     </thead>
                     <tbody>
                       {visibleCf4Patients.map((p) => (
-                        <tr key={p.id} style={styles.tr}>
+                        <tr
+                          key={p.id}
+                          style={previewPatient?.id === p.id ? { ...styles.tr, ...patientTableStyles.rowSelected } : styles.tr}
+                        >
                           <td style={styles.td}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <span style={{ ...patientTableStyles.dot, backgroundColor: p.color }} />

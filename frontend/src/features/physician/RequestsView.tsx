@@ -1,6 +1,6 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { claimsApi } from '../../services/domainApi';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import type { PhysicianRequest } from '../../types';
@@ -12,6 +12,47 @@ import { requests } from './styles';
 import { REQUESTS_TABLE_STATE } from './listState';
 import { ReviewSummaryModal } from './ReviewSummaryModal';
 import { fullName } from '../../lib/patient';
+
+const isPending = (request: PhysicianRequest) =>
+  request.status === "PENDING" ||
+  request.status === "PHYSICIAN_VALIDATION_REQUESTED";
+
+/** Every claim of one patient's stay, shown as a single request row. */
+type StayRequest = {
+  key: string;
+  /** The claim the review opens on: the earliest day still pending, else the earliest day. */
+  primary: PhysicianRequest;
+  requests: PhysicianRequest[];
+  pendingCount: number;
+  /** Latest time any day of the stay was requested. */
+  requestedAt: string;
+};
+
+/** Claims are filed per Course in the Ward day; the physician reviews the stay. */
+function groupByStay(items: PhysicianRequest[]): StayRequest[] {
+  const groups = new Map<string, PhysicianRequest[]>();
+  for (const request of items) {
+    const admissionId = request.summary.orders[0]?.admissionId;
+    const key = `${request.summary.patient.id}:${admissionId ?? request.id}`;
+    groups.set(key, [...(groups.get(key) ?? []), request]);
+  }
+  return [...groups].map(([key, requests]) => {
+    const byDay = [...requests].sort((a, b) =>
+      a.summary.summaryDate.localeCompare(b.summary.summaryDate),
+    );
+    const pending = byDay.filter(isPending);
+    return {
+      key,
+      primary: pending[0] ?? byDay[0],
+      requests: byDay,
+      pendingCount: pending.length,
+      requestedAt: requests
+        .map((request) => request.requestedAt)
+        .sort()
+        .at(-1)!,
+    };
+  });
+}
 
 export function RequestsView({
   focusRequestId,
@@ -36,6 +77,9 @@ export function RequestsView({
   }, [loadRequests]);
   usePolling(loadRequests, ORDER_POLL_MS);
 
+  const stays = useMemo(() => groupByStay(items), [items]);
+
+  // A notification points at one day's claim; the review opens on that stay.
   useEffect(() => {
     if (!focusRequestId) return;
     const match = items.find((request) => request.id === focusRequestId);
@@ -44,30 +88,25 @@ export function RequestsView({
     onFocusHandled?.();
   }, [focusRequestId, items, onFocusHandled]);
 
-  const isPending = (request: PhysicianRequest) =>
-    request.status === "PENDING" ||
-    request.status === "PHYSICIAN_VALIDATION_REQUESTED";
-
   // Shared search / filter / sort / pagination state, remembered so leaving
   // the tab and coming back keeps the list where it was.
-  const table = useTableState<PhysicianRequest>({
-    items,
+  const table = useTableState<StayRequest>({
+    items: stays,
     pageSize: 5,
     stateKey: REQUESTS_TABLE_STATE,
-    searchFields: (request) => [
-      fullName(request.summary.patient),
-      `${request.processor.firstName} ${request.processor.lastName}`,
+    searchFields: (stay) => [
+      fullName(stay.primary.summary.patient),
+      ...stay.requests.map((request) => `${request.processor.firstName} ${request.processor.lastName}`),
     ],
     filterPredicates: {
-      status: (request, value) =>
+      status: (stay, value) =>
         value === "all" ||
-        (value === "pending" ? isPending(request) : !isPending(request)),
+        (value === "pending" ? stay.pendingCount > 0 : stay.pendingCount === 0),
     },
     initialFilters: { status: "all" },
     sorters: {
-      patient: (request) =>
-        fullName(request.summary.patient),
-      requestedAt: (request) => request.requestedAt,
+      patient: (stay) => fullName(stay.primary.summary.patient),
+      requestedAt: (stay) => stay.requestedAt,
     },
     initialSort: { field: "requestedAt", direction: "descending" },
   });
@@ -119,48 +158,61 @@ export function RequestsView({
           </tr>
         </thead>
         <tbody>
-          {table.rows.map((r) => (
-            <tr key={r.id}>
-              <td style={requests.td}>
-                <div style={requests.primary}>
-                  {fullName(r.summary.patient)}
-                </div>
-              </td>
-              <td style={requests.td}>
-                <div style={requests.primary}>
-                  {r.processor.firstName} {r.processor.lastName}
-                </div>
-                <div style={requests.secondary}>Claims Processor</div>
-              </td>
-              <td style={requests.td}>
-                <div style={requests.primary}>
-                  {new Date(r.requestedAt).toLocaleDateString("en-GB")}
-                </div>
-                <div style={requests.secondary}>
-                  {new Date(r.requestedAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </div>
-              </td>
-              <td style={requests.td}>
-                <StatusBadge
-                  showDot
-                  status={isPending(r) ? "pending" : "approved"}
-                  label={isPending(r) ? "Pending Review" : "Reviewed"}
-                />
-              </td>
-              <td style={{ ...requests.td, textAlign: "right" }}>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setSelected(r)}
-                >
-                  Review
-                </Button>
-              </td>
-            </tr>
-          ))}
+          {table.rows.map((stay) => {
+            const r = stay.primary;
+            const dayCount = stay.requests.length;
+            return (
+              <tr key={stay.key}>
+                <td style={requests.td}>
+                  <div style={requests.primary}>
+                    {fullName(r.summary.patient)}
+                  </div>
+                  <div style={requests.secondary}>
+                    {dayCount} {dayCount === 1 ? "day" : "days"} in this stay
+                  </div>
+                </td>
+                <td style={requests.td}>
+                  <div style={requests.primary}>
+                    {r.processor.firstName} {r.processor.lastName}
+                  </div>
+                  <div style={requests.secondary}>Claims Processor</div>
+                </td>
+                <td style={requests.td}>
+                  <div style={requests.primary}>
+                    {new Date(stay.requestedAt).toLocaleDateString("en-GB")}
+                  </div>
+                  <div style={requests.secondary}>
+                    {new Date(stay.requestedAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </td>
+                <td style={requests.td}>
+                  <StatusBadge
+                    showDot
+                    status={stay.pendingCount ? "pending" : "approved"}
+                    label={
+                      !stay.pendingCount
+                        ? "Reviewed"
+                        : stay.pendingCount === dayCount
+                          ? "Pending Review"
+                          : `${stay.pendingCount} of ${dayCount} pending`
+                    }
+                  />
+                </td>
+                <td style={{ ...requests.td, textAlign: "right" }}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setSelected(r)}
+                  >
+                    Review
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 

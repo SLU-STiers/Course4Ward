@@ -591,9 +591,9 @@ export class PatientsService {
         ]),
       },
     });
-    // The claims processor can only request a claim against a Course in the Ward.
-    // Prepare that after the discharge is saved, without holding the nurse's request.
-    void this.courseInWard.prepareClaimForDischargedAdmission(id);
+    // Files the stay's Course in the Ward and sends it to Claims after the
+    // discharge is saved, without holding the nurse's request.
+    void this.courseInWard.prepareClaimForDischargedAdmission(id, userId);
 
     return { ...admission, dischargeDate };
   }

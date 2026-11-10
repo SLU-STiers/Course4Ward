@@ -161,6 +161,9 @@ export const courseInWardApi = {
 // --- Claims ---
 export const claimsApi = {
   create: (courseInWardId: string) => api.post<Claim>('/claims', { courseInWardId }),
+  /** Every day of one stay in a single request; the physician is asked once. */
+  createForStay: (courseInWardIds: string[]) =>
+    api.post<Claim[]>('/claims/stay', { courseInWardIds }),
   findAll: () => api.get<ClaimRecord[]>('/claims'),
   /** Summaries that do not have a claim yet. */
   eligibleSummaries: () => api.get<EligibleSummary[]>('/claims/eligible-summaries'),

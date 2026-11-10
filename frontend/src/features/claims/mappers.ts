@@ -122,6 +122,9 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
       age: calculateAge(patient.dateOfBirth),
       gender: sexLabel(patient.gender, 'Not recorded'),
       admissionDate: formatDateMedium(admissionDate),
+      dischargeDate: order?.admission.dischargeDate
+        ? formatDateMedium(order.admission.dischargeDate)
+        : 'Present',
     },
     summaryText: claim.summary.summaryContent,
     chart: chartFor(claim, order ? `${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Attending physician'),
@@ -174,6 +177,7 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
     daysInCare: daysInCare(admissionDate, dischargeDate),
     status,
     approved: claim.summary.status === 'APPROVED' && Boolean(claim.summary.approvedStatus),
+    cf4Generated: claim.status === 'CF4_GENERATED',
   };
 }
 
@@ -193,6 +197,7 @@ export function groupStayPatients(patients: CF4Patient[]): CF4Patient[] {
     if (existing) {
       existing.patient.claimIds.push(patient.claimId);
       existing.patient.approved = existing.patient.approved && patient.approved;
+      existing.patient.cf4Generated = existing.patient.cf4Generated && patient.cf4Generated;
       if (patient.admissionDateRaw < existing.patient.admissionDateRaw) {
         existing.patient.admissionDate = patient.admissionDate;
         existing.patient.admissionDateRaw = patient.admissionDateRaw;
@@ -242,7 +247,12 @@ export function groupStayPatients(patients: CF4Patient[]): CF4Patient[] {
     });
 }
 
-/** Stays whose every Course in the Ward day is already physician-approved. */
+/** Stays ready for a CF4: every day physician-approved, CF4 not yet generated. */
 export function groupApprovedPatients(patients: CF4Patient[]): CF4Patient[] {
-  return groupStayPatients(patients).filter((patient) => patient.approved);
+  return groupStayPatients(patients).filter((patient) => patient.approved && !patient.cf4Generated);
+}
+
+/** Stays whose CF4 has already been generated for every claim. */
+export function groupGeneratedPatients(patients: CF4Patient[]): CF4Patient[] {
+  return groupStayPatients(patients).filter((patient) => patient.cf4Generated);
 }

@@ -1,6 +1,14 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -11,6 +19,14 @@ import { ClaimsService } from './claims.service';
 class CreateClaimDto {
   @IsUUID()
   courseInWardId: string;
+}
+
+class CreateStayClaimDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(366)
+  @IsUUID('all', { each: true })
+  courseInWardIds: string[];
 }
 
 class NotifyPhysicianDto {
@@ -32,6 +48,12 @@ export class ClaimsController {
   @Roles(Role.CLAIMS_PROCESSOR)
   create(@Body() dto: CreateClaimDto, @CurrentUser() user: any) {
     return this.claimsService.createFromSummary(dto.courseInWardId, user.id);
+  }
+
+  @Post('stay')
+  @Roles(Role.CLAIMS_PROCESSOR)
+  createForStay(@Body() dto: CreateStayClaimDto, @CurrentUser() user: any) {
+    return this.claimsService.createForStay(dto.courseInWardIds, user.id);
   }
 
   @Get()

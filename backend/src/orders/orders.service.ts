@@ -48,6 +48,8 @@ const orderInclude = {
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
   private readonly ollama: OllamaClient;
+  /** Registered by CourseInWardService, which already depends on this service. */
+  private dischargeListeners: Array<(admissionId: string, nurseId: string) => void> = [];
 
   constructor(
     private prisma: PrismaService,
@@ -58,6 +60,11 @@ export class OrdersService {
     this.ollama = new OllamaClient(
       this.config.get<string>('AI_SERVICE_URL') ?? 'http://localhost:8000',
     );
+  }
+
+  /** Runs after a discharge order ends an admission. */
+  onDischarge(listener: (admissionId: string, nurseId: string) => void) {
+    this.dischargeListeners.push(listener);
   }
 
   async create(dto: CreateOrderDto, enteredById: string, enteredByRole: Role) {
@@ -421,6 +428,7 @@ export class OrdersService {
         ]),
       },
     });
+    for (const listener of this.dischargeListeners) listener(admissionId, nurseId);
   }
 
   /**

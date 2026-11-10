@@ -23,11 +23,14 @@ const mockPrismaService = {
     findUnique: jest.fn(),
   },
   summaryApprovalRequest: {
+    count: jest.fn(),
     create: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
   },
+  $executeRaw: jest.fn(),
+  $transaction: jest.fn(),
 } as unknown as jest.Mocked<PrismaService>;
 
 const mockAuditLogService = {
@@ -115,6 +118,12 @@ describe("Claims Module", () => {
     notificationsService = module.get(NotificationsService);
 
     jest.clearAllMocks();
+    // Interactive transactions run against the same mock client.
+    (mockPrismaService.$transaction as jest.Mock).mockImplementation(
+      (arg: unknown) =>
+        typeof arg === "function" ? (arg as (tx: unknown) => unknown)(mockPrismaService) : Promise.all(arg as unknown[]),
+    );
+    (mockPrismaService.summaryApprovalRequest.count as jest.Mock).mockResolvedValue(0);
   });
 
   // ============ SERVICE TESTS ============
@@ -231,6 +240,64 @@ describe("Claims Module", () => {
         expect(
           prismaService.summaryApprovalRequest.create,
         ).not.toHaveBeenCalled();
+      });
+
+      it("should not open a second claim when another request claimed the day first", async () => {
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          requests: [],
+          orders: [],
+        });
+        (prismaService.summaryApprovalRequest.count as jest.Mock).mockResolvedValue(1);
+
+        await expect(
+          service.createFromSummary(mockCourseInWardId, mockUser.id),
+        ).rejects.toThrow("A claim already exists for this summary");
+
+        expect(prismaService.$executeRaw).toHaveBeenCalled();
+        expect(prismaService.summaryApprovalRequest.create).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("createForStay", () => {
+      it("should open every day and ask the physician once for the whole stay", async () => {
+        (prismaService.courseInWard.findUnique as jest.Mock).mockImplementation(
+          ({ where }: { where: { id: string } }) => Promise.resolve({
+            ...mockSummary,
+            id: where.id,
+            validatorId: null,
+            status: SummaryStatus.DRAFT_AI,
+            approvedStatus: null,
+            requests: [],
+            orders: [{ orderedById: "physician-1", admission: { physicianId: "physician-attending" } }],
+          }),
+        );
+        (prismaService.summaryApprovalRequest.create as jest.Mock).mockImplementation(
+          ({ data }: { data: { summaryId: string } }) => Promise.resolve({ ...mockClaim, id: `claim-${data.summaryId}` }),
+        );
+
+        const claims = await service.createForStay(["day-1", "day-2", "day-1"], mockUser.id);
+
+        expect(claims).toHaveLength(2);
+        expect(prismaService.summaryApprovalRequest.create).toHaveBeenCalledTimes(2);
+        expect(notificationsService.create).toHaveBeenCalledTimes(1);
+        expect(notificationsService.create).toHaveBeenCalledWith(expect.objectContaining({
+          userId: "physician-attending",
+          requestId: "claim-day-1",
+        }));
+      });
+
+      it("should reject a stay whose every day is already claimed", async () => {
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          requests: [{ id: "claim-existing" }],
+          orders: [],
+        });
+
+        await expect(service.createForStay(["day-1"], mockUser.id)).rejects.toThrow(
+          "Every day of this stay already has a claim",
+        );
+        expect(notificationsService.create).not.toHaveBeenCalled();
       });
     });
 
