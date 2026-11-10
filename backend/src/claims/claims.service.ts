@@ -1,11 +1,27 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { NotificationType, SummaryStatus } from '@prisma/client';
+import { NotificationType, OrderStatus, SummaryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { triageSelect } from '../patients/patients.service';
 import { assertAttending, loadSummaryAdmission } from '../course-in-ward/summary-access';
+import { dayKeyOf } from '../course-in-ward/course-in-ward.service';
 import { createClaimOnce } from './claim-once';
+
+/**
+ * Which days of a stay still block its CF4 (`YYYY-MM-DD`, server-local, oldest first).
+ * - `missingDays`: finished orders that day, but no Course in the Ward dated that day.
+ *   A summary linked to orders from other days does not cover those days.
+ * - `unrequestedDays`: a summary exists that day but no claim has been opened on it.
+ * - `unapprovedDays`: a summary that day is not physician-approved.
+ */
+export interface StayCoverage {
+  missingDays: string[];
+  unrequestedDays: string[];
+  unapprovedDays: string[];
+}
+
+const EMPTY_COVERAGE: StayCoverage = { missingDays: [], unrequestedDays: [], unapprovedDays: [] };
 
 @Injectable()
 export class ClaimsService {
@@ -159,7 +175,77 @@ export class ClaimsService {
     });
   }
 
-  findAll() {
+  /** `StayCoverage` per admission id. */
+  async stayCoverage(admissionIds: string[]): Promise<Map<string, StayCoverage>> {
+    const ids = [...new Set(admissionIds)];
+    const [orders, summaries] = await Promise.all([
+      this.prisma.physicianOrder.findMany({
+        where: { admissionId: { in: ids }, status: OrderStatus.FINISHED, active: true },
+        select: { admissionId: true, dateCreated: true },
+      }),
+      this.prisma.courseInWard.findMany({
+        where: { orders: { some: { admissionId: { in: ids } } } },
+        select: {
+          summaryDate: true,
+          status: true,
+          approvedStatus: true,
+          requests: { select: { id: true }, take: 1 },
+          orders: { select: { admissionId: true } },
+        },
+      }),
+    ]);
+
+    type Day = { summarized: boolean; requested: boolean; approved: boolean };
+    const stays = new Map<string, Map<string, Day>>(ids.map((id) => [id, new Map()]));
+    const dayOf = (admissionId: string, day: string) => {
+      const days = stays.get(admissionId)!;
+      const entry = days.get(day) ?? { summarized: false, requested: true, approved: true };
+      days.set(day, entry);
+      return entry;
+    };
+
+    for (const order of orders) {
+      const day = dayKeyOf(order.dateCreated);
+      if (day) dayOf(order.admissionId, day);
+    }
+    for (const summary of summaries) {
+      const day = dayKeyOf(summary.summaryDate);
+      if (!day) continue;
+      for (const admissionId of new Set(summary.orders.map((order) => order.admissionId))) {
+        if (!stays.has(admissionId)) continue;
+        const entry = dayOf(admissionId, day);
+        entry.summarized = true;
+        entry.requested &&= summary.requests.length > 0;
+        entry.approved &&= summary.status === SummaryStatus.APPROVED && Boolean(summary.approvedStatus);
+      }
+    }
+
+    const coverage = new Map<string, StayCoverage>();
+    for (const [admissionId, days] of stays) {
+      const sorted = [...days].sort(([a], [b]) => a.localeCompare(b));
+      const pick = (test: (day: Day) => boolean) => sorted.filter(([, day]) => test(day)).map(([key]) => key);
+      coverage.set(admissionId, {
+        missingDays: pick((day) => !day.summarized),
+        unrequestedDays: pick((day) => day.summarized && !day.requested),
+        unapprovedDays: pick((day) => day.summarized && !day.approved),
+      });
+    }
+    return coverage;
+  }
+
+  /** Every claim, each with its stay's `StayCoverage` (`stay`). */
+  async findAll() {
+    const claims = await this.findAllClaims();
+    const coverage = await this.stayCoverage(
+      claims.flatMap((claim) => claim.summary.orders.map((order) => order.admissionId)),
+    );
+    return claims.map((claim) => {
+      const admissionId = claim.summary.orders[0]?.admissionId;
+      return { ...claim, stay: (admissionId && coverage.get(admissionId)) || EMPTY_COVERAGE };
+    });
+  }
+
+  private findAllClaims() {
     return this.prisma.summaryApprovalRequest.findMany({
       orderBy: { requestedAt: 'desc' },
       include: {
@@ -323,6 +409,26 @@ export class ClaimsService {
       throw new BadRequestException(
         'Course in the Ward must be physician-approved before CF4 can be generated',
       );
+    }
+    // The CF4 covers the whole stay, so every day of it must be summarized,
+    // requested and approved -- not only the day this claim is on.
+    const source = await this.prisma.physicianOrder.findFirst({
+      where: { summarizationId: claim.summaryId },
+      select: { admissionId: true },
+    });
+    if (source) {
+      const stay = (await this.stayCoverage([source.admissionId])).get(source.admissionId)!;
+      const blockers = [
+        ['no Course in the Ward', stay.missingDays],
+        ['no claim requested', stay.unrequestedDays],
+        ['not physician-approved', stay.unapprovedDays],
+      ] as const;
+      const reasons = blockers
+        .filter(([, days]) => days.length)
+        .map(([label, days]) => `${label} for ${days.join(', ')}`);
+      if (reasons.length) {
+        throw new BadRequestException(`CF4 needs every day of the stay summarized and approved: ${reasons.join('; ')}`);
+      }
     }
 
     const updated = await this.prisma.summaryApprovalRequest.update({

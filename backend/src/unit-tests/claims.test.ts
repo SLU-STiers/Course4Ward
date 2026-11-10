@@ -21,6 +21,11 @@ const emptyContactDetails = {
 const mockPrismaService = {
   courseInWard: {
     findUnique: jest.fn(),
+    findMany: jest.fn().mockResolvedValue([]),
+  },
+  physicianOrder: {
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
   },
   summaryApprovalRequest: {
     count: jest.fn(),
@@ -43,6 +48,8 @@ const mockNotificationsService = {
   create: jest.fn(),
   notifyUsers: jest.fn().mockResolvedValue([]),
 } as unknown as jest.Mocked<NotificationsService>;
+
+const emptyStay = { missingDays: [], unrequestedDays: [], unapprovedDays: [] };
 
 describe("Claims Module", () => {
   let controller: ClaimsController;
@@ -342,7 +349,7 @@ describe("Claims Module", () => {
             },
           },
         });
-        expect(result).toEqual([mockClaim]);
+        expect(result).toEqual([{ ...mockClaim, stay: emptyStay }]);
       });
 
       it("should return empty array when no claims exist", async () => {
@@ -518,6 +525,35 @@ describe("Claims Module", () => {
         ).not.toHaveBeenCalled();
         expect(auditLogService.record).not.toHaveBeenCalled();
       });
+
+      // One approved summary dated on the last day, holding orders from an
+      // earlier day too, does not cover that earlier day.
+      it("should refuse a CF4 while a day of the stay has no summary of its own", async () => {
+        (prismaService.summaryApprovalRequest.findUnique as jest.Mock).mockResolvedValue(mockClaim);
+        (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({ admissionId: "adm-1" });
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([
+          { admissionId: "adm-1", dateCreated: new Date(2026, 10, 3, 9) },
+          { admissionId: "adm-1", dateCreated: new Date(2026, 10, 5, 9) },
+        ]);
+        (prismaService.courseInWard.findMany as jest.Mock).mockResolvedValue([
+          {
+            summaryDate: new Date(2026, 10, 5),
+            status: SummaryStatus.APPROVED,
+            approvedStatus: true,
+            requests: [{ id: mockClaimId }],
+            orders: [{ admissionId: "adm-1" }, { admissionId: "adm-1" }],
+          },
+        ]);
+
+        await expect(service.generateCf4(mockClaimId, mockUser.id)).rejects.toThrow(
+          "no Course in the Ward for 2026-11-03",
+        );
+        expect(prismaService.summaryApprovalRequest.update).not.toHaveBeenCalled();
+
+        (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(null);
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([]);
+        (prismaService.courseInWard.findMany as jest.Mock).mockResolvedValue([]);
+      });
     });
   });
 
@@ -540,12 +576,12 @@ describe("Claims Module", () => {
 
     describe("findAll", () => {
       it("should call service.findAll", async () => {
-        jest.spyOn(service, "findAll").mockResolvedValue([mockClaim]);
+        jest.spyOn(service, "findAll").mockResolvedValue([{ ...mockClaim, stay: emptyStay }]);
 
         const result = await controller.findAll();
 
         expect(service.findAll).toHaveBeenCalled();
-        expect(result).toEqual([mockClaim]);
+        expect(result).toEqual([{ ...mockClaim, stay: emptyStay }]);
       });
     });
 
