@@ -45,7 +45,7 @@ export class PatientsController {
   }
 
   @Get('rooms')
-  @Roles(Role.NURSE)
+  @Roles(Role.NURSE, Role.PHYSICIAN)
   listRooms() {
     return this.patientsService.listRooms();
   }

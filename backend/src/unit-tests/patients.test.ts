@@ -147,6 +147,7 @@ describe("Patients Module", () => {
             enteredByRole: OrderEnteredBy.PHYSICIAN,
             active: true,
             summarizationId: null,
+            transferRoomId: null,
             communicationChannel: null,
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -698,7 +699,7 @@ describe("Patients Module", () => {
     });
 
     describe("rooms", () => {
-      const freeRoom = { id: "room-101", isActive: true, admissions: [] };
+      const freeRoom = { id: "room-101", number: "101", isActive: true, admissions: [], transferOrders: [] };
       const occupiedRoom = { ...freeRoom, admissions: [{ id: "admission-9" }] };
       const inpatientDto = {
         ...mockCreatePatientDto,
@@ -709,13 +710,16 @@ describe("Patients Module", () => {
 
       it("should list active rooms with their occupancy", async () => {
         (prismaService.room.findMany as jest.Mock).mockResolvedValue([
-          { id: "room-101", number: "101", admissions: [] },
-          { id: "room-102", number: "102", admissions: [{ id: "admission-9" }] },
+          { id: "room-101", number: "101", admissions: [], transferOrders: [] },
+          { id: "room-102", number: "102", admissions: [{ id: "admission-9" }], transferOrders: [] },
+          { id: "room-103", number: "103", admissions: [], transferOrders: [{ admissionId: "admission-7" }] },
         ]);
 
         await expect(service.listRooms()).resolves.toEqual([
-          { id: "room-101", number: "101", occupied: false, occupiedByAdmissionId: null },
-          { id: "room-102", number: "102", occupied: true, occupiedByAdmissionId: "admission-9" },
+          { id: "room-101", number: "101", occupied: false, occupiedByAdmissionId: null, reserved: false },
+          { id: "room-102", number: "102", occupied: true, occupiedByAdmissionId: "admission-9", reserved: false },
+          // A pending transfer order holds the room for its patient.
+          { id: "room-103", number: "103", occupied: true, occupiedByAdmissionId: "admission-7", reserved: true },
         ]);
       });
 
@@ -739,6 +743,18 @@ describe("Patients Module", () => {
         (prismaService.room.findUnique as jest.Mock).mockResolvedValue(occupiedRoom);
 
         await expect(service.create(inpatientDto, mockUser.id)).rejects.toThrow("Room 101 is occupied");
+        expect(prismaService.patient.create).not.toHaveBeenCalled();
+      });
+
+      it("should reject a room reserved by another patient's pending transfer", async () => {
+        (prismaService.room.findUnique as jest.Mock).mockResolvedValue({
+          ...freeRoom,
+          transferOrders: [{ id: "order-7" }],
+        });
+
+        await expect(service.create(inpatientDto, mockUser.id)).rejects.toThrow(
+          "Room 101 is reserved for a pending transfer",
+        );
         expect(prismaService.patient.create).not.toHaveBeenCalled();
       });
 
