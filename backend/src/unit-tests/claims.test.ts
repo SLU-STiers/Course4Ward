@@ -49,7 +49,7 @@ const mockNotificationsService = {
   notifyUsers: jest.fn().mockResolvedValue([]),
 } as unknown as jest.Mocked<NotificationsService>;
 
-const emptyStay = { missingDays: [], unrequestedDays: [], unapprovedDays: [] };
+const emptyStay = { missingDays: [], unrequestedDays: [], unapprovedDays: [], incompleteDays: [] };
 
 describe("Claims Module", () => {
   let controller: ClaimsController;
@@ -77,7 +77,17 @@ describe("Claims Module", () => {
     ...emptyContactDetails,
     createdAt: new Date(),
     updatedAt: new Date(),
+    admissions: [
+      {
+        id: "adm-1",
+        admissionDate: new Date(2026, 10, 1),
+        dischargeDate: new Date(2026, 10, 6),
+        physicianId: null,
+        additionalPhysicians: [],
+      },
+    ],
   };
+  const stillAdmitted = { ...mockPatient, admissions: [{ ...mockPatient.admissions[0], dischargeDate: null }] };
 
   const mockSummary = {
     id: mockCourseInWardId,
@@ -131,6 +141,8 @@ describe("Claims Module", () => {
         typeof arg === "function" ? (arg as (tx: unknown) => unknown)(mockPrismaService) : Promise.all(arg as unknown[]),
     );
     (mockPrismaService.summaryApprovalRequest.count as jest.Mock).mockResolvedValue(0);
+    // The summary's admission lookup (discharge check) reads this by default.
+    (mockPrismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue(mockSummary);
   });
 
   // ============ SERVICE TESTS ============
@@ -231,6 +243,20 @@ describe("Claims Module", () => {
           prismaService.summaryApprovalRequest.create,
         ).not.toHaveBeenCalled();
         expect(auditLogService.record).not.toHaveBeenCalled();
+      });
+
+      it("should refuse a claim while the patient is still admitted", async () => {
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
+          ...mockSummary,
+          patient: stillAdmitted,
+          requests: [],
+          orders: [],
+        });
+
+        await expect(
+          service.createFromSummary(mockCourseInWardId, mockUser.id),
+        ).rejects.toThrow("A claim can only be opened after the patient is discharged");
+        expect(prismaService.summaryApprovalRequest.create).not.toHaveBeenCalled();
       });
 
       it("should throw ConflictException when the summary already has a claim", async () => {
@@ -528,6 +554,16 @@ describe("Claims Module", () => {
 
       // One approved summary dated on the last day, holding orders from an
       // earlier day too, does not cover that earlier day.
+      it("should refuse a CF4 while the patient is still admitted", async () => {
+        (prismaService.summaryApprovalRequest.findUnique as jest.Mock).mockResolvedValue(mockClaim);
+        (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({ ...mockSummary, patient: stillAdmitted });
+
+        await expect(service.generateCf4(mockClaimId, mockUser.id)).rejects.toThrow(
+          "CF4 can only be generated after the patient is discharged",
+        );
+        expect(prismaService.summaryApprovalRequest.update).not.toHaveBeenCalled();
+      });
+
       it("should refuse a CF4 while a day of the stay has no summary of its own", async () => {
         (prismaService.summaryApprovalRequest.findUnique as jest.Mock).mockResolvedValue(mockClaim);
         (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({ admissionId: "adm-1" });
@@ -547,6 +583,33 @@ describe("Claims Module", () => {
 
         await expect(service.generateCf4(mockClaimId, mockUser.id)).rejects.toThrow(
           "no Course in the Ward for 2026-11-03",
+        );
+        expect(prismaService.summaryApprovalRequest.update).not.toHaveBeenCalled();
+
+        (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(null);
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([]);
+        (prismaService.courseInWard.findMany as jest.Mock).mockResolvedValue([]);
+      });
+
+      it("should refuse a CF4 while an approved day has an order finished after approval", async () => {
+        (prismaService.summaryApprovalRequest.findUnique as jest.Mock).mockResolvedValue(mockClaim);
+        (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue({ admissionId: "adm-1" });
+        (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([
+          { admissionId: "adm-1", dateCreated: new Date(2026, 10, 5, 9), summarizationId: "s-1" },
+          { admissionId: "adm-1", dateCreated: new Date(2026, 10, 5, 15), summarizationId: null },
+        ]);
+        (prismaService.courseInWard.findMany as jest.Mock).mockResolvedValue([
+          {
+            summaryDate: new Date(2026, 10, 5),
+            status: SummaryStatus.APPROVED,
+            approvedStatus: true,
+            requests: [{ id: mockClaimId }],
+            orders: [{ admissionId: "adm-1" }],
+          },
+        ]);
+
+        await expect(service.generateCf4(mockClaimId, mockUser.id)).rejects.toThrow(
+          "an order missing from the approved summary for 2026-11-05",
         );
         expect(prismaService.summaryApprovalRequest.update).not.toHaveBeenCalled();
 

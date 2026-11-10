@@ -14,14 +14,22 @@ import { createClaimOnce } from './claim-once';
  *   A summary linked to orders from other days does not cover those days.
  * - `unrequestedDays`: a summary exists that day but no claim has been opened on it.
  * - `unapprovedDays`: a summary that day is not physician-approved.
+ * - `incompleteDays`: approved, but a finished order that day is in no summary
+ *   (finished after approval); the physician regenerates and re-approves it.
  */
 export interface StayCoverage {
   missingDays: string[];
   unrequestedDays: string[];
   unapprovedDays: string[];
+  incompleteDays: string[];
 }
 
-const EMPTY_COVERAGE: StayCoverage = { missingDays: [], unrequestedDays: [], unapprovedDays: [] };
+const EMPTY_COVERAGE: StayCoverage = {
+  missingDays: [],
+  unrequestedDays: [],
+  unapprovedDays: [],
+  incompleteDays: [],
+};
 
 @Injectable()
 export class ClaimsService {
@@ -105,14 +113,17 @@ export class ClaimsService {
       throw new ConflictException('A claim already exists for this summary');
     }
 
+    // A claim (and so a CF4) covers a finished stay: never open one mid-stay.
+    const admission = await loadSummaryAdmission(this.prisma, courseInWardId);
+    if (!admission?.dischargeDate) {
+      throw new BadRequestException('A claim can only be opened after the patient is discharged');
+    }
+
     const approved = summary.status === SummaryStatus.APPROVED && Boolean(summary.approvedStatus);
 
     // Only the attending physician can approve, so an open request goes to them
     // (never to whoever happened to write the first order).
-    const attendingId =
-      summary.orders[0]?.admission.physicianId ??
-      (await loadSummaryAdmission(this.prisma, courseInWardId))?.physicianId ??
-      null;
+    const attendingId = summary.orders[0]?.admission.physicianId ?? admission.physicianId ?? null;
     const physicianId = approved ? summary.validatorId ?? attendingId : attendingId;
     if (!physicianId) {
       throw new BadRequestException('Summary has no attending physician to validate it');
@@ -181,7 +192,7 @@ export class ClaimsService {
     const [orders, summaries] = await Promise.all([
       this.prisma.physicianOrder.findMany({
         where: { admissionId: { in: ids }, status: OrderStatus.FINISHED, active: true },
-        select: { admissionId: true, dateCreated: true },
+        select: { admissionId: true, dateCreated: true, summarizationId: true },
       }),
       this.prisma.courseInWard.findMany({
         where: { orders: { some: { admissionId: { in: ids } } } },
@@ -195,18 +206,18 @@ export class ClaimsService {
       }),
     ]);
 
-    type Day = { summarized: boolean; requested: boolean; approved: boolean };
+    type Day = { summarized: boolean; requested: boolean; approved: boolean; unlinked: boolean };
     const stays = new Map<string, Map<string, Day>>(ids.map((id) => [id, new Map()]));
     const dayOf = (admissionId: string, day: string) => {
       const days = stays.get(admissionId)!;
-      const entry = days.get(day) ?? { summarized: false, requested: true, approved: true };
+      const entry = days.get(day) ?? { summarized: false, requested: true, approved: true, unlinked: false };
       days.set(day, entry);
       return entry;
     };
 
     for (const order of orders) {
       const day = dayKeyOf(order.dateCreated);
-      if (day) dayOf(order.admissionId, day);
+      if (day) dayOf(order.admissionId, day).unlinked ||= !order.summarizationId;
     }
     for (const summary of summaries) {
       const day = dayKeyOf(summary.summaryDate);
@@ -228,6 +239,7 @@ export class ClaimsService {
         missingDays: pick((day) => !day.summarized),
         unrequestedDays: pick((day) => day.summarized && !day.requested),
         unapprovedDays: pick((day) => day.summarized && !day.approved),
+        incompleteDays: pick((day) => day.summarized && day.approved && day.unlinked),
       });
     }
     return coverage;
@@ -410,6 +422,10 @@ export class ClaimsService {
         'Course in the Ward must be physician-approved before CF4 can be generated',
       );
     }
+    // Claims opened before the discharge rule existed may still be mid-stay.
+    if (!(await loadSummaryAdmission(this.prisma, claim.summaryId))?.dischargeDate) {
+      throw new BadRequestException('CF4 can only be generated after the patient is discharged');
+    }
     // The CF4 covers the whole stay, so every day of it must be summarized,
     // requested and approved -- not only the day this claim is on.
     const source = await this.prisma.physicianOrder.findFirst({
@@ -422,6 +438,7 @@ export class ClaimsService {
         ['no Course in the Ward', stay.missingDays],
         ['no claim requested', stay.unrequestedDays],
         ['not physician-approved', stay.unapprovedDays],
+        ['an order missing from the approved summary', stay.incompleteDays],
       ] as const;
       const reasons = blockers
         .filter(([, days]) => days.length)
