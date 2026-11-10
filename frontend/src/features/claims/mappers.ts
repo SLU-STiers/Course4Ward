@@ -2,10 +2,103 @@
 
 import type { ClaimRecord } from '../../types';
 import { calculateAge, computeAge, formatDateMedium, formatTimeMedium, toDateInputValue } from '../../lib/format';
-import { triageForDisplay } from '../../lib/triage';
-import { admissionStatus, daysInCare, fullName, initials, sexLabel, statusColor } from '../../lib/patient';
+import { triageForDisplay, triageLevelInfo, VITAL_FIELDS } from '../../lib/triage';
+import { INSURANCE_LABEL, PATIENT_CLASS_LABEL, admissionStatus, daysInCare, fullName, initials, sexLabel, statusColor } from '../../lib/patient';
 
-import type { CF4Patient, SummarizationRequest } from './types';
+import type { CF4Patient, Cf4SummaryDraft, StayChart, SummarizationRequest } from './types';
+
+function shown(value?: string | null): string {
+  const text = value?.trim();
+  return text ? text : '—';
+}
+
+/** Plain lines for the CF4. One fact per line, so nothing shares a baseline. */
+function triageLine(admission: ClaimRecord['summary']['orders'][number]['admission'] | undefined): string {
+  const triage = triageForDisplay(admission);
+  const level = triageLevelInfo(triage.level);
+  const lines: string[] = [];
+  if (level) lines.push(`${level.name} (ESI ${level.level}). Seen ${level.target.toLowerCase()}.`);
+  for (const field of VITAL_FIELDS) {
+    if (field.key === 'time') continue;
+    const value = triage[field.key];
+    if (!value || value === '—') continue;
+    const unit = 'unit' in field ? ` ${field.unit}` : '';
+    lines.push(`${field.label}: ${value}${unit}`);
+  }
+  return lines.length ? lines.join('\n') : '—';
+}
+
+function chartFor(claim: ClaimRecord, doctor: string): StayChart {
+  const patient = claim.summary.patient;
+  const admission = claim.summary.orders[0]?.admission;
+  const insurance = patient.insurance
+    ? patient.insurance === 'OTHER'
+      ? shown(patient.insuranceOther)
+      : INSURANCE_LABEL[patient.insurance]
+    : '—';
+  const emergency = [patient.contactPersonName, patient.contactPersonNumber, patient.contactPersonAddress]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(' · ');
+  const ward = admission?.room?.ward?.name;
+  const room = admission?.room?.number;
+  const attending = admission?.physician
+    ? `${admission.physician.firstName} ${admission.physician.lastName}`
+    : doctor;
+
+  return {
+    dateOfBirth: patient.dateOfBirth ? formatDateMedium(patient.dateOfBirth) : '—',
+    contactNumber: shown(patient.contactNumber),
+    address: shown(patient.address),
+    insurance,
+    religion: shown(patient.religion),
+    emergencyContact: emergency || '—',
+    attending,
+    location: [ward, room ? `Room ${room}` : ''].filter(Boolean).join(' · ') || '—',
+    patientClass: admission?.patientClass ? PATIENT_CLASS_LABEL[admission.patientClass] : '—',
+    triage: triageLine(admission),
+    assessment: shown(admission?.initialAssessment),
+  };
+}
+
+function uniqueShown(values: string[]): string {
+  const seen = [...new Set(values.map((value) => value.trim()).filter((value) => value && value !== '—'))];
+  return seen.length ? seen.join('; ') : '—';
+}
+
+/**
+ * One Course in the Ward for a stay. The PDF prints the model summary the
+ * physician approved, not the raw orders and not a day-by-day order list.
+ */
+export function buildStayDraft(patient: CF4Patient, requests: SummarizationRequest[]): Cf4SummaryDraft {
+  const ordered = [...requests].sort(
+    (a, b) => new Date(a.summaryDate).getTime() - new Date(b.summaryDate).getTime(),
+  );
+  const first = ordered[0];
+  const courseText = ordered
+    .map((request) => request.summaryText.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+  return {
+    patient,
+    requests: ordered,
+    courseText: courseText || 'No physician-approved Course in the Ward is available for this stay.',
+    chart: {
+      dateOfBirth: first?.chart.dateOfBirth ?? '—',
+      contactNumber: first?.chart.contactNumber ?? '—',
+      address: first?.chart.address ?? '—',
+      insurance: first?.chart.insurance ?? '—',
+      religion: first?.chart.religion ?? '—',
+      emergencyContact: first?.chart.emergencyContact ?? '—',
+      attending: uniqueShown(ordered.map((request) => request.chart.attending)),
+      location: uniqueShown(ordered.map((request) => request.chart.location)),
+      patientClass: uniqueShown(ordered.map((request) => request.chart.patientClass)),
+      triage: uniqueShown(ordered.map((request) => request.chart.triage)),
+      assessment: uniqueShown(ordered.map((request) => request.chart.assessment)),
+    },
+  };
+}
 
 export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
   const patient = claim.summary.patient;
@@ -31,6 +124,7 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
       admissionDate: formatDateMedium(admissionDate),
     },
     summaryText: claim.summary.summaryContent,
+    chart: chartFor(claim, order ? `${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Attending physician'),
     triage: triageForDisplay(order?.admission),
     orders: claim.summary.orders.map((summaryOrder) => ({
       id: summaryOrder.id,

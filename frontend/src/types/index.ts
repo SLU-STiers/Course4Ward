@@ -264,7 +264,10 @@ export interface ClaimRecord {
         id: string;
         admissionDate: string;
         dischargeDate?: string | null;
+        patientClass?: PatientClass;
         initialAssessment?: string | null;
+        physician?: { firstName: string; lastName: string } | null;
+        room?: { number: string; ward?: { name: string } | null } | null;
         triage?: AdmissionTriage | null;
       };
       orderedBy: { firstName: string; lastName: string };

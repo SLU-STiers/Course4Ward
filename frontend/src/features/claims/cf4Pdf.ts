@@ -6,8 +6,8 @@
  * the same centred small-caps section bands stacked over ruled cells, and
  * Section IV laid out as the form's `Date | DOCTOR'S ORDER/ACTION` table.
  *
- * The table charts the **Course in the Ward summarization**, not the raw
- * physician orders — the summary is what the processor reviews and signs.
+ * The table charts the **Course in the Ward for the whole stay**: the model
+ * summary the physician approved, not the raw orders and not one row per day.
  *
  * It is deliberately a SUPPORTING DOCUMENT: the PhilHealth letterhead is
  * omitted and the header says so, so a generated sheet can never be mistaken
@@ -46,8 +46,8 @@ const FAINT = '#8b93a1';
 /** Mutable cursor shared by the section writers. */
 type Ctx = { doc: jsPDF; y: number };
 
-/** One `Date | DOCTOR'S ORDER/ACTION` row: the summarization for a dated entry. */
-type SummaryRow = {
+/** The stay's Course in the Ward, charted once in Section IV. */
+type StayCourse = {
   dateLabel: string;
   text: string;
 };
@@ -118,23 +118,80 @@ function checkbox(doc: jsPDF, x: number, y: number, size: number, checked: boole
   doc.setLineWidth(0.6);
 }
 
-/** A row of bordered cells with a label in each top-left corner. */
-function fieldRow(ctx: Ctx, cells: FieldCell[], h: number): void {
+/** Body type. The gap is wider than the glyphs so one line cannot touch the next. */
+const BODY = 9;
+const LEAD = 16;
+
+/**
+ * Wraps `value` into lines that each fit `width`. Newlines stay as their own
+ * gap. No returned line contains a line break — jsPDF would draw that break
+ * on top of the next line.
+ */
+function wrapLines(doc: jsPDF, value: string, width: number): string[] {
+  const normalized = (value || '—')
+    .replace(/\r\n/g, '\n')
+    .replace(/[\u2028\u2029]/g, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .trim();
+  doc.setFont('helvetica', 'normal').setFontSize(BODY);
+  const lines: string[] = [];
+  for (const paragraph of normalized.split('\n')) {
+    const chunk = paragraph.trim();
+    if (!chunk) {
+      if (lines.length && lines[lines.length - 1] !== '') lines.push('');
+      continue;
+    }
+    const wrapped = doc.splitTextToSize(chunk, Math.max(12, width)) as string[];
+    for (const line of wrapped) lines.push(String(line).replace(/[\r\n\u2028\u2029]/g, ' '));
+  }
+  return lines.length ? lines : ['—'];
+}
+
+function drawLines(doc: jsPDF, lines: string[], x: number, y: number, bottom: number): void {
+  doc.setFont('helvetica', 'normal').setFontSize(BODY).setTextColor(INK);
+  let ty = y;
+  for (const line of lines) {
+    if (ty > bottom) break;
+    if (line) doc.text(line, x, ty);
+    ty += LEAD;
+  }
+}
+
+/** A row of bordered cells with a label in each top-left corner. Values wrap inside the cell. */
+function fieldRow(ctx: Ctx, cells: FieldCell[], minH: number): void {
   const { doc } = ctx;
+  const prepared = cells.map((cell) => {
+    if (cell.render || !cell.value) return { cell, lines: [] as string[] };
+    return { cell, lines: wrapLines(doc, cell.value, cell.w - 12) };
+  });
+  const lineCount = prepared.reduce((max, item) => Math.max(max, item.lines.length), 1);
+  const h = Math.max(minH, 20 + lineCount * LEAD);
   reserve(ctx, h);
   let x = M;
   doc.setDrawColor(INK).setLineWidth(0.6);
-  for (const cell of cells) {
+  for (const { cell, lines } of prepared) {
     doc.rect(x, ctx.y, cell.w, h, 'S');
-    fieldLabel(doc, cell.label, x + 6, ctx.y + 8.5);
+    fieldLabel(doc, cell.label, x + 6, ctx.y + 10);
     if (cell.render) {
       cell.render(doc, x, ctx.y, cell.w, h);
-    } else if (cell.value) {
-      doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(INK);
-      doc.text(cell.value, x + 6, ctx.y + h - 6);
+    } else {
+      drawLines(doc, lines, x + 6, ctx.y + 24, ctx.y + h - 6);
     }
     x += cell.w;
   }
+  ctx.y += h;
+}
+
+/** A full-width cell whose value wraps and stays inside the border. */
+function textBlock(ctx: Ctx, label: string, value: string): void {
+  const { doc } = ctx;
+  const lines = wrapLines(doc, value, CONTENT_W - 20);
+  const h = 22 + lines.length * LEAD + 8;
+  reserve(ctx, h);
+  doc.setDrawColor(INK).setLineWidth(0.6);
+  doc.rect(M, ctx.y, CONTENT_W, h, 'S');
+  fieldLabel(doc, label, M + 8, ctx.y + 12);
+  drawLines(doc, lines, M + 8, ctx.y + 28, ctx.y + h - 8);
   ctx.y += h;
 }
 
@@ -181,7 +238,7 @@ function notice(
   const workflow = source === 'new-cf4' ? 'New CF4 workflow' : 'Existing CF4 workflow';
   const text = [
     `Attach to the accomplished CF4 for ${patientName}.`,
-    `Generated from the physician-approved Course in the Ward summary · ${workflow}.`,
+    `Generated from the physician-approved Course in the Ward for the whole stay · ${workflow}.`,
     ...(sourceFileName ? [`Source file: ${sourceFileName}.`] : []),
   ].join(' ');
 
@@ -254,6 +311,25 @@ function patientSection(ctx: Ctx, draft: Cf4SummaryDraft): void {
     label: 'Admission period included in this document',
     value: patient.coveragePeriod,
   }], 24);
+
+  const { chart } = draft;
+  fieldRow(ctx, [
+    { w: CONTENT_W * 0.34, label: 'Date of birth', value: chart.dateOfBirth },
+    { w: CONTENT_W * 0.33, label: 'Contact number', value: chart.contactNumber },
+    { w: CONTENT_W * 0.33, label: 'Insurance', value: chart.insurance },
+  ], 30);
+  textBlock(ctx, 'Address', chart.address);
+  fieldRow(ctx, [
+    { w: CONTENT_W * 0.34, label: 'Religion', value: chart.religion },
+    { w: CONTENT_W * 0.66, label: 'Emergency contact', value: chart.emergencyContact },
+  ], 30);
+  fieldRow(ctx, [
+    { w: CONTENT_W * 0.4, label: 'Attending physician', value: chart.attending },
+    { w: CONTENT_W * 0.34, label: 'Ward / room', value: chart.location },
+    { w: CONTENT_W * 0.26, label: 'Patient class', value: chart.patientClass },
+  ], 30);
+  textBlock(ctx, 'Triage on admission', chart.triage);
+  textBlock(ctx, 'Initial assessment', chart.assessment);
 }
 
 function tableHeader(ctx: Ctx): void {
@@ -273,64 +349,74 @@ function tableHeader(ctx: Ctx): void {
   ctx.y += h;
 }
 
-function measureSummaryRow(doc: jsPDF, row: SummaryRow | null): number {
-  if (!row || !row.text) return 24;
-  const bodyW = CONTENT_W - DATE_COL_W - 14;
-  /* `splitTextToSize` wraps using the CURRENT font, so set it first — otherwise
-     the lines are measured for the previous section's type and overflow. */
-  doc.setFont('helvetica', 'normal').setFontSize(8.5);
-  const lines = doc.splitTextToSize(row.text, bodyW) as string[];
-  return Math.max(24, lines.length * 10.5 + 12);
-}
-
-/** One table row; `null` renders an empty ruled row like the blank form. */
-function summaryRow(ctx: Ctx, row: SummaryRow | null, height: number): void {
-  const { doc } = ctx;
-  const bodyX = M + DATE_COL_W + 7;
-  const bodyW = CONTENT_W - DATE_COL_W - 14;
-
-  doc.setDrawColor(INK).setLineWidth(0.6);
-  doc.rect(M, ctx.y, DATE_COL_W, height, 'S');
-  doc.rect(M + DATE_COL_W, ctx.y, CONTENT_W - DATE_COL_W, height, 'S');
-
-  if (!row) {
-    ctx.y += height;
-    return;
-  }
-
-  doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(INK);
-  doc.text(row.dateLabel, M + DATE_COL_W / 2, ctx.y + 12, { align: 'center' });
-
-  const lines = doc.splitTextToSize(row.text, bodyW) as string[];
-  let ty = ctx.y + 13;
-  for (const line of lines) {
-    doc.text(line, bodyX, ty);
-    ty += 10.5;
-  }
-
-  ctx.y += height;
-}
+const LINE = 10.5;
 
 /**
- * Section IV proper. The form charts one row per day of the stay; we chart the
- * physician-approved Course in the Ward summary instead of the raw orders, so
- * the sheet carries the summarization the processor actually reviews.
+ * Section IV as one course for the stay. The date column carries the admission
+ * period; the action column carries the physician-approved model summary, and
+ * the entry continues onto the next page instead of starting a new day.
  */
-function courseTable(ctx: Ctx, rows: SummaryRow[]): void {
-  const filler = Math.max(0, MIN_TABLE_ROWS - rows.length);
-  const all: Array<SummaryRow | null> = [
-    ...rows,
-    ...Array.from({ length: filler }, () => null),
-  ];
+function courseTable(ctx: Ctx, course: StayCourse): void {
+  const { doc } = ctx;
+  const bodyW = CONTENT_W - DATE_COL_W - 14;
+  doc.setFont('helvetica', 'normal').setFontSize(8.5);
+  const lines = doc.splitTextToSize(
+    course.text || 'No physician-approved Course in the Ward is available for this stay.',
+    bodyW,
+  ) as string[];
 
+  let index = 0;
+  let continued = false;
+  let painted = 0;
   tableHeader(ctx);
-  for (const row of all) {
-    const height = measureSummaryRow(ctx.doc, row);
+
+  while (index < lines.length) {
+    const room = PAGE_H - M - ctx.y;
+    const maxLines = Math.max(1, Math.floor((room - 16) / LINE));
+    const slice = lines.slice(index, index + maxLines);
+    doc.setFont('helvetica', 'normal').setFontSize(7.5);
+    const dateLines = doc.splitTextToSize(
+      continued ? 'Continued' : course.dateLabel,
+      DATE_COL_W - 12,
+    ) as string[];
+    const height = Math.max(24, slice.length * LINE + 16, dateLines.length * 9 + 16);
     if (!fits(ctx, height)) {
       newPage(ctx);
       tableHeader(ctx);
+      continue;
     }
-    summaryRow(ctx, row, height);
+
+    doc.setDrawColor(INK).setLineWidth(0.6);
+    doc.rect(M, ctx.y, DATE_COL_W, height, 'S');
+    doc.rect(M + DATE_COL_W, ctx.y, CONTENT_W - DATE_COL_W, height, 'S');
+
+    doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(INK);
+    let dateY = ctx.y + 14;
+    for (const line of dateLines) {
+      if (dateY > ctx.y + height - 4) break;
+      doc.text(line, M + DATE_COL_W / 2, dateY, { align: 'center' });
+      dateY += 9;
+    }
+
+    doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(INK);
+    let ty = ctx.y + 13;
+    for (const line of slice) {
+      doc.text(line, M + DATE_COL_W + 7, ty);
+      ty += LINE;
+    }
+
+    ctx.y += height;
+    index += slice.length;
+    painted += 1;
+    continued = true;
+  }
+
+  for (let blank = painted; blank < MIN_TABLE_ROWS; blank += 1) {
+    if (!fits(ctx, 24)) break;
+    doc.setDrawColor(INK).setLineWidth(0.6);
+    doc.rect(M, ctx.y, DATE_COL_W, 24, 'S');
+    doc.rect(M + DATE_COL_W, ctx.y, CONTENT_W - DATE_COL_W, 24, 'S');
+    ctx.y += 24;
   }
 }
 
@@ -380,7 +466,7 @@ function certification(ctx: Ctx, physician: string, evaluator: string): void {
 // ── Entry point ────────────────────────────────────────────────────────────
 
 /**
- * Builds one CF4 supporting document for a patient's daily summaries across admissions.
+ * Builds one CF4 supporting document for a patient's whole stay.
  *
  * @param draft Patient + the persisted summary the document is projected from.
  * @param source Which export workflow produced the draft.
@@ -393,7 +479,7 @@ export function buildCf4Pdf(
   evaluator: string,
   sourceFileName?: string,
 ): jsPDF {
-  const { patient, requests } = draft;
+  const { patient } = draft;
   const doc = new jsPDF({
     unit: 'pt',
     format: [PAGE_W, PAGE_H],
@@ -412,16 +498,14 @@ export function buildCf4Pdf(
   notice(ctx, patient.name, source, sourceFileName);
   patientSection(ctx, draft);
 
-  const summaryRows: SummaryRow[] = requests.map((request) => ({
-    dateLabel: formatDateMedium(request.summaryDate),
-    text: request.summaryText,
-  }));
-
-  bandWithNext(ctx, 'IV. COURSE IN THE WARD', BAND_H, 'Attach photocopy of laboratory/imaging results');
-  courseTable(ctx, summaryRows);
+  bandWithNext(ctx, 'IV. COURSE IN THE WARD', BAND_H, 'Entire stay · attach laboratory/imaging results');
+  courseTable(ctx, {
+    dateLabel: patient.coveragePeriod,
+    text: draft.courseText,
+  });
 
   bandWithNext(ctx, 'VII. CERTIFICATION OF HEALTH CARE PROFESSIONAL', 96);
-  certification(ctx, requests[0]?.doctor ?? evaluator, evaluator);
+  certification(ctx, draft.chart.attending === '—' ? evaluator : draft.chart.attending, evaluator);
 
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page += 1) {
