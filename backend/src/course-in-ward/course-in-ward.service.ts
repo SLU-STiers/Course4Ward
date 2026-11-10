@@ -837,6 +837,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.summaryVersion.deleteMany({ where: { summaryId: id } });
 
     const patientName = await this.auditLog.patientName({ patientId: approved.patientId });
+    const physicianName = await this.auditLog.userLabel(physicianId);
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_APPROVED',
@@ -856,7 +857,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
             userId: claim.processorId,
             type: NotificationType.REVIEW_REQUESTED,
             title: 'Course in the Ward summary approved',
-            message: `**${patientName}**'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for CF4 processing.`,
+            message: `**${physicianName}** approved **${patientName}**'s Course in the Ward for ${dayLabel(approved.summaryDate)}. It is ready for CF4 processing.`,
             requestId: claim.id,
           }),
         ),
@@ -864,7 +865,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     } else {
       await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
         title: 'Course in the Ward summary approved',
-        message: `**${patientName}**'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for claims review.`,
+        message: `**${physicianName}** approved **${patientName}**'s Course in the Ward for ${dayLabel(approved.summaryDate)}. It is ready for a claim request.`,
       });
     }
 
