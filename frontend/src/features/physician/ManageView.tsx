@@ -16,6 +16,7 @@ import { useSummaryModel } from '../../hooks/useSummaryModel';
 import { SubmittedOrdersTimeline } from '../../components/orders/SubmittedOrdersTimeline';
 import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { ORDER_TYPE_OPTIONS, orderTypeLabel } from '../../components/orders/orderType';
+import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from '../nurse/RoomPicker';
 import { useTableState } from '../../hooks/useTableState';
 import { useSessionState } from '../../hooks/useSessionState';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
@@ -87,6 +88,9 @@ export function ManageView({
   const [draft, setDraft] = useState("");
   /** Kind of order the composer files; back to General after each submit. */
   const [orderType, setOrderType] = useState<OrderType>("DEFAULT");
+  /** Destination room of a transfer order; reserved once the order is saved. */
+  const [transferRoom, setTransferRoom] = useState("");
+  const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(orderType === "TRANSFER");
   const [savingOrders, setSavingOrders] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [approvingSummary, setApprovingSummary] = useState(false);
@@ -330,10 +334,31 @@ export function ManageView({
       : openAdmission?.physicianId && openAdmission.physicianId !== currentUserId
         ? "Only the attending physician can discharge this patient"
         : undefined,
+    // The nurse carries the move out by finishing the order; a newer transfer
+    // replaces one still pending.
+    TRANSFER:
+      patientClass !== "INPATIENT"
+        ? "Only an admitted patient can be transferred"
+        : hasOrder("DISCHARGE")
+          ? "Patient already has a discharge order"
+          : openAdmission?.physicianId !== currentUserId
+            ? "Only the attending physician can transfer this patient"
+            : undefined,
   };
   const effectiveOrderType: OrderType = orderTypeBlockedReason[orderType]
     ? "DEFAULT"
     : orderType;
+  const pendingTransfer = openAdmissionOrders.find(
+    (order) => order.type === "TRANSFER" && order.status !== "FINISHED",
+  );
+  const transferRoomProblem =
+    effectiveOrderType === "TRANSFER"
+      ? !transferRoom.trim()
+        ? "Choose the room to transfer the patient to"
+        : normalizeRoom(transferRoom) === openAdmission?.room?.number
+          ? "The patient is already in this room"
+          : roomProblem(transferRoom, rooms)
+      : null;
 
   const selectableOrderDays = useMemo(
     () =>
@@ -532,9 +557,14 @@ export function ManageView({
         admissionId,
         orderContent: content,
         type: effectiveOrderType,
+        ...(effectiveOrderType === "TRANSFER" && { transferRoomNumber: normalizeRoom(transferRoom) }),
       });
       setDraft("");
       setOrderType("DEFAULT");
+      if (effectiveOrderType === "TRANSFER") {
+        setTransferRoom("");
+        void reloadRooms();
+      }
       await reloadOrders(patientId);
       const createdDay = orderDayValue(data.dateCreated);
       // Keep the new order visible when the list is filtered to another day.
@@ -1066,12 +1096,42 @@ export function ManageView({
                             void submitOrders();
                           }
                         }}
-                        placeholder="Add a new order"
+                        placeholder={
+                          effectiveOrderType === "TRANSFER"
+                            ? "Reason for the transfer"
+                            : "Add a new order"
+                        }
                         rows={2}
                         maxLength={2000}
                         disabled={savingOrders}
                         style={manage.noteArea}
                       />
+
+                      {effectiveOrderType === "TRANSFER" && (
+                        <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>
+                            Transfer to room
+                            {openAdmission?.room
+                              ? ` (now in room ${openAdmission.room.number}${openAdmission.room.ward ? ` · ${openAdmission.room.ward.name}` : ""})`
+                              : ""}
+                          </span>
+                          <RoomPicker
+                            value={transferRoom}
+                            onChange={(value) => {
+                              setTransferRoom(value);
+                              setOrderError(null);
+                            }}
+                            rooms={rooms}
+                            failed={roomsFailed}
+                            disabled={savingOrders}
+                          />
+                          <span style={{ fontSize: 12, color: "#64748b" }}>
+                            The room is reserved now; the nurse moves the patient when they finish the order.
+                            {pendingTransfer?.transferRoom &&
+                              ` This replaces the pending transfer to room ${pendingTransfer.transferRoom.number}.`}
+                          </span>
+                        </div>
+                      )}
 
                       <div style={manage.orderActions}>
                         <div
@@ -1116,7 +1176,8 @@ export function ManageView({
                         <button
                           type="button"
                           style={manage.submitBtn}
-                          disabled={savingOrders || !draft.trim()}
+                          disabled={savingOrders || !draft.trim() || Boolean(transferRoomProblem)}
+                          title={transferRoomProblem ?? undefined}
                           aria-busy={savingOrders}
                           onClick={() => void submitOrders()}
                         >
