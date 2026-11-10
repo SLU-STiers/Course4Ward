@@ -920,12 +920,20 @@ export function ManageView({
                                           }}
                                         >
                                           {formatDateLongFromKey(day)}
-                                          <span className="ui-approve-days__meta">
-                                            {status === "NO_SUMMARY"
-                                              ? "No summary yet"
-                                              : status === "DRAFT_EDITED"
-                                                ? "Edited"
-                                                : "AI draft"}
+                                          <span
+                                            className={`ui-approve-days__meta${
+                                              status === "MISSING_ORDER"
+                                                ? " ui-approve-days__meta--warn"
+                                                : ""
+                                            }`}
+                                          >
+                                            {status === "MISSING_ORDER"
+                                              ? "New order not in summary"
+                                              : status === "NO_SUMMARY"
+                                                ? "No summary yet"
+                                                : status === "DRAFT_EDITED"
+                                                  ? "Edited"
+                                                  : "AI draft"}
                                           </span>
                                         </button>
                                       ))}
@@ -1210,7 +1218,16 @@ export function ManageView({
                 <AiSummaryCard
                   fill
                   badgeLabel={
-                    summary ? SUMMARY_BADGE[summary.status] : "No summary yet"
+                    summary
+                      ? selected &&
+                        pendingDays[selected.id]?.some(
+                          (entry) =>
+                            entry.day === summaryDay &&
+                            entry.status === "MISSING_ORDER",
+                        )
+                        ? "New order not in summary · Regenerate"
+                        : SUMMARY_BADGE[summary.status]
+                      : "No summary yet"
                   }
                   badgeMuted={!summary}
                   dayLabel={

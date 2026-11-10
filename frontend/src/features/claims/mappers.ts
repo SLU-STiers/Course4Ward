@@ -208,10 +208,12 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
     missingDays: claim.stay?.missingDays ?? [],
     unrequestedDays: claim.stay?.unrequestedDays ?? [],
     unapprovedDays: claim.stay?.unapprovedDays ?? [],
+    incompleteDays: claim.stay?.incompleteDays ?? [],
     approved:
       claim.summary.status === 'APPROVED' &&
       Boolean(claim.summary.approvedStatus) &&
       !claim.stay?.missingDays.length &&
+      !claim.stay?.incompleteDays?.length &&
       !claim.stay?.unrequestedDays.length,
     cf4Generated: claim.status === 'CF4_GENERATED',
   };

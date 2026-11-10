@@ -81,6 +81,8 @@ export interface CF4Patient {
   unrequestedDays: string[];
   /** Summarized days still waiting for the physician's approval (`YYYY-MM-DD`). */
   unapprovedDays: string[];
+  /** Approved days missing an order finished after approval (`YYYY-MM-DD`). */
+  incompleteDays: string[];
   /** Every day of the stay summarized, requested and physician-approved. */
   approved: boolean;
   /** Every claim of the stay is already `CF4_GENERATED`. */

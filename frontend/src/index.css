@@ -2073,6 +2073,13 @@ td {
   font-weight: 700;
   color: var(--c4w-color-text-muted, #64748b);
 }
+/* An approved day that lacks an order finished after approval. */
+.ui-approve-days__meta--warn {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--c4w-color-warning-soft, #fef3c7);
+  color: var(--c4w-color-warning, #b45309);
+}
 .ui-approve-days__hint {
   margin: 8px 0 0;
   font-size: 0.75rem;

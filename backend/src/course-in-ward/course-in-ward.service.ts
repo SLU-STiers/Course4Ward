@@ -1146,43 +1146,60 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         id,
         patientId,
         summaryDate,
-        status: status as SummaryStatus | 'NO_SUMMARY',
+        status: status as SummaryStatus | 'NO_SUMMARY' | 'MISSING_ORDER',
       }));
     return [...drafts, ...(await this.findUnsummarizedDays(physicianId))];
   }
 
   /**
-   * Days of this physician's admissions with finished orders but no Course in
-   * the Ward dated that day — the same "No summary" days Claims sees. One row
-   * per patient-day, `status: 'NO_SUMMARY'`, `id` synthetic (no summary exists).
+   * Days of this physician's admissions (discharged ones included) that block
+   * the stay's CF4 the same way Claims' `stayCoverage` counts them, one row per
+   * patient-day:
+   * - finished orders but no Course in the Ward dated that day → `NO_SUMMARY`,
+   *   `id` synthetic -- even when those orders are linked to a summary of
+   *   another day (one summary spanning several days covers only its own);
+   * - only an APPROVED one, plus an order in no summary (finished after
+   *   approval) → `MISSING_ORDER`, `id` = that summary, to regenerate.
+   * A day with a draft is already listed as that draft.
    */
   private async findUnsummarizedDays(physicianId: string) {
     const orders = await this.prisma.physicianOrder.findMany({
       where: {
         status: OrderStatus.FINISHED,
         active: true,
-        summarizationId: null,
         admission: { physicianId },
       },
-      select: { dateCreated: true, admission: { select: { patientId: true } } },
+      select: { dateCreated: true, summarizationId: true, admission: { select: { patientId: true } } },
     });
     if (!orders.length) return [];
     const patientIds = [...new Set(orders.map((order) => order.admission.patientId))];
     const summaries = await this.prisma.courseInWard.findMany({
       where: { patientId: { in: patientIds } },
-      select: { patientId: true, summaryDate: true },
+      select: { id: true, patientId: true, summaryDate: true, status: true },
     });
-    const summarized = new Set(summaries.map((s) => `${s.patientId}:${dayKeyOf(s.summaryDate)}`));
-    const rows = new Map<string, { id: string; patientId: string; summaryDate: Date; status: 'NO_SUMMARY' }>();
+    // Per patient-day: the approved summary's id, or null when any draft exists.
+    const summarized = new Map<string, string | null>();
+    for (const s of summaries) {
+      const key = `${s.patientId}:${dayKeyOf(s.summaryDate)}`;
+      const approved = s.status === SummaryStatus.APPROVED;
+      summarized.set(key, approved && summarized.get(key) !== null ? s.id : null);
+    }
+    const rows = new Map<
+      string,
+      { id: string; patientId: string; summaryDate: Date; status: 'NO_SUMMARY' | 'MISSING_ORDER' }
+    >();
     for (const order of orders) {
       const day = dayKeyOf(order.dateCreated);
       const key = `${order.admission.patientId}:${day}`;
-      if (!day || summarized.has(key) || rows.has(key)) continue;
+      if (!day || rows.has(key)) continue;
+      const approvedId = summarized.get(key);
+      // A draft that day is listed already; an approved one covers its linked orders.
+      if (approvedId === null || (approvedId && order.summarizationId)) continue;
       rows.set(key, {
-        id: `no-summary:${key}`,
+        id: approvedId ?? `no-summary:${key}`,
         patientId: order.admission.patientId,
         summaryDate: dayStart(day),
-        status: 'NO_SUMMARY',
+        status: approvedId ? 'MISSING_ORDER' : 'NO_SUMMARY',
       });
     }
     return [...rows.values()];

@@ -225,8 +225,12 @@ export interface PendingSummary {
   id: string;
   patientId: string;
   summaryDate: string;
-  /** `NO_SUMMARY`: finished orders that day but no Course in the Ward yet (`id` is synthetic). */
-  status: SummaryStatus | 'NO_SUMMARY';
+  /**
+   * `NO_SUMMARY`: finished orders that day but no Course in the Ward yet (`id` is synthetic).
+   * `MISSING_ORDER`: the day is approved, but an order finished after approval is not in it
+   * (`id` is that summary; Regenerate + re-approve clears it).
+   */
+  status: SummaryStatus | 'NO_SUMMARY' | 'MISSING_ORDER';
 }
 
 /** An earlier text of a Course in the Ward, kept when it was regenerated or edited. */
@@ -310,6 +314,8 @@ export interface ClaimRecord {
     missingDays: string[];
     unrequestedDays: string[];
     unapprovedDays: string[];
+    /** Approved days with an order finished after approval that the summary lacks. */
+    incompleteDays: string[];
   };
 }
 

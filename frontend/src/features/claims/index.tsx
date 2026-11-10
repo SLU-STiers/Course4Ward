@@ -40,6 +40,7 @@ function stayGaps(patient: CF4Patient): string {
   return [
     patient.missingDays.length ? `No summary: ${dayList(patient.missingDays)}` : '',
     patient.unapprovedDays.length ? `Awaiting physician approval: ${dayList(patient.unapprovedDays)}` : '',
+    patient.incompleteDays.length ? `New order not in the approved summary: ${dayList(patient.incompleteDays)}` : '',
     patient.unrequestedDays.length ? `Not yet requested: ${dayList(patient.unrequestedDays)}` : '',
   ].filter(Boolean).join(' · ');
 }
@@ -47,8 +48,9 @@ function stayGaps(patient: CF4Patient): string {
 /** The physician dashboard's "N days to approve" chip, read-only here: drafts and days with no summary yet. */
 function ApproveChip({ patient }: { patient: CF4Patient }) {
   const days = [
-    ...patient.unapprovedDays.map((day) => ({ day, label: 'Awaiting approval' })),
-    ...patient.missingDays.map((day) => ({ day, label: 'No summary yet' })),
+    ...patient.unapprovedDays.map((day) => ({ day, label: 'Awaiting approval', warn: false })),
+    ...patient.missingDays.map((day) => ({ day, label: 'No summary yet', warn: false })),
+    ...patient.incompleteDays.map((day) => ({ day, label: 'New order not in summary', warn: true })),
   ].sort((a, b) => a.day.localeCompare(b.day));
   if (!days.length) return null;
   const label = days.length === 1 ? '1 day to approve' : `${days.length} days to approve`;
@@ -66,10 +68,12 @@ function ApproveChip({ patient }: { patient: CF4Patient }) {
       >
         <div className="ui-menu ui-approve-days">
           <strong className="ui-menu__heading">Awaiting physician approval</strong>
-          {days.map(({ day, label: meta }) => (
+          {days.map(({ day, label: meta, warn }) => (
             <div key={day} className="ui-menu__option ui-approve-days__option">
               {formatDateLongFromKey(day)}
-              <span className="ui-approve-days__meta">{meta}</span>
+              <span className={`ui-approve-days__meta${warn ? ' ui-approve-days__meta--warn' : ''}`}>
+                {meta}
+              </span>
             </div>
           ))}
         </div>
