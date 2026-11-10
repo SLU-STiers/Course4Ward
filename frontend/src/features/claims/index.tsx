@@ -531,7 +531,16 @@ export function ClaimsProcessorDashboard() {
           { id: 'requests', label: 'Requests', icon: <RequestsIcon /> },
           { id: 'export', label: 'Export', icon: <ExportIcon /> },
         ],
-        profile: <SidebarProfile initials="SJ" name="Steve Joabs" subtitle="Claims Processor" onLogout={handleLogout} />,
+        profile: (
+          <SidebarProfile
+            initials={`${user?.firstName?.[0] ?? 'C'}${user?.lastName?.[0] ?? 'P'}`}
+            name={user ? `${user.firstName} ${user.lastName}` : 'Claims Processor'}
+            subtitle={user?.userId ?? 'Claims Processor account'}
+            accountId={user?.userId}
+            roleLabel="Claims Processor"
+            onLogout={handleLogout}
+          />
+        ),
       }}
       header={
         <PageHeader
