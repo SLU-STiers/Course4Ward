@@ -1046,26 +1046,26 @@ export interface SeedPatientDetails {
   contactPersonAddress: string;
 }
 
-/** Contact, insurance and religion for each seeded patient (by patient key). */
+/** Contact, insurance and religion for the `i`-th seeded patient. */
+export function patientDetailsFor(p: SeedPatient, i: number): SeedPatientDetails {
+  const [insurance, insuranceOther] = INSURANCES[i % INSURANCES.length];
+  // Most contact persons live at home with the patient.
+  const livesTogether = i % 3 !== 2;
+  return {
+    contactNumber: phone(i + 1),
+    address: address(i),
+    insurance,
+    insuranceOther: insuranceOther ?? null,
+    religion: RELIGIONS[i % RELIGIONS.length],
+    contactPersonName: `${CONTACT_FIRST_NAMES[i % CONTACT_FIRST_NAMES.length]} ${p.lastName}`,
+    contactPersonNumber: phone(i + 41),
+    contactPersonAddress: livesTogether ? address(i) : address(i + 5),
+  };
+}
+
+/** Registration details for each seeded patient (by patient key). */
 export const patientDetails: Record<string, SeedPatientDetails> = Object.fromEntries(
-  patients.map((p, i) => {
-    const [insurance, insuranceOther] = INSURANCES[i % INSURANCES.length];
-    // Most contact persons live at home with the patient.
-    const livesTogether = i % 3 !== 2;
-    return [
-      p.key,
-      {
-        contactNumber: phone(i + 1),
-        address: address(i),
-        insurance,
-        insuranceOther: insuranceOther ?? null,
-        religion: RELIGIONS[i % RELIGIONS.length],
-        contactPersonName: `${CONTACT_FIRST_NAMES[i % CONTACT_FIRST_NAMES.length]} ${p.lastName}`,
-        contactPersonNumber: phone(i + 41),
-        contactPersonAddress: livesTogether ? address(i) : address(i + 5),
-      },
-    ];
-  }),
+  patients.map((p, i) => [p.key, patientDetailsFor(p, i)]),
 );
 
 // ---------- Triage at registration ----------

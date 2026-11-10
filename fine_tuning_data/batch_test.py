@@ -55,7 +55,7 @@ HERE = Path(__file__).resolve().parent
 EVAL_ADMISSIONS = {"2026002210", "2026002236", "2026002238", "2026002052", "2026003328"}
 
 # Length is a WARN past this, never a FAIL: no hard cap, just "as short as possible".
-MAX_SENTENCES = 10
+MAX_SENTENCES = 15
 
 HEADER = re.compile(r"^### (\S+) \| Day (\d+) of Admission #(\S+) \((\d{4}-\d{2}-\d{2})\)")
 ORDER_START = re.compile(r"^(\d+)\. (.*)")

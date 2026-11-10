@@ -1,23 +1,41 @@
 import { PatientClass, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
-  admissionRooms,
-  admissions,
+  admissionRooms as baseAdmissionRooms,
+  admissions as baseAdmissions,
   approvalRequests,
   auditLogs,
-  consultingPhysicians,
+  consultingPhysicians as baseConsultingPhysicians,
   coursesInWard,
   DEMO_PASSWORD,
   notes,
   nurseWards,
-  orders,
-  patientDetails,
-  patients,
+  orders as baseOrders,
+  patientDetails as basePatientDetails,
+  patients as basePatients,
   triageNurseUserIds,
-  triages,
+  triages as baseTriages,
   userIdCounters,
   users,
 } from './seed/data';
+import {
+  stayAdmissions,
+  stayConsultants,
+  stayOrders,
+  stayPatientDetails,
+  stayPatients,
+  stayRooms,
+  stayTriages,
+} from './seed/wardStays';
+
+// Base dataset plus the multi-day ward stays (seed/wardStays.ts).
+const patients = [...basePatients, ...stayPatients];
+const patientDetails = { ...basePatientDetails, ...stayPatientDetails };
+const admissions = [...baseAdmissions, ...stayAdmissions];
+const triages = { ...baseTriages, ...stayTriages };
+const consultingPhysicians = { ...baseConsultingPhysicians, ...stayConsultants };
+const orders = [...baseOrders, ...stayOrders];
+const admissionRooms = { ...baseAdmissionRooms, ...stayRooms };
 
 /**
  * Mock-data seed for local development.

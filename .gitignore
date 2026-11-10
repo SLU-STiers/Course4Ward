@@ -57,3 +57,6 @@ fine_tuning_data/batch_report.pdf
 
 # Fine-tuned GGUF weights (multi-GB, kept local for now)
 fine-tuned models/
+
+# Local backups before summary-style changes
+backup/

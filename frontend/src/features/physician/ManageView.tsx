@@ -598,9 +598,7 @@ export function ManageView({
         // The patient may now have no summary left to approve.
         void refreshPendingSummaries();
       })
-      .catch((err) =>
-        setOrderError(apiErrorMessage(err, "The summary could not be approved. Please try again.")),
-      )
+      .catch(() => setOrderError("The summary could not be approved. Please try again."))
       .finally(() => setApprovingSummary(false));
   };
 
@@ -1376,14 +1374,7 @@ export function ManageView({
                                 Compare Versions
                               </AiActionButton>
                               <span style={manage.aiActionSpacer} />
-                              {summary.status !== "APPROVED" &&
-                                summary.attendingPhysicianId !== currentUserId && (
-                                  <span style={manage.approveNote}>
-                                    Only the attending physician can approve
-                                  </span>
-                                )}
-                              {summary.status !== "APPROVED" &&
-                                summary.attendingPhysicianId === currentUserId && (
+                              {summary.status !== "APPROVED" && (
                                 <AiActionButton
                                   className="ui-ai-btn--primary"
                                   disabled={approvingSummary || regeneratingSummary}
