@@ -429,6 +429,22 @@ export interface AiStats {
   }>;
 }
 
+export type BatchTestVariant = 'standard' | 'fine_tuned';
+
+/** `GET /admin/reports/batch-test`: the admin batch-test console. */
+export interface BatchTestState {
+  /** False when the script is not deployed next to the backend. */
+  available: boolean;
+  status: 'idle' | 'running' | 'finished' | 'stopped';
+  options: { variants: BatchTestVariant[]; limit?: number; evalOnly: boolean } | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** 0 = all passed, 1 = some summary failed a check, anything else = the run broke. */
+  exitCode: number | null;
+  log: string[];
+  reportAvailable: boolean;
+}
+
 export interface ActivityTrendPoint {
   /** Bucket start as a UTC calendar date (`YYYY-MM-DD`) — render as-is. */
   period: string;

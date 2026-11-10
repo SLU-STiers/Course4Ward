@@ -24,6 +24,7 @@ import { Button, EmptyState, LoadingState, StatusBadge } from '../../components/
 import { actionMeta, roleLabel } from './activityLabels';
 import { BarList, ColumnChart, DonutChart, FunnelChart, StatRows, TrendChart } from './charts';
 import { segmentColor } from './chartTheme';
+import { BatchTestConsole } from './BatchTestConsole';
 import { styles } from './styles';
 import type { ReportRangePreset as RangePreset } from './types';
 import type { AiCallSection, AiCallStats, TrendBucket } from '../../types';
@@ -487,6 +488,7 @@ export function ReportingSection() {
  */
 function AiStatsPanel({ range, period }: { range: { from: string }; period: string }) {
   const [pdfError, setPdfError] = useState(false);
+  const [batchTestOpen, setBatchTestOpen] = useState(false);
   const { data, isPending, isError } = useQuery({
     queryKey: ['admin-report-ai', range],
     queryFn: () => adminApi.aiStats(range).then((response) => response.data),
@@ -662,10 +664,25 @@ function AiStatsPanel({ range, period }: { range: { from: string }; period: stri
             Could not create the PDF. Please try again.
           </span>
         ) : null}
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-expanded={batchTestOpen}
+          aria-controls="batch-test-console"
+          onClick={() => setBatchTestOpen((open) => !open)}
+        >
+          {batchTestOpen ? 'Hide batch test' : 'Batch test'}
+        </Button>
         <Button size="sm" variant="ghost" onClick={downloadPdf}>
           Download PDF report
         </Button>
       </div>
+
+      {batchTestOpen ? (
+        <div id="batch-test-console" style={{ gridColumn: '1 / -1' }}>
+          <BatchTestConsole />
+        </div>
+      ) : null}
 
       {/* Headline numbers: the answer to "is the AI fast and working?" at a glance. */}
       <div className="admin-kpi-grid" style={{ ...styles.kpiGrid, gridColumn: '1 / -1' }}>
