@@ -20,7 +20,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { adminApi } from '../../services/domainApi';
-import { EmptyState, LoadingState, StatusBadge } from '../../components/ui';
+import { Button, EmptyState, LoadingState, StatusBadge } from '../../components/ui';
 import { actionMeta, roleLabel } from './activityLabels';
 import { BarList, ColumnChart, DonutChart, FunnelChart, StatRows, TrendChart } from './charts';
 import { segmentColor } from './chartTheme';
@@ -468,7 +468,12 @@ export function ReportingSection() {
           </ReportCard>
         ) : null}
 
-        {tab === 'ai' ? <AiStatsPanel range={range} /> : null}
+        {tab === 'ai' ? (
+          <AiStatsPanel
+            range={range}
+            period={preset === 'all' ? rangeHint : `${rangeHint} (from ${range.from})`}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -480,7 +485,8 @@ export function ReportingSection() {
  * can draw on. Timings cover successful calls; failures are counted apart.
  * Fetched only while the tab is open.
  */
-function AiStatsPanel({ range }: { range: { from: string } }) {
+function AiStatsPanel({ range, period }: { range: { from: string }; period: string }) {
+  const [pdfError, setPdfError] = useState(false);
   const { data, isPending, isError } = useQuery({
     queryKey: ['admin-report-ai', range],
     queryFn: () => adminApi.aiStats(range).then((response) => response.data),
@@ -509,32 +515,166 @@ function AiStatsPanel({ range }: { range: { from: string } }) {
       value: `${formatMs(row.avgMs)} avg · p95 ${formatMs(row.p95Ms)}`,
     }));
 
+  // Built once and shared by the cards and the PDF, so the two cannot disagree.
+  const summaryRows = [
+    { key: 'calls', label: 'Summarization calls', value: summ.calls },
+    { key: 'success', label: 'Success rate', value: successRate(summ) },
+    ...timingRows(summ, 'summary'),
+    { key: 'orders', label: 'Orders per call', value: perSuccess(summ.items, summ) },
+    {
+      key: 'chars',
+      label: 'Summary length',
+      value: summ.avgOutputChars == null ? '—' : `${summ.avgOutputChars} chars`,
+    },
+  ];
+  const summaryByModel = breakdown(summ.byModel, AI_MODEL_LABELS);
+  const summaryByTrigger = breakdown(summ.byTrigger, AI_TRIGGER_LABELS);
+  const trendPoints = data.trend.filter((point) => point.avgSummaryMs != null);
+  const embeddingRows = [
+    {
+      key: 'model',
+      label: 'Embedding model',
+      value: emb.byModel.map((row) => row.key).join(', ') || '—',
+    },
+    { key: 'calls', label: 'Embedding calls', value: emb.calls },
+    { key: 'success', label: 'Success rate', value: successRate(emb) },
+    ...timingRows(emb, 'embed'),
+  ];
+  const embeddingByTrigger = breakdown(emb.byTrigger, AI_TRIGGER_LABELS);
+  const corpusRows = [
+    {
+      key: 'coverage',
+      label: 'Orders with an embedding',
+      value: `${corpus.ordersEmbedded} / ${corpus.ordersTotal} (${coverage}%)`,
+    },
+    {
+      key: 'rag',
+      label: 'RAG corpus (orders of approved summaries)',
+      value: corpus.ragOrders,
+    },
+    { key: 'approved', label: 'Approved summaries', value: corpus.approvedSummaries },
+    { key: 'dims', label: 'Vector dimension', value: corpus.dimension ?? '—' },
+    {
+      key: 'refs',
+      label: 'RAG references per base-model call',
+      value: base?.avgReferences ?? '—',
+    },
+    {
+      key: 'similarity',
+      label: 'Best reference similarity (avg)',
+      value: base?.avgTopSimilarity ?? '—',
+    },
+  ];
+  const failureRows = data.recentFailures.map((failure, index) => ({
+    key: `${failure.createdAt}-${index}`,
+    label: `${new Date(failure.createdAt).toLocaleString()} · ${
+      failure.kind === 'SUMMARY' ? 'Summary' : 'Embedding'
+    } · ${AI_TRIGGER_LABELS[failure.trigger] ?? failure.trigger}`,
+    value: failure.error ?? 'Unknown error',
+    style: { color: 'var(--c4w-color-danger, #b91c1c)' },
+  }));
+
+  const downloadPdf = async () => {
+    try {
+      const { buildAiReportPdf } = await import('./aiReportPdf');
+      buildAiReportPdf({
+        period,
+        sections: [
+          {
+            title: 'Summarization time',
+            description:
+              'How long the language model took to write a Course in the Ward draft from a day\'s finished physician orders. "Median" is the typical call, "95th percentile" the slow end that 1 call in 20 exceeds. "Orders per call" and "Summary length" show how much went in and came out per successful call.',
+            rows: summaryRows,
+          },
+          {
+            title: 'Summarization by model',
+            description:
+              'The same timings split by which model wrote the draft: the base model, which is given similar past orders as references (RAG), or the fine-tuned model.',
+            rows: summaryByModel,
+            emptyLabel: 'No summaries generated in this period.',
+          },
+          {
+            title: 'Summarization by trigger',
+            description:
+              'What started each summarization: a physician pressing Generate, a regeneration of an existing draft, or the nightly batch that drafts every patient still without a summary for the day.',
+            rows: summaryByTrigger,
+            emptyLabel: 'No summaries generated in this period.',
+          },
+          {
+            title: `Average summarization time (${bucketLabel(data.bucket)})`,
+            description:
+              'Average duration of successful summarization calls per period, to show whether the model is getting slower or faster over time. Periods are UTC calendar dates; periods without a summary are omitted.',
+            rows: trendPoints.map((point) => ({
+              label: point.period,
+              value: `${formatMs(point.avgSummaryMs)} avg · ${point.summaries} summar${
+                point.summaries === 1 ? 'y' : 'ies'
+              }`,
+            })),
+            emptyLabel: 'No summaries generated in this period.',
+          },
+          {
+            title: 'Embeddings',
+            description:
+              'Each physician order is converted into a numeric vector (an embedding) so that similar past orders can be found by meaning rather than by keyword. These are the calls to the embedding model in the period and how long they took.',
+            rows: embeddingRows,
+          },
+          {
+            title: 'Embeddings by trigger',
+            description:
+              'What caused each embedding call: a newly written order being indexed, or a search query being embedded to retrieve references for a summary.',
+            rows: embeddingByTrigger,
+            emptyLabel: 'No embedding calls in this period.',
+          },
+          {
+            title: 'Embedding and RAG corpus',
+            description:
+              'The current state of the searchable order history, regardless of the selected period. Only orders belonging to physician-approved summaries are used as RAG references. "Best reference similarity" is how closely the best-matching past order resembled the new ones (1 = identical).',
+            rows: corpusRows,
+          },
+          {
+            title: 'Recent AI failures',
+            description:
+              'The most recent summarization or embedding calls that failed in the period, with the error reported. A failed call produces no draft or embedding and is excluded from the timings above.',
+            rows: failureRows,
+            emptyLabel: 'No failed AI calls in this period.',
+          },
+        ],
+      }).save(`ai-statistics-report-${toDateKey(new Date())}.pdf`);
+      setPdfError(false);
+    } catch {
+      setPdfError(true);
+    }
+  };
+
   return (
     <>
+      <div
+        style={{
+          gridColumn: '1 / -1',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          gap: '8px',
+        }}
+      >
+        {pdfError ? (
+          <span role="alert" style={styles.reportEmpty}>
+            Could not create the PDF. Please try again.
+          </span>
+        ) : null}
+        <Button size="sm" variant="ghost" onClick={downloadPdf}>
+          Download PDF report
+        </Button>
+      </div>
+
       <ReportCard
         icon={<Timer size={14} aria-hidden="true" />}
         title="Summarization time"
         hint="LLM calls in period"
       >
-        <StatRows
-          rows={[
-            { key: 'calls', label: 'Summarization calls', value: summ.calls },
-            { key: 'success', label: 'Success rate', value: successRate(summ) },
-            ...timingRows(summ, 'summary'),
-            {
-              key: 'orders',
-              label: 'Orders per call',
-              value: perSuccess(summ.items, summ),
-            },
-            {
-              key: 'chars',
-              label: 'Summary length',
-              value: summ.avgOutputChars == null ? '—' : `${summ.avgOutputChars} chars`,
-            },
-          ]}
-        />
-        <StatRows rows={breakdown(summ.byModel, AI_MODEL_LABELS)} emptyLabel="No summaries generated yet." />
-        <StatRows rows={breakdown(summ.byTrigger, AI_TRIGGER_LABELS)} />
+        <StatRows rows={summaryRows} />
+        <StatRows rows={summaryByModel} emptyLabel="No summaries generated yet." />
+        <StatRows rows={summaryByTrigger} />
       </ReportCard>
 
       <ReportCard
@@ -543,12 +683,10 @@ function AiStatsPanel({ range }: { range: { from: string } }) {
         hint={`seconds, ${bucketLabel(data.bucket)}`}
       >
         <ColumnChart
-          points={data.trend
-            .filter((point) => point.avgSummaryMs != null)
-            .map((point) => ({
-              key: point.period,
-              count: Math.round((point.avgSummaryMs ?? 0) / 1000),
-            }))}
+          points={trendPoints.map((point) => ({
+            key: point.period,
+            count: Math.round((point.avgSummaryMs ?? 0) / 1000),
+          }))}
           unit="s average"
           emptyLabel="No summaries generated in this period."
         />
@@ -559,45 +697,9 @@ function AiStatsPanel({ range }: { range: { from: string } }) {
         title="Embeddings"
         hint="calls in period · corpus now"
       >
-        <StatRows
-          rows={[
-            {
-              key: 'model',
-              label: 'Embedding model',
-              value: emb.byModel.map((row) => row.key).join(', ') || '—',
-            },
-            { key: 'calls', label: 'Embedding calls', value: emb.calls },
-            { key: 'success', label: 'Success rate', value: successRate(emb) },
-            ...timingRows(emb, 'embed'),
-          ]}
-        />
-        <StatRows rows={breakdown(emb.byTrigger, AI_TRIGGER_LABELS)} />
-        <StatRows
-          rows={[
-            {
-              key: 'coverage',
-              label: 'Orders with an embedding',
-              value: `${corpus.ordersEmbedded} / ${corpus.ordersTotal} (${coverage}%)`,
-            },
-            {
-              key: 'rag',
-              label: 'RAG corpus (orders of approved summaries)',
-              value: corpus.ragOrders,
-            },
-            { key: 'approved', label: 'Approved summaries', value: corpus.approvedSummaries },
-            { key: 'dims', label: 'Vector dimension', value: corpus.dimension ?? '—' },
-            {
-              key: 'refs',
-              label: 'RAG references per base-model call',
-              value: base?.avgReferences ?? '—',
-            },
-            {
-              key: 'similarity',
-              label: 'Best reference similarity (avg)',
-              value: base?.avgTopSimilarity ?? '—',
-            },
-          ]}
-        />
+        <StatRows rows={embeddingRows} />
+        <StatRows rows={embeddingByTrigger} />
+        <StatRows rows={corpusRows} />
       </ReportCard>
 
       <ReportCard
@@ -605,17 +707,7 @@ function AiStatsPanel({ range }: { range: { from: string } }) {
         title="Recent AI failures"
         hint="in period"
       >
-        <StatRows
-          rows={data.recentFailures.map((failure, index) => ({
-            key: `${failure.createdAt}-${index}`,
-            label: `${new Date(failure.createdAt).toLocaleString()} · ${
-              failure.kind === 'SUMMARY' ? 'Summary' : 'Embedding'
-            } · ${AI_TRIGGER_LABELS[failure.trigger] ?? failure.trigger}`,
-            value: failure.error ?? 'Unknown error',
-            style: { color: 'var(--c4w-color-danger, #b91c1c)' },
-          }))}
-          emptyLabel="No failed AI calls in this period."
-        />
+        <StatRows rows={failureRows} emptyLabel="No failed AI calls in this period." />
       </ReportCard>
     </>
   );
