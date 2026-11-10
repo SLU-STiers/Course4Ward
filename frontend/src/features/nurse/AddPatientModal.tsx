@@ -143,22 +143,33 @@ const emptyForm = (): AddPatientFormResult => ({
   notes: '',
 });
 
-/** Text fields that must hold more than whitespace (the inputs' `required` lets "  " through). */
-const REQUIRED_TEXT: [keyof AddPatientFormResult, string][] = [
-  ['contactNumber', 'personal number'],
-  ['address', 'address'],
-  ['contactPersonName', 'contact person'],
-  ['contactPersonNumber', 'contact person’s number'],
-  ['contactPersonAddress', 'contact person’s address'],
-  ['triageTime', 'triage time'],
-  ['heartRate', 'heart rate'],
-  ['respRate', 'respiratory rate'],
-  ['spo2', 'SpO₂'],
-  ['bp', 'blood pressure'],
-  ['temp', 'temperature'],
-  ['pain', 'pain score'],
-  ['notes', 'notes'],
+const BP_PATTERN = /\d{2,3}\s*\/\s*\d{2,3}/;
+
+type VitalKey = 'heartRate' | 'respRate' | 'spo2' | 'bp' | 'temp' | 'pain';
+
+type VitalRule = {
+  key: VitalKey;
+  label: string;
+  /** Range enforced by the number input; absent when the input uses `pattern`. */
+  min?: number;
+  max?: number;
+  unit?: string;
+  pattern?: RegExp;
+  patternHint?: string;
+};
+
+/** Vital-sign rules in form order, re-checked here because the form submits with `noValidate`. */
+const VITAL_RULES: VitalRule[] = [
+  { key: 'heartRate', label: 'Heart rate', min: 20, max: 300, unit: 'bpm' },
+  { key: 'respRate', label: 'Respiratory rate', min: 1, max: 80, unit: '/min' },
+  { key: 'spo2', label: 'SpO₂', min: 50, max: 100, unit: '%' },
+  { key: 'bp', label: 'Blood pressure', pattern: BP_PATTERN, patternHint: 'systolic/diastolic, e.g. 120/80' },
+  { key: 'temp', label: 'Temperature', min: 30, max: 45, unit: '°C' },
+  { key: 'pain', label: 'Pain score', min: 0, max: 10, unit: '/10' },
 ];
+
+/** Vitals that only accept whole numbers (temperature allows one decimal). */
+const WHOLE_VITALS = new Set<VitalKey>(['heartRate', 'respRate', 'spo2', 'pain']);
 
 const MAX_AGE = 130;
 const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M} .'\u2019-]*$/u;
@@ -270,30 +281,160 @@ const toNumber = (value: string) => (value.trim() === '' ? undefined : Number(va
 
 const doctorName = (doctor: PhysicianOption) => `Dr. ${doctor.firstName} ${doctor.lastName}`;
 
-/** Every required input has a usable value, so Register Patient can turn solid. */
-function registrationReady(
+/** Form controls that submitting can jump to when they still need attention. */
+type FieldKey =
+  | 'firstName'
+  | 'lastName'
+  | 'age'
+  | 'gender'
+  | 'contactNumber'
+  | 'insurance'
+  | 'insuranceOther'
+  | 'religion'
+  | 'religionOther'
+  | 'address'
+  | 'contactPersonName'
+  | 'contactPersonNumber'
+  | 'contactPersonAddress'
+  | 'room'
+  | 'triageLevel'
+  | 'triageTime'
+  | 'heartRate'
+  | 'respRate'
+  | 'spo2'
+  | 'bp'
+  | 'temp'
+  | 'pain'
+  | 'chiefComplaints'
+  | 'notes'
+  | 'physician'
+  | 'consultingPhysician'
+  | 'registrationOrder';
+
+type RegistrationProblem = { field: FieldKey; message: string };
+
+const fieldId = (field: FieldKey) => `add-patient-field-${field}`;
+const FOCUSABLE_SELECTOR = 'input, select, textarea, button';
+
+/** Scrolls the control for `field` into view and focuses it, so the nurse lands where the fix is. */
+function focusField(root: HTMLElement | null, field: FieldKey) {
+  const container = root?.querySelector<HTMLElement>(`#${fieldId(field)}`);
+  if (!container) return;
+  const control = container.matches(FOCUSABLE_SELECTOR)
+    ? container
+    : container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+  container.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  control?.focus({ preventScroll: true });
+}
+
+/**
+ * Everything still blocking registration, in the order it appears on the form.
+ * Submitting jumps to the first entry; the rest stay in reserve for later attempts.
+ */
+function registrationProblems(
   form: AddPatientFormResult,
   roomNumber: string,
   rooms: Parameters<typeof roomProblem>[1],
   toWard: boolean,
   needsOrder: boolean,
-) {
+): RegistrationProblem[] {
+  const problems: RegistrationProblem[] = [];
+  const add = (field: FieldKey, message: string) => problems.push({ field, message });
+  const required = (field: FieldKey, value: string, label: string) => {
+    if (!value.trim()) add(field, `${label} is required.`);
+  };
   const firstName = form.firstName.trim();
   const lastName = form.lastName.trim();
+
+  // Patient information
+  if (!firstName) add('firstName', 'First name is required.');
+  else if (!NAME_PATTERN.test(firstName)) {
+    add('firstName', 'First name may contain letters, spaces, hyphens, apostrophes, and periods only.');
+  }
+  if (!lastName) add('lastName', 'Last name is required.');
+  else if (!NAME_PATTERN.test(lastName)) {
+    add('lastName', 'Last name may contain letters, spaces, hyphens, apostrophes, and periods only.');
+  }
+  const age = ageError(form.age);
+  if (age) add('age', age);
+  if (!form.gender) add('gender', 'Sex is required.');
+  required('contactNumber', form.contactNumber, 'Personal number');
+  if (form.contactNumber.trim() && !/^\d{11}$/.test(form.contactNumber)) {
+    add('contactNumber', 'Personal number must contain exactly 11 digits.');
+  }
+  if (!form.insurance) add('insurance', 'Insurance is required.');
+  else if (form.insurance === 'OTHER' && !form.insuranceOther.trim()) {
+    add('insuranceOther', 'Specify the patient’s insurance.');
+  }
+  if (!form.religion) add('religion', 'Religion is required.');
+  else if (form.religion === RELIGION_OTHER && !form.religionOther.trim()) {
+    add('religionOther', 'Specify the patient’s religion.');
+  }
+  required('address', form.address, 'Address');
+
+  // Contact person
   const contactName = form.contactPersonName.trim();
-  if (!firstName || !lastName || !NAME_PATTERN.test(firstName) || !NAME_PATTERN.test(lastName)) return false;
-  if (ageError(form.age) || !form.gender) return false;
-  if (!form.chiefComplaints.length) return false;
-  if (REQUIRED_TEXT.some(([key]) => !String(form[key]).trim())) return false;
-  if (!NAME_PATTERN.test(contactName)) return false;
-  if (!/^\d{11}$/.test(form.contactNumber) || !/^\d{11}$/.test(form.contactPersonNumber)) return false;
-  if (!form.insurance || (form.insurance === 'OTHER' && !form.insuranceOther.trim())) return false;
-  const religion = form.religion === RELIGION_OTHER ? form.religionOther.trim() : form.religion;
-  if (!religion || !form.triageLevel || !form.physicianId) return false;
-  if (!form.consultingPhysicianIds.length) return false;
-  if (needsOrder && !form.registrationOrder.trim()) return false;
-  if (toWard && (!normalizeRoom(roomNumber) || roomProblem(roomNumber, rooms))) return false;
-  return true;
+  required('contactPersonName', contactName, 'Contact person');
+  if (contactName && !NAME_PATTERN.test(contactName)) {
+    add(
+      'contactPersonName',
+      'The contact person’s name may contain letters, spaces, hyphens, apostrophes, and periods only.',
+    );
+  }
+  required('contactPersonNumber', form.contactPersonNumber, 'Contact person’s number');
+  if (form.contactPersonNumber.trim() && !/^\d{11}$/.test(form.contactPersonNumber)) {
+    add('contactPersonNumber', 'Contact number must contain exactly 11 digits.');
+  }
+  required('contactPersonAddress', form.contactPersonAddress, 'Contact person’s address');
+
+  // Room destination
+  if (toWard) {
+    if (!normalizeRoom(roomNumber)) add('room', 'Room number is required.');
+    else {
+      const problem = roomProblem(roomNumber, rooms);
+      if (problem) add('room', `${problem}.`);
+    }
+  }
+
+  // Triage assessment
+  if (!form.triageLevel) add('triageLevel', 'Triage level (ESI) is required.');
+  required('triageTime', form.triageTime, 'Triage time');
+  for (const rule of VITAL_RULES) {
+    const raw = String(form[rule.key]).trim();
+    if (!raw) {
+      add(rule.key, `${rule.label} is required.`);
+      continue;
+    }
+    if (rule.pattern) {
+      if (!rule.pattern.test(raw)) add(rule.key, `${rule.label} must be ${rule.patternHint}.`);
+      continue;
+    }
+    const value = Number(raw);
+    const min = rule.min ?? Number.NEGATIVE_INFINITY;
+    const max = rule.max ?? Number.POSITIVE_INFINITY;
+    if (!Number.isFinite(value)) {
+      add(rule.key, `${rule.label} must be a number.`);
+    } else if (value < min || value > max) {
+      add(rule.key, `${rule.label} must be between ${min} and ${max} ${rule.unit}.`);
+    } else if (WHOLE_VITALS.has(rule.key) && !Number.isInteger(value)) {
+      add(rule.key, `${rule.label} must be a whole number.`);
+    }
+  }
+  if (!form.chiefComplaints.some((complaint) => CHIEF_COMPLAINTS.includes(complaint))) {
+    add('chiefComplaints', 'Chief complaint is required.');
+  }
+  if (!form.notes.trim()) add('notes', 'Notes are required.');
+
+  // Care team
+  if (!form.physicianId) add('physician', 'Attending physician is required.');
+  if (!form.consultingPhysicianIds.length) add('consultingPhysician', 'Add a consulting physician.');
+
+  // Admission order
+  if (needsOrder && !form.registrationOrder.trim()) {
+    add('registrationOrder', 'The physician’s admission order is required.');
+  }
+
+  return problems;
 }
 
 export function AddPatientModal({
@@ -311,8 +452,10 @@ export function AddPatientModal({
   const [roomNumber, setRoomNumber] = useState(() => initialDraft?.roomNumber ?? '');
   const [draftRestored, setDraftRestored] = useState(initialDraft !== null);
   const [ageTouched, setAgeTouched] = useState(initialDraft !== null);
-  const [error, setError] = useState<string | null>(null);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const ageMessage = ageError(form.age);
   const classOption = REGISTRATION_CLASS;
@@ -321,7 +464,27 @@ export function AddPatientModal({
   /** 'Admission' when the class needs a physician order. */
   const orderName = classOption.order;
   const showAgeError = ageTouched && ageMessage !== null;
-  const ready = registrationReady(form, roomNumber, rooms, toWard, Boolean(orderName));
+  const problems = registrationProblems(form, roomNumber, rooms, toWard, Boolean(orderName));
+  const ready = problems.length === 0;
+
+  /**
+   * Message shown beside a field once registration was attempted. Recomputed on every
+   * render, so a field's reminder disappears as soon as that field is fixed.
+   */
+  const problemFor = (field: FieldKey) => {
+    if (!submitAttempted) return undefined;
+    const message = problems.find((problem) => problem.field === field)?.message;
+    if (!message) return undefined;
+    if (field === 'consultingPhysician' && pendingDoctorId) {
+      return 'Click Add to include the consulting physician.';
+    }
+    return message;
+  };
+
+  const fieldError = (field: FieldKey) => {
+    const message = problemFor(field);
+    return message ? <span style={s.fieldError}>{message}</span> : null;
+  };
 
   useEffect(() => {
     if (!ownerId) return;
@@ -333,7 +496,8 @@ export function AddPatientModal({
     setRoomNumber('');
     setPendingDoctorId('');
     setAgeTouched(false);
-    setError(null);
+    setSubmitAttempted(false);
+    setServerError(null);
     setDraftRestored(false);
   };
 
@@ -344,14 +508,19 @@ export function AddPatientModal({
       .catch(() => setPhysicians([]));
   }, []);
 
+  const updateForm = (update: (prev: AddPatientFormResult) => AddPatientFormResult) => {
+    setServerError(null);
+    setForm(update);
+  };
+
   const setField = <K extends keyof AddPatientFormResult>(key: K, value: AddPatientFormResult[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    updateForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const physicianById = (id: string) => physicians.find((doctor) => doctor.id === id);
 
   const setAttending = (id: string) => {
-    setForm((prev) => ({
+    updateForm((prev) => ({
       ...prev,
       physicianId: id,
       consultingPhysicianIds: prev.consultingPhysicianIds.filter((other) => other !== id),
@@ -360,7 +529,7 @@ export function AddPatientModal({
 
   const addConsulting = () => {
     if (!pendingDoctorId) return;
-    setForm((prev) => ({
+    updateForm((prev) => ({
       ...prev,
       consultingPhysicianIds: [...prev.consultingPhysicianIds, pendingDoctorId],
     }));
@@ -368,7 +537,7 @@ export function AddPatientModal({
   };
 
   const removeConsulting = (id: string) => {
-    setForm((prev) => ({
+    updateForm((prev) => ({
       ...prev,
       consultingPhysicianIds: prev.consultingPhysicianIds.filter((other) => other !== id),
     }));
@@ -380,97 +549,22 @@ export function AddPatientModal({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError(null);
+    setServerError(null);
+
+    const found = registrationProblems(form, roomNumber, rooms, toWard, Boolean(orderName));
+    if (found.length) {
+      if (found.some((problem) => problem.field === 'age')) setAgeTouched(true);
+      setSubmitAttempted(true);
+      focusField(formRef.current, found[0].field);
+      return;
+    }
 
     const firstName = form.firstName.trim();
     const lastName = form.lastName.trim();
-    if (!firstName || !lastName) {
-      setError('Please enter the patient’s first and last name.');
-      return;
-    }
-    if (!NAME_PATTERN.test(firstName) || !NAME_PATTERN.test(lastName)) {
-      setError('Patient names may contain letters, spaces, hyphens, apostrophes, and periods only.');
-      return;
-    }
-    if (ageMessage) {
-      setAgeTouched(true);
-      setError(ageMessage);
-      return;
-    }
-    if (!form.gender) {
-      setError('Please select the patient’s sex.');
-      return;
-    }
     const complaints = form.chiefComplaints.filter((complaint) => CHIEF_COMPLAINTS.includes(complaint));
-    if (!complaints.length) {
-      setError('Please select the chief complaint.');
-      return;
-    }
-    const missing = REQUIRED_TEXT.find(([key]) => !String(form[key]).trim());
-    if (missing) {
-      setError(`Please enter the ${missing[1]}.`);
-      return;
-    }
-    if (!NAME_PATTERN.test(form.contactPersonName.trim())) {
-      setError('The contact person’s name may contain letters, spaces, hyphens, apostrophes, and periods only.');
-      return;
-    }
-    if (!/^\d{11}$/.test(form.contactNumber)) {
-      setError('Personal number must contain exactly 11 digits.');
-      return;
-    }
-    if (!/^\d{11}$/.test(form.contactPersonNumber)) {
-      setError('Contact number must contain exactly 11 digits.');
-      return;
-    }
-    if (!form.insurance) {
-      setError('Please select the patient’s insurance.');
-      return;
-    }
-    if (!form.religion) {
-      setError('Please select the patient’s religion.');
-      return;
-    }
-    const religion = form.religion === RELIGION_OTHER ? form.religionOther.trim() : form.religion;
-    if (!religion) {
-      setError('Please specify the patient’s religion.');
-      return;
-    }
-    const insuranceOther = form.insuranceOther.trim();
-    if (form.insurance === 'OTHER' && !insuranceOther) {
-      setError('Please specify the patient’s insurance.');
-      return;
-    }
-    if (!form.triageLevel) {
-      setError('Please select the triage level.');
-      return;
-    }
-    if (!form.physicianId) {
-      setError('Please select the attending physician.');
-      return;
-    }
-    if (!form.consultingPhysicianIds.length) {
-      setError(
-        pendingDoctorId
-          ? 'Click Add to include the consulting physician.'
-          : 'Please add a consulting physician.',
-      );
-      return;
-    }
     const registrationOrder = form.registrationOrder.trim();
-    if (orderName && !registrationOrder) {
-      setError(`Enter the physician's ${orderName.toLowerCase()} order.`);
-      return;
-    }
-    if (toWard) {
-      const problem = normalizeRoom(roomNumber)
-        ? roomProblem(roomNumber, rooms)
-        : 'Please enter the room number';
-      if (problem) {
-        setError(`${problem}.`);
-        return;
-      }
-    }
+    const religion = form.religion === RELIGION_OTHER ? form.religionOther.trim() : form.religion;
+    const insuranceOther = form.insuranceOther.trim();
 
     setSaving(true);
     try {
@@ -516,7 +610,7 @@ export function AddPatientModal({
       // Someone may have just taken the room: refresh what is free.
       if (toWard) reloadRooms();
       const message = err?.response?.data?.message;
-      setError(
+      setServerError(
         Array.isArray(message)
           ? message.join(', ')
           : message || 'Could not register the patient. Please try again.',
@@ -531,7 +625,14 @@ export function AddPatientModal({
 
   return (
     <div style={ui.overlay} onClick={onClose}>
-      <form style={s.modal} onClick={(e) => e.stopPropagation()} onSubmit={handleSubmit}>
+      <form
+        ref={formRef}
+        className="add-patient-form"
+        style={s.modal}
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
+        noValidate
+      >
         <header style={s.header}>
           <div>
             <div style={s.titleRow}>
@@ -563,6 +664,7 @@ export function AddPatientModal({
             <div style={s.grid2}>
               <Field label="First Name" required>
                 <input
+                  id={fieldId('firstName')}
                   style={s.input}
                   value={form.firstName}
                   onChange={(e) => setField('firstName', sanitizeName(e.target.value))}
@@ -570,9 +672,11 @@ export function AddPatientModal({
                   maxLength={150}
                   required
                 />
+                {fieldError('firstName')}
               </Field>
               <Field label="Last Name" required>
                 <input
+                  id={fieldId('lastName')}
                   style={s.input}
                   value={form.lastName}
                   onChange={(e) => setField('lastName', sanitizeName(e.target.value))}
@@ -580,9 +684,11 @@ export function AddPatientModal({
                   maxLength={150}
                   required
                 />
+                {fieldError('lastName')}
               </Field>
               <Field label="Age" required>
                 <input
+                  id={fieldId('age')}
                   style={{ ...s.input, ...(showAgeError ? s.inputInvalid : {}) }}
                   type="text"
                   inputMode="numeric"
@@ -603,6 +709,7 @@ export function AddPatientModal({
               </Field>
               <Field label="Sex" required>
                 <select
+                  id={fieldId('gender')}
                   style={s.select}
                   value={form.gender}
                   onChange={(e) => setField('gender', toSex(e.target.value))}
@@ -617,6 +724,7 @@ export function AddPatientModal({
                     </option>
                   ))}
                 </select>
+                {fieldError('gender')}
               </Field>
               <Field label="Triage Date" required>
                 <input
@@ -629,13 +737,16 @@ export function AddPatientModal({
               </Field>
               <Field label="Personal Number" required>
                 <PhoneInput
+                  id={fieldId('contactNumber')}
                   value={form.contactNumber}
                   onChange={(v) => setField('contactNumber', v)}
                   placeholder="e.g. 0917 123 4567"
                 />
+                {fieldError('contactNumber')}
               </Field>
               <Field label="Insurance" required>
                 <select
+                  id={fieldId('insurance')}
                   style={s.select}
                   value={form.insurance}
                   onChange={(e) => setField('insurance', toInsurance(e.target.value))}
@@ -650,20 +761,26 @@ export function AddPatientModal({
                     </option>
                   ))}
                 </select>
+                {fieldError('insurance')}
                 {form.insurance === 'OTHER' && (
-                  <input
-                    style={{ ...s.input, marginTop: 8 }}
-                    value={form.insuranceOther}
-                    onChange={(e) => setField('insuranceOther', e.target.value)}
-                    placeholder="Specify insurance, e.g. Intellicare"
-                    aria-label="Specify insurance"
-                    maxLength={100}
-                    required
-                  />
+                  <>
+                    <input
+                      id={fieldId('insuranceOther')}
+                      style={{ ...s.input, marginTop: 8 }}
+                      value={form.insuranceOther}
+                      onChange={(e) => setField('insuranceOther', e.target.value)}
+                      placeholder="Specify insurance, e.g. Intellicare"
+                      aria-label="Specify insurance"
+                      maxLength={100}
+                      required
+                    />
+                    {fieldError('insuranceOther')}
+                  </>
                 )}
               </Field>
               <Field label="Religion" required>
                 <select
+                  id={fieldId('religion')}
                   style={s.select}
                   value={form.religion}
                   onChange={(e) => setField('religion', e.target.value)}
@@ -677,21 +794,27 @@ export function AddPatientModal({
                   ))}
                   <option value={RELIGION_OTHER}>Others (please specify)</option>
                 </select>
+                {fieldError('religion')}
                 {form.religion === RELIGION_OTHER && (
-                  <input
-                    style={{ ...s.input, marginTop: 8 }}
-                    value={form.religionOther}
-                    onChange={(e) => setField('religionOther', e.target.value)}
-                    placeholder="Specify religion, e.g. Baptist"
-                    aria-label="Specify religion"
-                    maxLength={100}
-                    required
-                  />
+                  <>
+                    <input
+                      id={fieldId('religionOther')}
+                      style={{ ...s.input, marginTop: 8 }}
+                      value={form.religionOther}
+                      onChange={(e) => setField('religionOther', e.target.value)}
+                      placeholder="Specify religion, e.g. Baptist"
+                      aria-label="Specify religion"
+                      maxLength={100}
+                      required
+                    />
+                    {fieldError('religionOther')}
+                  </>
                 )}
               </Field>
               <div style={{ gridColumn: '1 / -1' }}>
                 <Field label="Address" required>
                   <input
+                    id={fieldId('address')}
                     style={s.input}
                     value={form.address}
                     onChange={(e) => setField('address', e.target.value)}
@@ -699,6 +822,7 @@ export function AddPatientModal({
                     maxLength={300}
                     required
                   />
+                  {fieldError('address')}
                 </Field>
               </div>
             </div>
@@ -710,6 +834,7 @@ export function AddPatientModal({
             <div style={s.grid2}>
               <Field label="Contact Person" required>
                 <input
+                  id={fieldId('contactPersonName')}
                   style={s.input}
                   value={form.contactPersonName}
                   onChange={(e) => setField('contactPersonName', sanitizeName(e.target.value))}
@@ -717,17 +842,21 @@ export function AddPatientModal({
                   maxLength={150}
                   required
                 />
+                {fieldError('contactPersonName')}
               </Field>
               <Field label="Contact Number" required>
                 <PhoneInput
+                  id={fieldId('contactPersonNumber')}
                   value={form.contactPersonNumber}
                   onChange={(v) => setField('contactPersonNumber', v)}
                   placeholder="e.g. 0918 765 4321"
                 />
+                {fieldError('contactPersonNumber')}
               </Field>
               <div style={{ gridColumn: '1 / -1' }}>
                 <Field label="Contact Person Address" required>
                   <input
+                    id={fieldId('contactPersonAddress')}
                     style={s.input}
                     value={form.contactPersonAddress}
                     onChange={(e) => setField('contactPersonAddress', e.target.value)}
@@ -735,6 +864,7 @@ export function AddPatientModal({
                     maxLength={300}
                     required
                   />
+                  {fieldError('contactPersonAddress')}
                 </Field>
               </div>
             </div>
@@ -746,12 +876,18 @@ export function AddPatientModal({
                 Room Number<span style={s.required}>*</span>
               </span>
               <RoomPicker
+                id={fieldId('room')}
                 value={roomNumber}
-                onChange={setRoomNumber}
+                onChange={(value) => {
+                  setServerError(null);
+                  setRoomNumber(value);
+                }}
                 rooms={rooms}
                 failed={roomsFailed}
                 disabled={saving}
               />
+              {/* RoomPicker flags an occupied room itself; this covers the empty case. */}
+              {!normalizeRoom(roomNumber) && fieldError('room')}
             </Section>
           )}
 
@@ -760,7 +896,12 @@ export function AddPatientModal({
               <span style={s.label}>
                 Emergency Severity Index (ESI)<span style={s.required}>*</span>
               </span>
-              <div style={s.triageLevels} role="radiogroup" aria-label="Emergency Severity Index (ESI)">
+              <div
+                id={fieldId('triageLevel')}
+                style={s.triageLevels}
+                role="radiogroup"
+                aria-label="Emergency Severity Index (ESI)"
+              >
                 {TRIAGE_LEVELS.map((info) => {
                   const active = form.triageLevel === info.level;
                   return (
@@ -784,6 +925,7 @@ export function AddPatientModal({
                   );
                 })}
               </div>
+              {fieldError('triageLevel')}
               <p style={{ margin: '8px 0 0', fontSize: 12, color: '#64748b' }}>
                 {selectedTriage
                   ? `${selectedTriage.tag} · ${selectedTriage.target}: ${selectedTriage.description} e.g. ${selectedTriage.examples}.`
@@ -791,32 +933,57 @@ export function AddPatientModal({
               </p>
             </div>
             <div style={s.grid4}>
-              <TimePickerField value={form.triageTime} onChange={(v) => setField('triageTime', v)} required />
-              <Vital label="Heart Rate" unit="bpm" type="number" min={20} max={300} value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" required />
-              <Vital label="Resp. Rate" unit="/min" type="number" min={1} max={80} value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="—" required />
-              <Vital label="SpO₂" unit="%" type="number" min={50} max={100} value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="—" required />
-              <Vital label="Blood Pressure" unit="mmHg" value={form.bp} onChange={(v) => setField('bp', v)} placeholder="120/80" pattern="\d{2,3}\s*/\s*\d{2,3}" title="Systolic/diastolic, e.g. 120/80" required />
-              <Vital label="Temp" unit="°C" type="number" min={30} max={45} step={0.1} value={form.temp} onChange={(v) => setField('temp', v)} placeholder="—" required />
-              <Vital label="Pain" unit="/10" type="number" min={0} max={10} value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" required />
+              <div>
+                <TimePickerField id={fieldId('triageTime')} value={form.triageTime} onChange={(v) => setField('triageTime', v)} required />
+                {fieldError('triageTime')}
+              </div>
+              <div>
+                <Vital id={fieldId('heartRate')} label="Heart Rate" unit="bpm" type="number" min={20} max={300} value={form.heartRate} onChange={(v) => setField('heartRate', v)} placeholder="—" required />
+                {fieldError('heartRate')}
+              </div>
+              <div>
+                <Vital id={fieldId('respRate')} label="Resp. Rate" unit="/min" type="number" min={1} max={80} value={form.respRate} onChange={(v) => setField('respRate', v)} placeholder="—" required />
+                {fieldError('respRate')}
+              </div>
+              <div>
+                <Vital id={fieldId('spo2')} label="SpO₂" unit="%" type="number" min={50} max={100} value={form.spo2} onChange={(v) => setField('spo2', v)} placeholder="—" required />
+                {fieldError('spo2')}
+              </div>
+              <div>
+                <Vital id={fieldId('bp')} label="Blood Pressure" unit="mmHg" value={form.bp} onChange={(v) => setField('bp', v)} placeholder="120/80" pattern={BP_PATTERN.source} title="Systolic/diastolic, e.g. 120/80" required />
+                {fieldError('bp')}
+              </div>
+              <div>
+                <Vital id={fieldId('temp')} label="Temp" unit="°C" type="number" min={30} max={45} step={0.1} value={form.temp} onChange={(v) => setField('temp', v)} placeholder="—" required />
+                {fieldError('temp')}
+              </div>
+              <div>
+                <Vital id={fieldId('pain')} label="Pain" unit="/10" type="number" min={0} max={10} value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" required />
+                {fieldError('pain')}
+              </div>
             </div>
             <div style={{ marginTop: 14 }}>
               <span style={s.label}>
                 Chief Complaint<span style={s.required}>*</span>
               </span>
               <ChiefComplaintPicker
+                id={fieldId('chiefComplaints')}
                 value={form.chiefComplaints}
                 onChange={(chiefComplaints) => setField('chiefComplaints', chiefComplaints)}
               />
+              {fieldError('chiefComplaints')}
             </div>
             <div style={{ marginTop: 14 }}>
               <Field label="Notes" required>
                 <textarea
+                  id={fieldId('notes')}
                   style={s.textarea}
                   value={form.notes}
                   onChange={(e) => setField('notes', e.target.value)}
                   placeholder="Initial assessment, clinical notes..."
                   required
                 />
+                {fieldError('notes')}
               </Field>
             </div>
           </Section>
@@ -824,6 +991,7 @@ export function AddPatientModal({
           <Section icon={SECTION_ICONS.careTeam} title="Care Team" hint="Attending physician leads care; consultants advise">
             <Field label="Attending Physician" required>
               <PhysicianWardSelect
+                id={fieldId('physician')}
                 physicians={physicians}
                 value={form.physicianId}
                 onChange={setAttending}
@@ -832,6 +1000,7 @@ export function AddPatientModal({
                 ariaLabel="Attending physician"
                 required
               />
+              {fieldError('physician')}
             </Field>
 
             <div style={{ marginTop: 16 }}>
@@ -868,6 +1037,7 @@ export function AddPatientModal({
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                 <PhysicianWardSelect
+                  id={fieldId('consultingPhysician')}
                   physicians={availableToAdd}
                   value={pendingDoctorId}
                   onChange={setPendingDoctorId}
@@ -891,6 +1061,7 @@ export function AddPatientModal({
                   + Add
                 </button>
               </div>
+              {fieldError('consultingPhysician')}
             </div>
           </Section>
 
@@ -902,6 +1073,7 @@ export function AddPatientModal({
             >
               <Field label="Order" required>
                 <textarea
+                  id={fieldId('registrationOrder')}
                   style={s.textarea}
                   value={form.registrationOrder}
                   onChange={(e) => setField('registrationOrder', e.target.value)}
@@ -913,6 +1085,7 @@ export function AddPatientModal({
                   maxLength={2000}
                   required
                 />
+                {fieldError('registrationOrder')}
               </Field>
               <div style={{ ...s.grid2, marginTop: 12 }}>
                 <Field label="Ordered By">
@@ -940,16 +1113,17 @@ export function AddPatientModal({
               </div>
             </Section>
           )}
-
-          {error && (
-            <div style={s.error} role="alert">
-              <span aria-hidden="true">⚠</span>
-              {error}
-            </div>
-          )}
         </div>
 
         <footer style={s.footer}>
+          <span style={s.footerHint} role="status" aria-live="polite">
+            {serverError ??
+              (!ready && !saving
+                ? problems.length === 1
+                  ? '1 field still needs attention'
+                  : `${problems.length} fields still need attention`
+                : '')}
+          </span>
           <button type="button" style={{ ...ui.outlineBtn, height: 40 }} onClick={onClose} disabled={saving}>
             Cancel
           </button>
@@ -960,9 +1134,10 @@ export function AddPatientModal({
               height: 40,
               padding: '0 20px',
               backgroundColor: ready ? TEAL : '#bfdbfe',
-              cursor: ready && !saving ? 'pointer' : 'not-allowed',
+              cursor: saving ? 'not-allowed' : 'pointer',
             }}
-            disabled={!ready || saving}
+            disabled={saving}
+            title={ready ? undefined : problems[0].message}
           >
             {saving ? 'Registering...' : 'Register Patient'}
           </button>
@@ -973,9 +1148,11 @@ export function AddPatientModal({
 }
 
 function ChiefComplaintPicker({
+  id,
   value,
   onChange,
 }: {
+  id?: string;
   value: string[];
   onChange: (next: string[]) => void;
 }) {
@@ -1000,6 +1177,7 @@ function ChiefComplaintPicker({
   return (
     <div ref={rootRef}>
       <button
+        id={id}
         type="button"
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -1146,16 +1324,19 @@ function Field({
 }
 
 function PhoneInput({
+  id,
   value,
   onChange,
   placeholder,
 }: {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
 }) {
   return (
     <input
+      id={id}
       style={s.input}
       type="tel"
       inputMode="numeric"
