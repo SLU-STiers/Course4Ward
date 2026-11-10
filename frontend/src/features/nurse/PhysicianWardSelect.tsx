@@ -67,7 +67,7 @@ export function PhysicianWardSelect({
         <option value="">{placeholder}</option>
         {filteredPhysicians.map((physician) => (
           <option key={physician.id} value={physician.id}>
-            Dr. {physician.firstName} {physician.lastName} ({physician.userId})
+            Dr. {physician.firstName} {physician.lastName}
           </option>
         ))}
       </select>
