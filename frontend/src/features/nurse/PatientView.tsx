@@ -173,21 +173,6 @@ export function PatientView() {
 
   const loadedOrders =
     viewingOrders && viewingOrders.patientId === viewingPatientId ? viewingOrders.orders : null;
-  const hasActiveOrder = (type: PhysicianOrder['type']) =>
-    Boolean(
-      loadedOrders?.some(
-        (order) =>
-          order.admissionId === viewingAdmission?.id && order.active !== false && order.type === type,
-      ),
-    );
-  const waitingFor = (type: PhysicianOrder['type'], name: string) =>
-    !loadedOrders
-      ? 'Checking physician orders...'
-      : hasActiveOrder(type)
-        ? undefined
-        : `Waiting for the physician's ${name} order`;
-  const observeBlockedReason = waitingFor('OBSERVATION', 'observation');
-  const admitBlockedReason = waitingFor('ADMISSION', 'admission');
   const dischargeOrder = loadedOrders?.find(
     (order) =>
       order.admissionId === viewingAdmission?.id && order.active !== false && order.type === 'DISCHARGE',
@@ -379,14 +364,12 @@ export function PatientView() {
               ? () => runAdmissionAction(() => patientsApi.observe(viewingRecord.id))
               : undefined
           }
-          observeBlockedReason={observeBlockedReason}
           onAdmit={
             viewingRecord &&
             (viewingRecord.status === 'Emergency' || viewingRecord.status === 'Observation')
               ? () => runAdmissionAction(() => patientsApi.admit(viewingRecord.id))
               : undefined
           }
-          admitBlockedReason={admitBlockedReason}
           actionBusy={actionBusy}
           actionError={actionError}
         />

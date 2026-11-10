@@ -9,14 +9,12 @@ import { apiErrorMessage } from '../../lib/apiError';
 import {
   DATE_PATTERN,
   NAME_PATTERN,
-  ORDER_CHANNELS,
   RELIGIONS,
   RELIGION_OTHER,
   dateOfBirthError,
   oldestBirthDate,
   sanitizeName,
   sanitizePhoneNumber,
-  type OrderChannel,
 } from './patientForm';
 import { INSURANCE_LABEL, SEX_LABEL } from '../../lib/patient';
 import { TRIAGE_LEVELS, triageLevelInfo } from '../../lib/triage';
@@ -29,8 +27,7 @@ import { PhysicianWardSelect } from './PhysicianWardSelect';
 const REGISTRATION_CLASS = {
   value: 'INPATIENT',
   label: 'Inpatient',
-  hint: "Needs the physician's admission order before the patient is registered.",
-  order: 'Admission',
+  hint: 'The patient is registered as an inpatient and assigned to a room in your ward.',
 } as const;
 
 /** General complaints offered in the Chief Complaint checklist. */
@@ -68,8 +65,6 @@ export type AddPatientFormResult = {
   /** '' until the nurse picks one: there is deliberately no default. */
   gender: Sex | '';
   patientClass: 'INPATIENT';
-  registrationOrder: string;
-  registrationOrderChannel: OrderChannel;
   physicianId: string;
   consultingPhysicianIds: string[];
   /** The patient's own contact / mobile number. */
@@ -108,8 +103,6 @@ const emptyForm = (): AddPatientFormResult => ({
   dateOfBirth: '',
   gender: '',
   patientClass: 'INPATIENT' as const,
-  registrationOrder: '',
-  registrationOrderChannel: '',
   physicianId: '',
   consultingPhysicianIds: [],
   contactNumber: '',
@@ -208,7 +201,14 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       chiefComplaints: toComplaints(draft.form?.chiefComplaints),
     };
     // Fields of older versions of this form.
-    for (const legacy of ['admissionStatus', 'admissionOrder', 'admissionOrderChannel', 'age']) {
+    for (const legacy of [
+      'admissionStatus',
+      'admissionOrder',
+      'admissionOrderChannel',
+      'registrationOrder',
+      'registrationOrderChannel',
+      'age',
+    ]) {
       delete (form as Partial<Record<string, unknown>>)[legacy];
     }
     return {
@@ -311,8 +311,7 @@ type FieldKey =
   | 'chiefComplaints'
   | 'notes'
   | 'physician'
-  | 'consultingPhysician'
-  | 'registrationOrder';
+  | 'consultingPhysician';
 
 type RegistrationProblem = { field: FieldKey; message: string };
 
@@ -339,7 +338,6 @@ function registrationProblems(
   roomNumber: string,
   rooms: Parameters<typeof roomProblem>[1],
   toWard: boolean,
-  needsOrder: boolean,
 ): RegistrationProblem[] {
   const problems: RegistrationProblem[] = [];
   const add = (field: FieldKey, message: string) => problems.push({ field, message });
@@ -439,11 +437,6 @@ function registrationProblems(
   // Care team
   if (!form.physicianId) add('physician', 'Attending physician is required.');
 
-  // Admission order
-  if (needsOrder && !form.registrationOrder.trim()) {
-    add('registrationOrder', 'The physician’s admission order is required.');
-  }
-
   return problems;
 }
 
@@ -476,10 +469,8 @@ export function AddPatientModal({
   const classOption = REGISTRATION_CLASS;
   const toWard = form.patientClass === 'INPATIENT';
   const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(toWard);
-  /** 'Admission' when the class needs a physician order. */
-  const orderName = classOption.order;
   const showDobError = dobTouched && dobMessage !== null;
-  const problems = registrationProblems(form, roomNumber, rooms, toWard, Boolean(orderName));
+  const problems = registrationProblems(form, roomNumber, rooms, toWard);
   const ready = problems.length === 0;
 
   /**
@@ -565,12 +556,6 @@ export function AddPatientModal({
     return {
       // No admissionDate: admission is always today, stamped by the server with the current time.
       patientClass: form.patientClass,
-      // Inpatient only with the physician's admission order, which is
-      // filed on their behalf in the same request.
-      ...(orderName && {
-        registrationOrder: form.registrationOrder.trim(),
-        registrationOrderChannel: form.registrationOrderChannel || undefined,
-      }),
       roomNumber: toWard ? normalizeRoom(roomNumber) : undefined,
       physicianId: form.physicianId,
       additionalPhysicianIds: form.consultingPhysicianIds,
@@ -631,7 +616,7 @@ export function AddPatientModal({
     setServerError(null);
     setDuplicate(null);
 
-    const found = registrationProblems(form, roomNumber, rooms, toWard, Boolean(orderName));
+    const found = registrationProblems(form, roomNumber, rooms, toWard);
     if (found.length) {
       if (found.some((problem) => problem.field === 'dateOfBirth')) setDobTouched(true);
       setSubmitAttempted(true);
@@ -656,7 +641,6 @@ export function AddPatientModal({
     );
   };
 
-  const attending = physicianById(form.physicianId);
   const selectedTriage = triageLevelInfo(form.triageLevel);
 
   return (
@@ -1121,55 +1105,6 @@ export function AddPatientModal({
               )}
             </div>
           </Section>
-
-          {orderName && (
-            <Section
-              icon={SECTION_ICONS.triage}
-              title={`${orderName} Order`}
-              hint={`The physician's ${orderName.toLowerCase()} order, entered on their behalf`}
-            >
-              <Field label="Order" required>
-                <textarea
-                  id={fieldId('registrationOrder')}
-                  style={s.textarea}
-                  value={form.registrationOrder}
-                  onChange={(e) => setField('registrationOrder', e.target.value)}
-                  placeholder={
-                    toWard
-                      ? 'e.g. Admit to Medical Ward. CBC, chest x-ray PA view.'
-                      : 'e.g. For observation. Monitor vital signs every hour.'
-                  }
-                  maxLength={2000}
-                  required
-                />
-                {fieldError('registrationOrder')}
-              </Field>
-              <div style={{ ...s.grid2, marginTop: 12 }}>
-                <Field label="Ordered By">
-                  <input
-                    style={{ ...s.input, ...s.inputReadOnly }}
-                    value={attending ? doctorName(attending) : 'Select the attending physician'}
-                    readOnly
-                    aria-readonly="true"
-                    title="The order is attributed to the attending physician"
-                  />
-                </Field>
-                <Field label="Order Given As" required>
-                  <select
-                    style={s.select}
-                    value={form.registrationOrderChannel}
-                    onChange={(e) => setField('registrationOrderChannel', e.target.value as OrderChannel)}
-                  >
-                    {ORDER_CHANNELS.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-            </Section>
-          )}
         </div>
 
         {duplicate && (

@@ -19,6 +19,8 @@ enum Role {
   @@map("role")
 }
 
+/// ADMISSION / OBSERVATION are retired: kept so older orders still load, but
+/// new orders are DEFAULT or DISCHARGE only (see CreateOrderDto).
 enum OrderType {
   ADMISSION
   DISCHARGE
@@ -28,10 +30,6 @@ enum OrderType {
   @@map("order_type")
 }
 
-/// Kind of hospital encounter an admission record currently is.
-/// EMERGENCY / OUTPATIENT -> OBSERVATION needs an OBSERVATION order,
-/// any non-inpatient -> INPATIENT needs an ADMISSION order; the nurse
-/// carries both out. See PatientsService.
 /// Patient sex as recorded at registration (PhilHealth CF4 "Sex").
 enum Sex {
   MALE
@@ -52,6 +50,9 @@ enum InsuranceType {
   @@map("insurance_type")
 }
 
+/// Kind of hospital encounter an admission record currently is. The nurse
+/// moves EMERGENCY / OUTPATIENT -> OBSERVATION and any non-inpatient ->
+/// INPATIENT. See PatientsService.
 enum PatientClass {
   EMERGENCY
   OUTPATIENT
