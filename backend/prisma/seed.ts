@@ -239,6 +239,30 @@ async function main() {
     });
   }
 
+  // 5b) One Course in the Ward per day, as the app files them: a seeded summary
+  // keeps only its last day's orders and is dated that day. Its stay's earlier
+  // days become ordinary "no summary yet" days (Claims and the physician's
+  // "days to approve" chip count them; the discharge catch-up drafts them).
+  // Read back from the DB so it also repairs rows seeded on an earlier day.
+  for (const c of coursesInWard) {
+    const linked = await prisma.physicianOrder.findMany({
+      where: { summarizationId: c.id },
+      select: { id: true, dateCreated: true },
+    });
+    if (!linked.length) continue;
+    const last = linked.reduce((a, b) => (b.dateCreated > a.dateCreated ? b : a)).dateCreated;
+    const day = new Date(last.getFullYear(), last.getMonth(), last.getDate());
+    await prisma.physicianOrder.updateMany({
+      where: { id: { in: linked.filter((o) => o.dateCreated < day).map((o) => o.id) } },
+      data: { summarizationId: null },
+    });
+    // Only while the seeded text is untouched.
+    await prisma.courseInWard.updateMany({
+      where: { id: c.id, summaryContent: c.summaryContent },
+      data: { summaryDate: day },
+    });
+  }
+
   // 6) Physician notes.
   for (const n of notes) {
     await prisma.physicianNote.upsert({
