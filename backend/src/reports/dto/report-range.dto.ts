@@ -10,12 +10,12 @@ import { TREND_BUCKETS, type TrendBucket } from '../reports.service';
 export class ReportRangeDto {
   @ApiPropertyOptional({ example: '2026-08-18', description: 'Inclusive lower bound.' })
   @IsOptional()
-  @IsISO8601()
+  @IsISO8601({ strict: true }, { message: '$property must be a real date (ISO-8601)' })
   from?: string;
 
   @ApiPropertyOptional({ example: '2026-09-16', description: 'Inclusive upper bound.' })
   @IsOptional()
-  @IsISO8601()
+  @IsISO8601({ strict: true }, { message: '$property must be a real date (ISO-8601)' })
   to?: string;
 }
 

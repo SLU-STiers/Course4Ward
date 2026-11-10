@@ -20,7 +20,7 @@ const mockPrismaService = {
   physicianOrder: { count: jest.fn(), groupBy: jest.fn() },
   courseInWard: { count: jest.fn(), groupBy: jest.fn() },
   summaryApprovalRequest: { count: jest.fn(), groupBy: jest.fn() },
-  passwordResetRequest: { groupBy: jest.fn() },
+  passwordResetRequest: { groupBy: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
   auditLog: { count: jest.fn(), findMany: jest.fn(), groupBy: jest.fn() },
   $queryRaw: jest.fn(),
 };

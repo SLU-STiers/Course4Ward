@@ -67,14 +67,14 @@ export class AuditLogQueryDto {
     description: 'Inclusive lower bound on the log timestamp (ISO-8601).',
   })
   @IsOptional()
-  @IsISO8601()
+  @IsISO8601({ strict: true }, { message: '$property must be a real date (ISO-8601)' })
   from?: string;
 
   @ApiPropertyOptional({
     description: 'Inclusive upper bound on the log timestamp (ISO-8601).',
   })
   @IsOptional()
-  @IsISO8601()
+  @IsISO8601({ strict: true }, { message: '$property must be a real date (ISO-8601)' })
   to?: string;
 
   @ApiPropertyOptional({

@@ -13,6 +13,7 @@ const mockPrismaService = {
   user: {
     findUnique: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
   },
   passwordResetRequest: {
     findUnique: jest.fn(),
@@ -97,6 +98,94 @@ describe('AuthService', () => {
     (jwtService.signAsync as jest.Mock)
       .mockResolvedValueOnce('mock-access-token')
       .mockResolvedValueOnce('mock-refresh-token');
+  });
+
+  describe('logout', () => {
+    const verifyWith = (valid: Record<string, { sub: string; sessionVersion?: number }>) =>
+      (jwtService.verifyAsync as jest.Mock).mockImplementation(async (token: string) => {
+        if (valid[token]) return valid[token];
+        throw new Error('invalid token');
+      });
+
+    it('revokes every token of the session via the access token', async () => {
+      verifyWith({ 'access-1': { sub: 'user-123', sessionVersion: 3 } });
+      (mockPrismaService.user.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+      await service.logout('MANUAL', { accessToken: 'access-1' });
+
+      expect(mockPrismaService.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'user-123', sessionVersion: 3 },
+        data: { sessionVersion: { increment: 1 } },
+      });
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123', action: 'LOGOUT' }),
+      );
+    });
+
+    it('falls back to the refresh token when the access token has expired (idle sign-out)', async () => {
+      verifyWith({ 'refresh-1': { sub: 'user-123', sessionVersion: 0 } });
+      (mockPrismaService.user.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+      await service.logout('IDLE_TIMEOUT', { accessToken: 'expired', refreshToken: 'refresh-1' });
+
+      expect(jwtService.verifyAsync).toHaveBeenCalledWith('refresh-1', { secret: 'refresh-secret' });
+      expect(mockPrismaService.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'user-123', sessionVersion: 0 },
+        data: { sessionVersion: { increment: 1 } },
+      });
+    });
+
+    it('is a quiet no-op without a valid token', async () => {
+      verifyWith({});
+      await expect(service.logout('MANUAL', { accessToken: 'bad', refreshToken: 'bad' })).resolves.toEqual({
+        message: 'Signed out.',
+      });
+      expect(mockPrismaService.user.updateMany).not.toHaveBeenCalled();
+      expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('does not log a sign-out for a session that already ended', async () => {
+      verifyWith({ 'access-old': { sub: 'user-123', sessionVersion: 1 } });
+      (mockPrismaService.user.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+      await service.logout('MANUAL', { accessToken: 'access-old' });
+      expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('expired reset requests', () => {
+    it('marks timed-out pending requests EXPIRED before listing them', async () => {
+      (prismaService.passwordResetRequest.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (prismaService.$transaction as jest.Mock).mockResolvedValue([[], 0]);
+
+      await service.findPasswordResetRequests({ status: 'PENDING' as never });
+
+      expect(prismaService.passwordResetRequest.updateMany).toHaveBeenCalledWith({
+        where: { status: 'PENDING', expiresAt: { lt: expect.any(Date) } },
+        data: { status: 'EXPIRED', resolvedAt: expect.any(Date) },
+      });
+      const sweepOrder = (prismaService.passwordResetRequest.updateMany as jest.Mock).mock
+        .invocationCallOrder[0];
+      const listOrder = (prismaService.$transaction as jest.Mock).mock.invocationCallOrder[0];
+      expect(sweepOrder).toBeLessThan(listOrder);
+    });
+
+    it.each(['approvePasswordReset', 'rejectPasswordReset'] as const)(
+      '%s on a timed-out request explains it expired and expires it',
+      async (method) => {
+        (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue({
+          id: 'req-1',
+          userId: 'user-123',
+          status: 'PENDING',
+          expiresAt: new Date(Date.now() - 60_000),
+          user: mockUser,
+        });
+        (prismaService.passwordResetRequest.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+        await expect(service[method]('req-1', 'admin-1')).rejects.toThrow('request expired');
+        expect(prismaService.passwordResetRequest.updateMany).toHaveBeenCalled();
+        expect(prismaService.$transaction).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('requestPasswordReset', () => {

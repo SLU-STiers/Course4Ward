@@ -10,6 +10,7 @@ import {
   SummaryStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { expireStaleResetRequests } from '../auth/reset-expiry';
 
 /** Trend granularity exposed to the reporting UI. */
 export const TREND_BUCKETS = ['day', 'week', 'month'] as const;
@@ -59,6 +60,7 @@ export class ReportsService {
    */
   async summary(range: ReportRangeInput = {}) {
     const { from, to } = this.resolveRange(range);
+    await expireStaleResetRequests(this.prisma);
     const within = { gte: from, lte: to };
     const logWhere: Prisma.AuditLogWhereInput = { timeStamp: within };
     const startOfToday = startOfUtcDay(new Date());

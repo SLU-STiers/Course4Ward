@@ -7,6 +7,7 @@ import { Eye, EyeOff, UserPlus } from 'lucide-react';
 import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../../components/ui';
 import { useTableState } from '../../hooks/useTableState';
 import { adminApi } from '../../services/domainApi';
+import { useAuthStore } from '../../store/authStore';
 import { styles } from './styles';
 import type { StaffAccount, Ward } from '../../types';
 
@@ -26,6 +27,8 @@ const ROLE_HINTS: Record<string, string> = {
   ADMIN: 'Accounts and requests',
 };
 
+/** Matches the server's limit on staff first / last names. */
+const MAX_NAME_LENGTH = 50;
 const MIN_PASSWORD_LENGTH = 8;
 
 const roleLabel = (role: string) => ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role;
@@ -147,7 +150,20 @@ export function AccountsPanel() {
     },
   });
 
+  const updateError = (() => {
+    if (!updateUser.isError) return null;
+    const message = (updateUser.error as { response?: { data?: { message?: string | string[] } } })
+      ?.response?.data?.message;
+    return Array.isArray(message) ? message.join(', ') : message || 'Could not save the account.';
+  })();
+  // An admin may not deactivate or demote themselves (the server refuses it
+  // too); lock those controls rather than let them fail on save.
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const editingSelf = editingId !== null && editingId === currentUserId;
+  const editNameMissing = !editForm.firstName.trim() || !editForm.lastName.trim();
+
   const beginEdit = (user: StaffAccount) => {
+    updateUser.reset();
     setEditingId(user.id);
     setEditForm({
       firstName: user.firstName,
@@ -319,6 +335,7 @@ export function AccountsPanel() {
                   style={form_.input}
                   placeholder="e.g. Maria"
                   autoComplete="off"
+                  maxLength={MAX_NAME_LENGTH}
                   value={form.firstName}
                   onChange={(e) => setForm({ ...form, firstName: e.target.value })}
                 />
@@ -329,6 +346,7 @@ export function AccountsPanel() {
                   style={form_.input}
                   placeholder="e.g. Santos"
                   autoComplete="off"
+                  maxLength={MAX_NAME_LENGTH}
                   value={form.lastName}
                   onChange={(e) => setForm({ ...form, lastName: e.target.value })}
                 />
@@ -436,16 +454,24 @@ export function AccountsPanel() {
           <input
             style={styles.formInput}
             placeholder="First name"
+            maxLength={MAX_NAME_LENGTH}
             value={editForm.firstName}
             onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
           />
           <input
             style={styles.formInput}
             placeholder="Last name"
+            maxLength={MAX_NAME_LENGTH}
             value={editForm.lastName}
             onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
           />
-          <select style={styles.formInput} value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
+          <select
+            style={styles.formInput}
+            value={editForm.role}
+            disabled={editingSelf}
+            aria-label="Role"
+            onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+          >
             <option value="PHYSICIAN">Physician</option>
             <option value="NURSE">Nurse</option>
             <option value="CLAIMS_PROCESSOR">Claims Processor</option>
@@ -465,13 +491,38 @@ export function AccountsPanel() {
             </span>
           )}
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
-            <input type="checkbox" checked={editForm.isActive} onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })} /> Active
+            <input
+              type="checkbox"
+              checked={editForm.isActive}
+              disabled={editingSelf}
+              onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })}
+            />{' '}
+            Active
           </label>
+          {editingSelf && (
+            <span role="note" style={{ fontSize: 13, color: '#475569' }}>
+              You cannot change your own role or deactivate your own account. Ask another admin to do it.
+            </span>
+          )}
+          {editNameMissing && (
+            <span role="status" style={{ fontSize: 13, color: '#b91c1c' }}>
+              First and last name are required.
+            </span>
+          )}
+          {updateError && (
+            <div role="alert" style={form_.errorBox}>
+              ⚠ {updateError}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
             <button style={styles.secondaryButton} onClick={() => setEditingId(null)}>Cancel</button>
             <button
               style={styles.primaryButton}
-              disabled={updateUser.isPending || (editForm.role === 'PHYSICIAN' && !editForm.wardIds.length)}
+              disabled={
+                updateUser.isPending ||
+                editNameMissing ||
+                (editForm.role === 'PHYSICIAN' && !editForm.wardIds.length)
+              }
               onClick={() => {
                 const fullName = `${editForm.firstName || 'User'} ${editForm.lastName || ''}`.trim();
                 setConfirmation({

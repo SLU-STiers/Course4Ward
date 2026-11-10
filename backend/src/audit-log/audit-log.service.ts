@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ActionType, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLike } from '../common/like';
+import { expireStaleResetRequests } from '../auth/reset-expiry';
 
 /**
  * Every action name a domain service passes to `record()`.
@@ -106,6 +108,22 @@ const USER_SELECT = {
 } as const;
 
 const AUDIT_LOG_INCLUDE = { user: { select: USER_SELECT } };
+
+/**
+ * Key of the lower-cased summary stored alongside `details` so the free-text
+ * search can match what happened without regard to case. Internal only:
+ * {@link withoutSearchText} removes it before a log leaves the API.
+ */
+export const SEARCH_TEXT_KEY = 'searchText';
+
+export function withoutSearchText<T extends { details: Prisma.JsonValue | null }>(log: T): T {
+  const details = log.details;
+  if (!details || typeof details !== 'object' || Array.isArray(details) || !(SEARCH_TEXT_KEY in details)) {
+    return log;
+  }
+  const { [SEARCH_TEXT_KEY]: _searchText, ...rest } = details;
+  return { ...log, details: rest };
+}
 
 /** One fact about a logged action ("Patient": "Juan Dela Cruz"). */
 export interface AuditDetailItem {
@@ -253,7 +271,16 @@ export class AuditLogService {
       data: {
         userId: input.userId,
         action: action ?? ActionType.EDIT_ACCOUNT,
-        ...(input.details ? { details: input.details as unknown as Prisma.InputJsonObject } : {}),
+        ...(input.details
+          ? {
+              details: {
+                ...input.details,
+                // Lower-cased copy for case-insensitive search (Prisma's JSON
+                // filters cannot ignore case). Stripped before logs are served.
+                [SEARCH_TEXT_KEY]: input.details.summary.toLowerCase(),
+              } as unknown as Prisma.InputJsonObject,
+            }
+          : {}),
       },
     });
   }
@@ -312,7 +339,7 @@ export class AuditLogService {
       this.prisma.auditLog.count({ where }),
     ]);
 
-    return { items, total, skip, take };
+    return { items: items.map(withoutSearchText), total, skip, take };
   }
 
   private buildWhere(query: AuditLogQuery): Prisma.AuditLogWhereInput {
@@ -335,7 +362,8 @@ export class AuditLogService {
       // Like the other tables: the term matches if any visible column contains
       // it. "Ana Reyes", "a1b2c3d4", "Claims processor" and "Account updated"
       // each find their rows.
-      const contains = { contains: term, mode: 'insensitive' as const };
+      // `%` and `_` are escaped so they match literally, not as wildcards.
+      const contains = { contains: escapeLike(term), mode: 'insensitive' as const };
       const { actions, roles, words } = this.searchTargets(term);
 
       const matches: Prisma.AuditLogWhereInput[] = [
@@ -346,12 +374,14 @@ export class AuditLogService {
           user: {
             AND: words.map((word) => ({
               OR: [
-                { firstName: { contains: word, mode: 'insensitive' as const } },
-                { lastName: { contains: word, mode: 'insensitive' as const } },
+                { firstName: { contains: escapeLike(word), mode: 'insensitive' as const } },
+                { lastName: { contains: escapeLike(word), mode: 'insensitive' as const } },
               ],
             })),
           },
         },
+        // What happened: "Updated Ana Cruz (CLM005): status" is found by "clm005".
+        { details: { path: [SEARCH_TEXT_KEY], string_contains: escapeLike(term.toLowerCase()) } },
       ];
       if (roles.length) matches.push({ user: { role: { in: roles } } });
       if (actions.length) matches.push({ action: { in: actions } });
@@ -492,11 +522,11 @@ export class AuditLogService {
 
     const term = query.search?.trim();
     if (term) {
-      const like = `%${term}%`;
+      const like = `%${escapeLike(term)}%`;
       const { actions, roles, words } = this.searchTargets(term);
       const nameMatch = Prisma.join(
         words.map((word) => {
-          const wordLike = `%${word}%`;
+          const wordLike = `%${escapeLike(word)}%`;
           return Prisma.sql`(u."firstName" ILIKE ${wordLike} OR u."lastName" ILIKE ${wordLike})`;
         }),
         ' AND ',
@@ -505,6 +535,7 @@ export class AuditLogService {
         Prisma.sql`a."id" ILIKE ${like}`,
         Prisma.sql`u."userId" ILIKE ${like}`,
         Prisma.sql`(${nameMatch})`,
+        Prisma.sql`(a."details"->>${SEARCH_TEXT_KEY}) LIKE ${`%${escapeLike(term.toLowerCase())}%`}`,
       ];
       if (roles.length) {
         matches.push(Prisma.sql`u."role"::text IN (${Prisma.join(roles)})`);
@@ -542,6 +573,7 @@ export class AuditLogService {
   }
 
   async summary() {
+    await expireStaleResetRequests(this.prisma);
     const [totalUsers, activeUsers, pendingResets, pendingSummaries, approvedSummaries] =
       await Promise.all([
         this.prisma.user.count(),

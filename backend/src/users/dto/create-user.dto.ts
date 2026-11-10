@@ -1,14 +1,26 @@
-import { IsArray, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsArray, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 
+/** Longest first / last name accepted for a staff account. */
+export const MAX_NAME_LENGTH = 50;
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
 export class CreateUserDto {
-  @ApiProperty()
+  @ApiProperty({ maxLength: MAX_NAME_LENGTH })
+  @Transform(trim)
   @IsString()
+  @IsNotEmpty({ message: 'First name is required' })
+  @MaxLength(MAX_NAME_LENGTH)
   firstName: string;
 
-  @ApiProperty()
+  @ApiProperty({ maxLength: MAX_NAME_LENGTH })
+  @Transform(trim)
   @IsString()
+  @IsNotEmpty({ message: 'Last name is required' })
+  @MaxLength(MAX_NAME_LENGTH)
   lastName: string;
 
   @ApiProperty({ enum: Role })

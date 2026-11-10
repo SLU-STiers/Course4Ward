@@ -15,6 +15,7 @@ import {
   patients,
   triageNurseUserIds,
   triages,
+  userIdCounters,
   users,
 } from './seed/data';
 
@@ -58,6 +59,28 @@ async function main() {
       },
     });
     userIds.set(u.userId, record.id);
+  }
+
+  // 1b) User-id counters. The migration that creates them runs before any
+  // user exists, so it starts every role at 1; move each past the seeded ids
+  // (and past any id already in the table) so "Add User" never collides.
+  // Counters are only ever raised, keeping the seed safe to re-run.
+  for (const c of userIdCounters) {
+    const prefix = users.find((u) => u.role === c.role)?.userId.replace(/\d+$/, '');
+    const taken = prefix
+      ? await prisma.user.findMany({ where: { userId: { startsWith: prefix } }, select: { userId: true } })
+      : [];
+    const highest = taken.reduce((max, { userId }) => {
+      const n = Number(userId.slice(prefix!.length));
+      return Number.isInteger(n) ? Math.max(max, n) : max;
+    }, 0);
+    const current = await prisma.userIdCounter.findUnique({ where: { role: c.role } });
+    const nextNumber = Math.max(c.nextNumber, highest + 1, current?.nextNumber ?? 1);
+    await prisma.userIdCounter.upsert({
+      where: { role: c.role },
+      update: { nextNumber },
+      create: { role: c.role, nextNumber },
+    });
   }
 
   // 2) Patients — no natural unique key, so upsert by the fixed seed id.

@@ -66,19 +66,33 @@ export function RequestsView() {
   useEffect(() => () => window.clearTimeout(searchTimer.current), []);
 
   // Handle approving/resetting password request
+  // Why the last approve / reject failed, e.g. the request expired meanwhile.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const showActionError = (error: unknown, fallback: string) => {
+    const message = (error as { response?: { data?: { message?: string | string[] } } })?.response?.data
+      ?.message;
+    setActionError(Array.isArray(message) ? message.join(', ') : message || fallback);
+    // The request may have changed state (expired, resolved by another admin).
+    qc.invalidateQueries({ queryKey: ['reset-requests'] });
+  };
+
   const handleResetPassword = useMutation({
     mutationFn: (requestId: string) => adminApi.approveResetRequest(requestId),
+    onMutate: () => setActionError(null),
     onSuccess: (response: { data: PasswordResetApproval }) => {
       setTemporaryPassword(response.data.temporaryPassword);
       qc.invalidateQueries({ queryKey: ['reset-requests'] });
     },
+    onError: (error) => showActionError(error, 'Could not approve the request.'),
   });
 
   const handleRejectPassword = useMutation({
     mutationFn: (requestId: string) => adminApi.rejectResetRequest(requestId),
+    onMutate: () => setActionError(null),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reset-requests'] });
     },
+    onError: (error) => showActionError(error, 'Could not reject the request.'),
   });
 
   const currentData = (requestsPage?.items ?? []).map((request) => ({
@@ -115,6 +129,12 @@ export function RequestsView() {
           <div style={styles.resetResult}>
             Temporary password for the user: <strong>{temporaryPassword}</strong>. Share it securely; it is only shown here once.
             <button type="button" style={styles.dismissButton} onClick={() => setTemporaryPassword(null)}>Dismiss</button>
+          </div>
+        )}
+        {actionError && (
+          <div role="alert" style={{ ...styles.resetResult, backgroundColor: '#fef2f2', color: '#991b1b' }}>
+            ⚠ {actionError}
+            <button type="button" style={styles.dismissButton} onClick={() => setActionError(null)}>Dismiss</button>
           </div>
         )}
         {/* Header Bar with Search */}
