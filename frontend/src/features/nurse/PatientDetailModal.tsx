@@ -118,11 +118,8 @@ export function PatientDetailModal({
       await patientsApi.addConsultingPhysician(chart.recordId, pendingDoctorId);
       setPendingDoctorId('');
       onCareTeamChanged();
-    } catch (err: any) {
-      const message = err?.response?.data?.message;
-      setAddError(
-        Array.isArray(message) ? message.join(', ') : message || 'Could not add the physician.',
-      );
+    } catch (err: unknown) {
+      setAddError(apiErrorMessage(err, 'Could not add the physician.'));
     } finally {
       setAdding(false);
     }
@@ -514,11 +511,10 @@ function RoomDestinationField({
       setRoom(data.room?.number ?? typed);
       setEditing(false);
       onSaved?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Someone may have just taken the room: refresh what is free.
       reload();
-      const message = err?.response?.data?.message;
-      setError(Array.isArray(message) ? message.join(', ') : message || 'Could not save the room.');
+      setError(apiErrorMessage(err, 'Could not save the room.'));
     } finally {
       setSaving(false);
     }

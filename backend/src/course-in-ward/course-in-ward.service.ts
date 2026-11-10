@@ -11,7 +11,7 @@ import axios from 'axios';
 import { AiCallKind, NotificationType, OrderStatus, Prisma, Role, SummaryStatus } from '@prisma/client';
 import { AiTrigger, timeAiCall } from './ai-metrics';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
+import { AuditLogService, detailItems, fullName } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
 import { createClaimOnce } from '../claims/claim-once';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -76,6 +76,14 @@ function dayKeyOf(value: Date | string | null | undefined): string | null {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * `YYYY-MM-DD` of a summary day for messages and logs. `summaryDate` is local
+ * midnight, so a UTC rendering would name the previous day.
+ */
+function dayText(value: Date | string | null | undefined): string {
+  return dayKeyOf(value) ?? '—';
 }
 
 /** Midnight (local) of a `YYYY-MM-DD` key: the `summaryDate` of that day's Course in the Ward. */
@@ -419,7 +427,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         summaries.map((summary) =>
           this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
             title: 'Course in the Ward summary ready',
-            message: `**${fullName(patient)}** has a new Course in the Ward summary for ${dayLabel(summary.summaryDate)} ready for claims review.`,
+            message: `**${fullName(patient)}** has a new Course in the Ward summary for ${dayText(summary.summaryDate)} ready for claims review.`,
           }),
         ),
       );
@@ -499,7 +507,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         const summary = await this.upsertDaySummary(
           admission.patientId,
           day,
-          `Finished orders for ${dayLabel(dayStart(day))}:\n${orders
+          `Finished orders for ${day}:\n${orders
             .map((order) => `• ${order.orderContent}`)
             .join('\n')}`,
         );
@@ -577,7 +585,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
         summary: `Sent ${name}'s discharged stay to Claims (${days(claims.length)})`,
         items: detailItems([
           ['Patient', name],
-          ['Days', claims.map((entry) => dayLabel(entry.day)).join(', ')],
+          ['Days', claims.map((entry) => dayText(entry.day)).join(', ')],
           ['Assigned processor', await this.auditLog.userLabel(processor.id)],
           ['Waiting for physician', pending.length ? String(pending.length) : 'None'],
         ]),
@@ -779,10 +787,10 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       userId: physicianId,
       action: 'SUMMARY_EDITED_MANUAL',
       details: {
-        summary: `Edited ${patientName}'s summary for ${dayLabel(existing.summaryDate)}`,
+        summary: `Edited ${patientName}'s summary for ${dayText(existing.summaryDate)}`,
         items: detailItems([
           ['Patient', patientName],
-          ['Summary day', dayLabel(existing.summaryDate)],
+          ['Summary day', dayText(existing.summaryDate)],
         ]),
         changes: [{ field: 'Summary text', from: existing.summaryContent, to: editedText }],
       },
@@ -790,7 +798,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
     await this.notifyClaimProcessors(
       id,
-      `${patientName}'s summary for ${dayLabel(existing.summaryDate)} was edited and needs physician approval again.`,
+      `${patientName}'s summary for ${dayText(existing.summaryDate)} was edited and needs physician approval again.`,
     );
 
     return this.withOrders(updated.id);
@@ -846,10 +854,10 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       userId: physicianId,
       action: 'SUMMARY_REGENERATED_AI',
       details: {
-        summary: `Regenerated ${patientName}'s summary for ${dayLabel(updated.summaryDate)}`,
+        summary: `Regenerated ${patientName}'s summary for ${dayText(updated.summaryDate)}`,
         items: detailItems([
           ['Patient', patientName],
-          ['Summary day', dayLabel(updated.summaryDate)],
+          ['Summary day', dayText(updated.summaryDate)],
           ['AI model', MODEL_LABEL[model]],
           ['Extra instructions', extraInstructions],
         ]),
@@ -859,7 +867,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
     await this.notifyClaimProcessors(
       id,
-      `${patientName}'s summary for ${dayLabel(updated.summaryDate)} was regenerated and needs physician approval again.`,
+      `${patientName}'s summary for ${dayText(updated.summaryDate)} was regenerated and needs physician approval again.`,
     );
 
     return this.withOrders(updated.id);
@@ -927,10 +935,10 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       userId: physicianId,
       action: 'SUMMARY_APPROVED',
       details: {
-        summary: `Approved ${patientName}'s summary for ${dayLabel(approved.summaryDate)}`,
+        summary: `Approved ${patientName}'s summary for ${dayText(approved.summaryDate)}`,
         items: detailItems([
           ['Patient', patientName],
-          ['Summary day', dayLabel(approved.summaryDate)],
+          ['Summary day', dayText(approved.summaryDate)],
         ]),
       },
     });
@@ -942,7 +950,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
             userId: claim.processorId,
             type: NotificationType.REVIEW_REQUESTED,
             title: 'Course in the Ward summary approved',
-            message: `**${physicianName}** approved **${patientName}**'s Course in the Ward for ${dayLabel(approved.summaryDate)}. It is ready for CF4 processing.`,
+            message: `**${physicianName}** approved **${patientName}**'s Course in the Ward for ${dayText(approved.summaryDate)}. It is ready for CF4 processing.`,
             requestId: claim.id,
           }),
         ),
@@ -950,7 +958,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     } else {
       await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
         title: 'Course in the Ward summary approved',
-        message: `**${physicianName}** approved **${patientName}**'s Course in the Ward for ${dayLabel(approved.summaryDate)}. It is ready for a claim request.`,
+        message: `**${physicianName}** approved **${patientName}**'s Course in the Ward for ${dayText(approved.summaryDate)}. It is ready for a claim request.`,
       });
     }
 
@@ -997,11 +1005,11 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       userId: physicianId,
       action: 'SUMMARY_VERSION_RESTORED',
       details: {
-        summary: `Restored an earlier version of ${patientName}'s summary for ${dayLabel(existing.summaryDate)}`,
+        summary: `Restored an earlier version of ${patientName}'s summary for ${dayText(existing.summaryDate)}`,
         items: detailItems([
           ['Patient', patientName],
-          ['Summary day', dayLabel(existing.summaryDate)],
-          ['Version saved on', dayLabel(version.createdAt)],
+          ['Summary day', dayText(existing.summaryDate)],
+          ['Version saved on', dayText(version.createdAt)],
         ]),
         changes: [{ field: 'Summary text', from: existing.summaryContent, to: version.content }],
       },
@@ -1009,7 +1017,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
     await this.notifyClaimProcessors(
       id,
-      `${patientName}'s summary for ${dayLabel(updated.summaryDate)} was restored to an earlier version and needs physician approval again.`,
+      `${patientName}'s summary for ${dayText(updated.summaryDate)} was restored to an earlier version and needs physician approval again.`,
     );
 
     return this.withOrders(updated.id);
