@@ -1150,6 +1150,7 @@ describe("Patients Module", () => {
                 patientClass: true,
                 classSince: true,
                 initialAssessment: true,
+                physicianId: true,
                 // Physicians read the full triage assessment, not just the level.
                 triage: expect.objectContaining({
                   select: expect.objectContaining({

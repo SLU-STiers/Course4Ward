@@ -343,6 +343,8 @@ export class PatientsService {
                   patientClass: true,
                   classSince: true,
                   initialAssessment: true,
+                  // Lets the physician UI tell attending from consultant.
+                  physicianId: true,
                   triage: triageSelect,
                   room: roomSelect,
                 },

@@ -71,6 +71,7 @@ export function ManageView({
   /** Patient to open straight away — a row clicked in the Overview list. */
   initialPatientId?: string;
 }) {
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [loading, setLoading] = useState(true);
   /** Kept across tab switches: coming back reopens the patient last charted. */
@@ -324,7 +325,11 @@ export function ManageView({
           ? "An admitted patient cannot be placed under observation"
           : pendingDecision,
     ADMISSION: patientClass === "INPATIENT" ? "Patient is already admitted" : pendingDecision,
-    DISCHARGE: hasOrder("DISCHARGE") ? "Patient already has a discharge order" : undefined,
+    DISCHARGE: hasOrder("DISCHARGE")
+      ? "Patient already has a discharge order"
+      : openAdmission?.physicianId && openAdmission.physicianId !== currentUserId
+        ? "Only the attending physician can discharge this patient"
+        : undefined,
   };
   const effectiveOrderType: OrderType = orderTypeBlockedReason[orderType]
     ? "DEFAULT"
