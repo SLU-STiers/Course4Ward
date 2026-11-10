@@ -87,11 +87,13 @@ const styles: Record<string, CSSProperties> = {
   header: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
     flexShrink: 0,
   },
-  titleGroup: { display: 'flex', alignItems: 'center', gap: '8px' },
+  titleGroup: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 },
   /** Monochrome mark of the card title — same line style as the nav icons. */
   titleIcon: {
     display: 'block',
@@ -259,7 +261,7 @@ export function SubmittedOrdersTimeline({
         {nav}
       </div>
 
-      <div style={fill ? styles.timelineScroll : undefined}>
+      <div className={fill ? 'ui-scroll' : undefined} style={fill ? styles.timelineScroll : undefined}>
         <div style={styles.timelineContainer}>
           <div style={styles.timelineLine} />
           {orders.length ? (

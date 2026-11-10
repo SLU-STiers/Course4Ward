@@ -240,7 +240,7 @@ export function AiSummaryCard({
       <div style={styles.body}>
         {children ??
           (text ? (
-            <p style={styles.text}>{text}</p>
+            <p className="ui-scroll" style={styles.text}>{text}</p>
           ) : (
             <p style={styles.empty}>{emptyMessage}</p>
           ))}
