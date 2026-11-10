@@ -75,6 +75,33 @@ export interface Patient {
   roomNumber?: string | null;
 }
 
+/** `PATCH /patients/:id`: fields left out are kept; `null` clears an optional one. */
+export interface PatientDetailsUpdate {
+  firstName?: string;
+  middleName?: string | null;
+  lastName?: string;
+  gender?: Sex;
+  /** YYYY-MM-DD */
+  dateOfBirth?: string;
+  contactNumber?: string | null;
+  address?: string | null;
+  insurance?: InsuranceType | null;
+  insuranceOther?: string | null;
+  religion?: string | null;
+  contactPersonName?: string | null;
+  contactPersonNumber?: string | null;
+  contactPersonAddress?: string | null;
+}
+
+/** 409 body of `POST /patients` when the person is already registered. */
+export interface DuplicatePatientError {
+  code: 'PATIENT_ALREADY_REGISTERED';
+  message: string;
+  existingPatientId: string;
+  /** Still in a stay that has not ended, so they cannot be re-admitted yet. */
+  admitted: boolean;
+}
+
 /**
  * Backend `PatientClass`. EMERGENCY / OUTPATIENT need no order; OBSERVATION
  * and INPATIENT need a physician's observation / admission order.
@@ -298,7 +325,8 @@ export type AuditLogAction =
   | 'CLAIM_CREATED'
   | 'CLAIM_PHYSICIAN_NOTIFIED'
   | 'CF4_GENERATED'
-  | 'UPDATE_ORDER_STATUS';
+  | 'UPDATE_ORDER_STATUS'
+  | 'PATIENT_DISCHARGED';
 
 /** One row of `GET /admin/audit-logs`. */
 /**

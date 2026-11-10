@@ -40,6 +40,7 @@ const mockPrismaService = {
     create: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     update: jest.fn(),
   },
   user: {
@@ -48,6 +49,7 @@ const mockPrismaService = {
     findMany: jest.fn(),
   },
   patientAdmission: {
+    create: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
@@ -246,6 +248,7 @@ describe("Patients Module", () => {
             assertPatient: jest.fn(),
             assertAdmission: jest.fn(),
             assertOrder: jest.fn(),
+            wardsOf: jest.fn().mockResolvedValue({ wardIds: new Set(["ward-1"]), unroomed: true }),
           },
         },
       ],
@@ -258,6 +261,7 @@ describe("Patients Module", () => {
 
     jest.clearAllMocks();
     (mockPrismaService.user.count as jest.Mock).mockResolvedValue(1);
+    (mockPrismaService.patient.findMany as jest.Mock).mockResolvedValue([]);
     (mockPrismaService.$transaction as jest.Mock).mockImplementation((fn) => fn(mockPrismaService));
   });
 
@@ -489,6 +493,7 @@ describe("Patients Module", () => {
           middleName: "Maria",
           lastName: "Dela Cruz",
           gender: Sex.MALE,
+          dateOfBirth: "1990-05-03",
           physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
           contactNumber: "09171234567",
           contactPersonName: "Maria O’Connor",
@@ -503,6 +508,7 @@ describe("Patients Module", () => {
           middleName,
           lastName: "Dela Cruz",
           gender: Sex.MALE,
+          dateOfBirth: "1990-05-03",
           physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
         });
 
@@ -586,30 +592,83 @@ describe("Patients Module", () => {
         expect(prismaService.patient.create).not.toHaveBeenCalled();
       });
 
-      it("should create a patient without dateOfBirth", async () => {
-        const dtoWithoutDob = {
-          ...mockCreatePatientDto,
-          dateOfBirth: undefined,
-        };
-        (prismaService.patient.create as jest.Mock).mockResolvedValue({
-          ...mockPatientSimple,
-          dateOfBirth: null,
-        });
+      it("should store the date of birth as entered, never one estimated from an age", async () => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
 
-        const result = await service.create(dtoWithoutDob, mockUser.id);
+        await service.create({ ...mockCreatePatientDto, dateOfBirth: "1985-04-12" }, mockUser.id);
 
         expect(prismaService.patient.create).toHaveBeenCalledWith(
           expect.objectContaining({
-            data: expect.objectContaining({
-              firstName: dtoWithoutDob.firstName,
-              lastName: dtoWithoutDob.lastName,
-              gender: dtoWithoutDob.gender,
-              dateOfBirth: undefined,
+            data: expect.objectContaining({ dateOfBirth: new Date("1985-04-12T00:00:00.000Z") }),
+          }),
+        );
+      });
+
+      it("should require a date of birth in the DTO and no longer accept an age", async () => {
+        const dto = plainToInstance(CreatePatientDto, {
+          firstName: "Juan",
+          lastName: "Dela Cruz",
+          gender: "MALE",
+          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
+        });
+        const errors = await validate(dto);
+        expect(errors.map((error) => error.property)).toContain("dateOfBirth");
+      });
+
+      it.each([
+        ["in the future", "2999-01-01", "cannot be in the future"],
+        ["over 130 years ago", "1850-01-01", "more than 130 years ago"],
+        ["that does not exist", "1990-02-30", "must be a real date"],
+      ])("should refuse a date of birth %s", async (_label, dateOfBirth, message) => {
+        await expect(
+          service.create({ ...mockCreatePatientDto, dateOfBirth }, mockUser.id),
+        ).rejects.toThrow(message);
+        expect(prismaService.patient.create).not.toHaveBeenCalled();
+      });
+
+      it("should refuse registering someone already on record and point to the existing patient", async () => {
+        (prismaService.patient.findMany as jest.Mock).mockResolvedValue([
+          { id: "patient-old", firstName: "John", middleName: null, lastName: "Doe", admissions: [] },
+        ]);
+
+        const error = await service
+          .create({ ...mockCreatePatientDto, firstName: "  JOHN " }, mockUser.id)
+          .catch((err) => err);
+
+        expect(error).toBeInstanceOf(ConflictException);
+        expect(error.getResponse()).toEqual(
+          expect.objectContaining({ existingPatientId: "patient-old", admitted: false }),
+        );
+        expect(prismaService.patient.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              firstName: { equals: "JOHN", mode: "insensitive" },
+              lastName: { equals: "Doe", mode: "insensitive" },
             }),
           }),
         );
-        expect(auditLogService.record).toHaveBeenCalled();
-        expect(result.dateOfBirth).toBeNull();
+        expect(prismaService.patient.create).not.toHaveBeenCalled();
+      });
+
+      it("should not treat a different middle name as the same person", async () => {
+        (prismaService.patient.findMany as jest.Mock).mockResolvedValue([
+          { id: "patient-old", firstName: "John", middleName: "Santos", lastName: "Doe", admissions: [] },
+        ]);
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+
+        await service.create({ ...mockCreatePatientDto, middleName: "Reyes" }, mockUser.id);
+
+        expect(prismaService.patient.create).toHaveBeenCalled();
+      });
+
+      it("should require a room in the nurse's ward when they do not work in Emergency", async () => {
+        const wardAccess = (service as any).wardAccess;
+        (wardAccess.wardsOf as jest.Mock).mockResolvedValueOnce({ wardIds: new Set(["ward-1"]), unroomed: false });
+
+        await expect(service.create(mockCreatePatientDto, mockUser.id)).rejects.toThrow(
+          "Choose a room in your ward",
+        );
+        expect(prismaService.patient.create).not.toHaveBeenCalled();
       });
 
       it.each([
@@ -698,7 +757,12 @@ describe("Patients Module", () => {
     });
 
     describe("rooms", () => {
-      const freeRoom = { id: "room-101", isActive: true, admissions: [] };
+      const freeRoom = {
+        id: "room-101",
+        isActive: true,
+        ward: { id: "ward-1", name: "Surgery Ward" },
+        admissions: [],
+      };
       const occupiedRoom = { ...freeRoom, admissions: [{ id: "admission-9" }] };
       const inpatientDto = {
         ...mockCreatePatientDto,
@@ -713,10 +777,64 @@ describe("Patients Module", () => {
           { id: "room-102", number: "102", admissions: [{ id: "admission-9" }] },
         ]);
 
-        await expect(service.listRooms()).resolves.toEqual([
+        await expect(service.listRooms(mockUser.id)).resolves.toEqual([
           { id: "room-101", number: "101", occupied: false, occupiedByAdmissionId: null },
           { id: "room-102", number: "102", occupied: true, occupiedByAdmissionId: "admission-9" },
         ]);
+        expect(prismaService.room.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { isActive: true, wardId: { in: ["ward-1"] } } }),
+        );
+      });
+
+      it("should refuse a room in a ward the nurse does not work in", async () => {
+        (prismaService.room.findUnique as jest.Mock).mockResolvedValue({
+          ...freeRoom,
+          ward: { id: "ward-obdr", name: "OBDR" },
+        });
+
+        await expect(service.create(inpatientDto, mockUser.id)).rejects.toThrow(
+          "Room 101 is in OBDR, which is not one of your wards",
+        );
+        expect(prismaService.patient.create).not.toHaveBeenCalled();
+      });
+
+      it("should re-admit a returning patient into a new stay on the same record", async () => {
+        (prismaService.patient.findUnique as jest.Mock).mockResolvedValue({
+          firstName: "John",
+          lastName: "Doe",
+          admissions: [],
+        });
+        (prismaService.room.findUnique as jest.Mock).mockResolvedValue(freeRoom);
+        (prismaService.patient.findUniqueOrThrow as jest.Mock).mockResolvedValue(mockPatientSimple);
+        const { firstName: _f, lastName: _l, gender: _g, dateOfBirth: _d, ...admission } = inpatientDto;
+
+        await service.readmit(mockPatientId, admission, mockUser.id);
+
+        expect(prismaService.patient.create).not.toHaveBeenCalled();
+        expect(prismaService.patientAdmission.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            patientId: mockPatientId,
+            patientClass: PatientClass.INPATIENT,
+            roomId: "room-101",
+          }),
+        });
+        expect(auditLogService.record).toHaveBeenCalledWith(
+          expect.objectContaining({ action: "REGISTER_PATIENT" }),
+        );
+      });
+
+      it("should not re-admit a patient who is still admitted", async () => {
+        (prismaService.patient.findUnique as jest.Mock).mockResolvedValue({
+          firstName: "John",
+          lastName: "Doe",
+          admissions: [{ id: mockAdmissionId }],
+        });
+        const { firstName: _f, lastName: _l, gender: _g, dateOfBirth: _d, ...admission } = inpatientDto;
+
+        await expect(service.readmit(mockPatientId, admission, mockUser.id)).rejects.toThrow(
+          "is still admitted",
+        );
+        expect(prismaService.patientAdmission.create).not.toHaveBeenCalled();
       });
 
       it("should register an inpatient into a free room", async () => {
@@ -1290,18 +1408,7 @@ describe("Patients Module", () => {
           mockUser.id,
         );
 
-        expect(prismaService.patient.findUnique).toHaveBeenCalledWith({
-          where: { id: mockPatientId },
-          include: {
-            admissions: {
-              include: {
-                orders: { orderBy: { dateCreated: "desc" }, take: 20 },
-              },
-            },
-            notes: { orderBy: { createdAt: "desc" }, take: 20 },
-            coursesInWard: { orderBy: { summaryDate: "desc" }, take: 10 },
-          },
-        });
+        expect(prismaService.patient.findUnique).toHaveBeenCalledWith({ where: { id: mockPatientId } });
         expect(prismaService.patient.update).toHaveBeenCalledWith({
           where: { id: mockPatientId },
           data: {
@@ -1343,6 +1450,52 @@ describe("Patients Module", () => {
           },
         });
         expect(result.dateOfBirth).toBeNull();
+      });
+
+      it("should correct the name and contact details and clear a blanked field", async () => {
+        (prismaService.patient.findUnique as jest.Mock).mockResolvedValue({
+          ...mockPatient,
+          contactNumber: "09171234567",
+          address: "Old address",
+        });
+        (prismaService.patient.update as jest.Mock).mockImplementation(({ data }) => ({
+          ...mockPatient,
+          contactNumber: "09171234567",
+          address: "Old address",
+          ...data,
+        }));
+
+        await service.update(
+          mockPatientId,
+          { lastName: "Doe-Reyes", contactNumber: "09181234567", address: null as any },
+          mockUser.id,
+        );
+
+        expect(prismaService.patient.update).toHaveBeenCalledWith({
+          where: { id: mockPatientId },
+          data: { lastName: "Doe-Reyes", contactNumber: "09181234567", address: null },
+        });
+        const { changes } = (auditLogService.record as jest.Mock).mock.calls[0][0].details;
+        expect(changes.map((change: { field: string }) => change.field)).toEqual([
+          "Last name",
+          "Contact number",
+          "Address",
+        ]);
+      });
+
+      it("should refuse renaming a patient into someone already on record", async () => {
+        (prismaService.patient.findUnique as jest.Mock).mockResolvedValue(mockPatient);
+        (prismaService.patient.findMany as jest.Mock).mockResolvedValue([
+          { id: "patient-other", firstName: "Jane", middleName: null, lastName: "Doe", admissions: [] },
+        ]);
+
+        await expect(
+          service.update(mockPatientId, { firstName: "Jane" }, mockUser.id),
+        ).rejects.toThrow(ConflictException);
+        expect(prismaService.patient.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ id: { not: mockPatientId } }) }),
+        );
+        expect(prismaService.patient.update).not.toHaveBeenCalled();
       });
 
       it("should throw NotFoundException when updating non-existent patient", async () => {

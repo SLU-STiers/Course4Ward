@@ -9,7 +9,9 @@ import { DoctorCard, SECTION_ICONS, Section } from './PatientModalParts';
 import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { OBSERVATION_LIMIT_HOURS, hoursSince } from '../../lib/patient';
 import { PhysicianWardSelect } from './PhysicianWardSelect';
-import { formatDateShort, formatTimeMedium } from '../../lib/format';
+import { formatDateMedium, formatDateShort, formatTimeMedium } from '../../lib/format';
+import { EditPatientDetailsModal } from './EditPatientDetailsModal';
+import { apiErrorMessage } from '../../lib/apiError';
 
 import type { AdmissionStatus, AssignedDoctor, PatientChart } from './types';
 import type { PhysicianOption } from '../../types';
@@ -34,6 +36,8 @@ export function PatientDetailModal({
   actionError,
   onCareTeamChanged,
   onRoomChanged,
+  patientId,
+  onDetailsChanged,
   ordersColumn,
   orderActionsColumn,
   orderActionsTitle = 'Order on Behalf of Physician',
@@ -60,6 +64,9 @@ export function PatientDetailModal({
   onCareTeamChanged?: () => void;
   /** Called after the admitted patient's room is saved, to reload the list. */
   onRoomChanged?: () => void;
+  /** With `onDetailsChanged`, nurses can correct the patient's own details. */
+  patientId?: string;
+  onDetailsChanged?: () => void;
   /** Middle column: the submitted physician orders. With it, the modal splits into three columns. */
   ordersColumn?: ReactNode;
   /** Right column: entering orders on the physician's behalf and updating their status. */
@@ -98,6 +105,12 @@ export function PatientDetailModal({
   const [pendingDoctorId, setPendingDoctorId] = useState('');
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [pickingAttending, setPickingAttending] = useState(false);
+  const [newAttendingId, setNewAttendingId] = useState('');
+  const [changingAttending, setChangingAttending] = useState(false);
+  const [attendingError, setAttendingError] = useState<string | null>(null);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const canEditDetails = Boolean(patientId && onDetailsChanged);
 
   useEffect(() => {
     if (!canAddConsulting) return;
@@ -127,6 +140,27 @@ export function PatientDetailModal({
       );
     } finally {
       setAdding(false);
+    }
+  };
+
+  const attendingName = attending?.name;
+  const attendingOptions = physicians.filter(
+    (doctor) => `Dr. ${doctor.firstName} ${doctor.lastName}` !== attendingName,
+  );
+
+  const changeAttending = async () => {
+    if (!newAttendingId || !onCareTeamChanged) return;
+    setChangingAttending(true);
+    setAttendingError(null);
+    try {
+      await patientsApi.changeAttending(chart.recordId, newAttendingId);
+      setNewAttendingId('');
+      setPickingAttending(false);
+      onCareTeamChanged();
+    } catch (err: unknown) {
+      setAttendingError(apiErrorMessage(err, 'Could not change the attending physician.'));
+    } finally {
+      setChangingAttending(false);
     }
   };
 
@@ -198,10 +232,26 @@ export function PatientDetailModal({
             </div>
           )}
 
-          <Section icon={SECTION_ICONS.patientInfo} title="Patient Information" hint="Basic demographics and admission details">
+          <Section
+            icon={SECTION_ICONS.patientInfo}
+            title="Patient Information"
+            hint="Basic demographics and admission details"
+            action={
+              canEditDetails && (
+                <button
+                  type="button"
+                  style={{ ...ui.outlineBtn, height: 32, padding: '0 12px', fontSize: 12, flexShrink: 0 }}
+                  onClick={() => setEditingDetails(true)}
+                >
+                  Edit details
+                </button>
+              )
+            }
+          >
             <div style={threeColumn ? layout.fieldGrid : s.grid2}>
               <Field label="Full Name" value={chart.name} />
-              <Field label="Age" value={chart.age ? `${chart.age} years` : '—'} />
+              <Field label="Date of Birth" value={chart.dateOfBirth ? formatDateMedium(chart.dateOfBirth) : ''} />
+              <Field label="Age" value={chart.dateOfBirth ? `${chart.age} years` : '—'} />
               <Field label="Gender" value={chart.gender} />
               <Field label="Admission Date" value={chart.admissionDate} />
               <Field label="Admission Status" value={badge} />
@@ -239,11 +289,69 @@ export function PatientDetailModal({
           </Section>
 
           <Section icon={SECTION_ICONS.careTeam} title="Care Team" hint="Attending physician leads care; consultants advise">
-            <span style={s.label}>Attending Physician</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={s.label}>Attending Physician</span>
+              {canAddConsulting && attending && !pickingAttending && (
+                <button
+                  type="button"
+                  style={{ ...ui.outlineBtn, height: 28, padding: '0 10px', fontSize: 12 }}
+                  onClick={() => setPickingAttending(true)}
+                >
+                  Change
+                </button>
+              )}
+            </div>
             {attending ? (
               <DoctorCard name={attending.name} meta={doctorMeta('Attending', attending)} />
             ) : (
               <div style={s.emptyDoctors}>No attending physician assigned yet.</div>
+            )}
+            {pickingAttending && (
+              <div style={layout.addPanel}>
+                <span style={{ ...s.label, marginBottom: 0 }}>New Attending Physician</span>
+                <PhysicianWardSelect
+                  physicians={attendingOptions}
+                  value={newAttendingId}
+                  onChange={setNewAttendingId}
+                  selectStyle={{ ...s.select, width: '100%', fontSize: 14 }}
+                  disabled={changingAttending || !attendingOptions.length}
+                  placeholder={attendingOptions.length ? 'Select a physician' : 'No other physicians available'}
+                  ariaLabel="New attending physician"
+                />
+                {attendingError && (
+                  <div style={s.error} role="alert">
+                    <span aria-hidden="true">⚠</span>
+                    {attendingError}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button
+                    type="button"
+                    style={{ ...ui.outlineBtn, height: 40 }}
+                    onClick={() => {
+                      setPickingAttending(false);
+                      setNewAttendingId('');
+                      setAttendingError(null);
+                    }}
+                    disabled={changingAttending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      ...ui.outlineBtn,
+                      height: 40,
+                      opacity: newAttendingId && !changingAttending ? 1 : 0.5,
+                      cursor: newAttendingId && !changingAttending ? 'pointer' : 'not-allowed',
+                    }}
+                    onClick={changeAttending}
+                    disabled={!newAttendingId || changingAttending}
+                  >
+                    {changingAttending ? 'Saving...' : 'Make attending'}
+                  </button>
+                </div>
+              </div>
             )}
 
             <div style={{ marginTop: 16 }}>
@@ -295,6 +403,14 @@ export function PatientDetailModal({
               )}
             </div>
           </Section>
+
+          {editingDetails && patientId && onDetailsChanged && (
+            <EditPatientDetailsModal
+              patientId={patientId}
+              onClose={() => setEditingDetails(false)}
+              onSaved={onDetailsChanged}
+            />
+          )}
         </>
   );
 

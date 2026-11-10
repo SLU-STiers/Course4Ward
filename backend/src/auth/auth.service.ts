@@ -498,20 +498,16 @@ export class AuthService {
     if (!request) throw new NotFoundException('Password reset request not found');
     await this.assertStillPending(request);
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: request.userId },
-        data: { sessionVersion: { increment: 1 } },
-      }),
-      this.prisma.passwordResetRequest.update({
-        where: { id: request.id },
-        data: {
-          status: 'REJECTED',
-          resolvedAt: new Date(),
-          temporaryPassword: null,
-        },
-      }),
-    ]);
+    // Anyone can file a request for any staff ID without signing in, so
+    // rejecting one leaves the real user's sessions alone.
+    await this.prisma.passwordResetRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'REJECTED',
+        resolvedAt: new Date(),
+        temporaryPassword: null,
+      },
+    });
 
     await this.auditLog.record({
       userId: actingAdminId,
@@ -576,6 +572,17 @@ export class AuthService {
   }
 
   async changePassword(userId: string, newPassword: string) {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { userId: true, passwordHash: true },
+    });
+    if (!current) throw new NotFoundException('User not found');
+    if (newPassword.toLowerCase() === current.userId.toLowerCase()) {
+      throw new BadRequestException('Your password cannot be your login ID');
+    }
+    if (await bcrypt.compare(newPassword, current.passwordHash)) {
+      throw new BadRequestException('Choose a password different from your current one');
+    }
     const passwordHash = await bcrypt.hash(newPassword, 12);
     const user = await this.prisma.user.update({
       where: { id: userId },

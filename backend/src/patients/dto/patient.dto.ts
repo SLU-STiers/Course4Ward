@@ -18,7 +18,7 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType, PartialType, PickType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { CommunicationChannel, InsuranceType, PatientClass, Sex } from '@prisma/client';
 
@@ -32,7 +32,8 @@ export const normalizeRoom = ({ value }: { value: unknown }) =>
 const PHONE_PATTERN = /^\d{11}$/;
 const PHONE_MESSAGE = (field: string) =>
   `${field} must contain exactly 11 digits`;
-const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M} .'\u2019-]*$/u;
+export const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M} .'\u2019-]*$/u;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export class CreatePatientDto {
   @ApiProperty()
@@ -70,10 +71,11 @@ export class CreatePatientDto {
   @IsEnum(Sex, { message: 'Sex must be one of MALE, FEMALE, OTHER' })
   gender: Sex;
 
-  @ApiPropertyOptional({ description: 'ISO date of birth (preferred over age)' })
-  @IsOptional()
-  @IsDateString()
-  dateOfBirth?: string;
+  // Printed on the CF4, so it is the real date: never estimated from an age.
+  @ApiProperty({ description: 'Date of birth, YYYY-MM-DD', example: '1985-04-12' })
+  @Matches(DATE_ONLY_PATTERN, { message: 'Date of birth must be a date (YYYY-MM-DD)' })
+  @IsDateString({}, { message: 'Date of birth must be a real date' })
+  dateOfBirth: string;
 
   @ApiPropertyOptional({ description: "Patient's own contact / mobile number", example: '0917 123 4567' })
   @IsOptional()
@@ -131,14 +133,6 @@ export class CreatePatientDto {
   @IsString()
   @MaxLength(300)
   contactPersonAddress?: string;
-
-  @ApiPropertyOptional({ description: 'Approximate age in years; used when dateOfBirth is omitted' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  @Max(130)
-  age?: number;
 
   @ApiPropertyOptional({ description: 'ISO admission datetime; defaults to now' })
   @IsOptional()
@@ -274,6 +268,12 @@ export class AddConsultingPhysicianDto {
   physicianId: string;
 }
 
+export class ChangeAttendingDto {
+  @ApiProperty({ description: 'Physician user id (UUID) who becomes the attending' })
+  @IsUUID()
+  physicianId: string;
+}
+
 export class AssignRoomDto {
   @ApiProperty({ description: 'Ward room number, or null to clear the room', example: '101', nullable: true, type: String })
   @ValidateIf((dto: AssignRoomDto) => dto.roomNumber !== null)
@@ -284,14 +284,28 @@ export class AssignRoomDto {
   roomNumber: string | null;
 }
 
-export class UpdatePatientDto {
-  @ApiPropertyOptional({ enum: Sex })
-  @IsOptional()
-  @IsEnum(Sex, { message: 'Sex must be one of MALE, FEMALE, OTHER' })
-  gender?: Sex;
+/** The patient's own record, as opposed to one admission's details. */
+const PATIENT_DETAIL_FIELDS = [
+  'firstName',
+  'middleName',
+  'lastName',
+  'gender',
+  'dateOfBirth',
+  'contactNumber',
+  'address',
+  'insurance',
+  'insuranceOther',
+  'religion',
+  'contactPersonName',
+  'contactPersonNumber',
+  'contactPersonAddress',
+] as const;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsDateString()
-  dateOfBirth?: string;
-}
+/** A new admission for a patient who is already registered. */
+export class ReadmitPatientDto extends OmitType(CreatePatientDto, PATIENT_DETAIL_FIELDS) {}
+
+/**
+ * Corrections to a registered patient's details. A field left out is kept;
+ * `null` clears an optional field (required ones ignore it).
+ */
+export class UpdatePatientDto extends PartialType(PickType(CreatePatientDto, PATIENT_DETAIL_FIELDS)) {}

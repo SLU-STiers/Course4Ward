@@ -101,6 +101,7 @@ describe('OrdersService', () => {
     (prismaService.user.findUnique as jest.Mock).mockResolvedValue({
       firstName: 'Angela',
       lastName: 'Reyes',
+      isActive: true,
     });
   });
 
@@ -124,6 +125,7 @@ describe('OrdersService', () => {
           enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
           orderContent: dto.orderContent,
           type: OrderType.DEFAULT,
+          communicationChannel: null,
         },
         include: orderInclude,
       });
@@ -132,6 +134,25 @@ describe('OrdersService', () => {
         action: 'ORDER_CREATED',
       }));
       expect(result).toEqual(mockOrder);
+    });
+
+    it('stores how a nurse received the order in communicationChannel, not the order text', async () => {
+      (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);
+
+      await service.create({ ...dto, communicationChannel: 'SMS' } as CreateOrderDto, 'nurse-123', Role.NURSE);
+
+      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ orderContent: dto.orderContent, communicationChannel: 'SMS' }),
+        }),
+      );
+    });
+
+    it('rejects an order entered on behalf of a deactivated physician', async () => {
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue({ isActive: false });
+
+      await expect(service.create(dto, 'nurse-123', Role.NURSE)).rejects.toThrow(/deactivated/);
+      expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
     });
 
     it('should flag order as PHYSICIAN when entered by a physician', async () => {

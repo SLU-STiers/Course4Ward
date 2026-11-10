@@ -17,6 +17,8 @@ export type NursePatient = {
   admissionDateRaw: string;
   /** Raw admission timestamp — also when the attending physician was assigned. */
   admittedAt?: string;
+  /** ISO date of birth, when recorded. */
+  dateOfBirth?: string | null;
   color: string;
   age: number;
   gender: string;
@@ -60,6 +62,8 @@ export type TriageAssessment = TriageDisplay;
 export type PatientChart = {
   name: string;
   age: number;
+  /** ISO date of birth, when recorded. */
+  dateOfBirth?: string | null;
   gender: string;
   admissionDate: string;
   recordId: string;
@@ -83,6 +87,8 @@ export type OrderSet = {
 export type AdmissionStatus = 'Emergency' | 'Observation' | 'Admitted' | 'Discharged';
 export type AdmissionRecord = {
   id: string;
+  /** The patient this row belongs to. Names are not unique; always look up by this. */
+  patientId: string;
   name: string;
   /** Display date, `DD/MM/YYYY`. */
   admittedOn: string;

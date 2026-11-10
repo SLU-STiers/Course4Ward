@@ -18,7 +18,9 @@ import { WardAccessService } from '../wards/ward-access.service';
 import {
   AddConsultingPhysicianDto,
   AssignRoomDto,
+  ChangeAttendingDto,
   CreatePatientDto,
+  ReadmitPatientDto,
   UpdatePatientDto,
 } from './dto/patient.dto';
 
@@ -46,8 +48,16 @@ export class PatientsController {
 
   @Get('rooms')
   @Roles(Role.NURSE)
-  listRooms() {
-    return this.patientsService.listRooms();
+  listRooms(@CurrentUser() user: any) {
+    return this.patientsService.listRooms(user.id);
+  }
+
+  // Not ward-checked on the patient: a returning patient's last stay may have
+  // been in another ward. The new stay's room must be in the nurse's ward.
+  @Post(':id/admissions')
+  @Roles(Role.NURSE)
+  readmit(@Param('id') id: string, @Body() dto: ReadmitPatientDto, @CurrentUser() user: any) {
+    return this.patientsService.readmit(id, dto, user.id);
   }
 
   @Get()
@@ -108,6 +118,17 @@ export class PatientsController {
   async assignRoom(@Param('id') id: string, @Body() dto: AssignRoomDto, @CurrentUser() user: any) {
     await this.wardAccess.assertAdmission(user, id);
     return this.patientsService.assignRoom(id, dto.roomNumber, user.id);
+  }
+
+  @Patch('admissions/:id/attending')
+  @Roles(Role.NURSE)
+  async changeAttending(
+    @Param('id') id: string,
+    @Body() dto: ChangeAttendingDto,
+    @CurrentUser() user: any,
+  ) {
+    await this.wardAccess.assertAdmission(user, id);
+    return this.patientsService.changeAttending(id, dto.physicianId, user.id);
   }
 
   @Post('admissions/:id/consulting-physicians')

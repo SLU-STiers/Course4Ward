@@ -6,12 +6,18 @@ import { Button } from '../../components/ui';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { PhysicianOrder } from '../../types';
 import { addPatient as s } from './styles';
+import { ORDER_CHANNELS, type OrderChannel } from './patientForm';
 
 type PhysicianOption = { id: string; firstName: string; lastName: string };
 
-type OrderChannel = 'SMS' | 'Email' | 'Verbal' | 'Others';
-
-const CHANNELS: OrderChannel[] = ['SMS', 'Email', 'Verbal', 'Others'];
+/** Short labels for the segmented control; the same choices as the registration form's order. */
+const CHANNEL_SHORT_LABEL: Record<OrderChannel, string> = {
+  '': 'Written',
+  VERBAL: 'Verbal',
+  CALL: 'Call',
+  SMS: 'SMS',
+  OTHER: 'Other',
+};
 
 function apiErrorMessage(error: unknown): string {
   if (isAxiosError(error)) {
@@ -36,7 +42,7 @@ export function OnBehalfOrderForm({
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
   const [loadingPhysicians, setLoadingPhysicians] = useState(true);
   const [physicianError, setPhysicianError] = useState<string | null>(null);
-  const [channel, setChannel] = useState<OrderChannel>('SMS');
+  const [channel, setChannel] = useState<OrderChannel>('');
   const [physicianId, setPhysicianId] = useState('');
   const [orderContent, setOrderContent] = useState('');
   const [saving, setSaving] = useState(false);
@@ -85,7 +91,8 @@ export function OnBehalfOrderForm({
       const { data } = await ordersApi.create({
         admissionId,
         orderedById: physicianId,
-        orderContent: `Received via ${channel}.\n${orderContent.trim()}`,
+        orderContent: orderContent.trim(),
+        communicationChannel: channel || undefined,
       });
       const physician = physicians.find((option) => option.id === physicianId);
       setSentBy(physician ? `Dr. ${physician.firstName} ${physician.lastName}` : 'the physician');
@@ -102,17 +109,18 @@ export function OnBehalfOrderForm({
     <div style={{ display: 'grid', gap: 14 }}>
       <fieldset style={styles.fieldset}>
         <legend style={s.label}>Received via</legend>
-        <div style={{ ...s.segmented, gridTemplateColumns: `repeat(${CHANNELS.length}, 1fr)` }} role="radiogroup">
-          {CHANNELS.map((option) => (
+        <div style={{ ...s.segmented, gridTemplateColumns: `repeat(${ORDER_CHANNELS.length}, 1fr)` }} role="radiogroup">
+          {ORDER_CHANNELS.map(([option, label]) => (
             <button
-              key={option}
+              key={option || 'WRITTEN'}
               type="button"
               role="radio"
               aria-checked={channel === option}
+              title={label}
               style={{ ...s.segment, ...(channel === option ? s.segmentActive : {}) }}
               onClick={() => setChannel(option)}
             >
-              {option}
+              {CHANNEL_SHORT_LABEL[option]}
             </button>
           ))}
         </div>

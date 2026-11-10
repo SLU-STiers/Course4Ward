@@ -88,10 +88,11 @@ export const INITIAL_CHARTS: Record<string, PatientChart> = {
 };
 /** `15 Apr 2026` -> `2026-04-15`, the sort key `AdmissionRecord` requires. */
 const asAdmissionRecords = (
-  rows: Array<Omit<AdmissionRecord, 'admittedOnRaw'>>,
+  rows: Array<Omit<AdmissionRecord, 'admittedOnRaw' | 'patientId'>>,
 ): AdmissionRecord[] =>
   rows.map((row) => ({
     ...row,
+    patientId: row.id,
     admittedOnRaw: toDateInputValue(new Date(row.admittedOn)),
   }));
 

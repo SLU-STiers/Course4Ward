@@ -5,6 +5,7 @@ import type {
   OrderStatus,
   OrderType,
   Patient,
+  PatientDetailsUpdate,
   PhysicianOrder,
   PhysicianNote,
   CourseInWard,
@@ -67,8 +68,13 @@ export const patientsApi = {
   listPhysicians: () =>
     api.get<PhysicianOption[]>('/patients/physicians'),
   getOne: (id: string) => api.get<Patient>(`/patients/${id}`),
+  /** 409 with `existingPatientId` when the person is already registered (same name and birthdate). */
   create: (data: Record<string, unknown>) => api.post<Patient>('/patients', data),
-  update: (id: string, data: Partial<Patient>) => api.patch<Patient>(`/patients/${id}`, data),
+  /** Nurse-only: a new stay for a registered patient whose last stay has ended. */
+  readmit: (patientId: string, data: Record<string, unknown>) =>
+    api.post<Patient>(`/patients/${patientId}/admissions`, data),
+  /** Corrects the patient's own details; `null` clears an optional field. */
+  update: (id: string, data: PatientDetailsUpdate) => api.patch<Patient>(`/patients/${id}`, data),
   /** Nurse-only; needs an active DISCHARGE order, except to end an outpatient visit. */
   discharge: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/discharge`),
   /** Nurse-only: emergency / outpatient / observation → inpatient; needs an active ADMISSION order. */
@@ -77,7 +83,10 @@ export const patientsApi = {
   observe: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/observe`),
   addConsultingPhysician: (admissionId: string, physicianId: string) =>
     api.post(`/patients/admissions/${admissionId}/consulting-physicians`, { physicianId }),
-  /** Nurse-only: active ward rooms with their occupancy. */
+  /** Nurse-only: hands an undischarged admission to another active attending physician. */
+  changeAttending: (admissionId: string, physicianId: string) =>
+    api.patch(`/patients/admissions/${admissionId}/attending`, { physicianId }),
+  /** Nurse-only: active rooms in the nurse's own wards, with their occupancy. */
   listRooms: () => api.get<WardRoom[]>('/patients/rooms'),
   /** Nurse-only: puts an admitted patient in a free room, or clears it with `null`. */
   assignRoom: (admissionId: string, roomNumber: string | null) =>
@@ -96,6 +105,8 @@ export const ordersApi = {
     orderContent: string;
     /** Defaults to `DEFAULT` (a general order). */
     type?: OrderType;
+    /** Nurse on a physician's behalf: how it was received; omit for a written order. */
+    communicationChannel?: 'VERBAL' | 'CALL' | 'SMS' | 'OTHER';
   }) => api.post<PhysicianOrder>('/orders', data),
   // Orders cannot be edited or deleted once written (no API for it).
   /** Nurse-only: mark progress on an order. Omit `nurseComment` to keep the current one. */
