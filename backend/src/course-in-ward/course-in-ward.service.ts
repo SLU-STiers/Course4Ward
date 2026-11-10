@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { AiCallKind, OrderStatus, Prisma, Role, SummaryStatus } from '@prisma/client';
+import { AiCallKind, NotificationType, OrderStatus, Prisma, Role, SummaryStatus } from '@prisma/client';
 import { AiTrigger, timeAiCall } from './ai-metrics';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
@@ -826,7 +826,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     // this summary, so the claims processor can move on to CF4.
     const waitingClaims = await this.prisma.summaryApprovalRequest.findMany({
       where: { summaryId: id, status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] } },
-      select: { processorId: true },
+      select: { id: true, processorId: true },
     });
     await this.prisma.summaryApprovalRequest.updateMany({
       where: { summaryId: id, status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] } },
@@ -849,12 +849,18 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const processorIds = waitingClaims.map(({ processorId }) => processorId);
-    if (processorIds.length) {
-      await this.notifications.notifyUsers(processorIds, {
-        title: 'Course in the Ward summary approved',
-        message: `**${patientName}**'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for CF4 processing.`,
-      });
+    if (waitingClaims.length) {
+      await Promise.all(
+        waitingClaims.map((claim) =>
+          this.notifications.create({
+            userId: claim.processorId,
+            type: NotificationType.REVIEW_REQUESTED,
+            title: 'Course in the Ward summary approved',
+            message: `**${patientName}**'s summary for ${dayLabel(approved.summaryDate)} was approved and is ready for CF4 processing.`,
+            requestId: claim.id,
+          }),
+        ),
+      );
     } else {
       await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
         title: 'Course in the Ward summary approved',

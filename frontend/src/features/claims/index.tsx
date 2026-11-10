@@ -14,10 +14,11 @@ import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
 import { signOut } from '../../services/signOut';
 import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { formatDateMedium, toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
 
-import { groupApprovedPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
+import { groupApprovedPatients, groupStayPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
 import { ReviewRequestModal } from './ReviewRequestModal';
 import { EligibleSummariesCard } from './EligibleSummariesCard';
 import { Cf4SummaryPreview } from './Cf4SummaryPreview';
@@ -38,8 +39,10 @@ export function ClaimsProcessorDashboard() {
   // Request State
   const [searchQuery, setSearchQuery] = useState('');
   const [requests, setRequests] = useState<SummarizationRequest[]>([]);
-  const [selectedRequest, setSelectedRequest] = useState<SummarizationRequest | null>(null);
-  const [expandedRequestGroups, setExpandedRequestGroups] = useState<Set<string>>(new Set());
+  /** Every day of the stay opened from the requests table or a notification. */
+  const [reviewStay, setReviewStay] = useState<SummarizationRequest[] | null>(null);
+  /** Claim a notification should open once the requests list has it. */
+  const [focusRequestId, setFocusRequestId] = useState<string | null>(null);
   const [requestPage, setRequestPage] = useState(1);
   const [requestSortField, setRequestSortField] = useState<RequestSortField>('date');
   const [requestSortDirection, setRequestSortDirection] = useState<SortDirection>('descending');
@@ -72,7 +75,11 @@ export function ClaimsProcessorDashboard() {
   const [existingPatientId, setExistingPatientId] = useState('');
   const [exportError, setExportError] = useState('');
   const [confirmingSummary, setConfirmingSummary] = useState(false);
-  const overviewRequest = requests.find((request) => request.id === previewPatient?.claimId) ?? requests[0];
+  const stayRequests = previewPatient
+    ? requests
+        .filter((request) => previewPatient.claimIds.includes(request.id))
+        .sort((a, b) => new Date(a.summaryDate).getTime() - new Date(b.summaryDate).getTime())
+    : [];
 
   const navigate = useNavigate();
 
@@ -95,6 +102,25 @@ export function ClaimsProcessorDashboard() {
   }, []);
 
   useEffect(loadClaims, [loadClaims]);
+  usePolling(loadClaims, ORDER_POLL_MS);
+
+  useEffect(() => {
+    if (!focusRequestId) return;
+    const match = requests.find((request) => request.id === focusRequestId);
+    if (!match) return;
+    setActiveTab('requests');
+    setReviewStay(requests.filter((request) => request.patient.patientId === match.patient.patientId));
+    setFocusRequestId(null);
+  }, [focusRequestId, requests]);
+
+  useEffect(() => {
+    if (!reviewStay?.length) return;
+    const ids = new Set(reviewStay.map((request) => request.id));
+    const fresh = requests.filter((request) => ids.has(request.id));
+    const previous = reviewStay.map((request) => request.status).join();
+    const next = fresh.map((request) => request.status).join();
+    if (fresh.length && previous !== next) setReviewStay(fresh);
+  }, [requests, reviewStay]);
 
   const handleLogout = () => {
     signOut('MANUAL');
@@ -141,7 +167,7 @@ export function ClaimsProcessorDashboard() {
   const visibleRequestGroups = groupedRequests.slice(requestStart, requestStart + requestPageSize);
   const requestPages = Array.from({ length: requestPageCount }, (_, index) => index + 1);
 
-  const filteredCf4Patients = cf4Patients.filter(
+  const filteredCf4Patients = groupStayPatients(cf4Patients).filter(
     (p) =>
       (p.name.toLowerCase().includes(patientSearch.toLowerCase()) ||
       p.patientId.includes(patientSearch)) &&
@@ -192,12 +218,16 @@ export function ClaimsProcessorDashboard() {
   const exportPatientPages = Array.from({ length: exportPatientPageCount }, (_, index) => index + 1);
   /* The days of the claim on screen that actually carry orders — the only stops
      the date arrows and the calendar offer. */
+  const stayOrders = (() => {
+    const seen = new Set<string>();
+    return stayRequests.flatMap((request) => request.orders).filter((order) => {
+      if (seen.has(order.id)) return false;
+      seen.add(order.id);
+      return true;
+    });
+  })();
   const orderDates = [
-    ...new Set(
-      (overviewRequest?.orders ?? [])
-        .map((order) => toDateKey(order.dateCreated))
-        .filter(Boolean),
-    ),
+    ...new Set(stayOrders.map((order) => toDateKey(order.dateCreated)).filter(Boolean)),
   ].sort();
   /* Like the physician's list: a picked day only sticks while the claim on
      screen actually has orders on it. */
@@ -390,7 +420,15 @@ export function ClaimsProcessorDashboard() {
       header={
         <PageHeader
           title="Claims Processor"
-          actions={<NotificationBell />}
+          actions={
+            <NotificationBell
+              onOpenRequest={(requestId) => {
+                setActiveTab('requests');
+                setFocusRequestId(requestId);
+                loadClaims();
+              }}
+            />
+          }
         />
       }
     >
@@ -451,9 +489,6 @@ export function ClaimsProcessorDashboard() {
                       const latestRequest = group.requests.reduce((latest, request) =>
                         new Date(request.submittedAt) > new Date(latest.submittedAt) ? request : latest,
                       );
-                      const admissionCount = new Set(
-                        group.requests.map((request) => request.admissionId || request.patient.admissionDate),
-                      ).size;
                       const pendingCount = group.requests.filter((req) => req.status === 'Pending Review').length;
                       const rejectedCount = group.requests.filter((req) => req.status === 'Rejected').length;
                       const groupStatus = pendingCount
@@ -461,101 +496,51 @@ export function ClaimsProcessorDashboard() {
                         : rejectedCount
                           ? 'Rejected'
                           : 'Approved';
-                      const expanded = expandedRequestGroups.has(group.id);
                       return (
-                        <React.Fragment key={group.id}>
-                          <tr style={styles.tr}>
-                            <td style={styles.td}>
-                              <div style={styles.dateCell}>
-                                <span style={styles.dateText}>{latestRequest.date}</span>
-                                <span style={styles.dateSeparator} />
-                                <span style={styles.timeText}>{latestRequest.time}</span>
-                              </div>
-                            </td>
-                            <td style={styles.td}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                                  {latestRequest.patient.name}
-                                </span>
-                                <span style={{ fontSize: 11, color: '#64748b' }}>
-                                  {latestRequest.patient.age} years · {latestRequest.patient.gender}
-                                </span>
-                                <span style={{ fontSize: 11, color: '#64748b' }}>
-                                  {group.requests.length} daily {group.requests.length === 1 ? 'summary' : 'summaries'} · {admissionCount} {admissionCount === 1 ? 'admission' : 'admissions'}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={styles.td}>
-                              <StatusBadge
-                                showDot
-                                status={
-                                  groupStatus === 'Pending Review'
-                                    ? 'pending'
-                                    : groupStatus === 'Approved'
-                                      ? 'approved'
-                                      : 'rejected'
-                                }
-                                label={groupStatus}
-                              />
-                            </td>
-                            <td style={{ ...styles.td, ...styles.requestActionCell }}>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                aria-expanded={expanded}
-                                aria-controls={`request-group-${group.id}`}
-                                onClick={() => setExpandedRequestGroups((previous) => {
-                                  const next = new Set(previous);
-                                  if (next.has(group.id)) next.delete(group.id);
-                                  else next.add(group.id);
-                                  return next;
-                                })}
-                              >
-                                {expanded ? 'Hide days' : `View ${group.requests.length} day${group.requests.length === 1 ? '' : 's'}`}
-                              </Button>
-                            </td>
-                          </tr>
-                          {expanded && (
-                            <tr>
-                              <td colSpan={4} style={{ ...styles.td, backgroundColor: '#f8fafc' }}>
-                                <div id={`request-group-${group.id}`} style={{ display: 'grid', gap: 8 }}>
-                                  {group.requests.map((req) => (
-                                    <div key={req.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 10px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                        <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
-                                          Summary day: {formatDateMedium(req.summaryDate)}
-                                        </span>
-                                        <span style={{ fontSize: 11, color: '#64748b' }}>
-                                          Admitted {req.patient.admissionDate} · Submitted {req.date} · Dr. {req.doctor}
-                                        </span>
-                                      </div>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                        <StatusBadge
-                                          showDot
-                                          status={
-                                            req.status === 'Pending Review'
-                                              ? 'pending'
-                                              : req.status === 'Approved'
-                                                ? 'approved'
-                                                : 'rejected'
-                                          }
-                                          label={req.status}
-                                        />
-                                        <Button
-                                          variant="primary"
-                                          size="sm"
-                                          onClick={() => setSelectedRequest(req)}
-                                        >
-                                          Review
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
+                        <tr key={group.id} style={styles.tr}>
+                          <td style={styles.td}>
+                            <div style={styles.dateCell}>
+                              <span style={styles.dateText}>{latestRequest.date}</span>
+                              <span style={styles.dateSeparator} />
+                              <span style={styles.timeText}>{latestRequest.time}</span>
+                            </div>
+                          </td>
+                          <td style={styles.td}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                                {latestRequest.patient.name}
+                              </span>
+                              <span style={{ fontSize: 11, color: '#64748b' }}>
+                                {latestRequest.patient.age} years · {latestRequest.patient.gender}
+                              </span>
+                              <span style={{ fontSize: 11, color: '#64748b' }}>
+                                Admitted {latestRequest.patient.admissionDate}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={styles.td}>
+                            <StatusBadge
+                              showDot
+                              status={
+                                groupStatus === 'Pending Review'
+                                  ? 'pending'
+                                  : groupStatus === 'Approved'
+                                    ? 'approved'
+                                    : 'rejected'
+                              }
+                              label={groupStatus}
+                            />
+                          </td>
+                          <td style={{ ...styles.td, ...styles.requestActionCell }}>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => setReviewStay(group.requests)}
+                            >
+                              Review
+                            </Button>
+                          </td>
+                        </tr>
                       );
                     })}
                   </tbody>
@@ -563,7 +548,7 @@ export function ClaimsProcessorDashboard() {
 
                 <div style={styles.paginationRow}>
                   <span style={styles.paginationText}>
-                    Showing {groupedRequests.length ? requestStart + 1 : 0} to {Math.min(requestStart + requestPageSize, groupedRequests.length)} of {groupedRequests.length} patients ({sortedRequests.length} daily summaries)
+                    Showing {groupedRequests.length ? requestStart + 1 : 0} to {Math.min(requestStart + requestPageSize, groupedRequests.length)} of {groupedRequests.length} patients
                   </span>
                   <div style={styles.paginationControls}>
                     <button type="button" style={styles.pageArrowBtn} disabled={safeRequestPage === 1} onClick={() => setRequestPage((page) => Math.max(1, page - 1))}>‹</button>
@@ -577,15 +562,16 @@ export function ClaimsProcessorDashboard() {
             </div>
           )}
 
-          {selectedRequest && (
+          {reviewStay && reviewStay.length > 0 && (
             <ReviewRequestModal
-              request={selectedRequest}
-              onClose={() => setSelectedRequest(null)}
-              onRequestRevisions={(message) =>
-                claimsApi.notifyPhysician(selectedRequest.id, message).then(() => {
-                  setSelectedRequest(null);
-                })
-              }
+              requests={reviewStay}
+              onClose={() => setReviewStay(null)}
+              onRequestRevisions={async (message) => {
+                const pending = reviewStay.filter((request) => request.status === 'Pending Review');
+                const targets = pending.length ? pending : reviewStay;
+                await Promise.all(targets.map((request) => claimsApi.notifyPhysician(request.id, message)));
+                setReviewStay(null);
+              }}
             />
           )}
 
@@ -1089,7 +1075,7 @@ export function ClaimsProcessorDashboard() {
                    * duplicate keys leave the previous patient's orders rendered
                    * in the timeline.
                    */
-                  orders={(overviewRequest?.orders ?? [])
+                  orders={stayOrders
                     .filter(
                       (order) =>
                         !activeOrderDate ||
@@ -1102,9 +1088,7 @@ export function ClaimsProcessorDashboard() {
                       content: order.content,
                     }))}
                   renderContent={(entry) => {
-                    const order = overviewRequest?.orders.find(
-                      (item) => item.id === entry.id,
-                    );
+                    const order = stayOrders.find((item) => item.id === entry.id);
                     // Same read-only execution state the physician's card shows:
                     // status badge, order type and the nurse's note.
                     return (
@@ -1114,13 +1098,35 @@ export function ClaimsProcessorDashboard() {
                       </>
                     );
                   }}
-                  emptyMessage="No physician orders are available for the selected claim."
+                  emptyMessage={
+                    previewPatient
+                      ? 'No physician orders are available for this stay.'
+                      : 'Select a patient to see the orders from their stay.'
+                  }
                 />
                 <AiSummaryCard
-                  badgeLabel={overviewRequest?.status ?? 'No claims'}
-                  text={overviewRequest?.summaryText}
-                  emptyMessage="Select a persisted claim to review its AI summary."
-                />
+                  badgeLabel={
+                    stayRequests.some((request) => request.status === 'Pending Review')
+                      ? 'Pending Review'
+                      : stayRequests[0]?.status
+                  }
+                  emptyMessage="Select a patient to see the Course in the Ward for their stay."
+                >
+                  {stayRequests.length > 0 ? (
+                    <div style={{ display: 'grid', gap: 14 }}>
+                      {stayRequests.map((request) => (
+                        <div key={request.id}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>
+                            {formatDateMedium(request.summaryDate)} · {request.status}
+                          </div>
+                          <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                            {request.summaryText || 'No summary text for this day.'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : undefined}
+                </AiSummaryCard>
               </div>
             </div>
           )}

@@ -83,8 +83,11 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
   };
 }
 
-/** One export row represents a patient and includes all their daily claims. */
-export function groupApprovedPatients(patients: CF4Patient[]): CF4Patient[] {
+/**
+ * One row per patient for the whole stay. Daily claims are folded into that
+ * row (`claimIds`) so the same patient is not listed once per summary day.
+ */
+export function groupStayPatients(patients: CF4Patient[]): CF4Patient[] {
   const grouped = new Map<string, {
     patient: CF4Patient;
     admissions: Map<string, CF4Patient>;
@@ -142,6 +145,10 @@ export function groupApprovedPatients(patients: CF4Patient[]): CF4Patient[] {
         0,
       );
       return patient;
-    })
-    .filter((patient) => patient.approved);
+    });
+}
+
+/** Stays whose every Course in the Ward day is already physician-approved. */
+export function groupApprovedPatients(patients: CF4Patient[]): CF4Patient[] {
+  return groupStayPatients(patients).filter((patient) => patient.approved);
 }

@@ -1,7 +1,8 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { claimsApi } from '../../services/domainApi';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import type { PhysicianRequest } from '../../types';
 import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
 import { patientTableStyles } from '../../components/patientList/PatientTable';
@@ -12,20 +13,36 @@ import { REQUESTS_TABLE_STATE } from './listState';
 import { ReviewSummaryModal } from './ReviewSummaryModal';
 import { fullName } from '../../lib/patient';
 
-export function RequestsView() {
+export function RequestsView({
+  focusRequestId,
+  onFocusHandled,
+}: {
+  /** Claim the bell just opened. The review modal opens once that row is loaded. */
+  focusRequestId?: string | null;
+  onFocusHandled?: () => void;
+}) {
   const [items, setItems] = useState<PhysicianRequest[]>([]);
   const [selected, setSelected] = useState<PhysicianRequest | null>(null);
 
-  const loadRequests = () => {
+  const loadRequests = useCallback(() => {
     claimsApi
       .physicianRequests()
       .then(({ data }) => setItems(data))
       .catch(() => setItems([]));
-  };
+  }, []);
 
   useEffect(() => {
     loadRequests();
-  }, []);
+  }, [loadRequests]);
+  usePolling(loadRequests, ORDER_POLL_MS);
+
+  useEffect(() => {
+    if (!focusRequestId) return;
+    const match = items.find((request) => request.id === focusRequestId);
+    if (!match) return;
+    setSelected(match);
+    onFocusHandled?.();
+  }, [focusRequestId, items, onFocusHandled]);
 
   const isPending = (request: PhysicianRequest) =>
     request.status === "PENDING" ||

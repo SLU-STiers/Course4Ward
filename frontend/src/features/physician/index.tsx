@@ -1,6 +1,6 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../../services/domainApi';
@@ -28,6 +28,9 @@ export function PhysicianDashboard() {
    * the same patient can be opened again from a notification.
    */
   const [focusPatient, setFocusPatient] = useState<{ id: string; key: number } | null>(null);
+  /** Claim a notification should open on the Requests tab. */
+  const [focusRequestId, setFocusRequestId] = useState<string | null>(null);
+  const clearFocusRequest = useCallback(() => setFocusRequestId(null), []);
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
@@ -95,6 +98,10 @@ export function PhysicianDashboard() {
                 setActiveTab('manage');
                 setFocusPatient({ id: patientId, key: Date.now() });
               }}
+              onOpenRequest={(requestId) => {
+                setActiveTab('requests');
+                setFocusRequestId(requestId);
+              }}
             />
           }
         />
@@ -108,7 +115,9 @@ export function PhysicianDashboard() {
           initialPatientId={focusPatient?.id ?? undefined}
         />
       )}
-      {activeTab === "requests" && <RequestsView />}
+      {activeTab === "requests" && (
+        <RequestsView focusRequestId={focusRequestId} onFocusHandled={clearFocusRequest} />
+      )}
     </Layout>
   );
 }

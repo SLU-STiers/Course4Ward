@@ -19,6 +19,8 @@ export interface NotificationBellProps {
   onClick?: () => void;
   /** Opens the patient chart behind an order notification. */
   onOpenPatient?: (patientId: string) => void;
+  /** Opens the claim or review request this notification points at. */
+  onOpenRequest?: (requestId: string) => void;
 }
 
 /**
@@ -28,12 +30,18 @@ export interface NotificationBellProps {
  * A dashboard that passes its own `count`/`onClick` keeps exactly the old
  * local behaviour: a plain badge that triggers that dashboard's own action.
  */
-export function NotificationBell({ className, count, onClick, onOpenPatient }: NotificationBellProps) {
+export function NotificationBell({ className, count, onClick, onOpenPatient, onOpenRequest }: NotificationBellProps) {
   if (onClick || count !== undefined) {
     return <LocalBell className={className} count={count} onClick={onClick} />;
   }
 
-  return <NotificationBellPopover className={className} onOpenPatient={onOpenPatient} />;
+  return (
+    <NotificationBellPopover
+      className={className}
+      onOpenPatient={onOpenPatient}
+      onOpenRequest={onOpenRequest}
+    />
+  );
 }
 
 /** Badge-only bell driven by the caller (admin pending requests). */
@@ -70,9 +78,11 @@ function LocalBell({ className, count = 0, onClick }: NotificationBellProps) {
 function NotificationBellPopover({
   className,
   onOpenPatient,
+  onOpenRequest,
 }: {
   className?: string;
   onOpenPatient?: (patientId: string) => void;
+  onOpenRequest?: (requestId: string) => void;
 }) {
   const accessToken = useAuthStore((state) => state.accessToken);
   const [open, setOpen] = useState(false);
@@ -188,6 +198,11 @@ function NotificationBellPopover({
 
   const select = (item: AppNotification) => {
     if (!item.isRead) markRead(item.id);
+    if (item.requestId && onOpenRequest) {
+      setOpen(false);
+      onOpenRequest(item.requestId);
+      return;
+    }
     if (item.patientId && onOpenPatient) {
       setOpen(false);
       onOpenPatient(item.patientId);

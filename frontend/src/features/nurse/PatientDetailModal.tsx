@@ -148,10 +148,11 @@ export function PatientDetailModal({
                 {badge}
               </span>
             </div>
-            <p style={s.subtitle}>
-              {threeColumn && <strong style={{ color: '#0f172a' }}>{chart.name} · </strong>}
-              Admission record {chart.recordId}
-            </p>
+            {threeColumn && (
+              <p style={s.subtitle}>
+                <strong style={{ color: '#0f172a' }}>{chart.name}</strong>
+              </p>
+            )}
           </div>
           <button type="button" style={ui.closeX} onClick={onClose} aria-label="Close">
             ✕
