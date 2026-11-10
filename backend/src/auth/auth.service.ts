@@ -4,6 +4,8 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -47,8 +49,57 @@ const LOGOUT_DETAILS: Record<LogoutReason, { summary: string; reason: string }> 
 /** How long a reset request (and, once approved, its temporary password) stays retrievable. */
 export const RESET_REQUEST_TTL_MS = 60 * 60 * 1000;
 
+/**
+ * Same cost as passwords created for staff. Compared when the user ID does not
+ * exist, so a missing account takes as long to reject as a wrong password.
+ */
+const DUMMY_PASSWORD_HASH = '$2b$12$WOlj0LjA8CZbkRjVDLY1pu9oNDt6NWwp3rHu0ZfjBnWyDGRhHlWya';
+
+/** Failed sign-ins against one user ID before that ID has to wait. */
+const LOGIN_FAILURE_LIMIT = 8;
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+
+/** Reset requests for one user ID before further requests are ignored. */
+const RESET_REQUEST_LIMIT = 5;
+const RESET_REQUEST_WINDOW_MS = 15 * 60 * 1000;
+
+const TOO_MANY_SIGN_INS = 'Too many sign-in attempts. Wait a few minutes and try again.';
+
+/** Counts recent events for one key and forgets them after the window. */
+class AttemptWindow {
+  private readonly hits = new Map<string, number[]>();
+
+  constructor(private readonly limit: number, private readonly windowMs: number) {}
+
+  tooMany(key: string) {
+    return this.recent(key).length >= this.limit;
+  }
+
+  add(key: string) {
+    const recent = this.recent(key);
+    recent.push(Date.now());
+    this.hits.set(key, recent);
+  }
+
+  clear(key: string) {
+    this.hits.delete(key);
+  }
+
+  private recent(key: string) {
+    const now = Date.now();
+    return (this.hits.get(key) ?? []).filter((at) => now - at < this.windowMs);
+  }
+}
+
+function attemptKey(userId: string) {
+  return userId.trim().toLowerCase();
+}
+
 @Injectable()
 export class AuthService {
+  private readonly loginFailures = new AttemptWindow(LOGIN_FAILURE_LIMIT, LOGIN_FAILURE_WINDOW_MS);
+  private readonly resetRequests = new AttemptWindow(RESET_REQUEST_LIMIT, RESET_REQUEST_WINDOW_MS);
+
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
@@ -61,16 +112,24 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { userId: dto.userId },
     });
+    const key = attemptKey(dto.userId);
 
-    if (!user || !user.isActive) {
+    // Always run a hash compare. Skipping it for an unknown ID answers faster
+    // and tells a caller on the ward network which IDs are real.
+    const passwordValid = user
+      ? await bcrypt.compare(dto.password, user.passwordHash)
+      : await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
+
+    if (this.loginFailures.tooMany(key)) {
+      throw new HttpException(TOO_MANY_SIGN_INS, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    if (!user || !user.isActive || !passwordValid) {
+      this.loginFailures.add(key);
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!passwordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
+    this.loginFailures.clear(key);
     await this.auditLog.record({ userId: user.id, action: 'LOGIN' });
 
     return {
@@ -181,9 +240,12 @@ export class AuthService {
       where: { userId },
     });
 
-    if (!user) {
-      throw new NotFoundException('User ID not found');
-    }
+    const key = attemptKey(userId);
+    // Same reply whether the ID is unknown, inactive, or already requested too
+    // often, so the login page does not confirm which staff IDs exist.
+    if (this.resetRequests.tooMany(key)) return null;
+    this.resetRequests.add(key);
+    if (!user || !user.isActive) return null;
 
     await this.prisma.passwordResetRequest.updateMany({
       where: { userId: user.id, status: 'PENDING' },

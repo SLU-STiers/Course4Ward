@@ -52,6 +52,7 @@ export function roomProblem(value: string, rooms: WardRoom[] | null, admissionId
 }
 
 export function RoomPicker({
+  id,
   value,
   onChange,
   rooms,
@@ -59,6 +60,8 @@ export function RoomPicker({
   admissionId,
   disabled,
 }: {
+  /** Id of the room trigger, used to jump to it when a form is invalid. */
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   rooms: WardRoom[] | null;
@@ -127,6 +130,7 @@ export function RoomPicker({
             anchorClassName="ui-popover__anchor--block"
             trigger={
               <button
+                id={id}
                 type="button"
                 style={{
                   ...s.input,

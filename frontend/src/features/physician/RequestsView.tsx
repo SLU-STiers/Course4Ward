@@ -10,6 +10,7 @@ import { requests } from './styles';
 
 import { REQUESTS_TABLE_STATE } from './listState';
 import { ReviewSummaryModal } from './ReviewSummaryModal';
+import { fullName } from '../../lib/patient';
 
 export function RequestsView() {
   const [items, setItems] = useState<PhysicianRequest[]>([]);
@@ -37,7 +38,7 @@ export function RequestsView() {
     pageSize: 5,
     stateKey: REQUESTS_TABLE_STATE,
     searchFields: (request) => [
-      `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
+      fullName(request.summary.patient),
       `${request.processor.firstName} ${request.processor.lastName}`,
     ],
     filterPredicates: {
@@ -48,7 +49,7 @@ export function RequestsView() {
     initialFilters: { status: "all" },
     sorters: {
       patient: (request) =>
-        `${request.summary.patient.firstName} ${request.summary.patient.lastName}`,
+        fullName(request.summary.patient),
       requestedAt: (request) => request.requestedAt,
     },
     initialSort: { field: "requestedAt", direction: "descending" },
@@ -105,7 +106,7 @@ export function RequestsView() {
             <tr key={r.id}>
               <td style={requests.td}>
                 <div style={requests.primary}>
-                  {r.summary.patient.firstName} {r.summary.patient.lastName}
+                  {fullName(r.summary.patient)}
                 </div>
               </td>
               <td style={requests.td}>

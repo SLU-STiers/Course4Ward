@@ -52,6 +52,16 @@ body {
   outline-offset: 2px;
 }
 
+/* Add Patient jumps to the first field that needs attention, so that control needs a visible ring.
+   !important overrides the `outline: none` those controls set inline. */
+.add-patient-form input:focus,
+.add-patient-form select:focus,
+.add-patient-form textarea:focus,
+.add-patient-form button:focus {
+  outline: 3px solid rgba(37, 99, 235, 0.55) !important;
+  outline-offset: 2px !important;
+}
+
 @media (max-width: 767px) {
   .dashboard-content-offset {
     width: 100%;

@@ -22,7 +22,10 @@ const INCORRECT_CREDENTIALS_MESSAGE = 'Invalid credentials. Please check your us
  * messages (e.g. "password must be longer than or equal to 8 characters"),
  * but the login form always shows the same friendly wording either way.
  */
-function buildLoginErrorMessage(_err: any): string {
+function buildLoginErrorMessage(err: any): string {
+  if (err?.response?.status === 429) {
+    return 'Too many sign-in attempts. Wait a few minutes and try again.';
+  }
   return INCORRECT_CREDENTIALS_MESSAGE;
 }
 

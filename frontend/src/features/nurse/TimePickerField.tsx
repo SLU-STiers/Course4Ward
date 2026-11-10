@@ -31,11 +31,14 @@ function nowParts(): Parts {
 
 /** Styled like the triage vital boxes (e.g. Heart Rate); clicking opens the picker. */
 export function TimePickerField({
+  id,
   label = 'Time',
   value,
   onChange,
   required = false,
 }: {
+  /** Id of the trigger button, used to jump to it when a form is invalid. */
+  id?: string;
   label?: string;
   required?: boolean;
   value: string;
@@ -57,6 +60,7 @@ export function TimePickerField({
       anchorClassName="ui-popover__anchor--block"
       trigger={
         <button
+          id={id}
           type="button"
           style={{
             ...s.vital,

@@ -541,11 +541,13 @@ export const addPatient: Record<string, CSSProperties> = {
   footer: {
     display: 'flex',
     justifyContent: 'flex-end',
+    alignItems: 'center',
     gap: 10,
     padding: '14px 24px',
     borderTop: '1px solid #e2e8f0',
     backgroundColor: '#ffffff',
   },
+  footerHint: { marginRight: 'auto', fontSize: 12, fontWeight: 600, color: '#b91c1c' },
 };
 
 /* Per-order execution status + nurse comment, inside the orders timeline. */

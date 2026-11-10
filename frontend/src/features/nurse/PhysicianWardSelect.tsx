@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import type { PhysicianOption } from '../../types';
 
 export function PhysicianWardSelect({
+  id,
   physicians,
   value,
   onChange,
@@ -12,6 +13,8 @@ export function PhysicianWardSelect({
   ariaLabel,
   required = false,
 }: {
+  /** Id of the physician dropdown, used to jump to it when a form is invalid. */
+  id?: string;
   physicians: PhysicianOption[];
   value: string;
   onChange: (physicianId: string) => void;
@@ -53,6 +56,7 @@ export function PhysicianWardSelect({
         ))}
       </select>
       <select
+        id={id}
         style={selectStyle}
         value={value}
         onChange={(event) => onChange(event.target.value)}

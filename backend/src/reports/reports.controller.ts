@@ -28,6 +28,15 @@ export class ReportsController {
     });
   }
 
+  /** AI summarization / embedding timings, RAG usage and embedding coverage. */
+  @Get('ai')
+  ai(@Query() query: ReportRangeDto) {
+    return this.reportsService.aiStats({
+      from: query.from ? new Date(query.from) : undefined,
+      to: query.to ? new Date(query.to) : undefined,
+    });
+  }
+
   /** Activity (and order) volume per day/week/month, zero-filled. */
   @Get('activity-trend')
   activityTrend(@Query() query: ActivityTrendQueryDto) {

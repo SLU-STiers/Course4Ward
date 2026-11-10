@@ -55,6 +55,16 @@ export class CreatePatientDto {
   })
   lastName: string;
 
+  @ApiProperty()
+  @Transform(trim)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(150)
+  @Matches(NAME_PATTERN, {
+    message: 'Middle name may contain letters, spaces, hyphens, apostrophes, and periods only',
+  })
+  middleName: string;
+
   // Required and never defaulted: the nurse has to pick it.
   @ApiProperty({ enum: Sex })
   @IsEnum(Sex, { message: 'Sex must be one of MALE, FEMALE, OTHER' })

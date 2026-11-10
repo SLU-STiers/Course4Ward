@@ -373,6 +373,8 @@ export function ManageView({
     orderDays[orderDays.length - 1] ??
     null;
   const summary = summaryDay ? summariesByDay.get(summaryDay) : undefined;
+  // Approve is offered to the attending physician of the summary's admission only.
+  const currentUserId = useAuthStore((state) => state.user?.id);
   const summaryText =
     summaryDraft && summaryDay && summaryDraft.day === summaryDay
       ? summaryDraft.text
@@ -566,7 +568,9 @@ export function ManageView({
         // The patient may now have no summary left to approve.
         void refreshPendingSummaries();
       })
-      .catch(() => setOrderError("The summary could not be approved. Please try again."))
+      .catch((err) =>
+        setOrderError(apiErrorMessage(err, "The summary could not be approved. Please try again.")),
+      )
       .finally(() => setApprovingSummary(false));
   };
 
@@ -1304,7 +1308,14 @@ export function ManageView({
                                 Compare Versions
                               </AiActionButton>
                               <span style={manage.aiActionSpacer} />
-                              {summary.status !== "APPROVED" && (
+                              {summary.status !== "APPROVED" &&
+                                summary.attendingPhysicianId !== currentUserId && (
+                                  <span style={manage.approveNote}>
+                                    Only the attending physician can approve
+                                  </span>
+                                )}
+                              {summary.status !== "APPROVED" &&
+                                summary.attendingPhysicianId === currentUserId && (
                                 <AiActionButton
                                   className="ui-ai-btn--primary"
                                   disabled={approvingSummary || regeneratingSummary}

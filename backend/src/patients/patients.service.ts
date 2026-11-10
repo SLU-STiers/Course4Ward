@@ -9,6 +9,7 @@ import {
 } from '../audit-log/audit-log.service';
 import { CreatePatientDto, UpdatePatientDto } from './dto/patient.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CourseInWardService } from '../course-in-ward/course-in-ward.service';
 
 function buildTriage(dto: CreatePatientDto, nurseId: string) {
   const [bpSystolic, bpDiastolic] = dto.bp ? dto.bp.split('/').map(Number) : [undefined, undefined];
@@ -116,6 +117,7 @@ export class PatientsService {
     private prisma: PrismaService,
     private auditLog: AuditLogService,
     private notifications: NotificationsService,
+    private courseInWard: CourseInWardService,
   ) {}
 
   /** Physicians available for nurse assignment, including their ward specialties. */
@@ -178,6 +180,7 @@ export class PatientsService {
     const createPatient = (db: Prisma.TransactionClient, roomId: string | null) => db.patient.create({
       data: {
         firstName: dto.firstName.trim(),
+        middleName: dto.middleName.trim(),
         lastName: dto.lastName.trim(),
         gender: dto.gender,
         dateOfBirth: resolveDateOfBirth(dto),
@@ -588,6 +591,10 @@ export class PatientsService {
         ]),
       },
     });
+    // The claims processor can only request a claim against a Course in the Ward.
+    // Prepare that after the discharge is saved, without holding the nurse's request.
+    void this.courseInWard.prepareClaimForDischargedAdmission(id);
+
     return { ...admission, dischargeDate };
   }
 

@@ -23,11 +23,14 @@ import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { Patient, PhysicianOrder } from '../../types';
 
+const patientName = (patient: Patient) =>
+  [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' ');
+
 function toRecord(patient: Patient): AdmissionRecord {
   if (patient.restricted) {
     return {
       id: patient.id,
-      name: `${patient.firstName} ${patient.lastName}`,
+      name: patientName(patient),
       admittedOn: '—',
       admittedOnRaw: '',
       dischargedOn: null,
@@ -39,7 +42,7 @@ function toRecord(patient: Patient): AdmissionRecord {
   const admission = patient.admissions?.[0];
   return {
     id: admission?.id ?? patient.id,
-    name: `${patient.firstName} ${patient.lastName}`,
+    name: patientName(patient),
     admittedOn: admission ? formatDateNumeric(admission.admissionDate) : '—',
     admittedOnRaw: admission ? toDateInputValue(new Date(admission.admissionDate)) : '',
     dischargedOn: admission?.dischargeDate
@@ -105,7 +108,7 @@ export function PatientView() {
   });
 
   const viewingPatient = viewingName
-    ? patients.find((patient) => `${patient.firstName} ${patient.lastName}` === viewingName)
+    ? patients.find((patient) => patientName(patient) === viewingName)
     : null;
   const viewingAdmission = viewingPatient?.admissions?.[0];
   const viewing = viewingPatient

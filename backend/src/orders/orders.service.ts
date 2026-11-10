@@ -7,7 +7,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OrderEnteredBy, OrderStatus, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
+import { AiCallKind, OrderEnteredBy, OrderStatus, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
+import { timeAiCall } from '../course-in-ward/ai-metrics';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, detailItems, fullName, humanize } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -255,7 +256,12 @@ export class OrdersService {
   private async persistOrderEmbedding(orderId: string, content: string): Promise<void> {
     try {
       if (!content) return;
-      const { embeddings } = await this.ollama.embedTexts([content]);
+      const { embeddings } = await timeAiCall(
+        this.prisma,
+        { kind: AiCallKind.EMBEDDING, model: 'embedding', trigger: 'order' },
+        () => this.ollama.embedTexts([content]),
+        (result) => ({ model: result.model }),
+      );
       const vector = embeddings[0];
       if (!vector || vector.length === 0) return;
 

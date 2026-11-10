@@ -8,13 +8,15 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { OrderStatus, Prisma, Role, SummaryStatus } from '@prisma/client';
+import { AiCallKind, OrderStatus, Prisma, Role, SummaryStatus } from '@prisma/client';
+import { AiTrigger, timeAiCall } from './ai-metrics';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, dayLabel, detailItems, fullName } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OllamaClient, OllamaReference, SummaryModel } from './ollama-client';
 import { assertFormattingOnlyInstructions } from './summary-instructions';
+import { CARE_TEAM_ADMISSION_SELECT, assertAttending, summaryAdmission } from './summary-access';
 
 /**
  * The source orders every summary the API returns carries: they give its day,
@@ -25,6 +27,7 @@ const SUMMARY_ORDERS = {
     orderBy: { dateCreated: 'asc' },
     select: {
       id: true,
+      admissionId: true,
       dateCreated: true,
       orderContent: true,
       status: true,
@@ -152,6 +155,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     orders: any[],
     instructions?: string,
     model: SummaryModel = 'standard',
+    trigger: AiTrigger = 'manual',
   ): Promise<DaySummaryGroup[]> {
     if (!orders || orders.length === 0) {
       this.logger.warn('[ai] callAiSummarizer received no orders');
@@ -203,12 +207,27 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
 
     let response;
     try {
-      response = await this.ollamaClient.summarizeBatch(admissions, {
-        temperature: 0.1,
-        references,
-        instructions,
-        model,
-      });
+      response = await timeAiCall(
+        this.prisma,
+        { kind: AiCallKind.SUMMARY, model, trigger, itemCount: orders.length },
+        () =>
+          this.ollamaClient.summarizeBatch(admissions, {
+            temperature: 0.1,
+            references,
+            instructions,
+            model,
+          }),
+        (result) => {
+          const failures = result.results.filter((group) => !group.success);
+          return {
+            success: result.failed === 0 && failures.length === 0,
+            outputChars: result.results.reduce((sum, group) => sum + (group.summary?.length ?? 0), 0),
+            referenceCount: references.length,
+            topSimilarity: references[0]?.similarity ?? null,
+            error: failures.map((group) => group.error).filter(Boolean).join('; ') || null,
+          };
+        },
+      );
     } catch (err) {
       this.logger.warn(`[ai] summarize request failed: ${(err as Error).message}`);
       throw new BadRequestException(describeAiError(err, this.aiServiceUrl));
@@ -259,7 +278,13 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     limit = 3,
   ): Promise<OllamaReference[]> {
     try {
-      const queryVector = await this.ollamaClient.embed(queryText);
+      const { embeddings } = await timeAiCall(
+        this.prisma,
+        { kind: AiCallKind.EMBEDDING, model: 'embedding', trigger: 'rag-query' },
+        () => this.ollamaClient.embedTexts([queryText]),
+        (result) => ({ model: result.model }),
+      );
+      const queryVector = embeddings[0];
       if (!queryVector || queryVector.length !== EMBEDDING_DIM) {
         this.logger.warn(
           `[rag] unexpected query embedding dimension: ${queryVector?.length ?? 0}`,
@@ -327,6 +352,8 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     day?: string | null,
     model: SummaryModel = 'standard',
     instructions?: string,
+    trigger: AiTrigger = 'manual',
+    notifyClaims = true,
   ) {
     const targetDay = day ?? dayKeyOf(new Date())!;
     const [patient, targetOrders] = await Promise.all([
@@ -348,7 +375,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       targetOrders.map((order) => order.orderContent),
     );
 
-    const groups = await this.callAiSummarizer(targetOrders, extraInstructions, model);
+    const groups = await this.callAiSummarizer(targetOrders, extraInstructions, model, trigger);
 
     const summaries = [];
     for (const [index, group] of groups.entries()) {
@@ -386,20 +413,126 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    await Promise.all(
-      summaries.map((summary) =>
-        this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
-          title: 'Course in the Ward summary ready',
-          message: `**${fullName(patient)}** has a new Course in the Ward summary for ${dayLabel(summary.summaryDate)} ready for claims review.`,
-        }),
-      ),
-    );
+    if (notifyClaims) {
+      await Promise.all(
+        summaries.map((summary) =>
+          this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
+            title: 'Course in the Ward summary ready',
+            message: `**${fullName(patient)}** has a new Course in the Ward summary for ${dayLabel(summary.summaryDate)} ready for claims review.`,
+          }),
+        ),
+      );
+    }
 
     return summaries;
   }
 
   onModuleInit() {
     this.scheduleNightlyBatch();
+    // Stays discharged before this handoff existed still need a summary, or the
+    // claims processor never sees them.
+    void this.catchUpDischargedClaims();
+  }
+
+  /**
+   * A claim is opened on a Course in the Ward, so a discharge has to leave one
+   * summary per day of finished orders. The AI writes it when it is available;
+   * otherwise the finished orders are filed as the draft the physician reviews.
+   * Claims processors are told once the stay is ready to request.
+   */
+  async prepareClaimForDischargedAdmission(admissionId: string) {
+    try {
+      await this.fileDischargedStay(admissionId);
+    } catch (err) {
+      this.logger.warn(
+        `[discharge] could not prepare a claim for admission ${admissionId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async fileDischargedStay(admissionId: string) {
+    const admission = await this.prisma.patientAdmission.findUnique({
+      where: { id: admissionId },
+      select: {
+        id: true,
+        patientId: true,
+        physicianId: true,
+        dischargeDate: true,
+        patient: { select: { firstName: true, lastName: true } },
+        orders: {
+          where: { status: OrderStatus.FINISHED, active: true, summarizationId: null },
+          orderBy: { dateCreated: 'asc' },
+          select: { id: true, dateCreated: true, orderContent: true },
+        },
+      },
+    });
+    if (!admission?.dischargeDate) return;
+
+    const byDay = new Map<string, typeof admission.orders>();
+    for (const order of admission.orders) {
+      const day = dayKeyOf(order.dateCreated);
+      if (!day) continue;
+      const group = byDay.get(day) ?? [];
+      group.push(order);
+      byDay.set(day, group);
+    }
+
+    for (const [day, orders] of byDay) {
+      try {
+        await this.generateSummary(
+          admission.patientId,
+          admission.physicianId,
+          day,
+          'standard',
+          undefined,
+          'discharge',
+          false,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `[discharge] AI summary failed for admission ${admissionId} on ${day}: ${(err as Error).message}`,
+        );
+        const summary = await this.upsertDaySummary(
+          admission.patientId,
+          day,
+          `Finished orders for ${dayLabel(dayStart(day))}:\n${orders
+            .map((order) => `• ${order.orderContent}`)
+            .join('\n')}`,
+        );
+        await this.linkOrdersToSummary(summary.id, orders.map((order) => order.id));
+      }
+    }
+
+    const waiting = await this.prisma.courseInWard.count({
+      where: {
+        requests: { none: {} },
+        orders: { some: { admissionId } },
+      },
+    });
+    if (waiting === 0) return;
+
+    const name = fullName(admission.patient);
+    await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
+      title: 'Discharged patient ready for a claim',
+      message: `**${name}** was discharged. ${waiting} Course in the Ward ${waiting === 1 ? 'day is' : 'days are'} ready for a claim request.`,
+      patientId: admission.patientId,
+    });
+  }
+
+  /** Discharged stays that still have finished orders with no summary. */
+  private async catchUpDischargedClaims() {
+    const admissions = await this.prisma.patientAdmission.findMany({
+      where: {
+        dischargeDate: { not: null },
+        orders: {
+          some: { status: OrderStatus.FINISHED, active: true, summarizationId: null },
+        },
+      },
+      select: { id: true },
+    });
+    for (const admission of admissions) {
+      await this.prepareClaimForDischargedAdmission(admission.id);
+    }
   }
 
   onModuleDestroy() {
@@ -463,7 +596,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     let done = 0;
     for (const [patientId, physicianId] of patients) {
       try {
-        await this.generateSummary(patientId, physicianId, day);
+        await this.generateSummary(patientId, physicianId, day, 'standard', undefined, 'batch');
         done++;
       } catch (err) {
         this.logger.warn(`[batch] patient ${patientId}: ${(err as Error).message}`);
@@ -605,7 +738,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     // Keep the summary filed under the day it already covers: when the source
     // orders span more than one day, take that day's group.
     const summaryDay = dayKeyOf(existing.summaryDate);
-    const groups = await this.callAiSummarizer(sourceOrders, extraInstructions, model);
+    const groups = await this.callAiSummarizer(sourceOrders, extraInstructions, model, 'regenerate');
     const group = groups.find((candidate) => candidate.day === summaryDay) ?? groups[0];
     if (!group?.summary) {
       throw new BadRequestException('No orders found to regenerate this summary');
@@ -678,6 +811,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   // Physician approves the summary they deem accurate
   async approve(id: string, physicianId: string) {
     await this.findOne(id);
+    await assertAttending(this.prisma, id, physicianId);
     const approved = await this.prisma.courseInWard.update({
       where: { id },
       data: {
@@ -826,42 +960,70 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
    * returns this, or the client's copy would lose its orders (and its day)
    * until the next full reload.
    */
-  private withOrders(id: string) {
-    return this.prisma.courseInWard.findUniqueOrThrow({ where: { id }, include: SUMMARY_ORDERS });
-  }
-
-  findForPatient(patientId: string) {
-    return this.prisma.courseInWard.findMany({
-      where: { patientId },
-      orderBy: { summaryDate: 'desc' },
+  private async withOrders(id: string) {
+    const summary = await this.prisma.courseInWard.findUniqueOrThrow({
+      where: { id },
       include: SUMMARY_ORDERS,
     });
+    return (await this.withAttending([summary]))[0];
   }
 
   /**
-   * Every summary still waiting for this physician's approval, across all the
-   * patients they are responsible for (attending or consulting physician on
-   * any admission). A discharged patient stays in this list until the last
-   * day's Course in the Ward is approved, so nothing is lost when the ward
-   * list moves on to active patients.
+   * Adds `attendingPhysicianId` -- the only physician who may approve the
+   * summary -- so the UI can offer Approve to that physician alone.
    */
-  findPendingForPhysician(physicianId: string) {
-    return this.prisma.courseInWard.findMany({
+  private async withAttending<
+    T extends { patientId: string; summaryDate: Date; orders?: { admissionId?: string | null }[] },
+  >(summaries: T[]): Promise<(T & { attendingPhysicianId: string | null })[]> {
+    if (!summaries.length) return [];
+    const admissions = await this.prisma.patientAdmission.findMany({
+      where: { patientId: { in: [...new Set(summaries.map((s) => s.patientId))] } },
+      select: { ...CARE_TEAM_ADMISSION_SELECT, patientId: true },
+    });
+    return summaries.map((summary) => ({
+      ...summary,
+      attendingPhysicianId:
+        summaryAdmission(
+          summary,
+          admissions.filter((a) => a.patientId === summary.patientId),
+        )?.physicianId ?? null,
+    }));
+  }
+
+  async findForPatient(patientId: string) {
+    return this.withAttending(
+      await this.prisma.courseInWard.findMany({
+        where: { patientId },
+        orderBy: { summaryDate: 'desc' },
+        include: SUMMARY_ORDERS,
+      }),
+    );
+  }
+
+  /**
+   * Every summary still waiting for this physician's approval: the unapproved
+   * summaries of admissions they attend (only the attending physician can
+   * approve). A discharged patient stays in this list until the last day's
+   * Course in the Ward is approved, so nothing is lost when the ward list
+   * moves on to active patients.
+   */
+  async findPendingForPhysician(physicianId: string) {
+    const candidates = await this.prisma.courseInWard.findMany({
       where: {
         status: { not: SummaryStatus.APPROVED },
-        patient: {
-          admissions: {
-            some: {
-              OR: [
-                { physicianId },
-                { additionalPhysicians: { some: { physicianId } } },
-              ],
-            },
-          },
-        },
+        patient: { admissions: { some: { physicianId } } },
       },
       orderBy: { summaryDate: 'desc' },
-      select: { id: true, patientId: true, summaryDate: true, status: true },
+      select: {
+        id: true,
+        patientId: true,
+        summaryDate: true,
+        status: true,
+        orders: { select: { admissionId: true }, take: 1 },
+      },
     });
+    return (await this.withAttending(candidates))
+      .filter((summary) => summary.attendingPhysicianId === physicianId)
+      .map(({ id, patientId, summaryDate, status }) => ({ id, patientId, summaryDate, status }));
   }
 }

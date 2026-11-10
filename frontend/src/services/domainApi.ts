@@ -15,6 +15,7 @@ import type {
   AuthUser,
   PhysicianRequest,
   ActivityTrend,
+  AiStats,
   AdminUserInput,
   AuditLogAggregate,
   AuditLogAggregateQuery,
@@ -203,6 +204,8 @@ export const adminApi = {
     api.get<ReportSummary>('/admin/reports/summary', { params }),
   activityTrend: (params?: ReportRangeParams & { bucket?: TrendBucket }) =>
     api.get<ActivityTrend>('/admin/reports/activity-trend', { params }),
+  /** AI summarization / embedding timings and embedding coverage. */
+  aiStats: (params?: ReportRangeParams) => api.get<AiStats>('/admin/reports/ai', { params }),
   /** One page of reset requests, filtered and sorted server-side. */
   getResetRequests: (params?: PasswordResetQuery) =>
     api.get<PasswordResetRequestPage>('/admin/password-reset-requests', { params }),
