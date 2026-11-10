@@ -667,39 +667,102 @@ function AiStatsPanel({ range, period }: { range: { from: string }; period: stri
         </Button>
       </div>
 
+      {/* Headline numbers: the answer to "is the AI fast and working?" at a glance. */}
+      <div className="admin-kpi-grid" style={{ ...styles.kpiGrid, gridColumn: '1 / -1' }}>
+        <Kpi
+          label="Summaries"
+          value={summ.calls}
+          hint={summ.failures ? `${summ.failures} failed` : 'no failures'}
+        />
+        <Kpi label="Typical time" value={formatMs(summ.p50Ms)} hint={`p95 ${formatMs(summ.p95Ms)}`} />
+        <Kpi label="Success rate" value={successRate(summ)} hint="summarization" />
+        <Kpi
+          label="Orders / summary"
+          value={perSuccess(summ.items, summ)}
+          hint={summ.avgOutputChars == null ? 'no output yet' : `${summ.avgOutputChars} chars out`}
+        />
+        <Kpi
+          label="Embedded"
+          value={`${coverage}%`}
+          hint={`${corpus.ordersEmbedded} of ${corpus.ordersTotal} orders`}
+        />
+        <Kpi
+          label="RAG corpus"
+          value={corpus.ragOrders}
+          hint={`${corpus.approvedSummaries} approved summaries`}
+        />
+      </div>
+
       <ReportCard
         icon={<Timer size={14} aria-hidden="true" />}
         title="Summarization time"
-        hint="LLM calls in period"
+        hint="successful LLM calls in period"
       >
-        <StatRows rows={summaryRows} />
-        <StatRows rows={summaryByModel} emptyLabel="No summaries generated yet." />
-        <StatRows rows={summaryByTrigger} />
+        {summ.calls ? (
+          <>
+            <TimingBars stats={summ} />
+            {trendPoints.length > 1 ? (
+              <ColumnChart
+                points={trendPoints.map((point) => ({
+                  key: point.period,
+                  count: Math.round((point.avgSummaryMs ?? 0) / 1000),
+                }))}
+                unit="s average"
+              />
+            ) : (
+              <p style={styles.graphNote}>
+                A {bucketLabel(data.bucket)} trend appears once summaries span two or more periods.
+              </p>
+            )}
+          </>
+        ) : (
+          <p style={styles.reportEmpty}>No summaries generated in this period.</p>
+        )}
       </ReportCard>
 
       <ReportCard
         icon={<Activity size={14} aria-hidden="true" />}
-        title="Average summarization time"
-        hint={`seconds, ${bucketLabel(data.bucket)}`}
+        title="Where summaries came from"
+        hint="by model and by trigger"
       >
-        <ColumnChart
-          points={trendPoints.map((point) => ({
-            key: point.period,
-            count: Math.round((point.avgSummaryMs ?? 0) / 1000),
-          }))}
-          unit="s average"
-          emptyLabel="No summaries generated in this period."
-        />
+        {summ.calls ? (
+          <>
+            <BreakdownTable heading="Model" rows={summ.byModel} labels={AI_MODEL_LABELS} />
+            <BreakdownTable heading="Trigger" rows={summ.byTrigger} labels={AI_TRIGGER_LABELS} />
+          </>
+        ) : (
+          <p style={styles.reportEmpty}>No summaries generated in this period.</p>
+        )}
       </ReportCard>
 
       <ReportCard
         icon={<Binary size={14} aria-hidden="true" />}
-        title="Embeddings"
+        title="Embeddings & RAG"
         hint="calls in period · corpus now"
       >
-        <StatRows rows={embeddingRows} />
-        <StatRows rows={embeddingByTrigger} />
-        <StatRows rows={corpusRows} />
+        <div style={styles.barListRow}>
+          <span style={styles.barListLabel}>Orders embedded</span>
+          <span style={styles.barListTrack}>
+            <span
+              style={{
+                ...styles.barListFill,
+                width: `${Math.max(2, coverage)}%`,
+                backgroundColor: 'var(--c4w-color-primary, #2563eb)',
+              }}
+            />
+          </span>
+          <span style={styles.barListValue}>{coverage}%</span>
+        </div>
+        {/* Rows with no value yet ("—") are noise on screen; the PDF keeps them. */}
+        <StatRows rows={corpusRows.slice(1).filter((row) => row.value !== '—')} />
+        {emb.calls ? (
+          <>
+            <TimingBars stats={emb} />
+            <BreakdownTable heading="Trigger" rows={emb.byTrigger} labels={AI_TRIGGER_LABELS} />
+          </>
+        ) : (
+          <p style={styles.graphNote}>No embedding calls in this period.</p>
+        )}
       </ReportCard>
 
       <ReportCard
@@ -733,7 +796,79 @@ function perSuccess(total: number, stats: AiCallStats): string {
   return ok ? (total / ok).toFixed(1) : '—';
 }
 
-function Kpi({ label, value, hint }: { label: string; value: number; hint: string }) {
+/** Median / average / p95 / slowest as bars on one scale, so the spread is visible. */
+function TimingBars({ stats }: { stats: AiCallStats }) {
+  const max = stats.maxMs || 1;
+  const rows = [
+    { key: 'p50', label: 'Median', ms: stats.p50Ms },
+    { key: 'avg', label: 'Average', ms: stats.avgMs },
+    { key: 'p95', label: '95th percentile', ms: stats.p95Ms },
+    { key: 'max', label: 'Slowest', ms: stats.maxMs },
+  ];
+  return (
+    <div>
+      {rows.map((row, index) => (
+        <div key={row.key} style={styles.barListRow}>
+          <span style={styles.barListLabel}>{row.label}</span>
+          <span style={styles.barListTrack}>
+            <span
+              style={{
+                ...styles.barListFill,
+                width: `${Math.max(2, ((row.ms ?? 0) / max) * 100)}%`,
+                backgroundColor: segmentColor(index),
+              }}
+            />
+          </span>
+          <span style={styles.barListValue}>{formatMs(row.ms)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const compactCell = { padding: '5px 6px', fontSize: '12px' } as const;
+
+/** Calls / average / p95 per model or trigger, as a small table instead of crammed rows. */
+function BreakdownTable({
+  heading,
+  rows,
+  labels,
+}: {
+  heading: string;
+  rows: AiCallSection['byModel'];
+  labels: Record<string, string>;
+}) {
+  if (!rows.length) return null;
+  return (
+    <table style={styles.table}>
+      <thead>
+        <tr>
+          <th style={{ ...styles.th, ...compactCell, fontSize: '10px' }}>{heading}</th>
+          <th style={{ ...styles.th, ...compactCell, fontSize: '10px', textAlign: 'right' }}>Calls</th>
+          <th style={{ ...styles.th, ...compactCell, fontSize: '10px', textAlign: 'right' }}>Avg</th>
+          <th style={{ ...styles.th, ...compactCell, fontSize: '10px', textAlign: 'right' }}>p95</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.key} style={styles.tr}>
+            <td style={{ ...styles.td, ...compactCell }}>{labels[row.key] ?? row.key}</td>
+            <td style={{ ...styles.td, ...compactCell, textAlign: 'right' }}>
+              {row.calls}
+              {row.failures ? (
+                <span style={{ color: 'var(--c4w-color-danger, #b91c1c)' }}> ({row.failures} failed)</span>
+              ) : null}
+            </td>
+            <td style={{ ...styles.td, ...compactCell, textAlign: 'right' }}>{formatMs(row.avgMs)}</td>
+            <td style={{ ...styles.td, ...compactCell, textAlign: 'right' }}>{formatMs(row.p95Ms)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Kpi({ label, value, hint }: { label: string; value: number | string; hint: string }) {
   return (
     <div style={styles.kpiTile}>
       <span style={styles.kpiLabel} title={label}>
