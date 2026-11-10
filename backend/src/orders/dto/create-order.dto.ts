@@ -1,7 +1,7 @@
 import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { OrderStatus, OrderType } from '@prisma/client';
+import { CommunicationChannel, OrderStatus, OrderType } from '@prisma/client';
 import { normalizeRoom } from '../../patients/dto/patient.dto';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -33,6 +33,13 @@ export class CreateOrderDto {
   @IsOptional()
   @IsEnum(OrderType)
   type?: OrderType;
+
+  // Nurse orders on a physician's behalf: how the physician gave it. Omit for
+  // a written / signed order. Kept out of `orderContent`, which feeds the AI summary.
+  @ApiPropertyOptional({ enum: CommunicationChannel })
+  @IsOptional()
+  @IsEnum(CommunicationChannel)
+  communicationChannel?: CommunicationChannel;
 
   // TRANSFER only (required there): the free room the patient moves to. The
   // room is reserved until the nurse finishes the order.

@@ -75,6 +75,33 @@ export interface Patient {
   roomNumber?: string | null;
 }
 
+/** `PATCH /patients/:id`: fields left out are kept; `null` clears an optional one. */
+export interface PatientDetailsUpdate {
+  firstName?: string;
+  middleName?: string | null;
+  lastName?: string;
+  gender?: Sex;
+  /** YYYY-MM-DD */
+  dateOfBirth?: string;
+  contactNumber?: string | null;
+  address?: string | null;
+  insurance?: InsuranceType | null;
+  insuranceOther?: string | null;
+  religion?: string | null;
+  contactPersonName?: string | null;
+  contactPersonNumber?: string | null;
+  contactPersonAddress?: string | null;
+}
+
+/** 409 body of `POST /patients` when the person is already registered. */
+export interface DuplicatePatientError {
+  code: 'PATIENT_ALREADY_REGISTERED';
+  message: string;
+  existingPatientId: string;
+  /** Still in a stay that has not ended, so they cannot be re-admitted yet. */
+  admitted: boolean;
+}
+
 /**
  * Backend `PatientClass`. EMERGENCY / OUTPATIENT need no order; OBSERVATION
  * and INPATIENT need a physician's observation / admission order.
@@ -116,6 +143,9 @@ export type TriageLevel = 1 | 2 | 3 | 4 | 5;
 
 export interface AdmissionTriage {
   triageLevel: TriageLevel | null;
+  /** Calendar day as an ISO timestamp at UTC midnight. */
+  triageDate?: string | null;
+  /** 24h `HH:mm`. */
   triageTime: string | null;
   heartRate: number | null;
   respRate: number | null;
@@ -303,6 +333,7 @@ export type AuditLogAction =
   | 'CLAIM_PHYSICIAN_NOTIFIED'
   | 'CF4_GENERATED'
   | 'UPDATE_ORDER_STATUS'
+  | 'PATIENT_DISCHARGED'
   | 'TRANSFER_PATIENT';
 
 /** One row of `GET /admin/audit-logs`. */

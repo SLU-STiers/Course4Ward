@@ -6,6 +6,8 @@ import { useAuthStore } from '../store/authStore';
 import { signOut } from '../services/signOut';
 import { ROLE_PATH } from '../routes/roleRoutes';
 import { ActionButton } from '../components/ui/DashboardUi';
+import { apiErrorMessage } from '../lib/apiError';
+import { PASSWORD_RULE_HINT, passwordProblem } from '../lib/passwordPolicy';
 
 export function ResetPassword() {
   const navigate = useNavigate();
@@ -29,6 +31,11 @@ export function ResetPassword() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+    const problem = passwordProblem(newPassword);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match.');
       return;
@@ -39,8 +46,8 @@ export function ResetPassword() {
       const { data } = await authApi.changePassword(newPassword);
       setAuth(data.accessToken, data.refreshToken, data.user);
       navigate(data.user.role ? ROLE_PATH[data.user.role] : '/', { replace: true });
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Unable to update password.');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Unable to update password.'));
     } finally {
       setSaving(false);
     }
@@ -59,7 +66,8 @@ export function ResetPassword() {
         </button>
         <h1 style={{ margin: 0, color: 'var(--dashboard-primary-dark)', fontSize: 24 }}>Set a new password</h1>
         <p style={{ margin: 0, color: 'var(--dashboard-muted)', lineHeight: 1.5 }}>
-          Your administrator issued a temporary password. Choose a private password to continue.
+          Your administrator issued a temporary password. Choose a private password to continue:{' '}
+          {PASSWORD_RULE_HINT.toLowerCase()}
         </p>
         <div className="auth-password-wrap">
           <input

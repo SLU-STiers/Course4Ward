@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button, DataTableToolbar, StatusBadge } from '../../components/ui';
 import { PatientTablePagination, patientTableStyles } from '../../components/patientList/PatientTable';
 import { useTableState } from '../../hooks/useTableState';
-import { formatDateNumeric, toDateInputValue } from '../../lib/format';
+import { computeAge, formatDateNumeric, toDateInputValue } from '../../lib/format';
 import { sexLabel, statusColor } from '../../lib/patient';
 
 import { AddPatientModal } from './AddPatientModal';
@@ -30,6 +30,7 @@ function toRecord(patient: Patient): AdmissionRecord {
   if (patient.restricted) {
     return {
       id: patient.id,
+      patientId: patient.id,
       name: patientName(patient),
       admittedOn: '—',
       admittedOnRaw: '',
@@ -42,6 +43,7 @@ function toRecord(patient: Patient): AdmissionRecord {
   const admission = patient.admissions?.[0];
   return {
     id: admission?.id ?? patient.id,
+    patientId: patient.id,
     name: patientName(patient),
     admittedOn: admission ? formatDateNumeric(admission.admissionDate) : '—',
     admittedOnRaw: admission ? toDateInputValue(new Date(admission.admissionDate)) : '',
@@ -56,7 +58,8 @@ function toRecord(patient: Patient): AdmissionRecord {
 export function PatientView() {
   const [records, setRecords] = useState<AdmissionRecord[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [viewingName, setViewingName] = useState<string | null>(null);
+  /** Patient whose chart is open. Names are not unique, so this is always the id. */
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   /** Orders of the patient in the detail modal; tagged with its id so stale ones are ignored. */
   const [viewingOrders, setViewingOrders] = useState<{
@@ -107,16 +110,15 @@ export function PatientView() {
     initialSort: { field: 'admittedOn', direction: 'descending' },
   });
 
-  const viewingPatient = viewingName
-    ? patients.find((patient) => patientName(patient) === viewingName)
+  const viewingPatient = viewingId
+    ? patients.find((patient) => patient.id === viewingId)
     : null;
   const viewingAdmission = viewingPatient?.admissions?.[0];
   const viewing = viewingPatient
     ? {
-        name: viewingName ?? '',
-        age: viewingPatient.dateOfBirth
-          ? Math.max(0, new Date().getFullYear() - new Date(viewingPatient.dateOfBirth).getFullYear())
-          : 0,
+        name: patientName(viewingPatient),
+        age: computeAge(viewingPatient.dateOfBirth) ?? 0,
+        dateOfBirth: viewingPatient.dateOfBirth,
         gender: sexLabel(viewingPatient.gender),
         admissionDate: viewingAdmission
           ? new Date(viewingAdmission.admissionDate).toLocaleDateString('en-GB')
@@ -140,7 +142,7 @@ export function PatientView() {
         classSince: viewingAdmission?.classSince,
       }
     : null;
-  const viewingRecord = viewingName ? records.find((r) => r.name === viewingName) ?? null : null;
+  const viewingRecord = viewingId ? records.find((r) => r.patientId === viewingId) ?? null : null;
 
   // The nurse only carries out observation / admission / discharge once a
   // physician has ordered it, so the modal needs the admission's orders.
@@ -211,9 +213,9 @@ export function PatientView() {
           ? 'Finish every order written before the discharge order first'
           : undefined;
 
-  const openViewing = (name: string) => {
+  const openViewing = (patientId: string) => {
     setActionError(null);
-    setViewingName(name);
+    setViewingId(patientId);
   };
 
   // Observe / admit / discharge, then refresh the list. A refusal (e.g. the order was
@@ -223,7 +225,7 @@ export function PatientView() {
     setActionError(null);
     action()
       .then(() => {
-        setViewingName(null);
+        setViewingId(null);
         reload();
       })
       .catch((err) => {
@@ -290,7 +292,7 @@ export function PatientView() {
             {table.rows.map((r) => (
               <tr
                 key={r.id}
-                onClick={r.restricted ? undefined : () => openViewing(r.name)}
+                onClick={r.restricted ? undefined : () => openViewing(r.patientId)}
                 style={{ ...patientTableStyles.tr, cursor: r.restricted ? 'default' : 'pointer' }}
               >
                 <td style={patientTableStyles.td}>
@@ -327,7 +329,7 @@ export function PatientView() {
                     style={patientTableStyles.viewBtn}
                     onClick={(e) => {
                       e.stopPropagation();
-                      openViewing(r.name);
+                      openViewing(r.patientId);
                     }}
                   >
                     View
@@ -360,10 +362,12 @@ export function PatientView() {
       {viewing && (
         <PatientDetailModal
           chart={viewing}
-          onClose={() => setViewingName(null)}
+          onClose={() => setViewingId(null)}
           status={viewingRecord?.status}
           onCareTeamChanged={reload}
           onRoomChanged={reload}
+          patientId={viewingPatient?.id}
+          onDetailsChanged={reload}
           onDischarge={
             viewingRecord && viewingRecord.status !== 'Discharged'
               ? () => runAdmissionAction(() => patientsApi.discharge(viewingRecord.id))

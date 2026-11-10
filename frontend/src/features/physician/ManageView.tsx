@@ -90,7 +90,7 @@ export function ManageView({
   const [orderType, setOrderType] = useState<OrderType>("DEFAULT");
   /** Destination room of a transfer order; reserved once the order is saved. */
   const [transferRoom, setTransferRoom] = useState("");
-  const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(orderType === "TRANSFER");
+  const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(orderType === "TRANSFER", true);
   const [savingOrders, setSavingOrders] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [approvingSummary, setApprovingSummary] = useState(false);

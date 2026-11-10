@@ -122,6 +122,18 @@ export class OrdersService {
     if (!careTeam.has(orderedById)) {
       throw new BadRequestException('The ordering physician is not on the care team for this admission');
     }
+    if (enteredByRole === Role.PHYSICIAN && dto.communicationChannel) {
+      throw new BadRequestException('Only an order entered on a physician’s behalf has a "received via"');
+    }
+    const orderingPhysician = await this.prisma.user.findUnique({
+      where: { id: orderedById },
+      select: { isActive: true },
+    });
+    if (!orderingPhysician?.isActive) {
+      throw new BadRequestException(
+        'The ordering physician’s account is deactivated, so orders can no longer be entered for them',
+      );
+    }
 
     const type = dto.type ?? OrderType.DEFAULT;
     // Only the attending physician sends the patient home; consultants advise.
@@ -167,6 +179,7 @@ export class OrdersService {
       enteredByRole: enteredByFlag,
       orderContent: dto.orderContent,
       type,
+      communicationChannel: dto.communicationChannel ?? null,
     };
     // Writing an admission/discharge/transfer order does not change the
     // admission: the nurse carries it out (admit / discharge / finishing the
@@ -214,6 +227,7 @@ export class OrdersService {
           ['Ordering physician', `Dr. ${physicianName}`],
           ['Order type', humanize(type)],
           ['Order', dto.orderContent],
+          ['Received via', enteredByRole === Role.NURSE ? dto.communicationChannel ?? 'Written order' : null],
         ]),
       },
     });
@@ -602,7 +616,7 @@ export class OrdersService {
     const patientName = await this.auditLog.patientName({ patientId: admission.patientId });
     await this.auditLog.record({
       userId: nurseId,
-      action: 'REGISTER_PATIENT',
+      action: 'PATIENT_DISCHARGED',
       details: {
         summary: `Discharged ${patientName}`,
         items: detailItems([

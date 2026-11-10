@@ -24,13 +24,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, userId: true, role: true, isActive: true, sessionVersion: true },
+      select: {
+        id: true,
+        userId: true,
+        role: true,
+        isActive: true,
+        sessionVersion: true,
+        mustResetPassword: true,
+      },
     });
 
     if (!user || !user.isActive || user.sessionVersion !== (payload.sessionVersion ?? 0)) {
       throw new UnauthorizedException('Session expired');
     }
 
-    return { id: user.id, userId: user.userId, role: user.role };
+    // JwtAuthGuard refuses most routes while this is set.
+    return { id: user.id, userId: user.userId, role: user.role, mustResetPassword: user.mustResetPassword };
   }
 }

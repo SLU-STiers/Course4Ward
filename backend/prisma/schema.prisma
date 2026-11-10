@@ -110,6 +110,7 @@ enum ActionType {
   CLAIM_PHYSICIAN_NOTIFIED
   CF4_GENERATED
   UPDATE_ORDER_STATUS
+  PATIENT_DISCHARGED
   TRANSFER_PATIENT
 }
 
@@ -289,6 +290,8 @@ model TriageAssessment {
   /// 5-level triage priority: 1 Resuscitation, 2 Emergent, 3 Urgent,
   /// 4 Less Urgent, 5 Non-Urgent. The migration adds a CHECK (1-5).
   triageLevel  Int?
+  /// Calendar day of the triage; the clock time is `triageTime` (24h HH:mm).
+  triageDate   DateTime? @db.Date
   triageTime   String?
   heartRate    Int?
   respRate     Int?

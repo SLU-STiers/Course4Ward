@@ -11,7 +11,7 @@ import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 
 /** The patient list changes less often than an open patient's orders. */
 const PATIENT_POLL_MS = ORDER_POLL_MS;
-import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
+import { computeAge, formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
 import { writeSessionState } from '../../lib/sessionState';
 import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
 import { triageForDisplay, triageUrgency } from '../../lib/triage';
@@ -65,7 +65,8 @@ function mapPatient(patient: Patient, index: number): NursePatient {
     admissionDateRaw: admissionDate ? toDateInputValue(new Date(admissionDate)) : '',
     admittedAt: admissionDate || undefined,
     color: colors[index % colors.length],
-    age: patient.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()) : 0,
+    age: computeAge(patient.dateOfBirth) ?? 0,
+    dateOfBirth: patient.dateOfBirth,
     gender: sexLabel(patient.gender),
     initials: `${patient.firstName[0] ?? ''}${patient.lastName[0] ?? ''}`,
     status,
@@ -327,6 +328,7 @@ export function ManagementPortalView({
   const detailChart = detailPatient ? {
     name: detailPatient.name,
     age: detailPatient.age,
+    dateOfBirth: detailPatient.dateOfBirth,
     gender: detailPatient.gender,
     admissionDate: detailPatient.admissionDate,
     recordId: detailPatient.recordId,
@@ -599,6 +601,10 @@ export function ManagementPortalView({
             loadPatients().catch(() => undefined);
           }}
           onRoomChanged={() => {
+            loadPatients().catch(() => undefined);
+          }}
+          patientId={detailPatient?.id}
+          onDetailsChanged={() => {
             loadPatients().catch(() => undefined);
           }}
           onClose={() => setSelectedId(null)}

@@ -45,11 +45,14 @@ export function Section({
   icon,
   title,
   hint,
+  action,
   children,
 }: {
   icon: string;
   title: string;
   hint?: string;
+  /** Shown at the right of the section heading. */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -58,10 +61,11 @@ export function Section({
         <span style={s.sectionIcon} aria-hidden="true">
           <img src={icon} alt="" style={s.sectionIconImg} />
         </span>
-        <div>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <h4 style={s.sectionTitle}>{title}</h4>
           {hint && <p style={s.sectionHint}>{hint}</p>}
         </div>
+        {action}
       </div>
       {children}
     </section>
