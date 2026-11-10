@@ -107,6 +107,8 @@ export interface WardRoom {
   ward: { id: string; name: string } | null;
   occupied: boolean;
   occupiedByAdmissionId: string | null;
+  /** Held for a pending transfer order (`occupiedByAdmissionId` is that patient). */
+  reserved?: boolean;
 }
 
 /** 5-level triage priority, 1 (Resuscitation) to 5 (Non-Urgent). */
@@ -132,7 +134,7 @@ export interface AdmissionTriage {
 export type OrderStatus = 'TO_ACCOMPLISH' | 'ONGOING' | 'FINISHED';
 
 /** Backend `OrderType`: `DEFAULT` is a general order. */
-export type OrderType = 'DEFAULT' | 'OBSERVATION' | 'ADMISSION' | 'DISCHARGE';
+export type OrderType = 'DEFAULT' | 'OBSERVATION' | 'ADMISSION' | 'DISCHARGE' | 'TRANSFER';
 
 export interface PhysicianOrder {
   id: string;
@@ -152,6 +154,8 @@ export interface PhysicianOrder {
   executedBy?: { firstName: string; lastName: string } | null;
   orderedBy?: { firstName: string; lastName: string };
   encodedBy?: { firstName: string; lastName: string; role: Role };
+  /** Destination room of a TRANSFER order. */
+  transferRoom?: { number: string; ward?: { name: string } | null } | null;
 }
 
 export interface PhysicianNote {
@@ -298,7 +302,8 @@ export type AuditLogAction =
   | 'CLAIM_CREATED'
   | 'CLAIM_PHYSICIAN_NOTIFIED'
   | 'CF4_GENERATED'
-  | 'UPDATE_ORDER_STATUS';
+  | 'UPDATE_ORDER_STATUS'
+  | 'TRANSFER_PATIENT';
 
 /** One row of `GET /admin/audit-logs`. */
 /**

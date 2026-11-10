@@ -16,5 +16,5 @@ export const ORDER_STATUS_OPTIONS: { value: OrderStatus; label: string; badge: S
  */
 export type OrderExecutionState = Pick<
   PhysicianOrder,
-  'status' | 'type' | 'nurseComment' | 'executedAt' | 'executedBy'
+  'status' | 'type' | 'nurseComment' | 'executedAt' | 'executedBy' | 'transferRoom'
 >;

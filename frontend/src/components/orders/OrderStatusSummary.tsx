@@ -37,6 +37,7 @@ const styles: Record<string, CSSProperties> = {
   admissionTag: { color: '#1d4ed8', backgroundColor: '#dbeafe' },
   dischargeTag: { color: '#9a3412', backgroundColor: '#ffedd5' },
   observationTag: { color: '#6d28d9', backgroundColor: '#ede9fe' },
+  transferTag: { color: '#075985', backgroundColor: '#e0f2fe' },
 };
 
 type OrderStatusSummaryProps = {
@@ -67,10 +68,14 @@ export function OrderStatusSummary({ order, action, hideComment }: OrderStatusSu
                 ? styles.admissionTag
                 : order.type === 'OBSERVATION'
                   ? styles.observationTag
-                  : styles.dischargeTag),
+                  : order.type === 'TRANSFER'
+                    ? styles.transferTag
+                    : styles.dischargeTag),
             }}
           >
             {orderTypeLabel(order.type)} order
+            {order.type === 'TRANSFER' && order.transferRoom && ` → Room ${order.transferRoom.number}`}
+            {order.type === 'TRANSFER' && order.transferRoom?.ward && ` · ${order.transferRoom.ward.name}`}
           </span>
         )}
         <StatusBadge status={current.badge} label={current.label} showDot />

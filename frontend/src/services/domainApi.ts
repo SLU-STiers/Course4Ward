@@ -77,7 +77,7 @@ export const patientsApi = {
   observe: (admissionId: string) => api.patch(`/patients/admissions/${admissionId}/observe`),
   addConsultingPhysician: (admissionId: string, physicianId: string) =>
     api.post(`/patients/admissions/${admissionId}/consulting-physicians`, { physicianId }),
-  /** Nurse-only: active ward rooms with their occupancy. */
+  /** Nurses and physicians: active ward rooms with their occupancy (rooms held by a pending transfer count as occupied). */
   listRooms: () => api.get<WardRoom[]>('/patients/rooms'),
   /** Nurse-only: puts an admitted patient in a free room, or clears it with `null`. */
   assignRoom: (admissionId: string, roomNumber: string | null) =>
@@ -96,6 +96,8 @@ export const ordersApi = {
     orderContent: string;
     /** Defaults to `DEFAULT` (a general order). */
     type?: OrderType;
+    /** TRANSFER only (required there): the free room to move the patient to. */
+    transferRoomNumber?: string;
   }) => api.post<PhysicianOrder>('/orders', data),
   // Orders cannot be edited or deleted once written (no API for it).
   /** Nurse-only: mark progress on an order. Omit `nurseComment` to keep the current one. */

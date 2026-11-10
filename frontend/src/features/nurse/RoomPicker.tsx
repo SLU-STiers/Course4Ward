@@ -47,7 +47,9 @@ export function roomProblem(value: string, rooms: WardRoom[] | null, admissionId
   if (!number || !rooms) return null;
   const room = rooms.find((candidate) => candidate.number === number);
   if (!room) return `Room ${number} does not exist`;
-  if (takenByOther(room, admissionId)) return `Room ${number} is occupied`;
+  if (takenByOther(room, admissionId)) {
+    return room.reserved ? `Room ${number} is reserved for a transfer` : `Room ${number} is occupied`;
+  }
   return null;
 }
 
@@ -207,14 +209,24 @@ export function RoomPicker({
                           ...(taken ? styles.optionTaken : {}),
                         }}
                         onClick={() => !taken && pick(room.number)}
-                        title={taken ? `Room ${room.number} is occupied` : undefined}
+                        title={
+                          taken
+                            ? `Room ${room.number} is ${room.reserved ? 'reserved for a transfer' : 'occupied'}`
+                            : undefined
+                        }
                       >
                         <span>
                           <span style={{ fontWeight: 700 }}>Room {room.number}</span>
                           {room.ward && <span style={styles.ward}> · {room.ward.name}</span>}
                         </span>
                         <span style={{ ...styles.tag, ...(taken ? styles.tagTaken : styles.tagFree) }}>
-                          {taken ? 'Occupied' : room.number === chosen ? 'Selected' : 'Available'}
+                          {taken
+                            ? room.reserved
+                              ? 'Reserved'
+                              : 'Occupied'
+                            : room.number === chosen
+                              ? 'Selected'
+                              : 'Available'}
                         </span>
                       </button>
                     );
@@ -228,7 +240,7 @@ export function RoomPicker({
 
       {problem ? (
         <span style={s.fieldError} role="alert">
-          ⚠ {problem}.{problem.endsWith('occupied') ? ' Choose an available room.' : ''}
+          ⚠ {problem}.{problem.endsWith('occupied') || problem.endsWith('transfer') ? ' Choose an available room.' : ''}
         </span>
       ) : (
         chosen &&
