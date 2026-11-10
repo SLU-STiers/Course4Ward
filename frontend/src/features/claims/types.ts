@@ -30,6 +30,8 @@ export interface SummarizationRequest {
     dischargeDate: string;
   };
   summaryText: string;
+  /** The day's Course in the Ward is signed off by the physician (`APPROVED`). */
+  physicianApproved: boolean;
   /** Registration and admission facts for the day this summary belongs to. */
   chart: StayChart;
   /** Triage assessment recorded when the patient was registered for this admission. */
@@ -73,6 +75,13 @@ export interface CF4Patient {
   /** Whole days in care, counted inclusively and summed across admissions. */
   daysInCare: number;
   status: Exclude<PatientStatus, 'all'>;
+  /** Days with finished orders but no Course in the Ward dated that day (`YYYY-MM-DD`). */
+  missingDays: string[];
+  /** Summarized days with no claim opened yet (`YYYY-MM-DD`). */
+  unrequestedDays: string[];
+  /** Summarized days still waiting for the physician's approval (`YYYY-MM-DD`). */
+  unapprovedDays: string[];
+  /** Every day of the stay summarized, requested and physician-approved. */
   approved: boolean;
   /** Every claim of the stay is already `CF4_GENERATED`. */
   cf4Generated: boolean;

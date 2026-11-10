@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, Check, ClipboardCheck } from 'lucide-react';
 import { Layout } from '../../components/layout/Layout';
 import { NotificationBell } from '../../components/layout/NotificationBell';
 import { SidebarProfile } from '../../components/layout/SidebarProfile';
-import { Button, DataTableToolbar, PageHeader, StatusBadge } from '../../components/ui';
+import { Button, DataTableToolbar, PageHeader, Popover, StatusBadge } from '../../components/ui';
 import { patientTableStyles } from '../../components/patientList/PatientTable';
 import { DashboardIcon, ExportIcon, RequestsIcon } from '../../components/icons/NavIcons';
 import { AiSummaryCard } from '../../components/ai/AiSummaryCard';
@@ -16,16 +16,67 @@ import { signOut } from '../../services/signOut';
 import { useAuthStore } from '../../store/authStore';
 import { claimsApi } from '../../services/domainApi';
 import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
-import { formatDateMedium, toDateKey } from '../../lib/format';
+import { formatDateLongFromKey, formatDateMedium, toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
 
-import { buildStayDraft, groupApprovedPatients, groupGeneratedPatients, groupStayPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
+import { buildStayDraft, groupApprovedPatients, groupGeneratedPatients, groupStayPatients, mapClaimToPatient, mapClaimToRequest, stayKey } from './mappers';
 import { ReviewRequestModal } from './ReviewRequestModal';
 import { EligibleSummariesCard } from './EligibleSummariesCard';
 import { Cf4SummaryPreview } from './Cf4SummaryPreview';
 import { buildCf4Document, cf4FileName, saveFile } from './cf4Document';
 import { apiErrorMessage } from '../../lib/apiError';
 import type { CF4Patient, Cf4SummaryDraft, ExportSubView, PatientSortField, PatientStatus, RequestSortField, SortDirection, SummarizationRequest, TabType } from './types';
+
+/** The stay (admission) a request belongs to. */
+const requestStay = (request: SummarizationRequest) =>
+  stayKey({ admissionId: request.admissionId, patientId: request.patient.patientId });
+
+/** `2026-11-03, 2026-11-05` → `Nov 3, 2026, Nov 5, 2026`. */
+const dayList = (days: string[]) =>
+  days.map((day) => formatDateMedium(new Date(`${day}T12:00:00`))).join(', ');
+
+/** Why a stay cannot get its CF4 yet, or `''` when every day is covered. */
+function stayGaps(patient: CF4Patient): string {
+  return [
+    patient.missingDays.length ? `No summary: ${dayList(patient.missingDays)}` : '',
+    patient.unapprovedDays.length ? `Awaiting physician approval: ${dayList(patient.unapprovedDays)}` : '',
+    patient.unrequestedDays.length ? `Not yet requested: ${dayList(patient.unrequestedDays)}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+/** The physician dashboard's "N days to approve" chip, read-only here: drafts and days with no summary yet. */
+function ApproveChip({ patient }: { patient: CF4Patient }) {
+  const days = [
+    ...patient.unapprovedDays.map((day) => ({ day, label: 'Awaiting approval' })),
+    ...patient.missingDays.map((day) => ({ day, label: 'No summary yet' })),
+  ].sort((a, b) => a.day.localeCompare(b.day));
+  if (!days.length) return null;
+  const label = days.length === 1 ? '1 day to approve' : `${days.length} days to approve`;
+  return (
+    <span onClick={(event) => event.stopPropagation()}>
+      <Popover
+        align="start"
+        ariaLabel={`${label} by the physician`}
+        trigger={
+          <button type="button" className="ui-approve-chip">
+            <ClipboardCheck size={11} aria-hidden="true" />
+            {label}
+          </button>
+        }
+      >
+        <div className="ui-menu ui-approve-days">
+          <strong className="ui-menu__heading">Awaiting physician approval</strong>
+          {days.map(({ day, label: meta }) => (
+            <div key={day} className="ui-menu__option ui-approve-days__option">
+              {formatDateLongFromKey(day)}
+              <span className="ui-approve-days__meta">{meta}</span>
+            </div>
+          ))}
+        </div>
+      </Popover>
+    </span>
+  );
+}
 
 /** Sort key for a patient-list column (numbers compare numerically). */
 function patientSortValue(patient: CF4Patient, field: PatientSortField): string | number {
@@ -112,7 +163,7 @@ export function ClaimsProcessorDashboard() {
     const match = requests.find((request) => request.id === focusRequestId);
     if (!match) return;
     setActiveTab('requests');
-    setReviewStay(requests.filter((request) => request.patient.patientId === match.patient.patientId));
+    setReviewStay(requests.filter((request) => requestStay(request) === requestStay(match)));
     setFocusRequestId(null);
   }, [focusRequestId, requests]);
 
@@ -154,7 +205,7 @@ export function ClaimsProcessorDashboard() {
   });
   const requestGroupsByPatient = new Map<string, SummarizationRequest[]>();
   for (const request of sortedRequests) {
-    const key = request.patient.patientId;
+    const key = requestStay(request);
     const group = requestGroupsByPatient.get(key);
     if (group) group.push(request);
     else requestGroupsByPatient.set(key, [request]);
@@ -620,7 +671,7 @@ export function ClaimsProcessorDashboard() {
                               variant="primary"
                               size="sm"
                               onClick={() => setReviewStay(
-                                requests.filter((request) => request.patient.patientId === group.id),
+                                requests.filter((request) => requestStay(request) === group.id),
                               )}
                             >
                               Review
@@ -1102,7 +1153,15 @@ export function ClaimsProcessorDashboard() {
                           <td style={styles.td}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <span style={{ ...patientTableStyles.dot, backgroundColor: p.color }} />
-                              <span style={patientTableStyles.name}>{p.name}</span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <span style={patientTableStyles.name}>{p.name}</span>
+                                <ApproveChip patient={p} />
+                                {p.unrequestedDays.length > 0 && (
+                                  <span style={{ fontSize: 11, color: '#64748b' }}>
+                                    Not yet requested: {dayList(p.unrequestedDays)}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td style={{ ...styles.td, ...patientTableStyles.cell }}>{p.gender}</td>
@@ -1231,10 +1290,18 @@ export function ClaimsProcessorDashboard() {
                 >
                   {stayRequests.length > 0 ? (
                     <div style={{ display: 'grid', gap: 14 }}>
+                      {previewPatient && stayGaps(previewPatient) && (
+                        <p style={{ margin: 0, fontSize: 12, color: '#b91c1c' }} role="status">
+                          CF4 is blocked until every day has an approved summary. {stayGaps(previewPatient)}
+                        </p>
+                      )}
                       {stayRequests.map((request) => (
                         <div key={request.id}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>
                             {formatDateMedium(request.summaryDate)} · {request.status}
+                            <span style={{ marginLeft: 8, color: request.physicianApproved ? '#15803d' : '#b45309' }}>
+                              {request.physicianApproved ? '✓ Physician approved' : 'Awaiting physician approval'}
+                            </span>
                           </div>
                           <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
                             {request.summaryText || 'No summary text for this day.'}

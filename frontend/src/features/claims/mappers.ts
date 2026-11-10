@@ -155,6 +155,7 @@ export function mapClaimToRequest(claim: ClaimRecord): SummarizationRequest {
         : 'Present',
     },
     summaryText: claim.summary.summaryContent,
+    physicianApproved: claim.summary.status === 'APPROVED' && Boolean(claim.summary.approvedStatus),
     chart: chartFor(claim, order ? `${order.orderedBy.firstName} ${order.orderedBy.lastName}` : 'Attending physician'),
     triage: triageForDisplay(order?.admission),
     orders: claim.summary.orders.map((summaryOrder) => ({
@@ -204,14 +205,26 @@ export function mapClaimToPatient(claim: ClaimRecord): CF4Patient {
     coveragePeriod: '',
     daysInCare: daysInCare(admissionDate, dischargeDate),
     status,
-    approved: claim.summary.status === 'APPROVED' && Boolean(claim.summary.approvedStatus),
+    missingDays: claim.stay?.missingDays ?? [],
+    unrequestedDays: claim.stay?.unrequestedDays ?? [],
+    unapprovedDays: claim.stay?.unapprovedDays ?? [],
+    approved:
+      claim.summary.status === 'APPROVED' &&
+      Boolean(claim.summary.approvedStatus) &&
+      !claim.stay?.missingDays.length &&
+      !claim.stay?.unrequestedDays.length,
     cf4Generated: claim.status === 'CF4_GENERATED',
   };
 }
 
+/** A stay is one admission; two admissions of the same patient are two CF4s. */
+export function stayKey(entry: { admissionId: string; patientId: string }): string {
+  return entry.admissionId || entry.patientId;
+}
+
 /**
- * One row per patient for the whole stay. Daily claims are folded into that
- * row (`claimIds`) so the same patient is not listed once per summary day.
+ * One row per stay (admission). Daily claims are folded into that row
+ * (`claimIds`) so the same stay is not listed once per summary day.
  */
 export function groupStayPatients(patients: CF4Patient[]): CF4Patient[] {
   const grouped = new Map<string, {
@@ -220,7 +233,7 @@ export function groupStayPatients(patients: CF4Patient[]): CF4Patient[] {
   }>();
 
   for (const patient of patients) {
-    const key = patient.patientId;
+    const key = stayKey(patient);
     const existing = grouped.get(key);
     if (existing) {
       existing.patient.claimIds.push(patient.claimId);
