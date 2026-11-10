@@ -579,7 +579,7 @@ export function AddPatientModal({
     try {
       await patientsApi.create({
         firstName,
-        middleName,
+        middleName: middleName || undefined,
         lastName,
         age: Number(form.age),
         gender: form.gender,
@@ -690,7 +690,7 @@ export function AddPatientModal({
                   style={s.input}
                   value={form.middleName}
                   onChange={(e) => setField('middleName', sanitizeName(e.target.value))}
-                  placeholder="e.g. Santos"
+                  placeholder="Optional"
                   maxLength={150}
                 />
                 {fieldError('middleName')}

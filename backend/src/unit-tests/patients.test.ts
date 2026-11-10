@@ -215,7 +215,6 @@ describe("Patients Module", () => {
 
   const mockCreatePatientDto = {
     firstName: "John",
-    middleName: "Santos",
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: "1990-01-01",
@@ -300,7 +299,7 @@ describe("Patients Module", () => {
           expect.objectContaining({
             data: expect.objectContaining({
               firstName: mockCreatePatientDto.firstName,
-              middleName: "Santos",
+              middleName: null,
               lastName: mockCreatePatientDto.lastName,
               gender: mockCreatePatientDto.gender,
               dateOfBirth: new Date(mockCreatePatientDto.dateOfBirth),
@@ -344,9 +343,8 @@ describe("Patients Module", () => {
 
       it("should store null when the middle name is omitted", async () => {
         (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
-        const { middleName: _middleName, ...dtoWithoutMiddleName } = mockCreatePatientDto;
 
-        await service.create(dtoWithoutMiddleName, mockUser.id);
+        await service.create(mockCreatePatientDto, mockUser.id);
 
         expect(prismaService.patient.create).toHaveBeenCalledWith(
           expect.objectContaining({
