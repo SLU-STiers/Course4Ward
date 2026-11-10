@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
+import { BatchTestService } from './batch-test.service';
 
 /**
  * Read-only admin analytics. Lives beside AuditLogModule (which owns the
@@ -10,7 +11,7 @@ import { ReportsService } from './reports.service';
  */
 @Module({
   controllers: [ReportsController],
-  providers: [ReportsService],
+  providers: [ReportsService, BatchTestService],
   exports: [ReportsService],
 })
 export class ReportsModule {}
