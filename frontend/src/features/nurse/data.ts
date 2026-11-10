@@ -21,6 +21,7 @@ export const AVAILABLE_DOCTORS = [
 ];
 const DEFAULT_TRIAGE: TriageAssessment = {
   level: null,
+  date: '—',
   time: '08:00 AM',
   heartRate: '86 bpm',
   respRate: '18 /min',

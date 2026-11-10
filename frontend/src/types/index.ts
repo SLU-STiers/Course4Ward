@@ -141,6 +141,9 @@ export type TriageLevel = 1 | 2 | 3 | 4 | 5;
 
 export interface AdmissionTriage {
   triageLevel: TriageLevel | null;
+  /** Calendar day as an ISO timestamp at UTC midnight. */
+  triageDate?: string | null;
+  /** 24h `HH:mm`. */
   triageTime: string | null;
   heartRate: number | null;
   respRate: number | null;

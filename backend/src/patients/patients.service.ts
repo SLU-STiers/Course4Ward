@@ -22,6 +22,7 @@ function buildTriage(dto: ReadmitPatientDto, nurseId: string) {
   const [bpSystolic, bpDiastolic] = dto.bp ? dto.bp.split('/').map(Number) : [undefined, undefined];
   const triage = {
     triageLevel: dto.triageLevel,
+    triageDate: dto.triageDate ? new Date(`${dto.triageDate}T00:00:00.000Z`) : undefined,
     triageTime: dto.triageTime,
     heartRate: dto.heartRate,
     respRate: dto.respRate,
@@ -42,6 +43,7 @@ function buildTriage(dto: ReadmitPatientDto, nurseId: string) {
 export const triageSelect = {
   select: {
     triageLevel: true,
+    triageDate: true,
     triageTime: true,
     heartRate: true,
     respRate: true,

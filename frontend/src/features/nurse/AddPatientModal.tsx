@@ -87,6 +87,9 @@ export type AddPatientFormResult = {
   contactPersonAddress: string;
   /** 5-level triage priority; null until the nurse picks one. */
   triageLevel: TriageLevel | null;
+  /** `YYYY-MM-DD`; starts as today. */
+  triageDate: string;
+  /** 24h `HH:mm`; starts as the current time. */
   triageTime: string;
   heartRate: string;
   respRate: string;
@@ -119,6 +122,7 @@ const emptyForm = (): AddPatientFormResult => ({
   contactPersonNumber: '',
   contactPersonAddress: '',
   triageLevel: null,
+  triageDate: '',
   triageTime: '',
   heartRate: '',
   respRate: '',
@@ -197,6 +201,10 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       insurance: toInsurance(draft.form?.insurance),
       ...toReligion(draft.form?.religion, draft.form?.religionOther),
       triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
+      triageDate:
+        typeof draft.form?.triageDate === 'string' && DATE_PATTERN.test(draft.form.triageDate)
+          ? draft.form.triageDate
+          : '',
       chiefComplaints: toComplaints(draft.form?.chiefComplaints),
     };
     // Fields of older versions of this form.
@@ -222,8 +230,22 @@ function saveDraft(draft: AddPatientDraft | null) {
   }
 }
 
+const nowClock = () => {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+};
+
+/** Triage is usually recorded as the patient arrives, so blank date and time default to now. */
+const withTriageNow = (form: AddPatientFormResult): AddPatientFormResult => ({
+  ...form,
+  triageDate: form.triageDate || todayValue(),
+  triageTime: form.triageTime || nowClock(),
+});
+
+/** The defaulted triage date and time alone don't make a draft worth keeping. */
 const isPristine = (form: AddPatientFormResult, roomNumber: string) =>
-  roomNumber === '' && JSON.stringify(form) === JSON.stringify(emptyForm());
+  roomNumber === '' &&
+  JSON.stringify({ ...form, triageDate: '', triageTime: '' }) === JSON.stringify(emptyForm());
 
 const isSex = (value: unknown): value is Sex => typeof value === 'string' && value in SEX_LABEL;
 
@@ -278,6 +300,7 @@ type FieldKey =
   | 'contactPersonAddress'
   | 'room'
   | 'triageLevel'
+  | 'triageDate'
   | 'triageTime'
   | 'heartRate'
   | 'respRate'
@@ -382,6 +405,10 @@ function registrationProblems(
 
   // Triage assessment
   if (!form.triageLevel) add('triageLevel', 'Triage level (ESI) is required.');
+  required('triageDate', form.triageDate, 'Triage date');
+  if (form.triageDate && form.triageDate > todayValue()) {
+    add('triageDate', 'Triage date cannot be in the future.');
+  }
   required('triageTime', form.triageTime, 'Triage time');
   for (const rule of VITAL_RULES) {
     const raw = String(form[rule.key]).trim();
@@ -429,7 +456,9 @@ export function AddPatientModal({
 }) {
   const ownerId = useAuthStore((state) => state.user?.id);
   const [initialDraft] = useState(() => loadDraft(ownerId));
-  const [form, setForm] = useState<AddPatientFormResult>(() => initialDraft?.form ?? emptyForm());
+  const [form, setForm] = useState<AddPatientFormResult>(() =>
+    withTriageNow(initialDraft?.form ?? emptyForm()),
+  );
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
   const [pendingDoctorId, setPendingDoctorId] = useState('');
   const [roomNumber, setRoomNumber] = useState(() => initialDraft?.roomNumber ?? '');
@@ -473,7 +502,7 @@ export function AddPatientModal({
   }, [ownerId, form, roomNumber]);
 
   const discardDraft = () => {
-    setForm(emptyForm());
+    setForm(withTriageNow(emptyForm()));
     setRoomNumber('');
     setPendingDoctorId('');
     setDobTouched(false);
@@ -546,6 +575,7 @@ export function AddPatientModal({
       physicianId: form.physicianId,
       additionalPhysicianIds: form.consultingPhysicianIds,
       triageLevel: form.triageLevel ?? undefined,
+      triageDate: form.triageDate || undefined,
       triageTime: form.triageTime || undefined,
       heartRate: toNumber(form.heartRate),
       respRate: toNumber(form.respRate),
@@ -955,6 +985,10 @@ export function AddPatientModal({
               </p>
             </div>
             <div style={s.grid4}>
+              <div>
+                <Vital id={fieldId('triageDate')} label="Date" type="date" max={todayValue()} value={form.triageDate} onChange={(v) => setField('triageDate', v)} required />
+                {fieldError('triageDate')}
+              </div>
               <div>
                 <TimePickerField id={fieldId('triageTime')} value={form.triageTime} onChange={(v) => setField('triageTime', v)} required />
                 {fieldError('triageTime')}

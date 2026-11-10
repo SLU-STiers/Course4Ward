@@ -206,6 +206,12 @@ export class CreatePatientDto {
   @Max(5, { message: 'Triage level must be between 1 and 5' })
   triageLevel?: number;
 
+  @ApiPropertyOptional({ description: 'Triage date, YYYY-MM-DD', example: '2026-11-10' })
+  @IsOptional()
+  @Matches(DATE_ONLY_PATTERN, { message: 'Triage date must be in YYYY-MM-DD format' })
+  @IsDateString({ strict: true }, { message: 'Triage date must be a real date' })
+  triageDate?: string;
+
   @ApiPropertyOptional({ description: 'Triage time, 24h HH:mm', example: '08:30' })
   @IsOptional()
   @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Triage time must be in HH:mm format' })

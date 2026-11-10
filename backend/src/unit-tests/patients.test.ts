@@ -118,6 +118,7 @@ describe("Patients Module", () => {
         initialAssessment: null,
         triage: {
           triageLevel: 3,
+          triageDate: new Date("2024-01-01"),
           triageTime: "08:30",
           heartRate: 88,
           respRate: 18,
@@ -391,6 +392,7 @@ describe("Patients Module", () => {
           {
             ...mockCreatePatientDto,
             triageLevel: 2,
+            triageDate: "2026-11-10",
             triageTime: "08:30",
             heartRate: 88,
             spo2: 97,
@@ -411,6 +413,7 @@ describe("Patients Module", () => {
                   triage: {
                     create: {
                       triageLevel: 2,
+                      triageDate: new Date("2026-11-10T00:00:00.000Z"),
                       triageTime: "08:30",
                       heartRate: 88,
                       respRate: undefined,
