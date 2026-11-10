@@ -33,7 +33,8 @@ export type AuditAction =
   | 'SUMMARY_VERSION_RESTORED'
   | 'CLAIM_CREATED'
   | 'CLAIM_PHYSICIAN_NOTIFIED'
-  | 'CF4_GENERATED';
+  | 'CF4_GENERATED'
+  | 'PATIENT_TRANSFERRED';
 
 /**
  * Action name -> persisted `ActionType`. One-to-one wherever the enum can
@@ -60,6 +61,7 @@ export const ACTION_MAP: Record<AuditAction, ActionType> = {
   CLAIM_CREATED: ActionType.CLAIM_CREATED,
   CLAIM_PHYSICIAN_NOTIFIED: ActionType.CLAIM_PHYSICIAN_NOTIFIED,
   CF4_GENERATED: ActionType.CF4_GENERATED,
+  PATIENT_TRANSFERRED: ActionType.TRANSFER_PATIENT,
 };
 
 /**
@@ -88,6 +90,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   PASSWORD_RESET: 'Password reset',
   REGISTER_PATIENT: 'Patient registered',
   PATIENT_UPDATED: 'Patient record updated',
+  TRANSFER_PATIENT: 'Patient transferred',
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
