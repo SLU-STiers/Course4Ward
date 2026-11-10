@@ -9,6 +9,7 @@ import { PatientsService } from "../patients/patients.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { CourseInWardService } from "../course-in-ward/course-in-ward.service";
 import { WardAccessService } from "../wards/ward-access.service";
 import {
   CommunicationChannel,
@@ -233,6 +234,10 @@ describe("Patients Module", () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        {
+          provide: CourseInWardService,
+          useValue: { prepareClaimForDischargedAdmission: jest.fn().mockResolvedValue(undefined) },
+        },
         // Ward limits have their own tests (ward-access.test.ts); pass everything through here.
         {
           provide: WardAccessService,
@@ -1145,6 +1150,7 @@ describe("Patients Module", () => {
                 patientClass: true,
                 classSince: true,
                 initialAssessment: true,
+                physicianId: true,
                 // Physicians read the full triage assessment, not just the level.
                 triage: expect.objectContaining({
                   select: expect.objectContaining({

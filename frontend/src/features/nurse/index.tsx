@@ -1,6 +1,6 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../../services/domainApi';
@@ -28,6 +28,8 @@ export function NurseDashboard() {
     enabled: Boolean(user),
   });
 
+  const clearFocus = useCallback(() => setFocusPatient(null), []);
+
   const handleLogout = () => {
     signOut('MANUAL');
     navigate('/login');
@@ -38,7 +40,13 @@ export function NurseDashboard() {
       navbarProps={{
         ariaLabel: 'Nurse navigation',
         activeId: activeTab,
-        onNavigate: (id) => setActiveTab(id as TabType),
+        onNavigate: (id) => {
+          const tab = id as TabType;
+          setActiveTab(tab);
+          // A notification opens one chart. Leaving Management forgets it, so
+          // coming back from Patient does not pop that chart open again.
+          if (tab !== 'management') setFocusPatient(null);
+        },
         items: [
           { id: 'management', label: 'Management', icon: <ManageIcon /> },
           { id: 'patient', label: 'Patient', icon: <PatientIcon /> },
@@ -70,7 +78,12 @@ export function NurseDashboard() {
         />
       }
     >
-      {activeTab === 'management' && <ManagementPortalView focusPatient={focusPatient} />}
+      {activeTab === 'management' && (
+        <ManagementPortalView
+          focusPatient={focusPatient}
+          onFocusHandled={clearFocus}
+        />
+      )}
       {activeTab === 'patient' && <PatientView />}
     </Layout>
   );

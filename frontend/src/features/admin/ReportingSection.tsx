@@ -20,7 +20,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { adminApi } from '../../services/domainApi';
-import { EmptyState, LoadingState, StatusBadge } from '../../components/ui';
+import { Button, EmptyState, LoadingState, StatusBadge } from '../../components/ui';
 import { actionMeta, roleLabel } from './activityLabels';
 import { BarList, ColumnChart, DonutChart, FunnelChart, StatRows, TrendChart } from './charts';
 import { segmentColor } from './chartTheme';
@@ -468,7 +468,12 @@ export function ReportingSection() {
           </ReportCard>
         ) : null}
 
-        {tab === 'ai' ? <AiStatsPanel range={range} /> : null}
+        {tab === 'ai' ? (
+          <AiStatsPanel
+            range={range}
+            period={preset === 'all' ? rangeHint : `${rangeHint} (from ${range.from})`}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -480,7 +485,8 @@ export function ReportingSection() {
  * can draw on. Timings cover successful calls; failures are counted apart.
  * Fetched only while the tab is open.
  */
-function AiStatsPanel({ range }: { range: { from: string } }) {
+function AiStatsPanel({ range, period }: { range: { from: string }; period: string }) {
+  const [pdfError, setPdfError] = useState(false);
   const { data, isPending, isError } = useQuery({
     queryKey: ['admin-report-ai', range],
     queryFn: () => adminApi.aiStats(range).then((response) => response.data),
@@ -509,95 +515,254 @@ function AiStatsPanel({ range }: { range: { from: string } }) {
       value: `${formatMs(row.avgMs)} avg · p95 ${formatMs(row.p95Ms)}`,
     }));
 
+  // Built once and shared by the cards and the PDF, so the two cannot disagree.
+  const summaryRows = [
+    { key: 'calls', label: 'Summarization calls', value: summ.calls },
+    { key: 'success', label: 'Success rate', value: successRate(summ) },
+    ...timingRows(summ, 'summary'),
+    { key: 'orders', label: 'Orders per call', value: perSuccess(summ.items, summ) },
+    {
+      key: 'chars',
+      label: 'Summary length',
+      value: summ.avgOutputChars == null ? '—' : `${summ.avgOutputChars} chars`,
+    },
+  ];
+  const summaryByModel = breakdown(summ.byModel, AI_MODEL_LABELS);
+  const summaryByTrigger = breakdown(summ.byTrigger, AI_TRIGGER_LABELS);
+  const trendPoints = data.trend.filter((point) => point.avgSummaryMs != null);
+  const embeddingRows = [
+    {
+      key: 'model',
+      label: 'Embedding model',
+      value: emb.byModel.map((row) => row.key).join(', ') || '—',
+    },
+    { key: 'calls', label: 'Embedding calls', value: emb.calls },
+    { key: 'success', label: 'Success rate', value: successRate(emb) },
+    ...timingRows(emb, 'embed'),
+  ];
+  const embeddingByTrigger = breakdown(emb.byTrigger, AI_TRIGGER_LABELS);
+  const corpusRows = [
+    {
+      key: 'coverage',
+      label: 'Orders with an embedding',
+      value: `${corpus.ordersEmbedded} / ${corpus.ordersTotal} (${coverage}%)`,
+    },
+    {
+      key: 'rag',
+      label: 'RAG corpus (orders of approved summaries)',
+      value: corpus.ragOrders,
+    },
+    { key: 'approved', label: 'Approved summaries', value: corpus.approvedSummaries },
+    { key: 'dims', label: 'Vector dimension', value: corpus.dimension ?? '—' },
+    {
+      key: 'refs',
+      label: 'RAG references per base-model call',
+      value: base?.avgReferences ?? '—',
+    },
+    {
+      key: 'similarity',
+      label: 'Best reference similarity (avg)',
+      value: base?.avgTopSimilarity ?? '—',
+    },
+  ];
+  const failureRows = data.recentFailures.map((failure, index) => ({
+    key: `${failure.createdAt}-${index}`,
+    label: `${new Date(failure.createdAt).toLocaleString()} · ${
+      failure.kind === 'SUMMARY' ? 'Summary' : 'Embedding'
+    } · ${AI_TRIGGER_LABELS[failure.trigger] ?? failure.trigger}`,
+    value: failure.error ?? 'Unknown error',
+    style: { color: 'var(--c4w-color-danger, #b91c1c)' },
+  }));
+
+  const downloadPdf = async () => {
+    try {
+      const { buildAiReportPdf } = await import('./aiReportPdf');
+      buildAiReportPdf({
+        period,
+        sections: [
+          {
+            title: 'Summarization time',
+            description:
+              'How long the language model took to write a Course in the Ward draft from a day\'s finished physician orders. "Median" is the typical call, "95th percentile" the slow end that 1 call in 20 exceeds. "Orders per call" and "Summary length" show how much went in and came out per successful call.',
+            rows: summaryRows,
+          },
+          {
+            title: 'Summarization by model',
+            description:
+              'The same timings split by which model wrote the draft: the base model, which is given similar past orders as references (RAG), or the fine-tuned model.',
+            rows: summaryByModel,
+            emptyLabel: 'No summaries generated in this period.',
+          },
+          {
+            title: 'Summarization by trigger',
+            description:
+              'What started each summarization: a physician pressing Generate, a regeneration of an existing draft, or the nightly batch that drafts every patient still without a summary for the day.',
+            rows: summaryByTrigger,
+            emptyLabel: 'No summaries generated in this period.',
+          },
+          {
+            title: `Average summarization time (${bucketLabel(data.bucket)})`,
+            description:
+              'Average duration of successful summarization calls per period, to show whether the model is getting slower or faster over time. Periods are UTC calendar dates; periods without a summary are omitted.',
+            rows: trendPoints.map((point) => ({
+              label: point.period,
+              value: `${formatMs(point.avgSummaryMs)} avg · ${point.summaries} summar${
+                point.summaries === 1 ? 'y' : 'ies'
+              }`,
+            })),
+            emptyLabel: 'No summaries generated in this period.',
+          },
+          {
+            title: 'Embeddings',
+            description:
+              'Each physician order is converted into a numeric vector (an embedding) so that similar past orders can be found by meaning rather than by keyword. These are the calls to the embedding model in the period and how long they took.',
+            rows: embeddingRows,
+          },
+          {
+            title: 'Embeddings by trigger',
+            description:
+              'What caused each embedding call: a newly written order being indexed, or a search query being embedded to retrieve references for a summary.',
+            rows: embeddingByTrigger,
+            emptyLabel: 'No embedding calls in this period.',
+          },
+          {
+            title: 'Embedding and RAG corpus',
+            description:
+              'The current state of the searchable order history, regardless of the selected period. Only orders belonging to physician-approved summaries are used as RAG references. "Best reference similarity" is how closely the best-matching past order resembled the new ones (1 = identical).',
+            rows: corpusRows,
+          },
+          {
+            title: 'Recent AI failures',
+            description:
+              'The most recent summarization or embedding calls that failed in the period, with the error reported. A failed call produces no draft or embedding and is excluded from the timings above.',
+            rows: failureRows,
+            emptyLabel: 'No failed AI calls in this period.',
+          },
+        ],
+      }).save(`ai-statistics-report-${toDateKey(new Date())}.pdf`);
+      setPdfError(false);
+    } catch {
+      setPdfError(true);
+    }
+  };
+
   return (
     <>
+      <div
+        style={{
+          gridColumn: '1 / -1',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          gap: '8px',
+        }}
+      >
+        {pdfError ? (
+          <span role="alert" style={styles.reportEmpty}>
+            Could not create the PDF. Please try again.
+          </span>
+        ) : null}
+        <Button size="sm" variant="ghost" onClick={downloadPdf}>
+          Download PDF report
+        </Button>
+      </div>
+
+      {/* Headline numbers: the answer to "is the AI fast and working?" at a glance. */}
+      <div className="admin-kpi-grid" style={{ ...styles.kpiGrid, gridColumn: '1 / -1' }}>
+        <Kpi
+          label="Summaries"
+          value={summ.calls}
+          hint={summ.failures ? `${summ.failures} failed` : 'no failures'}
+        />
+        <Kpi label="Typical time" value={formatMs(summ.p50Ms)} hint={`p95 ${formatMs(summ.p95Ms)}`} />
+        <Kpi label="Success rate" value={successRate(summ)} hint="summarization" />
+        <Kpi
+          label="Orders / summary"
+          value={perSuccess(summ.items, summ)}
+          hint={summ.avgOutputChars == null ? 'no output yet' : `${summ.avgOutputChars} chars out`}
+        />
+        <Kpi
+          label="Embedded"
+          value={`${coverage}%`}
+          hint={`${corpus.ordersEmbedded} of ${corpus.ordersTotal} orders`}
+        />
+        <Kpi
+          label="RAG corpus"
+          value={corpus.ragOrders}
+          hint={`${corpus.approvedSummaries} approved summaries`}
+        />
+      </div>
+
       <ReportCard
         icon={<Timer size={14} aria-hidden="true" />}
         title="Summarization time"
-        hint="LLM calls in period"
+        hint="successful LLM calls in period"
       >
-        <StatRows
-          rows={[
-            { key: 'calls', label: 'Summarization calls', value: summ.calls },
-            { key: 'success', label: 'Success rate', value: successRate(summ) },
-            ...timingRows(summ, 'summary'),
-            {
-              key: 'orders',
-              label: 'Orders per call',
-              value: perSuccess(summ.items, summ),
-            },
-            {
-              key: 'chars',
-              label: 'Summary length',
-              value: summ.avgOutputChars == null ? '—' : `${summ.avgOutputChars} chars`,
-            },
-          ]}
-        />
-        <StatRows rows={breakdown(summ.byModel, AI_MODEL_LABELS)} emptyLabel="No summaries generated yet." />
-        <StatRows rows={breakdown(summ.byTrigger, AI_TRIGGER_LABELS)} />
+        {summ.calls ? (
+          <>
+            <TimingBars stats={summ} />
+            {trendPoints.length > 1 ? (
+              <ColumnChart
+                points={trendPoints.map((point) => ({
+                  key: point.period,
+                  count: Math.round((point.avgSummaryMs ?? 0) / 1000),
+                }))}
+                unit="s average"
+              />
+            ) : (
+              <p style={styles.graphNote}>
+                A {bucketLabel(data.bucket)} trend appears once summaries span two or more periods.
+              </p>
+            )}
+          </>
+        ) : (
+          <p style={styles.reportEmpty}>No summaries generated in this period.</p>
+        )}
       </ReportCard>
 
       <ReportCard
         icon={<Activity size={14} aria-hidden="true" />}
-        title="Average summarization time"
-        hint={`seconds, ${bucketLabel(data.bucket)}`}
+        title="Where summaries came from"
+        hint="by model and by trigger"
       >
-        <ColumnChart
-          points={data.trend
-            .filter((point) => point.avgSummaryMs != null)
-            .map((point) => ({
-              key: point.period,
-              count: Math.round((point.avgSummaryMs ?? 0) / 1000),
-            }))}
-          unit="s average"
-          emptyLabel="No summaries generated in this period."
-        />
+        {summ.calls ? (
+          <>
+            <BreakdownTable heading="Model" rows={summ.byModel} labels={AI_MODEL_LABELS} />
+            <BreakdownTable heading="Trigger" rows={summ.byTrigger} labels={AI_TRIGGER_LABELS} />
+          </>
+        ) : (
+          <p style={styles.reportEmpty}>No summaries generated in this period.</p>
+        )}
       </ReportCard>
 
       <ReportCard
         icon={<Binary size={14} aria-hidden="true" />}
-        title="Embeddings"
+        title="Embeddings & RAG"
         hint="calls in period · corpus now"
       >
-        <StatRows
-          rows={[
-            {
-              key: 'model',
-              label: 'Embedding model',
-              value: emb.byModel.map((row) => row.key).join(', ') || '—',
-            },
-            { key: 'calls', label: 'Embedding calls', value: emb.calls },
-            { key: 'success', label: 'Success rate', value: successRate(emb) },
-            ...timingRows(emb, 'embed'),
-          ]}
-        />
-        <StatRows rows={breakdown(emb.byTrigger, AI_TRIGGER_LABELS)} />
-        <StatRows
-          rows={[
-            {
-              key: 'coverage',
-              label: 'Orders with an embedding',
-              value: `${corpus.ordersEmbedded} / ${corpus.ordersTotal} (${coverage}%)`,
-            },
-            {
-              key: 'rag',
-              label: 'RAG corpus (orders of approved summaries)',
-              value: corpus.ragOrders,
-            },
-            { key: 'approved', label: 'Approved summaries', value: corpus.approvedSummaries },
-            { key: 'dims', label: 'Vector dimension', value: corpus.dimension ?? '—' },
-            {
-              key: 'refs',
-              label: 'RAG references per base-model call',
-              value: base?.avgReferences ?? '—',
-            },
-            {
-              key: 'similarity',
-              label: 'Best reference similarity (avg)',
-              value: base?.avgTopSimilarity ?? '—',
-            },
-          ]}
-        />
+        <div style={styles.barListRow}>
+          <span style={styles.barListLabel}>Orders embedded</span>
+          <span style={styles.barListTrack}>
+            <span
+              style={{
+                ...styles.barListFill,
+                width: `${Math.max(2, coverage)}%`,
+                backgroundColor: 'var(--c4w-color-primary, #2563eb)',
+              }}
+            />
+          </span>
+          <span style={styles.barListValue}>{coverage}%</span>
+        </div>
+        {/* Rows with no value yet ("—") are noise on screen; the PDF keeps them. */}
+        <StatRows rows={corpusRows.slice(1).filter((row) => row.value !== '—')} />
+        {emb.calls ? (
+          <>
+            <TimingBars stats={emb} />
+            <BreakdownTable heading="Trigger" rows={emb.byTrigger} labels={AI_TRIGGER_LABELS} />
+          </>
+        ) : (
+          <p style={styles.graphNote}>No embedding calls in this period.</p>
+        )}
       </ReportCard>
 
       <ReportCard
@@ -605,17 +770,7 @@ function AiStatsPanel({ range }: { range: { from: string } }) {
         title="Recent AI failures"
         hint="in period"
       >
-        <StatRows
-          rows={data.recentFailures.map((failure, index) => ({
-            key: `${failure.createdAt}-${index}`,
-            label: `${new Date(failure.createdAt).toLocaleString()} · ${
-              failure.kind === 'SUMMARY' ? 'Summary' : 'Embedding'
-            } · ${AI_TRIGGER_LABELS[failure.trigger] ?? failure.trigger}`,
-            value: failure.error ?? 'Unknown error',
-            style: { color: 'var(--c4w-color-danger, #b91c1c)' },
-          }))}
-          emptyLabel="No failed AI calls in this period."
-        />
+        <StatRows rows={failureRows} emptyLabel="No failed AI calls in this period." />
       </ReportCard>
     </>
   );
@@ -641,7 +796,79 @@ function perSuccess(total: number, stats: AiCallStats): string {
   return ok ? (total / ok).toFixed(1) : '—';
 }
 
-function Kpi({ label, value, hint }: { label: string; value: number; hint: string }) {
+/** Median / average / p95 / slowest as bars on one scale, so the spread is visible. */
+function TimingBars({ stats }: { stats: AiCallStats }) {
+  const max = stats.maxMs || 1;
+  const rows = [
+    { key: 'p50', label: 'Median', ms: stats.p50Ms },
+    { key: 'avg', label: 'Average', ms: stats.avgMs },
+    { key: 'p95', label: '95th percentile', ms: stats.p95Ms },
+    { key: 'max', label: 'Slowest', ms: stats.maxMs },
+  ];
+  return (
+    <div>
+      {rows.map((row, index) => (
+        <div key={row.key} style={styles.barListRow}>
+          <span style={styles.barListLabel}>{row.label}</span>
+          <span style={styles.barListTrack}>
+            <span
+              style={{
+                ...styles.barListFill,
+                width: `${Math.max(2, ((row.ms ?? 0) / max) * 100)}%`,
+                backgroundColor: segmentColor(index),
+              }}
+            />
+          </span>
+          <span style={styles.barListValue}>{formatMs(row.ms)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const compactCell = { padding: '5px 6px', fontSize: '12px' } as const;
+
+/** Calls / average / p95 per model or trigger, as a small table instead of crammed rows. */
+function BreakdownTable({
+  heading,
+  rows,
+  labels,
+}: {
+  heading: string;
+  rows: AiCallSection['byModel'];
+  labels: Record<string, string>;
+}) {
+  if (!rows.length) return null;
+  return (
+    <table style={styles.table}>
+      <thead>
+        <tr>
+          <th style={{ ...styles.th, ...compactCell, fontSize: '10px' }}>{heading}</th>
+          <th style={{ ...styles.th, ...compactCell, fontSize: '10px', textAlign: 'right' }}>Calls</th>
+          <th style={{ ...styles.th, ...compactCell, fontSize: '10px', textAlign: 'right' }}>Avg</th>
+          <th style={{ ...styles.th, ...compactCell, fontSize: '10px', textAlign: 'right' }}>p95</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.key} style={styles.tr}>
+            <td style={{ ...styles.td, ...compactCell }}>{labels[row.key] ?? row.key}</td>
+            <td style={{ ...styles.td, ...compactCell, textAlign: 'right' }}>
+              {row.calls}
+              {row.failures ? (
+                <span style={{ color: 'var(--c4w-color-danger, #b91c1c)' }}> ({row.failures} failed)</span>
+              ) : null}
+            </td>
+            <td style={{ ...styles.td, ...compactCell, textAlign: 'right' }}>{formatMs(row.avgMs)}</td>
+            <td style={{ ...styles.td, ...compactCell, textAlign: 'right' }}>{formatMs(row.p95Ms)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Kpi({ label, value, hint }: { label: string; value: number | string; hint: string }) {
   return (
     <div style={styles.kpiTile}>
       <span style={styles.kpiLabel} title={label}>

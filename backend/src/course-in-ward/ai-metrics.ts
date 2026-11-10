@@ -3,7 +3,7 @@ import { AiCallKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** What caused an AI call (stored as text on `AiCallMetric.trigger`). */
-export type AiTrigger = 'manual' | 'regenerate' | 'batch' | 'order' | 'rag-query';
+export type AiTrigger = 'manual' | 'regenerate' | 'batch' | 'order' | 'rag-query' | 'discharge';
 
 /** Outcome details read off a successful call's result. */
 export interface AiCallOutcome {

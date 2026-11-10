@@ -99,6 +99,16 @@ export class OrdersService {
     }
 
     const type = dto.type ?? OrderType.DEFAULT;
+    // Only the attending physician sends the patient home; consultants advise.
+    // A physician writing it themselves must be the attending too, whatever
+    // orderedById says.
+    if (
+      type === OrderType.DISCHARGE &&
+      (orderedById !== admission.physicianId ||
+        (enteredByRole === Role.PHYSICIAN && enteredById !== admission.physicianId))
+    ) {
+      throw new ForbiddenException('Only the attending physician can write a discharge order');
+    }
     if (type !== OrderType.DEFAULT) {
       await this.assertOrderTypeAllowed(dto.admissionId, type, admission.patientClass);
     }

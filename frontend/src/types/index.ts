@@ -91,6 +91,8 @@ export interface PatientAdmission {
   classSince?: string;
   initialAssessment?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
+  /** Attending physician's id (physician-scoped lists). */
+  physicianId?: string | null;
   additionalPhysicians?: { createdAt?: string; physician: { id: string; firstName: string; lastName: string } }[];
   /** Full triage row for nurses and physicians; claims payloads include it on the order's admission. */
   triage?: AdmissionTriage | null;
@@ -231,7 +233,7 @@ export interface Claim {
   cf4Generated: boolean;
 }
 
-/** A Course in the Ward no claim has been opened for (`GET /claims/eligible-summaries`). */
+/** A discharged Course in the Ward day no claim has been opened for (`GET /claims/eligible-summaries`). */
 export interface EligibleSummary {
   id: string;
   summaryDate: string;
@@ -239,7 +241,14 @@ export interface EligibleSummary {
   summaryContent: string;
   patient: { id: string; firstName: string; lastName: string };
   approvedBy?: { firstName: string; lastName: string } | null;
-  orders: Array<{ dateCreated: string; orderedBy: { firstName: string; lastName: string } }>;
+  orders: Array<{
+    dateCreated: string;
+    orderedBy: { firstName: string; lastName: string };
+    admission?: {
+      dischargeDate?: string | null;
+      physician?: { firstName: string; lastName: string } | null;
+    };
+  }>;
 }
 
 export interface ClaimRecord {
