@@ -55,6 +55,7 @@ JWT_SECRET=<insert key>
 - nmake /F Makefile.win install
 9. Open postgreSQL, click the “Server” tab, and enter the account credentials you have set during the installation phase.
 10. Go back to VS Code and change your directory to the backend (if you’re not in the backend directory). Type the following command:
+- npx prisma migrate deploy
 - npx prisma generate
 - npx prisma db seed
 11. The database schema “course4ward” should be created in postgreSQL.

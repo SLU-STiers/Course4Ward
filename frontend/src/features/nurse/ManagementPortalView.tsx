@@ -35,7 +35,7 @@ const colors = ['#ef4444', '#22c55e', '#84cc16', '#6366f1', '#eab308', '#06b6d4'
 
 function mapPatient(patient: Patient, index: number): NursePatient {
   const admission = patient.admissions?.[0];
-  const name = `${patient.firstName} ${patient.lastName}`;
+  const name = [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' ');
   if (patient.restricted) {
     return {
       id: patient.id,

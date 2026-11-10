@@ -55,12 +55,13 @@ export function hoursSince(since?: string | null): number {
 
 interface NameParts {
   firstName: string;
+  middleName?: string | null;
   lastName: string;
 }
 
-/** `First Last`. */
+/** `First Middle Last`, omitting a missing middle name. */
 export function fullName(person: NameParts): string {
-  return `${person.firstName} ${person.lastName}`;
+  return [person.firstName, person.middleName, person.lastName].filter(Boolean).join(' ');
 }
 
 /** `FL` — uppercase initials of the first and last name. */
