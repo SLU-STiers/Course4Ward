@@ -1,6 +1,7 @@
 // unit-tests/course-in-ward.test.ts
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { summaryAdmission } from '../course-in-ward/summary-access';
 import { CourseInWardService, MAX_SUMMARY_VERSIONS } from '../course-in-ward/course-in-ward.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -17,7 +18,7 @@ const mockOllamaInstance = {
   summarizeBatch: jest.fn(),
   health: jest.fn(),
   // No embeddings in unit tests: RAG retrieval falls back to no references.
-  embed: jest.fn().mockRejectedValue(new Error('embeddings disabled in tests')),
+  embedTexts: jest.fn().mockRejectedValue(new Error('embeddings disabled in tests')),
 };
 jest.mock('../course-in-ward/ollama-client', () => {
   return {
@@ -48,6 +49,10 @@ const mockPrismaService = {
   summaryApprovalRequest: {
     findMany: jest.fn().mockResolvedValue([]),
     updateMany: jest.fn(),
+  },
+  // Admissions decide each summary's attending physician (summary-access.ts).
+  patientAdmission: {
+    findMany: jest.fn().mockResolvedValue([]),
   },
   summaryVersion: {
     create: jest.fn(),
@@ -279,7 +284,7 @@ describe('CourseInWardService', () => {
         userId: mockRequestedById,
         action: 'SUMMARY_GENERATED_AI',
       }));
-      expect(result).toEqual([mockCreatedSummary]);
+      expect(result).toEqual([{ ...mockCreatedSummary, attendingPhysicianId: null }]);
     });
 
     it('should default to today when no day is given', async () => {
@@ -528,7 +533,7 @@ describe('CourseInWardService', () => {
           message: expect.stringContaining('Juan Dela Cruz'),
         }),
       );
-      expect(result).toEqual(mockUpdatedSummary);
+      expect(result).toEqual({ ...mockUpdatedSummary, attendingPhysicianId: null });
     });
 
     it('should keep the replaced text as a version and trim to the cap', async () => {
@@ -727,7 +732,7 @@ describe('CourseInWardService', () => {
           message: expect.stringContaining('Juan Dela Cruz'),
         }),
       );
-      expect(result).toEqual(mockUpdatedSummary);
+      expect(result).toEqual({ ...mockUpdatedSummary, attendingPhysicianId: null });
     });
 
     it('should pass the physician instructions to the AI service', async () => {
@@ -753,11 +758,11 @@ describe('CourseInWardService', () => {
       mockPrismaService.courseInWard.update.mockResolvedValue(mockUpdatedSummary);
       mockAuditLogService.record.mockResolvedValue({});
       mockPrismaService.physicianOrder.updateMany.mockResolvedValue({ count: 1 });
-      mockOllamaClient.embed.mockClear();
+      mockOllamaClient.embedTexts.mockClear();
 
       await service.regenerateSummary(mockSummaryId, mockPhysicianId, undefined, 'fine_tuned');
 
-      expect(mockOllamaClient.embed).not.toHaveBeenCalled();
+      expect(mockOllamaClient.embedTexts).not.toHaveBeenCalled();
       expect(mockOllamaClient.summarizeBatch).toHaveBeenCalledWith(
         expect.any(Array),
         expect.objectContaining({ model: 'fine_tuned', references: [] }),
@@ -831,9 +836,26 @@ describe('CourseInWardService', () => {
       validatedAt: expect.any(Date),
     };
 
+    /** The summary as both `findOne` and the attending check read it. */
+    const withAttending = (physicianId: string | null) => ({
+      ...mockExistingSummary,
+      orders: [],
+      patient: {
+        admissions: [
+          {
+            id: 'admission-1',
+            admissionDate: new Date(0),
+            dischargeDate: null,
+            physicianId,
+            additionalPhysicians: [{ physicianId: 'consultant-1' }],
+          },
+        ],
+      },
+    });
+
     it('should approve a summary successfully', async () => {
       // Arrange
-      mockPrismaService.courseInWard.findUnique.mockResolvedValue(mockExistingSummary);
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(withAttending(mockPhysicianId));
       mockPrismaService.courseInWard.update.mockResolvedValue(mockApprovedSummary);
       mockAuditLogService.record.mockResolvedValue({});
 
@@ -864,7 +886,28 @@ describe('CourseInWardService', () => {
         userId: mockPhysicianId,
         action: 'SUMMARY_APPROVED',
       }));
-      expect(result).toEqual(mockApprovedSummary);
+      expect(result).toEqual({ ...mockApprovedSummary, attendingPhysicianId: null });
+    });
+
+    it.each([
+      ['a consulting physician', 'consultant-1'],
+      ['an unrelated physician', 'someone-else'],
+    ])('should refuse approval by %s', async (_label, physicianId) => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(withAttending(mockPhysicianId));
+
+      await expect(service.approve(mockSummaryId, physicianId)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockPrismaService.courseInWard.update).not.toHaveBeenCalled();
+    });
+
+    it('should refuse approval when the admission has no attending physician', async () => {
+      mockPrismaService.courseInWard.findUnique.mockResolvedValue(withAttending(null));
+
+      await expect(service.approve(mockSummaryId, mockPhysicianId)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockPrismaService.courseInWard.update).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if summary does not exist', async () => {
@@ -962,6 +1005,7 @@ describe('CourseInWardService', () => {
             orderBy: { dateCreated: 'asc' },
             select: {
               id: true,
+              admissionId: true,
               orderContent: true,
               type: true,
               status: true,
@@ -973,7 +1017,9 @@ describe('CourseInWardService', () => {
           },
         },
       });
-      expect(result).toEqual(mockSummaries);
+      expect(result).toEqual(
+        mockSummaries.map((summary) => ({ ...summary, attendingPhysicianId: null })),
+      );
       expect(result.length).toBe(2);
     });
 
@@ -994,6 +1040,7 @@ describe('CourseInWardService', () => {
             orderBy: { dateCreated: 'asc' },
             select: {
               id: true,
+              admissionId: true,
               orderContent: true,
               type: true,
               status: true,
@@ -1133,5 +1180,32 @@ describe('CourseInWardService', () => {
         data: expect.objectContaining({ summaryDate: new Date(2026, 2, 4) }),
       });
     });
+  });
+});
+describe('summaryAdmission', () => {
+  const admission = (id: string, from: string, to: string | null, physicianId: string) => ({
+    id,
+    admissionDate: new Date(from),
+    dischargeDate: to ? new Date(to) : null,
+    physicianId,
+    additionalPhysicians: [],
+  });
+  const first = admission('a1', '2026-03-01T08:00:00', '2026-03-05T10:00:00', 'doc-1');
+  const second = admission('a2', '2026-03-10T08:00:00', null, 'doc-2');
+
+  it('uses the admission of the linked orders first', () => {
+    const summary = { summaryDate: new Date(2026, 2, 12), orders: [{ admissionId: 'a1' }] };
+    expect(summaryAdmission(summary, [first, second])?.id).toBe('a1');
+  });
+
+  it('falls back to the admission that covered the summary day', () => {
+    expect(summaryAdmission({ summaryDate: new Date(2026, 2, 3) }, [first, second])?.id).toBe('a1');
+    // Discharge day still belongs to that admission.
+    expect(summaryAdmission({ summaryDate: new Date(2026, 2, 5) }, [first, second])?.id).toBe('a1');
+  });
+
+  it('falls back to the latest admission when no admission covered the day', () => {
+    expect(summaryAdmission({ summaryDate: new Date(2026, 2, 7) }, [first, second])?.id).toBe('a2');
+    expect(summaryAdmission({ summaryDate: new Date(2026, 2, 7) }, [])).toBeNull();
   });
 });

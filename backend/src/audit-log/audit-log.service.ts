@@ -203,10 +203,10 @@ interface RecordAuditInput {
 
 /** "First Last", or a fallback when the record is gone. */
 export function fullName(
-  person: { firstName: string; lastName: string } | null | undefined,
+  person: { firstName: string; middleName?: string | null; lastName: string } | null | undefined,
   fallback = 'Unknown',
 ): string {
-  return person ? `${person.firstName} ${person.lastName}`.trim() : fallback;
+  return person ? [person.firstName, person.middleName, person.lastName].filter(Boolean).join(' ') : fallback;
 }
 
 /** "YYYY-MM-DD" for a date, as the logs show calendar days. */
@@ -260,7 +260,7 @@ export class AuditLogService {
 
   /** The patient's name for a log line, found by whichever id the caller has. */
   async patientName(ref: { patientId?: string; admissionId?: string; summaryId?: string }) {
-    const select = { firstName: true, lastName: true } as const;
+    const select = { firstName: true, middleName: true, lastName: true } as const;
     const patient = ref.patientId
       ? await this.prisma.patient.findUnique({ where: { id: ref.patientId }, select })
       : ref.admissionId

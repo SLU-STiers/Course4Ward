@@ -270,6 +270,127 @@ export class ReportsService {
     return { range: { from, to }, bucket, points };
   }
 
+  /**
+   * AI performance for the admin "AI" tab: summarization and embedding call
+   * timings (from `ai_call_metrics`, in range), RAG usage, plus the current
+   * state of the embedding corpus. Percentiles and averages cover successful
+   * calls only, so a timed-out call does not pose as a slow summary.
+   */
+  async aiStats(range: ReportRangeInput = {}) {
+    const { from, to } = this.resolveRange(range);
+    const bucket = aiTrendBucket(from, to);
+    const periods = bucketStarts(from, to, bucket);
+
+    const [groupRows, trendRows, failureRows, corpusRows] = await Promise.all([
+      this.prisma.$queryRaw<AiGroupRow[]>(Prisma.sql`
+        SELECT kind::text AS kind,
+               CASE WHEN GROUPING(model) = 1 THEN NULL ELSE model END AS model,
+               CASE WHEN GROUPING("trigger") = 1 THEN NULL ELSE "trigger" END AS "trigger",
+               COUNT(*)::int AS calls,
+               (COUNT(*) FILTER (WHERE NOT success))::int AS failures,
+               COALESCE(SUM("itemCount") FILTER (WHERE success), 0)::int AS items,
+               (AVG("durationMs") FILTER (WHERE success))::float AS "avgMs",
+               (percentile_cont(0.5) WITHIN GROUP (ORDER BY "durationMs") FILTER (WHERE success))::float AS "p50Ms",
+               (percentile_cont(0.95) WITHIN GROUP (ORDER BY "durationMs") FILTER (WHERE success))::float AS "p95Ms",
+               (MAX("durationMs") FILTER (WHERE success))::int AS "maxMs",
+               (AVG("outputChars") FILTER (WHERE success))::float AS "avgOutputChars",
+               (AVG("referenceCount") FILTER (WHERE success))::float AS "avgReferences",
+               (AVG("topSimilarity") FILTER (WHERE success))::float AS "avgTopSimilarity"
+        FROM ai_call_metrics
+        WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}
+        GROUP BY GROUPING SETS ((kind), (kind, model), (kind, "trigger"))
+      `),
+      this.prisma.$queryRaw<{ period: string; kind: string; calls: number; avgMs: number | null }[]>(
+        Prisma.sql`
+          SELECT to_char(date_trunc(${bucket}, "createdAt" AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS period,
+                 kind::text AS kind,
+                 COUNT(*)::int AS calls,
+                 (AVG("durationMs") FILTER (WHERE success))::float AS "avgMs"
+          FROM ai_call_metrics
+          WHERE "createdAt" >= ${from} AND "createdAt" <= ${to}
+          GROUP BY period, kind
+        `,
+      ),
+      this.prisma.aiCallMetric.findMany({
+        where: { success: false, createdAt: { gte: from, lte: to } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { createdAt: true, kind: true, model: true, trigger: true, error: true },
+      }),
+      this.prisma.$queryRaw<AiCorpusRow[]>(Prisma.sql`
+        SELECT
+          (SELECT COUNT(*) FROM physician_orders WHERE active = true)::int AS "ordersTotal",
+          (SELECT COUNT(*) FROM physician_orders
+             WHERE active = true AND "orderEmbedding" IS NOT NULL)::int AS "ordersEmbedded",
+          (SELECT COUNT(*) FROM physician_orders o
+             JOIN courses_in_ward c ON c.id = o."summarizationId"
+             WHERE o.active = true AND o."orderEmbedding" IS NOT NULL
+               AND c.status = 'APPROVED')::int AS "ragOrders",
+          (SELECT COUNT(*) FROM courses_in_ward WHERE status = 'APPROVED')::int AS "approvedSummaries",
+          (SELECT vector_dims("orderEmbedding") FROM physician_orders
+             WHERE "orderEmbedding" IS NOT NULL LIMIT 1)::int AS dimension
+      `),
+    ]);
+
+    const stats = (row?: AiGroupRow) => ({
+      calls: row?.calls ?? 0,
+      failures: row?.failures ?? 0,
+      items: row?.items ?? 0,
+      avgMs: roundOrNull(row?.avgMs),
+      p50Ms: roundOrNull(row?.p50Ms),
+      p95Ms: roundOrNull(row?.p95Ms),
+      maxMs: row?.maxMs ?? null,
+      avgOutputChars: roundOrNull(row?.avgOutputChars),
+      avgReferences: row?.avgReferences == null ? null : Number(row.avgReferences.toFixed(2)),
+      avgTopSimilarity:
+        row?.avgTopSimilarity == null ? null : Number(row.avgTopSimilarity.toFixed(3)),
+    });
+    const section = (kind: 'SUMMARY' | 'EMBEDDING') => {
+      const rows = groupRows.filter((row) => row.kind === kind);
+      return {
+        ...stats(rows.find((row) => row.model === null && row.trigger === null)),
+        byModel: rows
+          .filter((row) => row.model !== null)
+          .map((row) => ({ key: row.model as string, ...stats(row) }))
+          .sort((a, b) => b.calls - a.calls),
+        byTrigger: rows
+          .filter((row) => row.trigger !== null)
+          .map((row) => ({ key: row.trigger as string, ...stats(row) }))
+          .sort((a, b) => b.calls - a.calls),
+      };
+    };
+
+    const trendKey = (period: string, kind: string) => `${period}|${kind}`;
+    const trendByKey = new Map(trendRows.map((row) => [trendKey(row.period, row.kind), row]));
+    const corpus = corpusRows[0];
+
+    return {
+      range: { from, to },
+      bucket,
+      summarization: section('SUMMARY'),
+      embedding: section('EMBEDDING'),
+      corpus: {
+        ordersTotal: corpus?.ordersTotal ?? 0,
+        ordersEmbedded: corpus?.ordersEmbedded ?? 0,
+        ragOrders: corpus?.ragOrders ?? 0,
+        approvedSummaries: corpus?.approvedSummaries ?? 0,
+        dimension: corpus?.dimension ?? null,
+      },
+      trend: periods.map((period) => {
+        const summary = trendByKey.get(trendKey(period, 'SUMMARY'));
+        const embedding = trendByKey.get(trendKey(period, 'EMBEDDING'));
+        return {
+          period,
+          summaries: summary?.calls ?? 0,
+          avgSummaryMs: roundOrNull(summary?.avgMs),
+          embeddings: embedding?.calls ?? 0,
+          avgEmbeddingMs: roundOrNull(embedding?.avgMs),
+        };
+      }),
+      recentFailures: failureRows,
+    };
+  }
+
   /** Most active accounts in the range, with names resolved for display. */
   private async loadTopActors(rows: Array<{ userId: string; _count: { _all: number } }>, take = 5) {
     const top = [...rows].sort((a, b) => b._count._all - a._count._all).slice(0, take);
@@ -364,6 +485,43 @@ function bucketStarts(from: Date, to: Date, bucket: TrendBucket): string[] {
   }
 
   return periods;
+}
+
+/** One GROUPING SETS row of `aiStats`: `model`/`trigger` null on the kind's total. */
+interface AiGroupRow {
+  kind: string;
+  model: string | null;
+  trigger: string | null;
+  calls: number;
+  failures: number;
+  items: number;
+  avgMs: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  maxMs: number | null;
+  avgOutputChars: number | null;
+  avgReferences: number | null;
+  avgTopSimilarity: number | null;
+}
+
+interface AiCorpusRow {
+  ordersTotal: number;
+  ordersEmbedded: number;
+  ragOrders: number;
+  approvedSummaries: number;
+  dimension: number | null;
+}
+
+function roundOrNull(value: number | null | undefined): number | null {
+  return value == null ? null : Math.round(value);
+}
+
+/** Finest trend bucket that keeps the AI chart under `MAX_TREND_POINTS`. */
+export function aiTrendBucket(from: Date, to: Date): TrendBucket {
+  const days = Math.ceil((to.getTime() - from.getTime()) / MS_PER_DAY) + 1;
+  if (days <= 90) return 'day';
+  if (days / 7 <= MAX_TREND_POINTS) return 'week';
+  return 'month';
 }
 
 /** `{ key, count }` rows -> a record that always contains every enum member. */

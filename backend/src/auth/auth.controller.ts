@@ -71,10 +71,12 @@ export class AuthController {
   ) {
     const resetToken = await this.authService.createPasswordResetRequest(dto.userId, req.ip);
 
-    res.cookie(RESET_TOKEN_COOKIE, resetToken, {
-      ...RESET_TOKEN_COOKIE_OPTIONS,
-      maxAge: RESET_REQUEST_TTL_MS,
-    });
+    if (resetToken) {
+      res.cookie(RESET_TOKEN_COOKIE, resetToken, {
+        ...RESET_TOKEN_COOKIE_OPTIONS,
+        maxAge: RESET_REQUEST_TTL_MS,
+      });
+    }
 
     return { message: 'Reset request submitted for administrator approval.' };
   }

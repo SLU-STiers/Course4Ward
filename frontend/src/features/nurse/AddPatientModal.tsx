@@ -76,6 +76,7 @@ const CHIEF_COMPLAINTS = [
 
 export type AddPatientFormResult = {
   firstName: string;
+  middleName: string;
   lastName: string;
   /** Kept as typed text so an empty field is distinguishable from age 0 (newborn). */
   age: string;
@@ -114,6 +115,7 @@ export type AddPatientFormResult = {
 };
 const emptyForm = (): AddPatientFormResult => ({
   firstName: '',
+  middleName: '',
   lastName: '',
   age: '',
   gender: '',
@@ -203,6 +205,7 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       ...draft.form,
       patientClass: 'INPATIENT' as const,
       firstName: sanitizeName(typeof draft.form?.firstName === 'string' ? draft.form.firstName : ''),
+      middleName: sanitizeName(typeof draft.form?.middleName === 'string' ? draft.form.middleName : ''),
       lastName: sanitizeName(typeof draft.form?.lastName === 'string' ? draft.form.lastName : ''),
       age: String(draft.form?.age ?? ''),
       gender: toSex(draft.form?.gender),
@@ -284,6 +287,7 @@ const doctorName = (doctor: PhysicianOption) => `Dr. ${doctor.firstName} ${docto
 /** Form controls that submitting can jump to when they still need attention. */
 type FieldKey =
   | 'firstName'
+  | 'middleName'
   | 'lastName'
   | 'age'
   | 'gender'
@@ -344,12 +348,16 @@ function registrationProblems(
     if (!value.trim()) add(field, `${label} is required.`);
   };
   const firstName = form.firstName.trim();
+  const middleName = form.middleName.trim();
   const lastName = form.lastName.trim();
 
   // Patient information
   if (!firstName) add('firstName', 'First name is required.');
   else if (!NAME_PATTERN.test(firstName)) {
     add('firstName', 'First name may contain letters, spaces, hyphens, apostrophes, and periods only.');
+  }
+  if (middleName && !NAME_PATTERN.test(middleName)) {
+    add('middleName', 'Middle name may contain letters, spaces, hyphens, apostrophes, and periods only.');
   }
   if (!lastName) add('lastName', 'Last name is required.');
   else if (!NAME_PATTERN.test(lastName)) {
@@ -560,6 +568,7 @@ export function AddPatientModal({
     }
 
     const firstName = form.firstName.trim();
+    const middleName = form.middleName.trim();
     const lastName = form.lastName.trim();
     const complaints = form.chiefComplaints.filter((complaint) => CHIEF_COMPLAINTS.includes(complaint));
     const registrationOrder = form.registrationOrder.trim();
@@ -570,6 +579,7 @@ export function AddPatientModal({
     try {
       await patientsApi.create({
         firstName,
+        middleName: middleName || undefined,
         lastName,
         age: Number(form.age),
         gender: form.gender,
@@ -673,6 +683,17 @@ export function AddPatientModal({
                   required
                 />
                 {fieldError('firstName')}
+              </Field>
+              <Field label="Middle Name">
+                <input
+                  id={fieldId('middleName')}
+                  style={s.input}
+                  value={form.middleName}
+                  onChange={(e) => setField('middleName', sanitizeName(e.target.value))}
+                  placeholder="Optional"
+                  maxLength={150}
+                />
+                {fieldError('middleName')}
               </Field>
               <Field label="Last Name" required>
                 <input

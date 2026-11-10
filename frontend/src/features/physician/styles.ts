@@ -608,6 +608,7 @@ export const manage: Record<string, CSSProperties> = {
   aiActionRow: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, width: "100%" },
   /** Pushes the primary action (Approve / Save) to the right edge. */
   aiActionSpacer: { flex: "1 1 auto" },
+  approveNote: { fontSize: 12, color: "#64748b" },
   /**
    * "Compare versions" popup (SummaryHistory): version cards on the left, the
    * selected one's composition on the right. Each pane scrolls on its own, so

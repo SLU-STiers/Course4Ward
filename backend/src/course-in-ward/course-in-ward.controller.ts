@@ -15,6 +15,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CourseInWardService } from './course-in-ward.service';
 import { WardAccessService } from '../wards/ward-access.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { assertPatientCareTeam, assertSummaryCareTeam } from './summary-access';
 import {
   GenerateSummaryDto,
   EditSummaryDto,
@@ -29,11 +31,17 @@ export class CourseInWardController {
   constructor(
     private courseInWardService: CourseInWardService,
     private wardAccess: WardAccessService,
+    private prisma: PrismaService,
   ) {}
+
+  // Physicians may only work on summaries of admissions they attend or consult
+  // on; approving is checked in the service (attending only), so the claims
+  // approval path is covered too. The nightly batch calls the service directly.
 
   @Post('generate')
   @Roles(Role.PHYSICIAN)
-  generate(@Body() dto: GenerateSummaryDto, @CurrentUser() user: any) {
+  async generate(@Body() dto: GenerateSummaryDto, @CurrentUser() user: any) {
+    await assertPatientCareTeam(this.prisma, dto.patientId, user.id);
     // Returns one Course in the Ward per summarized order day (usually one).
     return this.courseInWardService.generateSummary(
       dto.patientId,
@@ -46,17 +54,19 @@ export class CourseInWardController {
 
   @Patch(':id/edit')
   @Roles(Role.PHYSICIAN)
-  edit(@Param('id') id: string, @Body() dto: EditSummaryDto, @CurrentUser() user: any) {
+  async edit(@Param('id') id: string, @Body() dto: EditSummaryDto, @CurrentUser() user: any) {
+    await assertSummaryCareTeam(this.prisma, id, user.id);
     return this.courseInWardService.editSummary(id, dto.editedText, user.id);
   }
 
   @Post(':id/regenerate')
   @Roles(Role.PHYSICIAN)
-  regenerate(
+  async regenerate(
     @Param('id') id: string,
     @Body() dto: RegenerateSummaryDto,
     @CurrentUser() user: any,
   ) {
+    await assertSummaryCareTeam(this.prisma, id, user.id);
     return this.courseInWardService.regenerateSummary(id, user.id, dto.instructions, dto.model);
   }
 
@@ -72,17 +82,19 @@ export class CourseInWardController {
 
   @Get(':id/versions')
   @Roles(Role.PHYSICIAN)
-  versions(@Param('id') id: string) {
+  async versions(@Param('id') id: string, @CurrentUser() user: any) {
+    await assertSummaryCareTeam(this.prisma, id, user.id);
     return this.courseInWardService.listVersions(id);
   }
 
   @Post(':id/versions/:versionId/restore')
   @Roles(Role.PHYSICIAN)
-  restore(
+  async restore(
     @Param('id') id: string,
     @Param('versionId') versionId: string,
     @CurrentUser() user: any,
   ) {
+    await assertSummaryCareTeam(this.prisma, id, user.id);
     return this.courseInWardService.restoreVersion(id, versionId, user.id);
   }
 

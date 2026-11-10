@@ -103,12 +103,13 @@ describe('AuthService', () => {
     it('should reject a user ID that does not exist', async () => {
       (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.requestPasswordReset({ userId: 'INVALID-USER' })).rejects.toThrow(
-        'User ID not found',
-      );
+      await expect(service.requestPasswordReset({ userId: 'INVALID-USER' })).resolves.toEqual({
+        message: 'Reset request submitted for administrator approval.',
+      });
 
       expect(prismaService.passwordResetRequest.updateMany).not.toHaveBeenCalled();
       expect(prismaService.passwordResetRequest.create).not.toHaveBeenCalled();
+      expect(mockNotificationsService.notifyAdmins).not.toHaveBeenCalled();
     });
 
     it('should not expose the raw reset token in the response', async () => {
@@ -297,6 +298,7 @@ describe('AuthService', () => {
     it('should throw error when user is not found', async () => {
       // Arrange
       (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(false) as never);
 
       // Act & Assert
       await expect(service.login(dto)).rejects.toThrow('Invalid credentials');
@@ -304,6 +306,7 @@ describe('AuthService', () => {
       expect(prismaService.user.findUnique).toHaveBeenCalledWith({
         where: { userId: 'DRJ-0231' },
       });
+      expect(bcrypt.compare).toHaveBeenCalledWith('correct-password', expect.any(String));
       expect(jwtService.signAsync).not.toHaveBeenCalled();
       expect(auditLogService.record).not.toHaveBeenCalled();
     });
@@ -314,11 +317,27 @@ describe('AuthService', () => {
         ...mockUser,
         isActive: false,
       });
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(true) as never);
 
       // Act & Assert
       await expect(service.login(dto)).rejects.toThrow('Invalid credentials');
 
+      expect(bcrypt.compare).toHaveBeenCalledWith('correct-password', mockUser.passwordHash);
       expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('should pause sign-in after repeated failures for the same user ID', async () => {
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(false) as never);
+
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await expect(service.login(dto)).rejects.toThrow('Invalid credentials');
+      }
+
+      await expect(service.login(dto)).rejects.toThrow(
+        'Too many sign-in attempts. Wait a few minutes and try again.',
+      );
       expect(auditLogService.record).not.toHaveBeenCalled();
     });
 
