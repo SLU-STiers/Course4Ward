@@ -48,8 +48,11 @@ from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# Same held-out admissions as build_dataset.py: the fine-tuned model never saw them.
-EVAL_ADMISSIONS = {"2026002210", "2026002236", "2026002238"}
+# Admissions held out of fine-tuning (build_dataset.py imports this, so the two never
+# disagree): 19 day-groups from 1 to 28 orders. Widened from the first three on
+# 2026-11-10; a model trained before then saw 2026002052 and 2026003328, so compare
+# it with --only on the first three admissions' groups instead.
+EVAL_ADMISSIONS = {"2026002210", "2026002236", "2026002238", "2026002052", "2026003328"}
 
 # Length is a WARN past this, never a FAIL: no hard cap, just "as short as possible".
 MAX_SENTENCES = 10
