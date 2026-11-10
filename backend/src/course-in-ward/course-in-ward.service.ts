@@ -353,6 +353,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     model: SummaryModel = 'standard',
     instructions?: string,
     trigger: AiTrigger = 'manual',
+    notifyClaims = true,
   ) {
     const targetDay = day ?? dayKeyOf(new Date())!;
     const [patient, targetOrders] = await Promise.all([
@@ -412,20 +413,126 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    await Promise.all(
-      summaries.map((summary) =>
-        this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
-          title: 'Course in the Ward summary ready',
-          message: `**${fullName(patient)}** has a new Course in the Ward summary for ${dayLabel(summary.summaryDate)} ready for claims review.`,
-        }),
-      ),
-    );
+    if (notifyClaims) {
+      await Promise.all(
+        summaries.map((summary) =>
+          this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
+            title: 'Course in the Ward summary ready',
+            message: `**${fullName(patient)}** has a new Course in the Ward summary for ${dayLabel(summary.summaryDate)} ready for claims review.`,
+          }),
+        ),
+      );
+    }
 
     return summaries;
   }
 
   onModuleInit() {
     this.scheduleNightlyBatch();
+    // Stays discharged before this handoff existed still need a summary, or the
+    // claims processor never sees them.
+    void this.catchUpDischargedClaims();
+  }
+
+  /**
+   * A claim is opened on a Course in the Ward, so a discharge has to leave one
+   * summary per day of finished orders. The AI writes it when it is available;
+   * otherwise the finished orders are filed as the draft the physician reviews.
+   * Claims processors are told once the stay is ready to request.
+   */
+  async prepareClaimForDischargedAdmission(admissionId: string) {
+    try {
+      await this.fileDischargedStay(admissionId);
+    } catch (err) {
+      this.logger.warn(
+        `[discharge] could not prepare a claim for admission ${admissionId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async fileDischargedStay(admissionId: string) {
+    const admission = await this.prisma.patientAdmission.findUnique({
+      where: { id: admissionId },
+      select: {
+        id: true,
+        patientId: true,
+        physicianId: true,
+        dischargeDate: true,
+        patient: { select: { firstName: true, lastName: true } },
+        orders: {
+          where: { status: OrderStatus.FINISHED, active: true, summarizationId: null },
+          orderBy: { dateCreated: 'asc' },
+          select: { id: true, dateCreated: true, orderContent: true },
+        },
+      },
+    });
+    if (!admission?.dischargeDate) return;
+
+    const byDay = new Map<string, typeof admission.orders>();
+    for (const order of admission.orders) {
+      const day = dayKeyOf(order.dateCreated);
+      if (!day) continue;
+      const group = byDay.get(day) ?? [];
+      group.push(order);
+      byDay.set(day, group);
+    }
+
+    for (const [day, orders] of byDay) {
+      try {
+        await this.generateSummary(
+          admission.patientId,
+          admission.physicianId,
+          day,
+          'standard',
+          undefined,
+          'discharge',
+          false,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `[discharge] AI summary failed for admission ${admissionId} on ${day}: ${(err as Error).message}`,
+        );
+        const summary = await this.upsertDaySummary(
+          admission.patientId,
+          day,
+          `Finished orders for ${dayLabel(dayStart(day))}:\n${orders
+            .map((order) => `• ${order.orderContent}`)
+            .join('\n')}`,
+        );
+        await this.linkOrdersToSummary(summary.id, orders.map((order) => order.id));
+      }
+    }
+
+    const waiting = await this.prisma.courseInWard.count({
+      where: {
+        requests: { none: {} },
+        orders: { some: { admissionId } },
+      },
+    });
+    if (waiting === 0) return;
+
+    const name = fullName(admission.patient);
+    await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
+      title: 'Discharged patient ready for a claim',
+      message: `**${name}** was discharged. ${waiting} Course in the Ward ${waiting === 1 ? 'day is' : 'days are'} ready for a claim request.`,
+      patientId: admission.patientId,
+    });
+  }
+
+  /** Discharged stays that still have finished orders with no summary. */
+  private async catchUpDischargedClaims() {
+    const admissions = await this.prisma.patientAdmission.findMany({
+      where: {
+        dischargeDate: { not: null },
+        orders: {
+          some: { status: OrderStatus.FINISHED, active: true, summarizationId: null },
+        },
+      },
+      select: { id: true },
+    });
+    for (const admission of admissions) {
+      await this.prepareClaimForDischargedAdmission(admission.id);
+    }
   }
 
   onModuleDestroy() {

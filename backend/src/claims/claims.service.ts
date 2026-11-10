@@ -85,10 +85,16 @@ export class ClaimsService {
     return claim;
   }
 
-  /** Summaries no claim has been opened for yet -- the claims processor's intake list. */
+  /**
+   * Course in the Ward days the claims processor can still request: the stay
+   * has been discharged, and no claim has been opened for that day yet.
+   */
   findEligibleSummaries() {
     return this.prisma.courseInWard.findMany({
-      where: { requests: { none: {} } },
+      where: {
+        requests: { none: {} },
+        orders: { some: { admission: { dischargeDate: { not: null } } } },
+      },
       orderBy: { summaryDate: 'desc' },
       include: {
         patient: { select: { id: true, firstName: true, lastName: true } },
@@ -99,6 +105,12 @@ export class ClaimsService {
           select: {
             dateCreated: true,
             orderedBy: { select: { firstName: true, lastName: true } },
+            admission: {
+              select: {
+                dischargeDate: true,
+                physician: { select: { firstName: true, lastName: true } },
+              },
+            },
           },
         },
       },

@@ -12,6 +12,7 @@ import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 /** The patient list changes less often than an open patient's orders. */
 const PATIENT_POLL_MS = ORDER_POLL_MS;
 import { formatDateLongFromKey, formatDateNumeric, toDateInputValue, toDateKey } from '../../lib/format';
+import { writeSessionState } from '../../lib/sessionState';
 import { daysInCare, sexLabel, statusColor } from '../../lib/patient';
 import { triageForDisplay, triageUrgency } from '../../lib/triage';
 import { ui } from './styles';
@@ -134,17 +135,25 @@ function summaryDayKey(summary: CourseInWard): string {
 
 export function ManagementPortalView({
   focusPatient,
+  onFocusHandled,
 }: {
   /** Set when a notification should open this patient's chart. */
   focusPatient?: { id: string; key: number } | null;
+  /** Clears that request once the chart is open, so a later visit stays closed. */
+  onFocusHandled?: () => void;
 }) {
   const [patients, setPatients] = useState<NursePatient[]>([]);
   /** The patient open in the View modal. */
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** A notification's focus key already applied, so remounting does not reopen it. */
+  const appliedFocusKey = useRef<number | null>(null);
 
   useEffect(() => {
-    if (focusPatient) setSelectedId(focusPatient.id);
-  }, [focusPatient]);
+    if (!focusPatient || appliedFocusKey.current === focusPatient.key) return;
+    appliedFocusKey.current = focusPatient.key;
+    setSelectedId(focusPatient.id);
+    onFocusHandled?.();
+  }, [focusPatient, onFocusHandled]);
   const [selectedDate, setSelectedDate] = useState('');
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
@@ -209,23 +218,36 @@ export function ManagementPortalView({
     loadPatients().catch(() => undefined);
   }, PATIENT_POLL_MS);
 
+  // Opening Management always starts on admitted patients, newest admission first.
+  // Session memory would otherwise bring back the filter and sort left last time.
+  const appliedOpeningDefaults = useRef(false);
+  if (!appliedOpeningDefaults.current) {
+    appliedOpeningDefaults.current = true;
+    writeSessionState('nurse.management.table:query', '');
+    writeSessionState('nurse.management.table:filters', { status: 'Admitted' });
+    writeSessionState('nurse.management.table:sort', {
+      field: 'admissionDate',
+      direction: 'descending',
+    });
+    writeSessionState('nurse.management.table:page', 1);
+  }
+
   const table = useTableState<NursePatient>({
     items: patients,
     pageSize: 8,
-    // Remembered for the session, so switching dashboard tabs comes back to the
-    // same search / filter / sort / page.
     stateKey: 'nurse.management.table',
     searchFields: (patient) => [patient.name, patient.patientId, patient.recordId],
     filterPredicates: {
       status: (patient, value) => value === 'all' || (!patient.restricted && displayStatus(patient) === value),
     },
-    initialFilters: { status: 'all' },
+    initialFilters: { status: 'Admitted' },
     sorters: {
       name: (patient) => patient.name,
       triage: (patient) => triageUrgency(patient.triage?.level),
       age: (patient) => patient.age,
       daysInCare: (patient) => patient.daysInCare,
-      admissionDate: (patient) => patient.admissionDateRaw,
+      // Full timestamp, so patients admitted the same calendar day stay newest-first.
+      admissionDate: (patient) => patient.admittedAt || patient.admissionDateRaw,
     },
     initialSort: { field: 'admissionDate', direction: 'descending' },
   });
@@ -425,7 +447,9 @@ export function ManagementPortalView({
   return (
     <div>
       <section style={patientTableStyles.card}>
-        <h2 style={patientTableStyles.cardTitle}>Patient Overview</h2>
+        <div style={patientTableStyles.cardHeader}>
+          <h2 style={{ ...patientTableStyles.cardTitle, margin: 0 }}>Patient Overview</h2>
+        </div>
         <DataTableToolbar
           searchProps={{
             value: table.query,

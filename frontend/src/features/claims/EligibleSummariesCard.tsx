@@ -1,8 +1,9 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, StatusBadge, type StatusValue } from '../../components/ui';
 import { formatDateMedium } from '../../lib/format';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { claimsApi } from '../../services/domainApi';
 import type { EligibleSummary, SummaryStatus } from '../../types';
 import { styles } from './styles';
@@ -19,9 +20,9 @@ type EligibleSummariesCardProps = {
 };
 
 /**
- * Intake list: Course in the Ward summaries no claim has been opened for.
- * Opening a claim on an approved summary makes it ready for CF4 straight away;
- * on a draft it becomes a pending request addressed to the attending physician.
+ * Intake list: discharged stays whose Course in the Ward days still have no claim.
+ * Requesting a claim sends every day of that stay to the attending physician,
+ * or straight to CF4 when the summary is already approved.
  */
 export function EligibleSummariesCard({ onClaimCreated }: EligibleSummariesCardProps) {
   const [summaries, setSummaries] = useState<EligibleSummary[] | null>(null);
@@ -36,16 +37,32 @@ export function EligibleSummariesCard({ onClaimCreated }: EligibleSummariesCardP
   }, []);
 
   useEffect(load, [load]);
+  usePolling(load, ORDER_POLL_MS);
 
-  const openClaim = async (summaryId: string) => {
-    setCreatingId(summaryId);
+  const patients = useMemo(() => {
+    const grouped = new Map<string, EligibleSummary[]>();
+    for (const summary of summaries ?? []) {
+      const rows = grouped.get(summary.patient.id) ?? [];
+      rows.push(summary);
+      grouped.set(summary.patient.id, rows);
+    }
+    return [...grouped.values()];
+  }, [summaries]);
+
+  const openClaim = async (rows: EligibleSummary[]) => {
+    const patientId = rows[0]?.patient.id;
+    if (!patientId) return;
+    setCreatingId(patientId);
     setError(null);
     try {
-      await claimsApi.create(summaryId);
-      setSummaries((previous) => previous?.filter((summary) => summary.id !== summaryId) ?? null);
+      for (const summary of rows) {
+        await claimsApi.create(summary.id);
+      }
+      const claimed = new Set(rows.map((summary) => summary.id));
+      setSummaries((previous) => previous?.filter((summary) => !claimed.has(summary.id)) ?? null);
       onClaimCreated();
     } catch {
-      setError('Could not open a claim for that summary. Please try again.');
+      setError('Could not request a claim for that patient. Please try again.');
       load();
     } finally {
       setCreatingId(null);
@@ -56,11 +73,11 @@ export function EligibleSummariesCard({ onClaimCreated }: EligibleSummariesCardP
     <section style={{ ...styles.tableCard, marginBottom: 24 }}>
       <div style={{ padding: '16px 16px 8px' }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>
-          Summaries without a claim
+          Discharged patients
         </h3>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
-          Open a claim to review a Course in the Ward. Drafts are sent to the attending physician
-          for approval.
+          Request a claim for a discharged stay. Each Course in the Ward day is sent to the
+          attending physician for approval.
         </p>
         {error && <p style={{ margin: '8px 0 0', fontSize: 12, color: '#dc2626' }}>{error}</p>}
       </div>
@@ -68,46 +85,57 @@ export function EligibleSummariesCard({ onClaimCreated }: EligibleSummariesCardP
         <thead>
           <tr style={styles.thRow}>
             <th style={styles.th}>Patient</th>
-            <th style={styles.th}>Summary day</th>
+            <th style={styles.th}>Discharged</th>
             <th style={styles.th}>Physician</th>
-            <th style={styles.th}>Status</th>
+            <th style={styles.th}>Course in the Ward</th>
             <th style={{ ...styles.th, textAlign: 'right' }} />
           </tr>
         </thead>
         <tbody>
-          {(summaries ?? []).map((summary) => {
+          {patients.map((rows) => {
+            const summary = rows[0];
+            const physician =
+              summary.orders[0]?.admission?.physician ??
+              summary.approvedBy ??
+              summary.orders[0]?.orderedBy;
+            const dischargedOn = rows
+              .map((row) => row.orders[0]?.admission?.dischargeDate)
+              .filter((value): value is string => Boolean(value))
+              .sort()
+              .at(-1);
             const badge = SUMMARY_BADGE[summary.status];
-            const physician = summary.approvedBy ?? summary.orders[0]?.orderedBy;
+            const dayLabel = `${rows.length} ${rows.length === 1 ? 'day' : 'days'}`;
             return (
-              <tr key={summary.id} style={styles.tr}>
+              <tr key={summary.patient.id} style={styles.tr}>
                 <td style={styles.td}>
                   {summary.patient.firstName} {summary.patient.lastName}
                 </td>
-                <td style={styles.td}>{formatDateMedium(summary.summaryDate)}</td>
+                <td style={styles.td}>{dischargedOn ? formatDateMedium(dischargedOn) : '—'}</td>
                 <td style={styles.td}>
                   {physician ? `Dr. ${physician.firstName} ${physician.lastName}` : '—'}
                 </td>
                 <td style={styles.td}>
+                  <span style={{ marginRight: 8 }}>{dayLabel}</span>
                   <StatusBadge status={badge.status} label={badge.label} />
                 </td>
                 <td style={{ ...styles.td, textAlign: 'right' }}>
                   <Button
                     size="sm"
                     variant="primary"
-                    loading={creatingId === summary.id}
+                    loading={creatingId === summary.patient.id}
                     disabled={creatingId !== null}
-                    onClick={() => void openClaim(summary.id)}
+                    onClick={() => void openClaim(rows)}
                   >
-                    Open claim
+                    Request claim
                   </Button>
                 </td>
               </tr>
             );
           })}
-          {summaries !== null && summaries.length === 0 && (
+          {summaries !== null && patients.length === 0 && (
             <tr>
               <td style={{ ...styles.td, fontSize: 13, color: '#64748b' }} colSpan={5}>
-                Every summary already has a claim.
+                No discharged patient is waiting for a claim.
               </td>
             </tr>
           )}

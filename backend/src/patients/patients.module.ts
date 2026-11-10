@@ -4,9 +4,10 @@ import { PatientsController } from './patients.controller';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { WardsModule } from '../wards/wards.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { CourseInWardModule } from '../course-in-ward/course-in-ward.module';
 
 @Module({
-  imports: [AuditLogModule, WardsModule, NotificationsModule],
+  imports: [AuditLogModule, WardsModule, NotificationsModule, CourseInWardModule],
   controllers: [PatientsController],
   providers: [PatientsService],
   exports: [PatientsService],

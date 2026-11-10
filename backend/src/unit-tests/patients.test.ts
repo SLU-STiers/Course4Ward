@@ -9,6 +9,7 @@ import { PatientsService } from "../patients/patients.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditLogService } from "../audit-log/audit-log.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { CourseInWardService } from "../course-in-ward/course-in-ward.service";
 import { WardAccessService } from "../wards/ward-access.service";
 import {
   CommunicationChannel,
@@ -214,6 +215,7 @@ describe("Patients Module", () => {
 
   const mockCreatePatientDto = {
     firstName: "John",
+    middleName: "Santos",
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: "1990-01-01",
@@ -233,6 +235,10 @@ describe("Patients Module", () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: AuditLogService, useValue: mockAuditLogService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        {
+          provide: CourseInWardService,
+          useValue: { prepareClaimForDischargedAdmission: jest.fn().mockResolvedValue(undefined) },
+        },
         // Ward limits have their own tests (ward-access.test.ts); pass everything through here.
         {
           provide: WardAccessService,
@@ -294,7 +300,7 @@ describe("Patients Module", () => {
           expect.objectContaining({
             data: expect.objectContaining({
               firstName: mockCreatePatientDto.firstName,
-              middleName: null,
+              middleName: "Santos",
               lastName: mockCreatePatientDto.lastName,
               gender: mockCreatePatientDto.gender,
               dateOfBirth: new Date(mockCreatePatientDto.dateOfBirth),
@@ -480,7 +486,7 @@ describe("Patients Module", () => {
         expect(await validate(dto)).toHaveLength(0);
       });
 
-      it("should allow an empty optional middle name", async () => {
+      it("should reject a blank middle name", async () => {
         const dto = plainToInstance(CreatePatientDto, {
           firstName: "Juan",
           middleName: "   ",
@@ -489,8 +495,9 @@ describe("Patients Module", () => {
           physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
         });
 
-        expect(dto.middleName).toBeUndefined();
-        expect(await validate(dto)).toHaveLength(0);
+        expect(dto.middleName).toBe("");
+        const errors = await validate(dto);
+        expect(errors.map((error) => error.property)).toContain("middleName");
       });
 
       it("should reject numbers in the contact person name", async () => {
