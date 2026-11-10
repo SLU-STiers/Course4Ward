@@ -796,15 +796,44 @@ export const styles: Record<string, CSSProperties> = {
     whiteSpace: 'nowrap',
   },
   summaryPanelBody: {
-    padding: '16px',
+    padding: '0 16px 16px',
     fontSize: '13px',
     lineHeight: 1.65,
     color: '#334155',
-    whiteSpace: 'pre-wrap',
     overflowY: 'auto',
     flex: 1,
     minHeight: 0,
     userSelect: 'text',
+  },
+  courseDay: {
+    padding: '14px 0',
+    borderBottom: '1px solid #f1f5f9',
+  },
+  /** Sticks to the top of the scrolling panel so the day stays visible while reading it. */
+  courseDayHeader: {
+    position: 'sticky',
+    top: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    margin: '0 0 6px',
+    padding: '6px 0',
+    fontSize: '12px',
+    fontWeight: 700,
+    color: '#0f172a',
+    backgroundColor: '#ffffff',
+  },
+  courseDayNumber: {
+    padding: '1px 8px',
+    borderRadius: '999px',
+    fontSize: '11px',
+    fontWeight: 700,
+    color: '#1d4ed8',
+    backgroundColor: '#eff6ff',
+  },
+  courseDayText: {
+    margin: 0,
+    whiteSpace: 'pre-wrap',
   },
   /** Wrapper that lets a click-catching button sit over the PDF iframe. */
   pdfPreviewShell: {

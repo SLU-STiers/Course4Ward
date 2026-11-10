@@ -23,6 +23,7 @@
 import { jsPDF } from 'jspdf';
 
 import { formatDateMedium } from '../../lib/format';
+import { courseEntries, type CourseEntry } from './mappers';
 import type { Cf4SummaryDraft, ExportSource } from './types';
 
 /** 8.5in — the CF4 is printed on Philippine long bond, not A4. */
@@ -47,10 +48,6 @@ const FAINT = '#8b93a1';
 type Ctx = { doc: jsPDF; y: number };
 
 /** The stay's Course in the Ward, charted once in Section IV. */
-type StayCourse = {
-  dateLabel: string;
-  text: string;
-};
 
 /** A bordered field cell in the patient-data grid. */
 type FieldCell = {
@@ -352,31 +349,51 @@ function tableHeader(ctx: Ctx): void {
 const LINE = 10.5;
 
 /**
- * Section IV as one course for the stay. The date column carries the admission
- * period; the action column carries the physician-approved model summary, and
- * the entry continues onto the next page instead of starting a new day.
+ * Section IV, one row per day of the stay: the date column carries the day and
+ * the action column that day's physician-approved summary. A day too long for
+ * the page continues on the next one under a "(cont.)" date.
  */
-function courseTable(ctx: Ctx, course: StayCourse): void {
+function courseTable(ctx: Ctx, entries: CourseEntry[]): void {
+  const { doc } = ctx;
+  let painted = 0;
+  tableHeader(ctx);
+  for (const entry of entries) {
+    painted += courseRow(ctx, entry);
+  }
+
+  for (let blank = painted; blank < MIN_TABLE_ROWS; blank += 1) {
+    if (!fits(ctx, 24)) break;
+    doc.setDrawColor(INK).setLineWidth(0.6);
+    doc.rect(M, ctx.y, DATE_COL_W, 24, 'S');
+    doc.rect(M + DATE_COL_W, ctx.y, CONTENT_W - DATE_COL_W, 24, 'S');
+    ctx.y += 24;
+  }
+}
+
+/** Paints one day, split across pages when needed; returns how many rows it took. */
+function courseRow(ctx: Ctx, entry: CourseEntry): number {
   const { doc } = ctx;
   const bodyW = CONTENT_W - DATE_COL_W - 14;
   doc.setFont('helvetica', 'normal').setFontSize(8.5);
-  const lines = doc.splitTextToSize(
-    course.text || 'No physician-approved Course in the Ward is available for this stay.',
-    bodyW,
-  ) as string[];
+  const lines = doc.splitTextToSize(entry.text, bodyW) as string[];
 
   let index = 0;
   let continued = false;
   let painted = 0;
-  tableHeader(ctx);
 
   while (index < lines.length) {
     const room = PAGE_H - M - ctx.y;
     const maxLines = Math.max(1, Math.floor((room - 16) / LINE));
+    // Start a short day on a fresh page rather than leave its first lines stranded.
+    if (!continued && maxLines < Math.min(lines.length, 3) && ctx.y > M + 40) {
+      newPage(ctx);
+      tableHeader(ctx);
+      continue;
+    }
     const slice = lines.slice(index, index + maxLines);
     doc.setFont('helvetica', 'normal').setFontSize(7.5);
     const dateLines = doc.splitTextToSize(
-      continued ? 'Continued' : course.dateLabel,
+      continued ? `${entry.dateLabel} (cont.)` : entry.dateLabel,
       DATE_COL_W - 12,
     ) as string[];
     const height = Math.max(24, slice.length * LINE + 16, dateLines.length * 9 + 16);
@@ -410,14 +427,7 @@ function courseTable(ctx: Ctx, course: StayCourse): void {
     painted += 1;
     continued = true;
   }
-
-  for (let blank = painted; blank < MIN_TABLE_ROWS; blank += 1) {
-    if (!fits(ctx, 24)) break;
-    doc.setDrawColor(INK).setLineWidth(0.6);
-    doc.rect(M, ctx.y, DATE_COL_W, 24, 'S');
-    doc.rect(M + DATE_COL_W, ctx.y, CONTENT_W - DATE_COL_W, 24, 'S');
-    ctx.y += 24;
-  }
+  return painted;
 }
 
 /** Section VII, verbatim wording from the form. */
@@ -499,10 +509,7 @@ export function buildCf4Pdf(
   patientSection(ctx, draft);
 
   bandWithNext(ctx, 'IV. COURSE IN THE WARD', BAND_H, 'Entire stay · attach laboratory/imaging results');
-  courseTable(ctx, {
-    dateLabel: patient.coveragePeriod,
-    text: draft.courseText,
-  });
+  courseTable(ctx, courseEntries(draft));
 
   bandWithNext(ctx, 'VII. CERTIFICATION OF HEALTH CARE PROFESSIONAL', 96);
   certification(ctx, draft.chart.attending === '—' ? evaluator : draft.chart.attending, evaluator);

@@ -7,6 +7,7 @@ import { ArrowLeft, Check, Copy, Download, Maximize2, Minus, Plus, X } from 'luc
 import { Button, Modal, StatusBadge } from '../../components/ui';
 import { formatDateMedium } from '../../lib/format';
 import { buildCf4Document, cf4FileName, saveFile } from './cf4Document';
+import { courseEntries } from './mappers';
 import type { Cf4SummaryDraft, ExportSource } from './types';
 import { styles } from './styles';
 
@@ -200,8 +201,11 @@ export function Cf4SummaryPreview({
   const hasPrevious = activeIndex > 0;
   const hasNext = activeIndex < total - 1;
 
+  const courseDays = courseEntries(active);
+
   const handleCopy = () => {
-    void navigator.clipboard?.writeText(active.courseText).then(() => setCopied(true));
+    const text = courseDays.map((day) => `${day.dateLabel}\n${day.text}`).join('\n\n');
+    void navigator.clipboard?.writeText(text).then(() => setCopied(true));
   };
 
   /** Saves the exact document shown in the preview. */
@@ -435,7 +439,15 @@ export function Cf4SummaryPreview({
             className="ui-scroll"
             style={{ ...styles.summaryPanelBody, fontSize: `${fontSize}px` }}
           >
-            {active.courseText || 'No approved summaries for this stay.'}
+            {courseDays.map((day, index) => (
+              <section key={`${day.dateLabel}-${index}`} style={styles.courseDay}>
+                <h4 style={styles.courseDayHeader}>
+                  {courseDays.length > 1 && <span style={styles.courseDayNumber}>Day {index + 1}</span>}
+                  {day.dateLabel}
+                </h4>
+                <p style={styles.courseDayText}>{day.text || 'No approved summaries for this stay.'}</p>
+              </section>
+            ))}
           </div>
         </div>
 
