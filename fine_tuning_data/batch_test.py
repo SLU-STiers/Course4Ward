@@ -393,6 +393,14 @@ def print_report(rows, variants):
 VARIANT_LABELS = {"standard": "Base model (with RAG)", "fine_tuned": "Fine-tuned model"}
 
 
+def fmt_number(value, digits=2):
+    """`0.50` -> `0.5`, `160` -> `160`: trim trailing zeros of decimals only."""
+    if value is None:
+        return "—"
+    text = f"{value:.{digits}f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 def read_rows(path):
     """batch_results.csv -> rows with the numeric columns back as numbers."""
     def num(value):
@@ -414,8 +422,7 @@ def write_report(rows, path, references, meta):
     variants = list(dict.fromkeys(r["variant"] for r in rows))
     generated = time.strftime("%Y-%m-%d %H:%M")
 
-    def fmt(value, digits=2):
-        return "—" if value is None else f"{value:.{digits}f}".rstrip("0").rstrip(".")
+    fmt = fmt_number
 
     def tile(label, value, hint=""):
         return (f'<div class="tile"><span class="k">{esc(label)}</span>'
@@ -622,6 +629,8 @@ def self_test():
     assert rouge("a b c d", "a b x d") == {"rouge1": 0.75, "rouge2": 0.33, "rougeL": 0.75}
     assert rouge("a b", "c d") == {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0}
     assert rouge("", "a") == dict.fromkeys(ROUGE_KEYS)
+    assert [fmt_number(160, 0), fmt_number(0.5), fmt_number(0.25), fmt_number(15.0, 1), fmt_number(None)] == \
+        ["160", "0.5", "0.25", "15", "—"]  # 160 once printed as "16"
     print("self-test OK")
 
 
