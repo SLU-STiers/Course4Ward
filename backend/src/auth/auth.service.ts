@@ -13,6 +13,8 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { Prisma, ResetStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeLike } from '../common/like';
+import { expireStaleResetRequests } from './reset-expiry';
 import { AuditLogService, detailItems, fullName } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LoginDto } from './dto/login.dto';
@@ -181,14 +183,47 @@ export class AuthService {
     };
   }
 
-  async logout(userId: string, reason: LogoutReason) {
+  /**
+   * Ends the session server-side: bumping `sessionVersion` revokes every
+   * access and refresh token issued so far, so a token copied off a shared
+   * ward computer stops working the moment the user signs out.
+   *
+   * The access token is often already expired by the time the idle timeout
+   * signs someone out, so the refresh token is accepted too. Signing out an
+   * already-ended session is a quiet no-op rather than an error.
+   */
+  async logout(reason: LogoutReason, tokens: { accessToken?: string; refreshToken?: string }) {
+    const session =
+      (await this.verifySession(tokens.accessToken, 'JWT_ACCESS_SECRET')) ??
+      (await this.verifySession(tokens.refreshToken, 'JWT_REFRESH_SECRET'));
+    if (!session) return { message: 'Signed out.' };
+
+    // Only the current session generation may end it, so a stale token can
+    // never sign out a newer session.
+    const { count } = await this.prisma.user.updateMany({
+      where: { id: session.sub, sessionVersion: session.sessionVersion ?? 0 },
+      data: { sessionVersion: { increment: 1 } },
+    });
+    if (!count) return { message: 'Signed out.' };
+
     const { summary, reason: reasonText } = LOGOUT_DETAILS[reason];
     await this.auditLog.record({
-      userId,
+      userId: session.sub,
       action: 'LOGOUT',
       details: { summary, items: detailItems([['Reason', reasonText]]) },
     });
     return { message: 'Signed out.' };
+  }
+
+  private async verifySession(token: string | undefined, secretKey: string) {
+    if (!token) return null;
+    try {
+      return await this.jwt.verifyAsync<{ sub: string; sessionVersion?: number }>(token, {
+        secret: this.config.get(secretKey),
+      });
+    } catch {
+      return null;
+    }
   }
 
   // Exchanges a still-valid refresh token for a fresh token pair, so an
@@ -318,6 +353,7 @@ export class AuthService {
    * however many requests pile up; `total` is the full filtered count.
    */
   async findPasswordResetRequests(query: PasswordResetQuery = {}) {
+    await expireStaleResetRequests(this.prisma);
     const skip = query.skip ?? 0;
     const take = query.take ?? DEFAULT_RESET_REQUEST_PAGE_SIZE;
     const direction = query.direction ?? 'desc';
@@ -362,7 +398,7 @@ export class AuthService {
     // "john doe" matches John Doe: each word has to hit at least one field.
     const words = query.search?.trim().split(/\s+/).filter(Boolean) ?? [];
     for (const word of words) {
-      const contains = { contains: word, mode: 'insensitive' as const };
+      const contains = { contains: escapeLike(word), mode: 'insensitive' as const };
       conditions.push({
         OR: [
           { id: contains },
@@ -379,6 +415,22 @@ export class AuthService {
     return conditions.length ? { AND: conditions } : {};
   }
 
+  /**
+   * Refuses requests that were already resolved or timed out. A timed-out one
+   * is marked EXPIRED on the spot, so the admin's refreshed list drops it.
+   */
+  private async assertStillPending(request: { id: string; status: string; expiresAt: Date }) {
+    if (request.status === 'PENDING' && request.expiresAt < new Date()) {
+      await expireStaleResetRequests(this.prisma);
+      throw new BadRequestException(
+        'This password reset request expired. Ask the user to submit a new one.',
+      );
+    }
+    if (request.status !== 'PENDING') {
+      throw new BadRequestException('Password reset request is no longer pending');
+    }
+  }
+
   async approvePasswordReset(requestId: string, actingAdminId: string) {
     const request = await this.prisma.passwordResetRequest.findUnique({
       where: { id: requestId },
@@ -386,9 +438,7 @@ export class AuthService {
     });
 
     if (!request) throw new NotFoundException('Password reset request not found');
-    if (request.status !== 'PENDING' || request.expiresAt < new Date()) {
-      throw new BadRequestException('Password reset request is no longer pending');
-    }
+    await this.assertStillPending(request);
 
     const temporaryPassword = randomBytes(9).toString('base64url');
     const passwordHash = await bcrypt.hash(temporaryPassword, 12);
@@ -446,9 +496,7 @@ export class AuthService {
     });
 
     if (!request) throw new NotFoundException('Password reset request not found');
-    if (request.status !== 'PENDING' || request.expiresAt < new Date()) {
-      throw new BadRequestException('Password reset request is no longer pending');
-    }
+    await this.assertStillPending(request);
 
     await this.prisma.$transaction([
       this.prisma.user.update({

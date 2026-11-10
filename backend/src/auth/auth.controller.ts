@@ -7,7 +7,7 @@ import {
   RequestPasswordResetDto,
   ConfirmPasswordResetDto,
 } from './dto/reset-password.dto';
-import { IsIn, IsString, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
@@ -23,6 +23,11 @@ const RESET_TOKEN_COOKIE_OPTIONS = { httpOnly: true, sameSite: 'lax' as const, p
 class LogoutDto {
   @IsIn(LOGOUT_REASONS)
   reason: LogoutReason;
+
+  /** Lets an idle sign-out end the session after the access token expired. */
+  @IsOptional()
+  @IsString()
+  refreshToken?: string;
 }
 
 class RefreshTokenDto {
@@ -45,10 +50,13 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  // Not behind JwtAuthGuard: an idle sign-out usually arrives with an expired
+  // access token, and must still revoke the session via the refresh token.
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
-  logout(@Body() dto: LogoutDto, @CurrentUser() user: any) {
-    return this.authService.logout(user.id, dto.reason);
+  logout(@Body() dto: LogoutDto, @Req() req: Request) {
+    const header = req.headers.authorization;
+    const accessToken = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
+    return this.authService.logout(dto.reason, { accessToken, refreshToken: dto.refreshToken });
   }
 
   @Get('session')

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Role } from '@prisma/client';
+import { ConflictException } from '@nestjs/common';
+import { Prisma, Role } from '@prisma/client';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -15,6 +16,7 @@ describe('UsersService', () => {
       findUnique: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
     },
     userIdCounter: {
       findUnique: jest.fn(),
@@ -63,6 +65,7 @@ describe('UsersService', () => {
         update: jest.fn().mockResolvedValue({ role: Role.NURSE, nextNumber: 1 }),
       },
       user: {
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({
           id: 'user-1',
           userId: 'NRS001',
@@ -88,10 +91,11 @@ describe('UsersService', () => {
       'admin-1',
     );
 
+    // NRS001 is used, so the counter now points at the next unused number.
     expect(tx.userIdCounter.create).toHaveBeenCalledWith({
       data: {
         role: Role.NURSE,
-        nextNumber: 1,
+        nextNumber: 2,
       },
     });
     expect(tx.user.create).toHaveBeenCalledWith(
@@ -113,6 +117,137 @@ describe('UsersService', () => {
         ]),
       }),
     }));
+  });
+
+  it('skips past ids already taken when the counter lags behind the accounts', async () => {
+    const tx = {
+      userIdCounter: {
+        findUnique: jest.fn().mockResolvedValue({ role: Role.CLAIMS_PROCESSOR, nextNumber: 1 }),
+        create: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue(
+          ['CLM001', 'CLM002', 'CLM004', 'CLMX'].map((userId) => ({ userId })),
+        ),
+        create: jest.fn().mockResolvedValue({
+          id: 'user-5', userId: 'CLM005', firstName: 'Ana', lastName: 'Cruz',
+          role: Role.CLAIMS_PROCESSOR, isActive: true, mustResetPassword: true,
+        }),
+      },
+    };
+    mockPrismaService.$transaction.mockImplementation(async (callback) => callback(tx));
+
+    await service.create(
+      { firstName: 'Ana', lastName: 'Cruz', role: Role.CLAIMS_PROCESSOR, temporaryPassword: 'StrongPass123' },
+      'admin-1',
+    );
+
+    expect(tx.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: 'CLM005' }) }),
+    );
+    expect(tx.userIdCounter.update).toHaveBeenCalledWith({
+      where: { role: Role.CLAIMS_PROCESSOR },
+      data: { nextNumber: 6 },
+    });
+  });
+
+  it('uses the counter when it is ahead of the taken ids', async () => {
+    const tx = {
+      userIdCounter: {
+        findUnique: jest.fn().mockResolvedValue({ role: Role.ADMIN, nextNumber: 9 }),
+        create: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      user: {
+        findMany: jest.fn().mockResolvedValue([{ userId: 'ADM003' }]),
+        create: jest.fn().mockResolvedValue({
+          id: 'user-9', userId: 'ADM009', firstName: 'Ana', lastName: 'Cruz',
+          role: Role.ADMIN, isActive: true, mustResetPassword: true,
+        }),
+      },
+    };
+    mockPrismaService.$transaction.mockImplementation(async (callback) => callback(tx));
+
+    await service.create(
+      { firstName: 'Ana', lastName: 'Cruz', role: Role.ADMIN, temporaryPassword: 'StrongPass123' },
+      'admin-1',
+    );
+
+    expect(tx.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: 'ADM009' }) }),
+    );
+  });
+
+  it('reports a concurrent id clash as a 409 instead of a server error', async () => {
+    mockPrismaService.$transaction.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(
+      service.create(
+        { firstName: 'Ana', lastName: 'Cruz', role: Role.ADMIN, temporaryPassword: 'StrongPass123' },
+        'admin-1',
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  describe('admin lock-out protection', () => {
+    const admin = (id: string) => ({
+      id,
+      userId: 'ADM001',
+      firstName: 'Rafael',
+      lastName: 'Cruz',
+      role: Role.ADMIN,
+      isActive: true,
+      wards: [],
+      physicianWards: [],
+    });
+
+    it('refuses to let an admin deactivate their own account', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(admin('admin-1'));
+      await expect(service.update('admin-1', { isActive: false }, 'admin-1')).rejects.toThrow(
+        'You cannot deactivate your own account',
+      );
+      expect(mockPrismaService.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to let an admin remove their own admin role', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(admin('admin-1'));
+      await expect(
+        service.update('admin-1', { role: Role.CLAIMS_PROCESSOR }, 'admin-1'),
+      ).rejects.toThrow('remove your own admin role');
+      expect(mockPrismaService.user.update).not.toHaveBeenCalled();
+    });
+
+    it('still lets an admin rename themselves', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(admin('admin-1'));
+      mockPrismaService.user.update.mockResolvedValue({ ...admin('admin-1'), firstName: 'Raf' });
+      await service.update('admin-1', { firstName: 'Raf', role: Role.ADMIN, isActive: true }, 'admin-1');
+      expect(mockPrismaService.user.update).toHaveBeenCalled();
+    });
+
+    it('refuses to deactivate the last active admin', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(admin('admin-2'));
+      mockPrismaService.user.count.mockResolvedValue(0);
+      await expect(service.update('admin-2', { isActive: false }, 'admin-1')).rejects.toThrow(
+        'At least one active admin account must remain.',
+      );
+    });
+
+    it('lets one admin deactivate another while other admins remain', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(admin('admin-2'));
+      mockPrismaService.user.count.mockResolvedValue(2);
+      mockPrismaService.user.update.mockResolvedValue({ ...admin('admin-2'), isActive: false });
+      await service.update('admin-2', { isActive: false }, 'admin-1');
+      expect(mockPrismaService.user.count).toHaveBeenCalledWith({
+        where: { role: Role.ADMIN, isActive: true, id: { not: 'admin-2' } },
+      });
+      expect(mockPrismaService.user.update).toHaveBeenCalled();
+    });
   });
 
   it('logs exactly which account fields an update changed', async () => {
@@ -172,7 +307,7 @@ describe('UsersService', () => {
           create: jest.fn().mockResolvedValue({ role: Role.PHYSICIAN, nextNumber: 1 }),
           update: jest.fn(),
         },
-        user: { create: jest.fn().mockResolvedValue({}) },
+        user: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({}) },
       };
       mockPrismaService.$transaction.mockImplementation(async (callback) => callback(tx));
       mockPrismaService.ward.count.mockResolvedValue(2);

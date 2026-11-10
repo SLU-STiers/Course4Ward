@@ -22,6 +22,7 @@ const mockPrismaService = {
     findMany: jest.fn(),
   },
   passwordResetRequest: {
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     count: jest.fn(),
   },
   courseInWard: {
@@ -137,6 +138,27 @@ describe('AuditLogService', () => {
         },
       });
       expect(result).toEqual(mockAuditLogCreated);
+    });
+
+    it('should store a lower-cased copy of the summary for case-insensitive search', async () => {
+      mockPrismaService.auditLog.create.mockResolvedValue({});
+
+      await service.record({
+        userId: mockUserId,
+        action: 'USER_UPDATED',
+        details: { summary: 'Updated Ana Cruz (CLM005): status' },
+      });
+
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith({
+        data: {
+          userId: mockUserId,
+          action: ActionType.EDIT_ACCOUNT,
+          details: {
+            summary: 'Updated Ana Cruz (CLM005): status',
+            searchText: 'updated ana cruz (clm005): status',
+          },
+        },
+      });
     });
 
     it('should warn and fall back to EDIT_ACCOUNT for an unknown action', async () => {
@@ -337,6 +359,46 @@ describe('AuditLogService', () => {
       });
     });
 
+    it('should not serve the internal search copy of the summary', async () => {
+      mockPrismaService.auditLog.findMany.mockResolvedValue([
+        { id: 'log-1', details: { summary: 'Signed in', searchText: 'signed in' } },
+        { id: 'log-2', details: null },
+      ]);
+      mockPrismaService.auditLog.count.mockResolvedValue(2);
+
+      const page = await service.findAll({});
+
+      expect(page.items).toEqual([
+        { id: 'log-1', details: { summary: 'Signed in' } },
+        { id: 'log-2', details: null },
+      ]);
+    });
+
+    it('should treat % and _ in the search literally', async () => {
+      mockPrismaService.auditLog.findMany.mockResolvedValue([]);
+      mockPrismaService.auditLog.count.mockResolvedValue(0);
+
+      await service.findAll({ search: '50%_off' });
+
+      const where = mockPrismaService.auditLog.findMany.mock.calls[0][0].where;
+      expect(where.AND[0].OR).toContainEqual({ id: { contains: '50\\%\\_off', mode: 'insensitive' } });
+      expect(where.AND[0].OR).toContainEqual({
+        details: { path: ['searchText'], string_contains: '50\\%\\_off' },
+      });
+    });
+
+    it('should match the search against what happened, ignoring case', async () => {
+      mockPrismaService.auditLog.findMany.mockResolvedValue([]);
+      mockPrismaService.auditLog.count.mockResolvedValue(0);
+
+      await service.findAll({ search: 'CLM005' });
+
+      const where = mockPrismaService.auditLog.findMany.mock.calls[0][0].where;
+      expect(where.AND[0].OR).toContainEqual({
+        details: { path: ['searchText'], string_contains: 'clm005' },
+      });
+    });
+
     it('should match free text against every visible column', async () => {
       // Arrange
       mockPrismaService.auditLog.findMany.mockResolvedValue([]);
@@ -361,6 +423,7 @@ describe('AuditLogService', () => {
               ],
             },
           },
+          { details: { path: ['searchText'], string_contains: 'approve summary' } },
           { action: { in: [ActionType.APPROVE_SUMMARY] } },
         ],
       });
@@ -600,6 +663,8 @@ describe('AuditLogService', () => {
         '%approve%',
         '%summary%',
         '%summary%',
+        'searchText',
+        '%approve summary%',
         ActionType.APPROVE_SUMMARY,
         400,
       ]);

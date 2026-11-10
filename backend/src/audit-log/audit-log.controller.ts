@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AuditLogService } from './audit-log.service';
+import { endOfDateBound, startOfDateBound } from '../common/date-bounds';
 import {
   AuditLogAggregateQueryDto,
   AuditLogQueryDto,
@@ -31,8 +32,8 @@ export class AuditLogController {
       action: query.action,
       role: query.role,
       userId: query.userId,
-      from: query.from ? new Date(query.from) : undefined,
-      to: query.to ? new Date(query.to) : undefined,
+      from: query.from ? startOfDateBound(query.from) : undefined,
+      to: query.to ? endOfDateBound(query.to) : undefined,
       search: query.search,
     });
   }
@@ -49,8 +50,8 @@ export class AuditLogController {
         action: query.action,
         role: query.role,
         userId: query.userId,
-        from: query.from ? new Date(query.from) : undefined,
-        to: query.to ? new Date(query.to) : undefined,
+        from: query.from ? startOfDateBound(query.from) : undefined,
+        to: query.to ? endOfDateBound(query.to) : undefined,
         search: query.search,
       },
       query.by,

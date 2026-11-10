@@ -373,8 +373,8 @@ export function ManageView({
     orderDays[orderDays.length - 1] ??
     null;
   const summary = summaryDay ? summariesByDay.get(summaryDay) : undefined;
-  // Approve is offered to the attending physician of the summary's admission only.
-  const currentUserId = useAuthStore((state) => state.user?.id);
+  // Approve is offered to the attending physician of the summary's admission
+  // only (compared against `currentUserId`, declared at the top).
   const summaryText =
     summaryDraft && summaryDay && summaryDraft.day === summaryDay
       ? summaryDraft.text

@@ -15,13 +15,19 @@ export type LogoutReason = 'MANUAL' | 'IDLE_TIMEOUT';
  * signed out locally whether or not the server hears about it.
  */
 export function signOut(reason: LogoutReason) {
-  const { accessToken, logout } = useAuthStore.getState();
-  if (accessToken) {
+  const { accessToken, refreshToken, logout } = useAuthStore.getState();
+  if (accessToken || refreshToken) {
+    // The server revokes the session, so copied tokens stop working too. The
+    // refresh token is sent because an idle sign-out usually happens after
+    // the short-lived access token has already expired.
     void axios
       .post(
         `${api.defaults.baseURL}/auth/logout`,
-        { reason },
-        { headers: { Authorization: `Bearer ${accessToken}` }, withCredentials: true },
+        { reason, ...(refreshToken ? { refreshToken } : {}) },
+        {
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+          withCredentials: true,
+        },
       )
       .catch(() => undefined);
   }

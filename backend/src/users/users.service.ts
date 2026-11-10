@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AuditChange,
@@ -84,31 +84,36 @@ export class UsersService {
       CLAIMS_PROCESSOR: 'CLM',
     };
 
+    const prefix = prefixes[dto.role];
     const user = await this.prisma.$transaction(async (tx) => {
+      // `nextNumber` is the next unused number for the role. It is never
+      // trusted below the highest id already taken, so a counter that lags
+      // behind the accounts (e.g. seeded users) cannot hand out a duplicate.
       const existingCounter = await tx.userIdCounter.findUnique({
         where: { role: dto.role },
       });
-
-      let counter;
-      let nextUserNumber: number;
+      const taken = await tx.user.findMany({
+        where: { userId: { startsWith: prefix } },
+        select: { userId: true },
+      });
+      const highestTaken = taken.reduce((max, { userId }) => {
+        const match = new RegExp(`^${prefix}(\\d+)$`).exec(userId);
+        return match ? Math.max(max, Number(match[1])) : max;
+      }, 0);
+      const nextUserNumber = Math.max(existingCounter?.nextNumber ?? 1, highestTaken + 1);
 
       if (existingCounter) {
-        counter = await tx.userIdCounter.update({
+        await tx.userIdCounter.update({
           where: { role: dto.role },
-          data: { nextNumber: { increment: 1 } },
+          data: { nextNumber: nextUserNumber + 1 },
         });
-        nextUserNumber = counter.nextNumber - 1;
       } else {
-        counter = await tx.userIdCounter.create({
-          data: {
-            role: dto.role,
-            nextNumber: 1,
-          },
+        await tx.userIdCounter.create({
+          data: { role: dto.role, nextNumber: nextUserNumber + 1 },
         });
-        nextUserNumber = counter.nextNumber;
       }
 
-      const userId = `${prefixes[dto.role]}${String(nextUserNumber).padStart(3, '0')}`;
+      const userId = `${prefix}${String(nextUserNumber).padStart(3, '0')}`;
 
       return tx.user.create({
         data: {
@@ -127,6 +132,12 @@ export class UsersService {
         },
         select: this.safeSelect,
       });
+    }).catch((error: unknown) => {
+      // Two admins creating the same role at once can still race for one id.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Another account was created at the same time. Please try again.');
+      }
+      throw error;
     });
 
     await this.auditLog.record({
@@ -167,6 +178,7 @@ export class UsersService {
 
     const { wardIds: requestedWardIds, ...fields } = dto;
     const role = dto.role ?? existing.role;
+    await this.assertAdminAccessKept(existing, role, dto.isActive ?? existing.isActive, actingAdminId);
     // Replace ward assignments when sent, and clear both relation types on role changes.
     const wardIds =
       requestedWardIds !== undefined || role !== existing.role
@@ -244,6 +256,34 @@ export class UsersService {
     }
 
     return user;
+  }
+
+  /**
+   * Keeps the system manageable: an admin cannot deactivate or demote their
+   * own account (they would lock themselves out mid-session), and no change
+   * may leave the hospital without an active admin to manage accounts.
+   */
+  private async assertAdminAccessKept(
+    existing: { id: string; role: Role; isActive: boolean },
+    nextRole: Role,
+    nextIsActive: boolean,
+    actingAdminId: string,
+  ) {
+    const losesAdminAccess =
+      existing.role === Role.ADMIN && existing.isActive && (nextRole !== Role.ADMIN || !nextIsActive);
+    if (!losesAdminAccess) return;
+
+    if (existing.id === actingAdminId) {
+      throw new BadRequestException(
+        'You cannot deactivate your own account or remove your own admin role. Ask another admin to do it.',
+      );
+    }
+    const otherActiveAdmins = await this.prisma.user.count({
+      where: { role: Role.ADMIN, isActive: true, id: { not: existing.id } },
+    });
+    if (otherActiveAdmins === 0) {
+      throw new BadRequestException('At least one active admin account must remain.');
+    }
   }
 
   /**
