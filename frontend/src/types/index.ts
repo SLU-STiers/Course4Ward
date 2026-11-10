@@ -478,6 +478,17 @@ export interface AiStats {
   }>;
 }
 
+/** `GET /admin/reports/missed-summaries`: a past patient-day the nightly batch missed. */
+export interface MissedSummaryDay {
+  /** Server-local `YYYY-MM-DD`; render verbatim. */
+  day: string;
+  patientId: string;
+  patientName: string;
+  physicianName: string | null;
+  discharged: boolean;
+  orders: number;
+}
+
 export type BatchTestVariant = 'standard' | 'fine_tuned';
 
 /** `GET /admin/reports/batch-test`: the admin batch-test console. */

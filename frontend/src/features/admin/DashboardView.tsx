@@ -1,13 +1,13 @@
 /** Part of the admin dashboard — see index.tsx for the screen shell. */
 
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, KeyRound, Clock3, ClipboardList } from 'lucide-react';
+import { Users, KeyRound, Clock3, ClipboardList, CalendarX } from 'lucide-react';
 import { adminApi } from '../../services/domainApi';
 import { styles } from './styles';
 
 import { ActivityLogTable } from './ActivityLogTable';
-import { ReportingSection } from './ReportingSection';
+import { ReportingSection, type ReportTab } from './ReportingSection';
 
 export function DashboardView() {
   // One request backs the four headline cards; the reporting section keeps its
@@ -16,6 +16,14 @@ export function DashboardView() {
     queryKey: ['admin-report-summary', {}],
     queryFn: () => adminApi.reportSummary().then((response) => response.data),
   });
+  // Same query key as the AI tab's card, so the tile and the list share one fetch.
+  const { data: missed } = useQuery({
+    queryKey: ['admin-missed-summaries'],
+    queryFn: () => adminApi.missedSummaries().then((response) => response.data),
+  });
+  const missedDays = new Set(missed?.map((row) => row.day)).size;
+  const [reportTab, setReportTab] = useState<ReportTab>('overview');
+  const [focusMissed, setFocusMissed] = useState(false);
 
   return (
     <div style={styles.dashboardStack}>
@@ -45,13 +53,30 @@ export function DashboardView() {
           caption="Written since midnight"
           icon={<ClipboardList size={18} strokeWidth={2} />}
         />
+        <MetricCard
+          title="Missed Batches"
+          value={String(missedDays)}
+          caption={missedDays ? `Days never summarized · ${missed?.length} patient-days` : 'Nightly runs on track'}
+          icon={<CalendarX size={18} strokeWidth={2} />}
+          onClick={() => {
+            setReportTab('ai');
+            setFocusMissed(true);
+          }}
+        />
       </div>
 
       {/* Activity log on the left, reporting on the right — see
           `.admin-dashboard-columns` in `src/index.css`. */}
       <div className="admin-dashboard-columns">
         <ActivityLogTable />
-        <ReportingSection />
+        <ReportingSection
+          tab={reportTab}
+          onTabChange={(tab) => {
+            setReportTab(tab);
+            setFocusMissed(false);
+          }}
+          focusMissed={focusMissed}
+        />
       </div>
     </div>
   );
@@ -67,14 +92,16 @@ function MetricCard({
   value,
   caption,
   icon,
+  onClick,
 }: {
   title: string;
   value: string;
   caption: string;
   icon: ReactNode;
+  onClick?: () => void;
 }) {
-  return (
-    <article style={styles.metricCard}>
+  const body = (
+    <>
       <div style={styles.metricHeader}>
         <span style={styles.metricIcon} aria-hidden="true">
           {icon}
@@ -83,6 +110,17 @@ function MetricCard({
       </div>
       <div style={styles.metricValue}>{value}</div>
       <div style={styles.metricTrend}>{caption}</div>
-    </article>
+    </>
+  );
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{ ...styles.metricCard, cursor: 'pointer', textAlign: 'left', font: 'inherit' }}
+    >
+      {body}
+    </button>
+  ) : (
+    <article style={styles.metricCard}>{body}</article>
   );
 }

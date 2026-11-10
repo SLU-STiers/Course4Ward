@@ -17,6 +17,7 @@ import type {
   PhysicianRequest,
   ActivityTrend,
   AiStats,
+  MissedSummaryDay,
   BatchTestState,
   BatchTestVariant,
   AdminUserInput,
@@ -228,6 +229,13 @@ export const adminApi = {
     api.get<ActivityTrend>('/admin/reports/activity-trend', { params }),
   /** AI summarization / embedding timings and embedding coverage. */
   aiStats: (params?: ReportRangeParams) => api.get<AiStats>('/admin/reports/ai', { params }),
+  /** Past patient-days the nightly summary batch missed, and a catch-up run for one. */
+  missedSummaries: () => api.get<MissedSummaryDay[]>('/admin/reports/missed-summaries'),
+  runMissedSummary: (data: { day: string; patientId?: string }) =>
+    api.post<{ day: string; patients: number; summarized: number }>(
+      '/admin/reports/missed-summaries/run',
+      data,
+    ),
   /** Summarization batch test: status + live output, start, stop, finished report. */
   batchTestState: () => api.get<BatchTestState>('/admin/reports/batch-test'),
   startBatchTest: (data: { variants: BatchTestVariant[]; limit?: number; evalOnly: boolean }) =>
