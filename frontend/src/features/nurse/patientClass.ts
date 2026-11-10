@@ -1,7 +1,7 @@
 /** Part of the nurse dashboard — see index.tsx for the screen shell. */
 
 import type { StatusValue } from '../../components/ui';
-import { PATIENT_CLASS_LABEL } from '../../lib/patient';
+import { PATIENT_CLASS_LABEL } from '../../lib/patient.ts';
 import type { Patient, PatientAdmission } from '../../types';
 import type { AdmissionStatus } from './types';
 
