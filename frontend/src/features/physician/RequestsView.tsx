@@ -97,7 +97,7 @@ export function RequestsView({
         sortProps={{
           title: "Sort requests by",
           options: [
-            { value: "requestedAt", label: "Submitted date" },
+            { value: "requestedAt", label: "Requested on" },
             { value: "patient", label: "Patient name" },
           ],
           value: table.sort.field,
@@ -112,8 +112,8 @@ export function RequestsView({
         <thead>
           <tr>
             <th style={requests.th}>Patient</th>
-            <th style={requests.th}>Submitted By</th>
-            <th style={requests.th}>Submitted On</th>
+            <th style={requests.th}>Requested by</th>
+            <th style={requests.th}>Requested on</th>
             <th style={requests.th}>Status</th>
             <th style={{ ...requests.th, textAlign: "right" }}>Action</th>
           </tr>

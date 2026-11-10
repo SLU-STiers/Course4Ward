@@ -30,18 +30,28 @@ export function TriageSummaryBar({
 
   return (
     <section style={manage.triageBar} aria-label="Triage assessment">
-      <span style={manage.triageBarTitle}>Triage</span>
-      <TriageBadge level={triage.level} />
-      <span style={manage.triageBarVitals}>
-        {vitals.length
-          ? vitals.map(([label, value, unit]) => (
-              <span key={label}>
+      <div style={manage.triageBarMain}>
+        <span style={manage.triageBarTitle}>Triage</span>
+        <TriageBadge level={triage.level} compact />
+        <span style={manage.triageBarVitals}>
+          {vitals.length ? (
+            vitals.map(([label, value, unit]) => (
+              <span key={label} style={manage.triageChip}>
                 {label} <strong style={{ color: '#0f172a' }}>{value}</strong> {unit}
               </span>
             ))
-          : 'No vital signs recorded at triage.'}
-      </span>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} disabled={!admission}>
+          ) : (
+            <span style={manage.triageEmpty}>No vital signs recorded</span>
+          )}
+        </span>
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => setOpen(true)}
+        disabled={!admission}
+        style={{ flexShrink: 0 }}
+      >
         View triage
       </Button>
 

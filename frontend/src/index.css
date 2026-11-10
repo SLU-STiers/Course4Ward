@@ -615,15 +615,16 @@ td {
 }
 
 .ui-split-separator--column {
-  width: 20px;
+  width: 16px;
   cursor: col-resize;
 }
 
 .ui-split-separator--row {
-  height: 16px;
+  height: 18px;
   cursor: row-resize;
 }
 
+/* A short grip, not a full-length rule, so it reads as something you can drag. */
 .ui-split-separator::after {
   content: '';
   position: absolute;
@@ -631,32 +632,60 @@ td {
   left: 50%;
   transform: translate(-50%, -50%);
   border-radius: 999px;
-  background: var(--dashboard-border);
-  transition: background 160ms ease;
+  background-color: #e2e8f0;
+  background-image:
+    radial-gradient(circle, #64748b 1.15px, transparent 1.25px),
+    radial-gradient(circle, #64748b 1.15px, transparent 1.25px),
+    radial-gradient(circle, #64748b 1.15px, transparent 1.25px);
+  background-repeat: no-repeat;
+  border: 1px solid #cbd5e1;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
-/* Kept inset from the panel corners so the bar reads as a handle, not a rule. */
 .ui-split-separator--column::after {
-  width: 4px;
-  height: 100%;
-  max-height: 96px;
+  width: 8px;
+  height: 52px;
+  background-size: 8px 8px, 8px 8px, 8px 8px;
+  background-position: center 10px, center 26px, center 42px;
 }
 
 .ui-split-separator--row::after {
-  width: 100%;
-  max-width: 96px;
-  height: 4px;
+  width: 52px;
+  height: 8px;
+  background-size: 8px 8px, 8px 8px, 8px 8px;
+  background-position: 10px center, 26px center, 42px center;
 }
 
 .ui-split-separator:hover::after,
 .ui-split-separator:active::after,
 .ui-split-separator:focus-visible::after {
-  background: var(--dashboard-primary);
+  background-color: var(--c4w-color-primary, #2563eb);
+  border-color: var(--c4w-color-primary, #2563eb);
+  background-image:
+    radial-gradient(circle, #ffffff 1.15px, transparent 1.25px),
+    radial-gradient(circle, #ffffff 1.15px, transparent 1.25px),
+    radial-gradient(circle, #ffffff 1.15px, transparent 1.25px);
+  transform: translate(-50%, -50%) scale(1.06);
 }
 
 .ui-split-separator:disabled::after {
   background: transparent;
 }
+
+/* The one scrollbar a resized panel still needs. Thin, and only as dark as the borders. */
+.ui-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.ui-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.ui-scroll::-webkit-scrollbar-track { background: transparent; }
+.ui-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.ui-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: padding-box; }
 
 /* Physician overview filters: each card keeps its own color, and the selected one fills in. */
 .physician-overview-stat {
@@ -1280,6 +1309,10 @@ td {
 }
 .ui-toolbar__search { display: flex; flex: 0 1 380px; max-width: 380px; min-width: 0; }
 .ui-toolbar__controls { display: flex; align-items: center; gap: var(--c4w-space-xs, 0.5rem); flex: 0 0 auto; flex-wrap: nowrap; }
+/* Narrow panels (the physician Manage list) wrap search and filters onto their own rows instead of running off the card. */
+.ui-toolbar--wrap { flex-wrap: wrap; }
+.ui-toolbar--wrap .ui-toolbar__search { flex: 1 1 220px; max-width: none; }
+.ui-toolbar--wrap .ui-toolbar__controls { flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; }
 .admin-activity-toolbar {
   width: 100%;
   margin: 0;
@@ -1734,6 +1767,9 @@ td {
 .ui-date-nav {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
   gap: var(--c4w-space-sm, 8px);
 }
 
@@ -1742,7 +1778,8 @@ td {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-width: 150px;
+  min-width: 0;
+  max-width: 100%;
   height: 28px;
   padding: 0 12px;
   border: 1px solid var(--c4w-color-border, #e2e8f0);
