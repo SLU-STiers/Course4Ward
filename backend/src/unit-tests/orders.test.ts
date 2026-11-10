@@ -15,11 +15,16 @@ const mockPrismaService = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     count: jest.fn(),
   },
   patientAdmission: {
     findUnique: jest.fn(),
+    update: jest.fn(),
     updateMany: jest.fn(),
+  },
+  room: {
+    findUnique: jest.fn(),
   },
   courseInWard: {
     findFirst: jest.fn(),
@@ -31,7 +36,10 @@ const mockPrismaService = {
     findUnique: jest.fn(),
   },
   $executeRaw: jest.fn(),
+  $transaction: jest.fn(),
 } as unknown as jest.Mocked<PrismaService>;
+// Room transactions run their callback against the same mocks.
+(mockPrismaService.$transaction as jest.Mock).mockImplementation((fn: any) => fn(mockPrismaService));
 
 const mockConfigService = {
   get: jest.fn().mockReturnValue('http://localhost:8000'),
@@ -41,6 +49,7 @@ const orderInclude = {
   orderedBy: { select: { firstName: true, lastName: true } },
   encodedBy: { select: { firstName: true, lastName: true, role: true } },
   executedBy: { select: { firstName: true, lastName: true } },
+  transferRoom: { select: { number: true, ward: { select: { name: true } } } },
 };
 
 const openAdmission = {
@@ -681,6 +690,191 @@ describe('OrdersService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
       expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('transfer orders', () => {
+    const surgery305 = {
+      id: 'room-305',
+      number: '305',
+      isActive: true,
+      ward: { id: 'ward-surgery', name: 'Surgery' },
+      admissions: [],
+      transferOrders: [],
+    };
+    const transferDto: CreateOrderDto = {
+      admissionId: 'admission-123',
+      orderContent: 'Needs post-op monitoring',
+      type: OrderType.TRANSFER,
+      transferRoomNumber: '305',
+    };
+
+    beforeEach(() => {
+      (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+        ...openAdmission,
+        patientId: 'patient-123',
+        room: { wardId: 'ward-coronary', number: '210', ward: { id: 'ward-coronary', name: 'Coronary' } },
+      });
+      (prismaService.physicianOrder.findMany as jest.Mock).mockResolvedValue([]);
+      (prismaService.physicianOrder.create as jest.Mock).mockResolvedValue(mockOrder);
+      (prismaService.room.findUnique as jest.Mock).mockResolvedValue(surgery305);
+    });
+
+    it('should reserve the room and name it in the order text when the attending orders it', async () => {
+      await service.create(transferDto, 'doctor-123', Role.PHYSICIAN);
+
+      // The previous pending transfer is retired, freeing its room.
+      expect(prismaService.physicianOrder.updateMany).toHaveBeenCalledWith({
+        where: {
+          admissionId: 'admission-123',
+          type: OrderType.TRANSFER,
+          active: true,
+          status: { not: OrderStatus.FINISHED },
+        },
+        data: { active: false },
+      });
+      expect(prismaService.physicianOrder.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: OrderType.TRANSFER,
+          transferRoomId: 'room-305',
+          orderContent: 'Transfer to room 305 (Surgery). Needs post-op monitoring',
+        }),
+        include: orderInclude,
+      });
+    });
+
+    it('should let a nurse enter it on the attending physician\'s behalf', async () => {
+      await service.create({ ...transferDto, orderedById: 'doctor-123' }, 'nurse-123', Role.NURSE);
+      expect(prismaService.physicianOrder.create).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a consulting physician', { ...transferDto }, 'doctor-456', Role.PHYSICIAN],
+      ['a nurse on a consultant\'s behalf', { ...transferDto, orderedById: 'doctor-456' }, 'nurse-123', Role.NURSE],
+    ])('should refuse a transfer from %s', async (_label, body, userId, role) => {
+      await expect(service.create(body, userId, role)).rejects.toThrow(ForbiddenException);
+      expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a room reserved by another patient\'s transfer', async () => {
+      (prismaService.room.findUnique as jest.Mock).mockResolvedValue({
+        ...surgery305,
+        transferOrders: [{ id: 'order-9' }],
+      });
+
+      await expect(service.create(transferDto, 'doctor-123', Role.PHYSICIAN)).rejects.toThrow(
+        'Room 305 is reserved for a pending transfer',
+      );
+      expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
+    });
+
+    it('should refuse the room the patient is already in, and a patient who is not admitted', async () => {
+      await expect(
+        service.create({ ...transferDto, transferRoomNumber: '210' }, 'doctor-123', Role.PHYSICIAN),
+      ).rejects.toThrow('The patient is already in room 210');
+
+      (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue({
+        ...openAdmission,
+        patientClass: PatientClass.OBSERVATION,
+        room: null,
+      });
+      await expect(service.create(transferDto, 'doctor-123', Role.PHYSICIAN)).rejects.toThrow(
+        'Only an admitted patient can be transferred',
+      );
+    });
+
+    it('should refuse a transfer without a room, and a room on another order type', async () => {
+      await expect(
+        service.create({ ...transferDto, transferRoomNumber: undefined }, 'doctor-123', Role.PHYSICIAN),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.create({ ...transferDto, type: OrderType.DEFAULT }, 'doctor-123', Role.PHYSICIAN),
+      ).rejects.toThrow('A room can only be given with a transfer order');
+    });
+
+    it('should cancel a pending transfer when a discharge is ordered', async () => {
+      await service.create(
+        { admissionId: 'admission-123', orderContent: 'May go home', type: OrderType.DISCHARGE },
+        'doctor-123',
+        Role.PHYSICIAN,
+      );
+
+      expect(prismaService.physicianOrder.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ type: OrderType.TRANSFER, active: true }),
+          data: { active: false },
+        }),
+      );
+    });
+
+    it('should move the patient and notify both wards and the physicians when the nurse finishes it', async () => {
+      const transferOrder = { ...mockOrder, type: OrderType.TRANSFER, transferRoomId: 'room-305' };
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(transferOrder);
+      (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(1);
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue({
+        ...transferOrder,
+        status: OrderStatus.FINISHED,
+        orderedBy: { firstName: 'Ana', lastName: 'Cruz' },
+      });
+      (prismaService.courseInWard.findFirst as jest.Mock).mockResolvedValue(null);
+
+      await service.updateStatus('order-123', { status: OrderStatus.FINISHED }, 'nurse-123');
+
+      expect(prismaService.$transaction).toHaveBeenCalled();
+      expect(prismaService.patientAdmission.update).toHaveBeenCalledWith({
+        where: { id: 'admission-123' },
+        data: { roomId: 'room-305' },
+      });
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PATIENT_TRANSFERRED' }),
+      );
+      expect(mockNotificationsService.notifyNursesInWard).toHaveBeenCalledWith('ward-coronary', {
+        title: 'Patient transferred out',
+        message: expect.stringContaining('to room 305 (Surgery)'),
+      });
+      expect(mockNotificationsService.notifyNursesInWard).toHaveBeenCalledWith('ward-surgery', {
+        title: 'Patient transferred in',
+        message: expect.stringContaining('from room 210 (Coronary)'),
+        patientId: 'patient-123',
+      });
+      expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
+        ['doctor-123', 'doctor-456', 'doctor-123'],
+        expect.objectContaining({
+          title: 'Patient transferred',
+          message: expect.stringContaining('moved from room 210 (Coronary) to room 305 (Surgery)'),
+        }),
+      );
+    });
+
+    it('should send one message when the new room is in the same ward', async () => {
+      (prismaService.room.findUnique as jest.Mock).mockResolvedValue({
+        ...surgery305,
+        ward: { id: 'ward-coronary', name: 'Coronary' },
+      });
+      const transferOrder = { ...mockOrder, type: OrderType.TRANSFER, transferRoomId: 'room-305' };
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(transferOrder);
+      (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(1);
+      (prismaService.physicianOrder.update as jest.Mock).mockResolvedValue(transferOrder);
+
+      await service.updateStatus('order-123', { status: OrderStatus.FINISHED }, 'nurse-123');
+
+      expect(mockNotificationsService.notifyNursesInWard).toHaveBeenCalledTimes(1);
+      expect(mockNotificationsService.notifyNursesInWard).toHaveBeenCalledWith(
+        'ward-coronary',
+        expect.objectContaining({ title: 'Patient moved rooms' }),
+      );
+    });
+
+    it('should refuse to carry out a transfer that was already done or replaced', async () => {
+      const transferOrder = { ...mockOrder, type: OrderType.TRANSFER, transferRoomId: 'room-305' };
+      (prismaService.physicianOrder.findFirst as jest.Mock).mockResolvedValue(transferOrder);
+      (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(0);
+
+      await expect(
+        service.updateStatus('order-123', { status: OrderStatus.FINISHED }, 'nurse-123'),
+      ).rejects.toThrow(ConflictException);
+      expect(prismaService.patientAdmission.update).not.toHaveBeenCalled();
+      expect(prismaService.physicianOrder.update).not.toHaveBeenCalled();
     });
   });
 });

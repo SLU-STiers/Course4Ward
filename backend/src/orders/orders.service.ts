@@ -14,6 +14,7 @@ import { AuditLogService, detailItems, fullName, humanize } from '../audit-log/a
 import { NotificationsService } from '../notifications/notifications.service';
 import { OllamaClient } from '../course-in-ward/ollama-client';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/create-order.dto';
+import { freeRoom, inRoomTransaction } from '../patients/rooms';
 
 /**
  * Half-open local-day window `[start, end)` for a `YYYY-MM-DD` key. A missing
@@ -42,7 +43,24 @@ const orderInclude = {
   orderedBy: { select: { firstName: true, lastName: true } },
   encodedBy: { select: { firstName: true, lastName: true, role: true } },
   executedBy: { select: { firstName: true, lastName: true } },
+  transferRoom: { select: { number: true, ward: { select: { name: true } } } },
 };
+
+type RoomLabel = { number: string; ward?: { name: string } | null } | null;
+
+/** "room 305 (Surgery)"; an inpatient with no room yet reads "no room". */
+function roomLabel(room: RoomLabel) {
+  if (!room) return 'no room';
+  return room.ward ? `room ${room.number} (${room.ward.name})` : `room ${room.number}`;
+}
+
+/** Transfer orders still waiting for the nurse on one admission. */
+const pendingTransfers = (admissionId: string): Prisma.PhysicianOrderWhereInput => ({
+  admissionId,
+  type: OrderType.TRANSFER,
+  active: true,
+  status: { not: OrderStatus.FINISHED },
+});
 
 @Injectable()
 export class OrdersService {
@@ -79,7 +97,7 @@ export class OrdersService {
         patientClass: true,
         physicianId: true,
         additionalPhysicians: { select: { physicianId: true } },
-        room: { select: { wardId: true } },
+        room: { select: { wardId: true, number: true } },
       },
     });
     if (!admission) throw new NotFoundException('Admission not found');
@@ -116,23 +134,70 @@ export class OrdersService {
     ) {
       throw new ForbiddenException('Only the attending physician can write a discharge order');
     }
+    const transferRoomNumber = dto.transferRoomNumber;
+    if (type !== OrderType.TRANSFER && transferRoomNumber) {
+      throw new BadRequestException('A room can only be given with a transfer order');
+    }
+    if (type === OrderType.TRANSFER) {
+      // Same rule as discharge: a nurse may enter it, but only on the attending's behalf.
+      if (
+        orderedById !== admission.physicianId ||
+        (enteredByRole === Role.PHYSICIAN && enteredById !== admission.physicianId)
+      ) {
+        throw new ForbiddenException('Only the attending physician can order a transfer');
+      }
+      if (!transferRoomNumber) {
+        throw new BadRequestException('Choose the room to transfer the patient to');
+      }
+      if (admission.patientClass !== PatientClass.INPATIENT) {
+        throw new BadRequestException('Only an admitted patient can be transferred');
+      }
+      if (admission.room?.number === transferRoomNumber) {
+        throw new BadRequestException(`The patient is already in room ${transferRoomNumber}`);
+      }
+    }
     if (type !== OrderType.DEFAULT) {
       await this.assertOrderTypeAllowed(dto.admissionId, type, admission.patientClass);
     }
 
-    // Writing an admission/discharge order does not change the admission: the
-    // nurse carries it out with PATCH /patients/admissions/:id/admit|discharge.
-    const order = await this.prisma.physicianOrder.create({
-      data: {
-        admissionId: dto.admissionId,
-        orderedById,
-        encodedById: enteredById,
-        enteredByRole: enteredByFlag,
-        orderContent: dto.orderContent,
-        type,
-      },
-      include: orderInclude,
-    });
+    const data = {
+      admissionId: dto.admissionId,
+      orderedById,
+      encodedById: enteredById,
+      enteredByRole: enteredByFlag,
+      orderContent: dto.orderContent,
+      type,
+    };
+    // Writing an admission/discharge/transfer order does not change the
+    // admission: the nurse carries it out (admit / discharge / finishing the
+    // transfer order). A transfer reserves its room until then.
+    const order = transferRoomNumber
+      ? await inRoomTransaction(this.prisma, async (tx) => {
+          const room = await freeRoom(tx, transferRoomNumber, dto.admissionId);
+          // A newer transfer replaces one still waiting for the nurse (and frees its room).
+          await tx.physicianOrder.updateMany({
+            where: pendingTransfers(dto.admissionId),
+            data: { active: false },
+          });
+          return tx.physicianOrder.create({
+            data: {
+              ...data,
+              // The destination leads the text so the record (and its summary) reads on its own.
+              orderContent: `Transfer to ${roomLabel(room)}. ${dto.orderContent}`,
+              transferRoomId: room.id,
+            },
+            include: orderInclude,
+          });
+        })
+      : await this.prisma.physicianOrder.create({ data, include: orderInclude });
+
+    // A discharge supersedes a transfer that has not happened yet.
+    if (type === OrderType.DISCHARGE) {
+      await this.prisma.physicianOrder.updateMany({
+        where: pendingTransfers(dto.admissionId),
+        data: { active: false },
+      });
+    }
 
     const patientName = await this.auditLog.patientName({ admissionId: dto.admissionId });
     const physicianName = fullName(order.orderedBy);
@@ -224,7 +289,7 @@ export class OrdersService {
     });
     const has = (candidate: OrderType) => existing.some((order) => order.type === candidate);
 
-    if (type === OrderType.DISCHARGE) {
+    if (type === OrderType.DISCHARGE || type === OrderType.TRANSFER) {
       if (has(OrderType.DISCHARGE)) {
         throw new ConflictException('This patient already has a discharge order');
       }
@@ -336,15 +401,21 @@ export class OrdersService {
     }
 
     const changed = dto.status !== order.status;
-    const updated = await this.prisma.physicianOrder.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        ...(dto.nurseComment !== undefined && { nurseComment: dto.nurseComment.trim() || null }),
-        ...(changed && { executedById: nurseId, executedAt: new Date() }),
-      },
-      include: orderInclude,
-    });
+    const data = {
+      status: dto.status,
+      ...(dto.nurseComment !== undefined && { nurseComment: dto.nurseComment.trim() || null }),
+      ...(changed && { executedById: nurseId, executedAt: new Date() }),
+    };
+    // Finishing a transfer order moves the patient in the same transaction, so
+    // the order is never marked done without the move (or the other way round).
+    const finishingTransfer =
+      changed && order.type === OrderType.TRANSFER && dto.status === OrderStatus.FINISHED;
+    const [updated, move] = finishingTransfer
+      ? await inRoomTransaction(this.prisma, async (tx) => {
+          const moved = await this.moveForTransfer(tx, order);
+          return [await tx.physicianOrder.update({ where: { id }, data, include: orderInclude }), moved] as const;
+        })
+      : ([await this.prisma.physicianOrder.update({ where: { id }, data, include: orderInclude }), null] as const);
 
     const patientName = await this.auditLog.patientName({ admissionId: order.admissionId });
     const nurse = await this.prisma.user.findUnique({
@@ -372,9 +443,31 @@ export class OrdersService {
       },
     });
 
+    const movedText = move
+      ? `**${patientName}** was moved from ${roomLabel(move.from)} to ${roomLabel(move.to)} by **${nurseName}**.`
+      : undefined;
+    if (move) {
+      await this.auditLog.record({
+        userId: nurseId,
+        action: 'PATIENT_TRANSFERRED',
+        details: {
+          summary: `Transferred ${patientName} to ${roomLabel(move.to)}`,
+          items: detailItems([
+            ['Patient', patientName],
+            ['Ordering physician', `Dr. ${fullName(updated.orderedBy)}`],
+          ]),
+          changes: [
+            { field: 'Room', from: move.from?.number ?? 'None', to: move.to.number },
+            { field: 'Ward', from: move.from?.ward?.name ?? '—', to: move.to.ward?.name ?? '—' },
+          ].filter((change) => change.from !== change.to),
+        },
+      });
+      await this.notifyTransferWards(move, patientName, nurseName);
+    }
+
     const noteChanged = (order.nurseComment ?? null) !== (updated.nurseComment ?? null);
     if (changed && dto.status === OrderStatus.FINISHED) {
-      await this.notifyFinishedAfterSummary(order, nurseName, patientName);
+      await this.notifyFinishedAfterSummary(order, nurseName, patientName, movedText);
     } else if (changed || noteChanged) {
       const admission = await this.prisma.patientAdmission.findUnique({
         where: { id: order.admissionId },
@@ -402,6 +495,96 @@ export class OrdersService {
     }
 
     return updated;
+  }
+
+  /**
+   * Moves the patient into the transfer order's room, inside the caller's room
+   * transaction. The room is reserved for this admission, so it is only lost if
+   * something bypassed the reservation; then the move fails with 409.
+   */
+  private async moveForTransfer(
+    tx: Prisma.TransactionClient,
+    order: { id: string; admissionId: string; transferRoomId: string | null },
+  ) {
+    // Re-checked inside the transaction so two nurses cannot both carry it out.
+    const pending = await tx.physicianOrder.count({
+      where: { id: order.id, active: true, status: { not: OrderStatus.FINISHED } },
+    });
+    if (!pending) throw new ConflictException('This transfer order was already carried out or replaced');
+    if (!order.transferRoomId) throw new BadRequestException('This transfer order has no destination room');
+
+    const admission = await tx.patientAdmission.findUnique({
+      where: { id: order.admissionId },
+      select: {
+        dischargeDate: true,
+        patientClass: true,
+        patientId: true,
+        room: { select: { number: true, ward: { select: { id: true, name: true } } } },
+      },
+    });
+    if (!admission || admission.dischargeDate) {
+      throw new BadRequestException('Cannot transfer a discharged patient');
+    }
+    if (admission.patientClass !== PatientClass.INPATIENT) {
+      throw new BadRequestException('Only an admitted patient can be transferred');
+    }
+    const target = await tx.room.findUnique({
+      where: { id: order.transferRoomId },
+      select: { number: true },
+    });
+    if (!target) throw new NotFoundException('The transfer room no longer exists');
+
+    const to = await freeRoom(tx, target.number, order.admissionId);
+    await tx.patientAdmission.update({ where: { id: order.admissionId }, data: { roomId: to.id } });
+    return { patientId: admission.patientId, from: admission.room, to };
+  }
+
+  /**
+   * Tells the nurses of the ward the patient left and of the ward they arrived
+   * in (one message when it is the same ward). Only the arriving ward gets a
+   * link to the chart: the old ward no longer has access. Best effort.
+   */
+  private async notifyTransferWards(
+    move: {
+      patientId: string;
+      from: { number: string; ward: { id: string; name: string } | null } | null;
+      to: { number: string; ward: { id: string; name: string } | null };
+    },
+    patientName: string,
+    nurseName: string,
+  ) {
+    try {
+      // No room = the ward that holds unroomed patients (Emergency).
+      const fromWardId = move.from
+        ? move.from.ward?.id ?? null
+        : (await this.prisma.ward.findFirst({ where: { holdsUnroomed: true }, select: { id: true } }))?.id ?? null;
+      const toWardId = move.to.ward?.id ?? null;
+      const from = roomLabel(move.from);
+
+      if (fromWardId && fromWardId === toWardId) {
+        await this.notifications.notifyNursesInWard(toWardId, {
+          title: 'Patient moved rooms',
+          message: `**${patientName}** was moved from ${from} to ${roomLabel(move.to)} by **${nurseName}**.`,
+          patientId: move.patientId,
+        });
+        return;
+      }
+      await Promise.all([
+        fromWardId &&
+          this.notifications.notifyNursesInWard(fromWardId, {
+            title: 'Patient transferred out',
+            message: `**${patientName}** was transferred out of your ward to ${roomLabel(move.to)} by **${nurseName}**.`,
+          }),
+        toWardId &&
+          this.notifications.notifyNursesInWard(toWardId, {
+            title: 'Patient transferred in',
+            message: `**${patientName}** was transferred into your ward, room ${move.to.number}, from ${from} by **${nurseName}**.`,
+            patientId: move.patientId,
+          }),
+      ]);
+    } catch (err) {
+      this.logger.warn(`[notify] could not notify wards of a transfer: ${(err as Error).message}`);
+    }
   }
 
   /** Carrying out a discharge order ends the admission. A second nurse finds it already discharged. */
@@ -445,6 +628,8 @@ export class OrdersService {
     },
     nurseName: string,
     patientName: string,
+    /** Set for a carried-out transfer: replaces the generic "accomplished" message. */
+    movedText?: string,
   ) {
     try {
       const created = new Date(order.dateCreated);
@@ -473,12 +658,17 @@ export class OrdersService {
         ...admission.additionalPhysicians.map(({ physicianId }) => physicianId),
         order.orderedById,
       ].filter((id): id is string => Boolean(id));
+      const regenerate =
+        "after that day's Course in the Ward was written. Regenerate the summary to include it.";
       await this.notifications.notifyUsers(physicianIds, {
-        title: summary ? 'Order finished after summary' : 'Order accomplished',
-        message: summary
-          ? `**${nurseName}** accomplished an order for **${patientName}** on ${day} ` +
-            `after that day's Course in the Ward was written. Regenerate the summary to include it.`
-          : `**${nurseName}** accomplished an order for **${patientName}**.`,
+        title: movedText ? 'Patient transferred' : summary ? 'Order finished after summary' : 'Order accomplished',
+        message: movedText
+          ? summary
+            ? `${movedText} The transfer order is from ${day} and was carried out ${regenerate}`
+            : movedText
+          : summary
+            ? `**${nurseName}** accomplished an order for **${patientName}** on ${day} ${regenerate}`
+            : `**${nurseName}** accomplished an order for **${patientName}**.`,
         patientId: admission.patientId,
       });
     } catch (err) {

@@ -2,6 +2,7 @@ import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'cla
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { OrderStatus, OrderType } from '@prisma/client';
+import { normalizeRoom } from '../../patients/dto/patient.dto';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -32,6 +33,16 @@ export class CreateOrderDto {
   @IsOptional()
   @IsEnum(OrderType)
   type?: OrderType;
+
+  // TRANSFER only (required there): the free room the patient moves to. The
+  // room is reserved until the nurse finishes the order.
+  @ApiPropertyOptional({ description: 'Destination room of a TRANSFER order', example: '305' })
+  @IsOptional()
+  @Transform(normalizeRoom)
+  @IsString()
+  @IsNotEmpty({ message: 'The room number must not be empty' })
+  @MaxLength(20)
+  transferRoomNumber?: string;
 }
 
 export class UpdateOrderStatusDto {
