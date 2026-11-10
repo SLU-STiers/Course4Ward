@@ -22,7 +22,9 @@ Exit code 1 when any summary fails a hard check, so it can gate a model change.
 Hard checks (FAIL): call failed/empty, bullet or numbered list, a physician
 name ("Dr."), present tense ("is receiving"), a number that appears nowhere in
 the orders (likely invented dose).
-Soft checks (WARN): future/imperative wording, a sentence over 35 words.
+Soft checks (WARN): future/imperative wording, more than MAX_SENTENCES sentences.
+Summaries should be as short as the orders allow, but there is no hard cap on
+length, so it never fails a summary; word and sentence counts are just reported.
 All 88 approved references pass every hard check, so a FAIL is the model's.
 
 Metrics: time, sentences, words, number coverage (share of the orders' doses/
@@ -47,6 +49,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 # Same held-out admissions as build_dataset.py: the fine-tuned model never saw them.
 EVAL_ADMISSIONS = {"2026002210", "2026002236", "2026002238"}
+
+# Length is a WARN past this, never a FAIL: no hard cap, just "as short as possible".
+MAX_SENTENCES = 10
 
 HEADER = re.compile(r"^### (\S+) \| Day (\d+) of Admission #(\S+) \((\d{4}-\d{2}-\d{2})\)")
 ORDER_START = re.compile(r"^(\d+)\. (.*)")
@@ -153,9 +158,9 @@ def check(summary, orders_text, allowed_numbers=()):
     if re.search(r"\b(will|please|kindly)\b", summary, re.I):
         warns.append("future/imperative wording")
     sents = sentences(summary)
-    long_ones = [len(s.split()) for s in sents if len(s.split()) > 35]
-    if long_ones:
-        warns.append(f"{len(long_ones)} sentence(s) over 35 words")
+    if len(sents) > MAX_SENTENCES:
+        warns.append(f"more than {MAX_SENTENCES} sentences ({len(sents)})")
+
 
     order_numbers = numbers_in(orders_text)
     covered = len(order_numbers & numbers_in(summary))
@@ -489,7 +494,7 @@ approved for the same orders.</p>
 <table>
 <tr><th>Result</th><th>Meaning</th></tr>
 <tr class="pass"><td><b>PASS</b></td><td>No problem found.</td></tr>
-<tr class="warn"><td><b>WARN</b></td><td>Usable, but worth a look: future or imperative wording ("will", "please"), or a sentence over 35 words.</td></tr>
+<tr class="warn"><td><b>WARN</b></td><td>Usable, but worth a look: future or imperative wording ("will", "please"), or more than {MAX_SENTENCES} sentences. Length is never a FAIL: there is no hard cap, summaries should just be as short as the orders allow.</td></tr>
 <tr class="fail"><td><b>FAIL</b></td><td>Breaks a rule the summary must follow: the call failed or returned nothing; a bullet or numbered list;
 a physician's name; present tense ("is receiving") instead of past tense; or a number that appears nowhere in the
 orders, which usually means an invented dose.</td></tr>
@@ -497,7 +502,9 @@ orders, which usually means an invented dose.</td></tr>
 <p class="desc">Every approved reference summary passes all FAIL checks, so a FAIL points at the AI, not the test.
 <b>Number coverage</b> is the share of the orders' numbers (doses, rates, counts) that the summary kept: a rough
 measure of completeness. <b>ROUGE-1</b> is the share of words the summary shares with the approved reference
-(0 = nothing in common, 1 = same words); around 0.5 is typical for two correct summaries worded differently.</p>
+(0 = nothing in common, 1 = same words). It rewards shared wording, not correctness, and drops when the summary is
+much shorter than its reference, so read it as a comparison between models on the same orders, not as a pass mark:
+two correct summaries worded differently often score only 0.3-0.5.</p>
 {''.join(sections)}
 
 <h2>All results</h2>
@@ -571,6 +578,12 @@ def self_test():
     assert check("", orders)[0] == ["empty summary"]
     assert check("Labs will be requested.", orders)[1] == ["future/imperative wording"]
     assert check(good, orders)[2]["number_coverage"] == 1.0
+    eleven = " ".join(["CBC was requested."] * (MAX_SENTENCES + 1))
+    assert check(eleven, orders)[1] == [f"more than {MAX_SENTENCES} sentences ({MAX_SENTENCES + 1})"]
+    assert check(eleven, orders)[0] == []  # length is never a FAIL
+    long_sentence = "CBC was requested " + "and repeated " * 30 + "."
+    assert check(long_sentence, orders)[1] == []  # no per-sentence word limit
+    assert any(f.startswith("present tense") for f in check("The patient is receiving IV fluids.", orders)[0])
     assert any(f.startswith("present tense") for f in check("The patient is receiving IV fluids.", orders)[0])
     assert similarity("a b c", "c b a") == 1.0  # word order does not matter
     assert similarity("a b", "c d") == 0.0
