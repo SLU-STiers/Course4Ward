@@ -215,7 +215,6 @@ describe("Patients Module", () => {
 
   const mockCreatePatientDto = {
     firstName: "John",
-    middleName: "Santos",
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: "1990-01-01",
@@ -300,7 +299,7 @@ describe("Patients Module", () => {
           expect.objectContaining({
             data: expect.objectContaining({
               firstName: mockCreatePatientDto.firstName,
-              middleName: "Santos",
+              middleName: null,
               lastName: mockCreatePatientDto.lastName,
               gender: mockCreatePatientDto.gender,
               dateOfBirth: new Date(mockCreatePatientDto.dateOfBirth),
@@ -486,7 +485,7 @@ describe("Patients Module", () => {
         expect(await validate(dto)).toHaveLength(0);
       });
 
-      it("should reject a blank middle name", async () => {
+      it("should allow an empty optional middle name", async () => {
         const dto = plainToInstance(CreatePatientDto, {
           firstName: "Juan",
           middleName: "   ",
@@ -495,9 +494,8 @@ describe("Patients Module", () => {
           physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
         });
 
-        expect(dto.middleName).toBe("");
-        const errors = await validate(dto);
-        expect(errors.map((error) => error.property)).toContain("middleName");
+        expect(dto.middleName).toBeUndefined();
+        expect(await validate(dto)).toHaveLength(0);
       });
 
       it("should reject numbers in the contact person name", async () => {

@@ -180,7 +180,7 @@ export class PatientsService {
     const createPatient = (db: Prisma.TransactionClient, roomId: string | null) => db.patient.create({
       data: {
         firstName: dto.firstName.trim(),
-        middleName: dto.middleName.trim(),
+        middleName: dto.middleName?.trim() || null,
         lastName: dto.lastName.trim(),
         gender: dto.gender,
         dateOfBirth: resolveDateOfBirth(dto),
