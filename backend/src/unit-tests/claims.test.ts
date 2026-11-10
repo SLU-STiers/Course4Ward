@@ -60,6 +60,7 @@ describe("Claims Module", () => {
   const mockPatient = {
     id: "patient-123",
     firstName: "John",
+    middleName: null,
     lastName: "Doe",
     gender: Sex.MALE,
     dateOfBirth: new Date("1990-01-01"),
