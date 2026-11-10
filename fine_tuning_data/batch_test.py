@@ -22,11 +22,14 @@ Exit code 1 when any summary fails a hard check, so it can gate a model change.
 Hard checks (FAIL): call failed/empty, bullet or numbered list, a physician
 name ("Dr."), present tense ("is receiving"), a number that appears nowhere in
 the orders (likely invented dose).
-Soft checks (WARN): future/imperative wording, a sentence over 35 words.
+Soft checks (WARN): future/imperative wording, more than MAX_SENTENCES sentences.
+Summaries should be as short as the orders allow, but there is no hard cap on
+length, so it never fails a summary; word and sentence counts are just reported.
 All 88 approved references pass every hard check, so a FAIL is the model's.
 
 Metrics: time, sentences, words, number coverage (share of the orders' doses/
-rates/counts kept: a completeness proxy) and ROUGE-1 F1 against the reference.
+rates/counts kept: a completeness proxy) and ROUGE-1, ROUGE-2 and ROUGE-L F1
+against the reference.
 """
 import argparse
 import csv
@@ -45,8 +48,14 @@ from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# Same held-out admissions as build_dataset.py: the fine-tuned model never saw them.
-EVAL_ADMISSIONS = {"2026002210", "2026002236", "2026002238"}
+# Admissions held out of fine-tuning (build_dataset.py imports this, so the two never
+# disagree): 19 day-groups from 1 to 28 orders. Widened from the first three on
+# 2026-11-10; a model trained before then saw 2026002052 and 2026003328, so compare
+# it with --only on the first three admissions' groups instead.
+EVAL_ADMISSIONS = {"2026002210", "2026002236", "2026002238", "2026002052", "2026003328"}
+
+# Length is a WARN past this, never a FAIL: no hard cap, just "as short as possible".
+MAX_SENTENCES = 10
 
 HEADER = re.compile(r"^### (\S+) \| Day (\d+) of Admission #(\S+) \((\d{4}-\d{2}-\d{2})\)")
 ORDER_START = re.compile(r"^(\d+)\. (.*)")
@@ -153,9 +162,8 @@ def check(summary, orders_text, allowed_numbers=()):
     if re.search(r"\b(will|please|kindly)\b", summary, re.I):
         warns.append("future/imperative wording")
     sents = sentences(summary)
-    long_ones = [len(s.split()) for s in sents if len(s.split()) > 35]
-    if long_ones:
-        warns.append(f"{len(long_ones)} sentence(s) over 35 words")
+    if len(sents) > MAX_SENTENCES:
+        warns.append(f"more than {MAX_SENTENCES} sentences ({len(sents)})")
 
     order_numbers = numbers_in(orders_text)
     covered = len(order_numbers & numbers_in(summary))
@@ -167,18 +175,44 @@ def check(summary, orders_text, allowed_numbers=()):
     }
 
 
-def similarity(a, b):
-    """ROUGE-1 F1 against the approved reference, 0..1: shared words, any order.
+ROUGE_KEYS = ("rouge1", "rouge2", "rougeL")
 
-    Order-sensitive matching (difflib) scores two correct summaries near 0 when
-    they merely arrange the same orders differently.
+
+def _f1(overlap, generated_len, reference_len):
+    if not overlap:
+        return 0.0
+    precision, recall = overlap / generated_len, overlap / reference_len
+    return round(2 * precision * recall / (precision + recall), 2)
+
+
+def _lcs(a, b):
+    """Length of the longest common subsequence of two word lists (O(len(a) * len(b)))."""
+    previous = [0] * (len(b) + 1)
+    for word in a:
+        current = [0]
+        for j, other in enumerate(b, start=1):
+            current.append(previous[j - 1] + 1 if word == other else max(previous[j], current[j - 1]))
+        previous = current
+    return previous[-1]
+
+
+def rouge(generated, reference):
+    """ROUGE-1, ROUGE-2 and ROUGE-L F1 against the reference, each 0..1.
+
+    ROUGE-1: shared words, any order. ROUGE-2: shared word pairs, so it rewards
+    keeping phrases together ("600 mg IV"). ROUGE-L: the longest run of words in
+    the same order (gaps allowed), so it rewards keeping the reference's sequence.
+    None for all three when either text is empty.
     """
-    a, b = WORD.findall((a or "").lower()), WORD.findall((b or "").lower())
+    a, b = WORD.findall((generated or "").lower()), WORD.findall((reference or "").lower())
     if not a or not b:
-        return None
-    overlap = sum((Counter(a) & Counter(b)).values())
-    precision, recall = overlap / len(a), overlap / len(b)
-    return round(2 * precision * recall / (precision + recall), 2) if overlap else 0.0
+        return dict.fromkeys(ROUGE_KEYS)
+    pairs_a, pairs_b = Counter(zip(a, a[1:])), Counter(zip(b, b[1:]))
+    return {
+        "rouge1": _f1(sum((Counter(a) & Counter(b)).values()), len(a), len(b)),
+        "rouge2": _f1(sum((pairs_a & pairs_b).values()), max(1, len(a) - 1), max(1, len(b) - 1)),
+        "rougeL": _f1(_lcs(a, b), len(a), len(b)),
+    }
 
 
 def pct(values, q):
@@ -274,18 +308,19 @@ def main():
                 if error:
                     fails.insert(0, f"error: {error}")
                 status = "FAIL" if fails else ("WARN" if warns else "PASS")
-                sim = similarity(summary, references.get(group["group_id"]))
+                scores = rouge(summary, references.get(group["group_id"]))
+                shown = "/".join("-" if scores[k] is None else f"{scores[k]:.2f}" for k in ROUGE_KEYS)
 
                 print(f"[{n}/{total}] {status:4} {variant:10} {group['group_id']:22} "
                       f"{service_s if service_s is not None else wall:>6}s"
-                      f"  sim={sim if sim is not None else '-'}  {'; '.join(fails + warns)}")
+                      f"  R1/R2/RL={shown}  {'; '.join(fails + warns)}")
                 rows.append({
                     "variant": variant, "group_id": group["group_id"], "run": run,
                     "status": status, "orders": len(group["orders"]),
                     "seconds": service_s if service_s is not None else wall, "wall_seconds": wall,
                     "sentences": metrics.get("sentences"), "words": metrics.get("words"),
                     "number_coverage": metrics.get("number_coverage"),
-                    "reference_similarity": sim,
+                    **scores,
                     "fails": " | ".join(fails), "warns": " | ".join(warns),
                     "summary": summary or "",
                 })
@@ -311,7 +346,8 @@ def main():
 
 
 METRICS = [("sentences", "Sentences"), ("words", "Words"),
-           ("number_coverage", "Number coverage"), ("reference_similarity", "ROUGE-1 vs reference")]
+           ("number_coverage", "Number coverage"),
+           ("rouge1", "ROUGE-1"), ("rouge2", "ROUGE-2"), ("rougeL", "ROUGE-L")]
 
 
 def variant_stats(rows, variant):
@@ -360,6 +396,14 @@ def print_report(rows, variants):
 VARIANT_LABELS = {"standard": "Base model (with RAG)", "fine_tuned": "Fine-tuned model"}
 
 
+def fmt_number(value, digits=2):
+    """`0.50` -> `0.5`, `160` -> `160`: trim trailing zeros of decimals only."""
+    if value is None:
+        return "—"
+    text = f"{value:.{digits}f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 def read_rows(path):
     """batch_results.csv -> rows with the numeric columns back as numbers."""
     def num(value):
@@ -368,8 +412,9 @@ def read_rows(path):
     with open(path, newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
     for r in rows:
-        for field in ("seconds", "wall_seconds", "sentences", "words",
-                      "number_coverage", "reference_similarity"):
+        # CSVs from before ROUGE-2/L had ROUGE-1 only, as "reference_similarity".
+        r.setdefault("rouge1", r.get("reference_similarity"))
+        for field in ("seconds", "wall_seconds", "sentences", "words", "number_coverage", *ROUGE_KEYS):
             r[field] = num(r.get(field))
     return rows
 
@@ -380,8 +425,7 @@ def write_report(rows, path, references, meta):
     variants = list(dict.fromkeys(r["variant"] for r in rows))
     generated = time.strftime("%Y-%m-%d %H:%M")
 
-    def fmt(value, digits=2):
-        return "—" if value is None else f"{value:.{digits}f}".rstrip("0").rstrip(".")
+    fmt = fmt_number
 
     def tile(label, value, hint=""):
         return (f'<div class="tile"><span class="k">{esc(label)}</span>'
@@ -398,7 +442,8 @@ def write_report(rows, path, references, meta):
             tile("Pass rate", rate, "no FAIL and no WARN"),
             tile("Typical time", f"{fmt(t[1], 1)} s" if t else "—", f"p95 {fmt(t[2], 1)} s" if t else ""),
             tile("Coverage", fmt(m.get("number_coverage", (None,))[0]), "of the orders' numbers kept"),
-            tile("ROUGE-1", fmt(m.get("reference_similarity", (None,))[0]), "word overlap with reference"),
+            tile("ROUGE-1 / 2 / L",
+                 " / ".join(fmt(m.get(k, (None,))[0]) for k in ROUGE_KEYS), "average F1 vs reference"),
             tile("Length", f"{fmt(m.get('words', (None,))[0], 0)} words",
                  f"{fmt(m.get('sentences', (None,))[0], 1)} sentences"),
         ])
@@ -433,7 +478,8 @@ def write_report(rows, path, references, meta):
         f'<tr class="{r["status"].lower()}"><td>{esc(r["group_id"])}</td>'
         f'<td>{"Fine-tuned" if r["variant"] == "fine_tuned" else "Base"}</td><td>{esc(str(r["run"]))}</td>'
         f'<td><b>{r["status"]}</b></td><td>{esc(str(r["orders"]))}</td><td>{fmt(r["seconds"], 1)}</td>'
-        f'<td>{fmt(r["words"], 0)}</td><td>{fmt(r["number_coverage"])}</td><td>{fmt(r["reference_similarity"])}</td>'
+        f'<td>{fmt(r["words"], 0)}</td><td>{fmt(r["number_coverage"])}</td>'
+        + "".join(f"<td>{fmt(r[k])}</td>" for k in ROUGE_KEYS) +
         f'<td>{esc("; ".join(filter(None, [r["fails"], r["warns"]])).replace(" | ", "; "))}</td></tr>'
         for r in rows)
 
@@ -489,20 +535,23 @@ approved for the same orders.</p>
 <table>
 <tr><th>Result</th><th>Meaning</th></tr>
 <tr class="pass"><td><b>PASS</b></td><td>No problem found.</td></tr>
-<tr class="warn"><td><b>WARN</b></td><td>Usable, but worth a look: future or imperative wording ("will", "please"), or a sentence over 35 words.</td></tr>
+<tr class="warn"><td><b>WARN</b></td><td>Usable, but worth a look: future or imperative wording ("will", "please"), or more than {MAX_SENTENCES} sentences. Length is never a FAIL: there is no hard cap, summaries should just be as short as the orders allow.</td></tr>
 <tr class="fail"><td><b>FAIL</b></td><td>Breaks a rule the summary must follow: the call failed or returned nothing; a bullet or numbered list;
 a physician's name; present tense ("is receiving") instead of past tense; or a number that appears nowhere in the
 orders, which usually means an invented dose.</td></tr>
 </table>
 <p class="desc">Every approved reference summary passes all FAIL checks, so a FAIL points at the AI, not the test.
 <b>Number coverage</b> is the share of the orders' numbers (doses, rates, counts) that the summary kept: a rough
-measure of completeness. <b>ROUGE-1</b> is the share of words the summary shares with the approved reference
-(0 = nothing in common, 1 = same words); around 0.5 is typical for two correct summaries worded differently.</p>
+measure of completeness. <b>ROUGE</b> compares the summary's wording with the reference summary (F1, 0 = nothing
+in common, 1 = identical): <b>ROUGE-1</b> counts shared words, <b>ROUGE-2</b> shared word pairs (keeping phrases such as
+"600 mg IV" together), and <b>ROUGE-L</b> the longest run of words in the same order. ROUGE-2 and ROUGE-L are naturally
+lower than ROUGE-1. All three reward shared wording, not correctness, and drop when the summary is much shorter than
+its reference, so read them as a comparison between models on the same orders, not as a pass mark.</p>
 {''.join(sections)}
 
 <h2>All results</h2>
 <table class="results"><tr><th>Group</th><th>Model</th><th>Run</th><th>Result</th><th>Orders</th><th>Time (s)</th>
-<th>Words</th><th>Coverage</th><th>ROUGE-1</th><th>Issues</th></tr>{result_rows}</table>
+<th>Words</th><th>Coverage</th><th>R-1</th><th>R-2</th><th>R-L</th><th>Issues</th></tr>{result_rows}</table>
 
 <div class="appendix"><h2>Appendix: generated summaries</h2>
 <p class="desc">Each generated summary next to the physician-approved reference for the same orders.</p>
@@ -571,9 +620,20 @@ def self_test():
     assert check("", orders)[0] == ["empty summary"]
     assert check("Labs will be requested.", orders)[1] == ["future/imperative wording"]
     assert check(good, orders)[2]["number_coverage"] == 1.0
+    eleven = " ".join(["CBC was requested."] * (MAX_SENTENCES + 1))
+    assert check(eleven, orders)[1] == [f"more than {MAX_SENTENCES} sentences ({MAX_SENTENCES + 1})"]
+    assert check(eleven, orders)[0] == []  # length is never a FAIL
+    long_sentence = "CBC was requested " + "and repeated " * 30 + "."
+    assert check(long_sentence, orders)[1] == []  # no per-sentence word limit
     assert any(f.startswith("present tense") for f in check("The patient is receiving IV fluids.", orders)[0])
-    assert similarity("a b c", "c b a") == 1.0  # word order does not matter
-    assert similarity("a b", "c d") == 0.0
+    assert rouge("a b c", "c b a")["rouge1"] == 1.0  # ROUGE-1 ignores order...
+    assert rouge("a b c", "c b a")["rouge2"] == 0.0  # ...ROUGE-2 needs the same pairs...
+    assert rouge("a b c", "c b a")["rougeL"] == 0.33  # ...ROUGE-L the same sequence (1 of 3)
+    assert rouge("a b c d", "a b x d") == {"rouge1": 0.75, "rouge2": 0.33, "rougeL": 0.75}
+    assert rouge("a b", "c d") == {"rouge1": 0.0, "rouge2": 0.0, "rougeL": 0.0}
+    assert rouge("", "a") == dict.fromkeys(ROUGE_KEYS)
+    assert [fmt_number(160, 0), fmt_number(0.5), fmt_number(0.25), fmt_number(15.0, 1), fmt_number(None)] == \
+        ["160", "0.5", "0.25", "15", "—"]  # 160 once printed as "16"
     print("self-test OK")
 
 
