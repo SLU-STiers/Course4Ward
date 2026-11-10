@@ -30,6 +30,8 @@ export interface SummarizationRequest {
     admissionDate: string;
   };
   summaryText: string;
+  /** Registration and admission facts for the day this summary belongs to. */
+  chart: StayChart;
   /** Triage assessment recorded when the patient was registered for this admission. */
   triage: TriageDisplay;
   /**
@@ -74,9 +76,30 @@ export interface CF4Patient {
   approved: boolean;
 }
 
+/**
+ * Registration and admission facts printed with the Course in the Ward.
+ * Every value is display-ready; a missing fact is `—`.
+ */
+export interface StayChart {
+  dateOfBirth: string;
+  contactNumber: string;
+  address: string;
+  insurance: string;
+  religion: string;
+  emergencyContact: string;
+  attending: string;
+  location: string;
+  patientClass: string;
+  triage: string;
+  assessment: string;
+}
+
 /** One patient queued for the Course in the Ward Summary review step. */
 export interface Cf4SummaryDraft {
   patient: CF4Patient;
-  /** All physician-approved daily summaries from the patient's admissions. */
+  /** Approved summaries that make up this stay, oldest day first. */
   requests: SummarizationRequest[];
+  /** Those summaries written as one Course in the Ward for the whole stay. */
+  courseText: string;
+  chart: StayChart;
 }

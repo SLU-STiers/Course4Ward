@@ -258,7 +258,10 @@ describe("Claims Module", () => {
                         id: true,
                         admissionDate: true,
                         dischargeDate: true,
+                        patientClass: true,
                         initialAssessment: true,
+                        physician: { select: { firstName: true, lastName: true } },
+                        room: { select: { number: true, ward: { select: { name: true } } } },
                         triage: expect.objectContaining({
                           select: expect.objectContaining({ triageLevel: true, heartRate: true }),
                         }),

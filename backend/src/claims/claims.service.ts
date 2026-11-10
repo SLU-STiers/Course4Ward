@@ -133,8 +133,11 @@ export class ClaimsService {
                     id: true,
                     admissionDate: true,
                     dischargeDate: true,
-                    // The claim review shows the patient's triage assessment.
+                    patientClass: true,
+                    // The claim review and the CF4 show the stay, not only the day.
                     initialAssessment: true,
+                    physician: { select: { firstName: true, lastName: true } },
+                    room: { select: { number: true, ward: { select: { name: true } } } },
                     triage: triageSelect,
                   },
                 },

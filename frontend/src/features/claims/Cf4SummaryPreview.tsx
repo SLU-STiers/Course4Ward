@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 
 import { Button, Modal, StatusBadge } from '../../components/ui';
-import { formatDateMedium } from '../../lib/format';
 import type { Cf4SummaryDraft, ExportSource } from './types';
 import { styles } from './styles';
 
@@ -40,8 +39,8 @@ function initialsOf(name: string): string {
 
 /**
  * Review step between picking patients and generating the CF4: steps through
- * every queued patient and shows all approved daily Course in the Ward
- * entries alongside the collated document before anything is persisted.
+ * every queued patient and shows the Course in the Ward for the whole stay
+ * alongside the document before anything is persisted.
  */
 export function Cf4SummaryPreview({
   drafts,
@@ -77,7 +76,7 @@ export function Cf4SummaryPreview({
   const activeIndex = total ? Math.min(Math.max(index, 0), total - 1) : 0;
   const active = drafts[activeIndex];
   const patient = active?.patient;
-  const requests = active?.requests ?? [];
+  const chart = active?.chart;
 
   /* Build one document per draft. The preview and download both use this same
      Blob; a template PDF is retained and populated for the existing-CF4 flow. */
@@ -189,8 +188,8 @@ export function Cf4SummaryPreview({
         </span>
         <span style={styles.summarySourceHint}>
           {total > 1
-            ? `Review each selected patient below — one collated CF4 document is generated per patient, with all approved summary days across admissions included.`
-            : 'Review all approved daily summaries for this patient. Confirming generates one collated CF4 document.'}
+            ? 'Review each selected patient below. One Course in the Ward PDF is generated per patient and covers that patient’s whole stay.'
+            : 'Review the Course in the Ward for this patient’s whole stay. Confirming generates one PDF.'}
         </span>
       </div>
 
@@ -290,6 +289,18 @@ export function Cf4SummaryPreview({
               </span>
             </div>
             <div style={styles.summaryMetaField}>
+              <span style={styles.summaryMetaLabel}>Attending</span>
+              <span style={styles.summaryMetaValue}>{chart?.attending ?? '—'}</span>
+            </div>
+            <div style={styles.summaryMetaField}>
+              <span style={styles.summaryMetaLabel}>Ward / room</span>
+              <span style={styles.summaryMetaValue}>{chart?.location ?? '—'}</span>
+            </div>
+            <div style={styles.summaryMetaField}>
+              <span style={styles.summaryMetaLabel}>Insurance</span>
+              <span style={styles.summaryMetaValue}>{chart?.insurance ?? '—'}</span>
+            </div>
+            <div style={styles.summaryMetaField}>
               <span style={styles.summaryMetaLabel}>Status</span>
               <StatusBadge status={patient.status} showDot />
             </div>
@@ -301,19 +312,10 @@ export function Cf4SummaryPreview({
         <div style={styles.summaryPanel}>
           <div style={styles.summaryPanelHeader}>
             <span style={styles.summaryPanelTitle}>Course in the Ward</span>
-            <span style={styles.summaryPanelMeta}>
-              {requests.length} approved day{requests.length === 1 ? '' : 's'} across admissions
-            </span>
+            <span style={styles.summaryPanelMeta}>{patient.coveragePeriod}</span>
           </div>
-          <div style={styles.summaryPanelBody}>
-            {requests.map((request) => (
-              <section key={request.id} style={{ marginBottom: 18 }}>
-                <h5 style={{ margin: '0 0 6px', fontSize: 12, color: '#334155' }}>
-                  {formatDateMedium(request.summaryDate)}
-                </h5>
-                <div>{request.summaryText || 'No Course in the Ward summary text is available for this day.'}</div>
-              </section>
-            ))}
+          <div style={{ ...styles.summaryPanelBody, whiteSpace: 'pre-wrap' }}>
+            {active.courseText}
           </div>
         </div>
 

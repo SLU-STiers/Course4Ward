@@ -18,7 +18,7 @@ import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import { formatDateMedium, toDateKey } from '../../lib/format';
 import { styles, overviewStyles } from './styles';
 
-import { groupApprovedPatients, groupStayPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
+import { buildStayDraft, groupApprovedPatients, groupStayPatients, mapClaimToPatient, mapClaimToRequest } from './mappers';
 import { ReviewRequestModal } from './ReviewRequestModal';
 import { EligibleSummariesCard } from './EligibleSummariesCard';
 import { Cf4SummaryPreview } from './Cf4SummaryPreview';
@@ -333,12 +333,10 @@ export function ClaimsProcessorDashboard() {
 
     setExportError('');
     setSummaryDrafts(
-      queued.map((patient) => ({
+      queued.map((patient) => buildStayDraft(
         patient,
-        requests: requests
-          .filter((request) => patient.claimIds.includes(request.id))
-          .sort((a, b) => new Date(a.summaryDate).getTime() - new Date(b.summaryDate).getTime()),
-      })),
+        requests.filter((request) => patient.claimIds.includes(request.id)),
+      )),
     );
     setSummaryIndex(0);
     setExportSource(source);
