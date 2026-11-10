@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InsuranceType, OrderEnteredBy, OrderStatus, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
+import { InsuranceType, OrderStatus, OrderType, PatientClass, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AuditLogService,
@@ -142,19 +142,6 @@ const CLASS_NAME: Record<PatientClass, string> = {
   INPATIENT: 'Inpatient',
 };
 
-const ORDER_LABEL: Partial<Record<OrderType, string>> = {
-  ADMISSION: 'admission order',
-  OBSERVATION: 'observation order',
-};
-
-/** The physician order a class needs: at registration or to move into it. */
-const CLASS_ORDER: Record<PatientClass, OrderType | null> = {
-  EMERGENCY: null,
-  OUTPATIENT: null,
-  OBSERVATION: OrderType.OBSERVATION,
-  INPATIENT: OrderType.ADMISSION,
-};
-
 /** Which classes a patient may be moved into a class from. */
 const CLASS_TRANSITIONS: Record<PatientClass, PatientClass[]> = {
   EMERGENCY: [],
@@ -193,10 +180,8 @@ export class PatientsService {
   }
 
   // Nurse patient management: demographics + admission. New patients default
-  // to OUTPATIENT (the nurse form no longer offers EMERGENCY); EMERGENCY and
-  // OUTPATIENT registrations need no order. OBSERVATION and INPATIENT (direct
-  // admission, trauma, scheduled surgery) are physician decisions, so the
-  // nurse enters the physician's order on their behalf in the same request.
+  // to OUTPATIENT (the nurse form no longer offers EMERGENCY). No class needs
+  // a physician order to register.
   async create(dto: CreatePatientDto, nurseId: string) {
     const dateOfBirth = parseDateOfBirth(dto.dateOfBirth);
     await this.assertNotRegistered(dto, dateOfBirth);
@@ -252,7 +237,7 @@ export class PatientsService {
         ]),
       },
     });
-    await this.announceAdmission(patientName, plan, dto, nurseId, attending, 'registered');
+    await this.announceAdmission(patientName, plan, 'registered');
 
     return patient;
   }
@@ -309,7 +294,7 @@ export class PatientsService {
         ]),
       },
     });
-    await this.announceAdmission(patientName, plan, dto, nurseId, attending, 're-admitted');
+    await this.announceAdmission(patientName, plan, 're-admitted');
 
     return patient;
   }
@@ -360,23 +345,11 @@ export class PatientsService {
   }
 
   /**
-   * Checks the admission part of a registration / re-admission: the class and
-   * its order, and that the care team is active physicians.
+   * Checks the admission part of a registration / re-admission: the class,
+   * the room, and that the care team is active physicians.
    */
   private async planAdmission(dto: ReadmitPatientDto, nurseId: string) {
     const patientClass = dto.patientClass ?? PatientClass.OUTPATIENT;
-    const orderType = CLASS_ORDER[patientClass];
-    const registrationOrder = dto.registrationOrder?.trim();
-    if (orderType && !registrationOrder) {
-      throw new BadRequestException(
-        `Registering a patient as ${CLASS_LABEL[patientClass]} needs the physician's ${ORDER_LABEL[orderType]}`,
-      );
-    }
-    if (!orderType && (registrationOrder || dto.registrationOrderChannel)) {
-      throw new BadRequestException(
-        `No order is entered when registering a patient as ${CLASS_LABEL[patientClass]}`,
-      );
-    }
     if (dto.roomNumber && patientClass !== PatientClass.INPATIENT) {
       throw new BadRequestException('A room can only be assigned to an admitted patient');
     }
@@ -401,8 +374,6 @@ export class PatientsService {
 
     return {
       patientClass,
-      orderType,
-      registrationOrder,
       additionalPhysicianIds,
       requiredIds,
       admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : new Date(),
@@ -428,20 +399,6 @@ export class PatientsService {
         ? { create: plan.additionalPhysicianIds.map((physicianId) => ({ physicianId })) }
         : undefined,
       triage: triage ? { create: triage } : undefined,
-      // Created in the same write, so an observation / inpatient stay
-      // never exists without the order behind it.
-      orders: plan.orderType
-        ? {
-            create: {
-              orderContent: plan.registrationOrder!,
-              type: plan.orderType,
-              orderedById: dto.physicianId,
-              encodedById: nurseId,
-              enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
-              communicationChannel: dto.registrationOrderChannel ?? null,
-            },
-          }
-        : undefined,
     };
   }
 
@@ -452,32 +409,12 @@ export class PatientsService {
     return { attending, consultants };
   }
 
-  /** Logs the order entered with the admission and tells the admins and the care team. */
+  /** Tells the admins and the care team about the new stay. */
   private async announceAdmission(
     patientName: string,
     plan: Awaited<ReturnType<PatientsService['planAdmission']>>,
-    dto: ReadmitPatientDto,
-    nurseId: string,
-    attending: string,
     verb: 'registered' | 're-admitted',
   ) {
-    if (plan.orderType) {
-      await this.auditLog.record({
-        userId: nurseId,
-        action: 'ORDER_CREATED',
-        details: {
-          summary: `Entered ${attending}'s ${ORDER_LABEL[plan.orderType]} for ${patientName}`,
-          items: detailItems([
-            ['Patient', patientName],
-            ['Ordering physician', attending],
-            ['Order type', ORDER_LABEL[plan.orderType]],
-            ['Order', plan.registrationOrder],
-            ['Received via', dto.registrationOrderChannel],
-          ]),
-        },
-      });
-    }
-
     const className = CLASS_NAME[plan.patientClass];
     await Promise.all([
       this.notifications.notifyAdmins({
@@ -750,14 +687,6 @@ export class PatientsService {
     return patient;
   }
 
-  /** Whether a physician has written an active order of `type` for this admission. */
-  private async hasActiveOrder(admissionId: string, type: OrderType) {
-    const count = await this.prisma.physicianOrder.count({
-      where: { admissionId, type, active: true },
-    });
-    return count > 0;
-  }
-
   // The nurse formally discharges the patient once a physician has written the
   // discharge order. An outpatient visit is simply ended: clinic visits have
   // no discharge order.
@@ -830,23 +759,20 @@ export class PatientsService {
     return { ...admission, dischargeDate };
   }
 
-  // Emergency / outpatient / observation -> inpatient, once a physician has
-  // written the admission order.
+  // Emergency / outpatient / observation -> inpatient.
   admitAdmission(id: string, userId: string) {
     return this.changeClass(id, userId, PatientClass.INPATIENT);
   }
 
-  // Emergency / outpatient -> observation, once a physician has written the
-  // observation order.
+  // Emergency / outpatient -> observation.
   observeAdmission(id: string, userId: string) {
     return this.changeClass(id, userId, PatientClass.OBSERVATION);
   }
 
   /**
-   * The nurse carries out a physician's admission / observation order. Only
-   * the transitions in CLASS_TRANSITIONS exist, each needs an active order of
-   * the matching type, and the update is guarded on the current class so two
-   * nurses acting at once cannot both apply it.
+   * The nurse moves a patient into observation or admits them. Only the
+   * transitions in CLASS_TRANSITIONS exist, and the update is guarded on the
+   * current class so two nurses acting at once cannot both apply it.
    */
   private async changeClass(id: string, userId: string, target: PatientClass) {
     const admission = await this.prisma.patientAdmission.findUnique({ where: { id } });
@@ -864,13 +790,6 @@ export class PatientsService {
         }`,
       );
     }
-    const orderType = CLASS_ORDER[target]!;
-    if (!(await this.hasActiveOrder(id, orderType))) {
-      throw new BadRequestException(
-        `A physician must write an ${ORDER_LABEL[orderType]} first`,
-      );
-    }
-
     const classSince = new Date();
     const { count } = await this.prisma.patientAdmission.updateMany({
       where: { id, patientClass: admission.patientClass, dischargeDate: null },
@@ -889,10 +808,7 @@ export class PatientsService {
           target === PatientClass.INPATIENT
             ? `Admitted ${patientName} as an inpatient`
             : `Placed ${patientName} under observation`,
-        items: detailItems([
-          ['Patient', patientName],
-          ['Carried out', `Physician's ${ORDER_LABEL[orderType]}`],
-        ]),
+        items: detailItems([['Patient', patientName]]),
         changes: [
           { field: 'Class', from: CLASS_NAME[admission.patientClass], to: CLASS_NAME[target] },
         ],

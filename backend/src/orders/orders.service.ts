@@ -94,6 +94,7 @@ export class OrdersService {
       select: {
         patientId: true,
         dischargeDate: true,
+        // Only an inpatient can be transferred.
         patientClass: true,
         physicianId: true,
         additionalPhysicians: { select: { physicianId: true } },
@@ -168,8 +169,9 @@ export class OrdersService {
         throw new BadRequestException(`The patient is already in room ${transferRoomNumber}`);
       }
     }
-    if (type !== OrderType.DEFAULT) {
-      await this.assertOrderTypeAllowed(dto.admissionId, type, admission.patientClass);
+    // A discharge is ordered once; a transfer makes no sense after one.
+    if (type === OrderType.DISCHARGE || type === OrderType.TRANSFER) {
+      await this.assertNoDischargeOrder(dto.admissionId);
     }
 
     const data = {
@@ -181,9 +183,9 @@ export class OrdersService {
       type,
       communicationChannel: dto.communicationChannel ?? null,
     };
-    // Writing an admission/discharge/transfer order does not change the
-    // admission: the nurse carries it out (admit / discharge / finishing the
-    // transfer order). A transfer reserves its room until then.
+    // Writing a discharge/transfer order does not change the admission: the
+    // nurse carries it out (PATCH /patients/admissions/:id/discharge, or
+    // finishing the transfer order). A transfer reserves its room until then.
     const order = transferRoomNumber
       ? await inRoomTransaction(this.prisma, async (tx) => {
           const room = await freeRoom(tx, transferRoomNumber, dto.admissionId);
@@ -280,57 +282,16 @@ export class OrdersService {
   }
 
   /**
-   * Observation, admission and discharge orders are one-off decisions, each
-   * carried out by the nurse (observe / admit / discharge):
-   * - OBSERVATION only for an emergency patient or outpatient.
-   * - ADMISSION for anyone not yet an inpatient.
-   * - Neither while another of these decisions is still pending or once a
-   *   discharge has been ordered, and none of the three twice.
-   * Only active orders count, so a discontinued one can be written again.
+   * A discharge order is a one-off decision the nurse carries out, so an
+   * admission holds at most one. Only active orders count, so a discontinued
+   * one can be written again.
    */
-  private async assertOrderTypeAllowed(
-    admissionId: string,
-    type: OrderType,
-    patientClass: PatientClass,
-  ) {
-    const existing = await this.prisma.physicianOrder.findMany({
-      where: {
-        admissionId,
-        active: true,
-        type: { in: [OrderType.OBSERVATION, OrderType.ADMISSION, OrderType.DISCHARGE] },
-      },
-      select: { type: true },
+  private async assertNoDischargeOrder(admissionId: string) {
+    const existing = await this.prisma.physicianOrder.count({
+      where: { admissionId, active: true, type: OrderType.DISCHARGE },
     });
-    const has = (candidate: OrderType) => existing.some((order) => order.type === candidate);
-
-    if (type === OrderType.DISCHARGE || type === OrderType.TRANSFER) {
-      if (has(OrderType.DISCHARGE)) {
-        throw new ConflictException('This patient already has a discharge order');
-      }
-      return;
-    }
-
-    if (type === OrderType.ADMISSION && patientClass === PatientClass.INPATIENT) {
-      throw new ConflictException('This patient is already admitted');
-    }
-    if (type === OrderType.OBSERVATION) {
-      if (patientClass === PatientClass.OBSERVATION) {
-        throw new ConflictException('This patient is already under observation');
-      }
-      if (patientClass === PatientClass.INPATIENT) {
-        throw new ConflictException('An admitted patient cannot be placed under observation');
-      }
-    }
-    if (has(OrderType.DISCHARGE)) {
+    if (existing > 0) {
       throw new ConflictException('This patient already has a discharge order');
-    }
-    if (has(OrderType.ADMISSION)) {
-      throw new ConflictException('This patient already has an admission order');
-    }
-    // A carried-out observation order is history once the patient is under
-    // observation; only one still waiting for the nurse blocks.
-    if (has(OrderType.OBSERVATION) && patientClass !== PatientClass.OBSERVATION) {
-      throw new ConflictException('This patient already has an observation order');
     }
   }
 

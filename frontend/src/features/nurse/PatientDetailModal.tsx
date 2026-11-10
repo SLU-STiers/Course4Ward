@@ -29,9 +29,7 @@ export function PatientDetailModal({
   onDischarge,
   dischargeBlockedReason,
   onObserve,
-  observeBlockedReason,
   onAdmit,
-  admitBlockedReason,
   actionBusy = false,
   actionError,
   onCareTeamChanged,
@@ -52,12 +50,8 @@ export function PatientDetailModal({
   dischargeBlockedReason?: string;
   /** Places an emergency patient under observation. */
   onObserve?: () => void;
-  /** Set while observation is not allowed yet, e.g. no physician observation order. */
-  observeBlockedReason?: string;
   /** Formally admits an emergency / observation patient to the ward. */
   onAdmit?: () => void;
-  /** Set while admission is not allowed yet, e.g. no physician admission order. */
-  admitBlockedReason?: string;
   actionBusy?: boolean;
   actionError?: string | null;
   /** When provided (and the patient is not discharged), nurses can add consulting physicians. */
@@ -84,20 +78,11 @@ export function PatientDetailModal({
   const canObserve = !discharged && Boolean(onObserve);
   const canAdmit = !discharged && Boolean(onAdmit);
   const canDischarge = !discharged && Boolean(onDischarge);
-  // Every offered action is waiting on a physician order: say so once. Each
-  // button's tooltip still names its own order.
-  const offered = [
-    canObserve ? observeBlockedReason : null,
-    canAdmit ? admitBlockedReason : null,
-    canDischarge ? dischargeBlockedReason : null,
-  ].filter((reason) => reason !== null);
+  // Discharge is the only action waiting on a physician order; when it is the
+  // only action offered and still blocked, say why in the footer.
   const footerNote =
     actionError ||
-    (offered.length && offered.every(Boolean)
-      ? offered.length === 1
-        ? offered[0]
-        : "Waiting for a physician's order"
-      : undefined);
+    (canDischarge && !canObserve && !canAdmit ? dischargeBlockedReason : undefined);
   const observationHours = badge === 'Observation' ? hoursSince(chart.classSince) : 0;
   const canAddConsulting = Boolean(onCareTeamChanged) && badge !== 'Discharged';
 
@@ -435,7 +420,6 @@ export function PatientDetailModal({
           {canObserve && onObserve && (
             <ActionButton
               label={actionBusy ? 'Working...' : 'Place Under Observation'}
-              blockedReason={observeBlockedReason}
               busy={actionBusy}
               onClick={onObserve}
             />
@@ -443,7 +427,6 @@ export function PatientDetailModal({
           {canAdmit && onAdmit && (
             <ActionButton
               label={actionBusy ? 'Working...' : 'Admit Patient'}
-              blockedReason={admitBlockedReason}
               busy={actionBusy}
               onClick={onAdmit}
             />

@@ -676,87 +676,22 @@ describe("Patients Module", () => {
       });
 
       it.each([
-        [PatientClass.INPATIENT, OrderType.ADMISSION],
-        [PatientClass.OBSERVATION, OrderType.OBSERVATION],
-      ])(
-        "should register as %s together with the physician's %s order",
-        async (patientClass, orderType) => {
-          (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
-
-          await service.create(
-            {
-              ...mockCreatePatientDto,
-              patientClass,
-              registrationOrder: "  Admit to ICU. Trauma protocol.  ",
-              registrationOrderChannel: CommunicationChannel.VERBAL,
-            },
-            mockUser.id,
-          );
-
-          const admission = (prismaService.patient.create as jest.Mock).mock.calls[0][0].data
-            .admissions.create;
-          expect(admission).toEqual(
-            expect.objectContaining({
-              patientClass,
-              classSince: expect.any(Date),
-              orders: {
-                create: {
-                  orderContent: "Admit to ICU. Trauma protocol.",
-                  type: orderType,
-                  orderedById: "physician-123",
-                  encodedById: mockUser.id,
-                  enteredByRole: OrderEnteredBy.NURSE_ON_BEHALF,
-                  communicationChannel: CommunicationChannel.VERBAL,
-                },
-              },
-            }),
-          );
-          expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
-            userId: mockUser.id,
-            action: "ORDER_CREATED",
-          }));
-        },
-      );
-
-      it.each([PatientClass.INPATIENT, PatientClass.OBSERVATION])(
-        "should refuse a %s registration without the physician's order",
-        async (patientClass) => {
-          await expect(
-            service.create({ ...mockCreatePatientDto, patientClass }, mockUser.id),
-          ).rejects.toThrow(BadRequestException);
-          expect(prismaService.patient.create).not.toHaveBeenCalled();
-        },
-      );
-
-      it.each([PatientClass.EMERGENCY, PatientClass.OUTPATIENT])(
-        "should register as %s without an order and refuse one",
-        async (patientClass) => {
-          (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
-          await service.create({ ...mockCreatePatientDto, patientClass }, mockUser.id);
-          const admission = (prismaService.patient.create as jest.Mock).mock.calls[0][0].data
-            .admissions.create;
-          expect(admission.patientClass).toBe(patientClass);
-          expect(admission.orders).toBeUndefined();
-
-          await expect(
-            service.create(
-              { ...mockCreatePatientDto, patientClass, registrationOrder: "Admit to ward" },
-              mockUser.id,
-            ),
-          ).rejects.toThrow("No order is entered when registering a patient as");
-        },
-      );
-
-      it("should reject an empty registration order in the DTO", async () => {
-        const dto = plainToInstance(CreatePatientDto, {
-          firstName: "Juan",
-          lastName: "Dela Cruz",
-          physicianId: "7f1c0d6e-1b2a-4c3d-9e8f-0a1b2c3d4e5f",
-          patientClass: "INPATIENT",
-          registrationOrder: "   ",
-        });
-        const errors = await validate(dto);
-        expect(errors.map((error) => error.property)).toContain("registrationOrder");
+        PatientClass.EMERGENCY,
+        PatientClass.OUTPATIENT,
+        PatientClass.OBSERVATION,
+        PatientClass.INPATIENT,
+      ])("should register as %s without any physician order", async (patientClass) => {
+        (prismaService.patient.create as jest.Mock).mockResolvedValue(mockPatientSimple);
+        await service.create({ ...mockCreatePatientDto, patientClass }, mockUser.id);
+        const admission = (prismaService.patient.create as jest.Mock).mock.calls[0][0].data
+          .admissions.create;
+        expect(admission).toEqual(
+          expect.objectContaining({ patientClass, classSince: expect.any(Date) }),
+        );
+        expect(admission.orders).toBeUndefined();
+        expect(auditLogService.record).not.toHaveBeenCalledWith(
+          expect.objectContaining({ action: "ORDER_CREATED" }),
+        );
       });
     });
 
@@ -773,7 +708,6 @@ describe("Patients Module", () => {
       const inpatientDto = {
         ...mockCreatePatientDto,
         patientClass: PatientClass.INPATIENT,
-        registrationOrder: "Admit to ward",
         roomNumber: "101",
       };
 
@@ -1127,15 +1061,13 @@ describe("Patients Module", () => {
       });
 
       it.each([PatientClass.EMERGENCY, PatientClass.OUTPATIENT, PatientClass.OBSERVATION])(
-        "should admit a %s patient once an admission order exists",
+        "should admit a %s patient without needing a physician order",
         async (from) => {
           (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(visit(from));
 
           const result = await service.admitAdmission(mockAdmissionId, mockUser.id);
 
-          expect(prismaService.physicianOrder.count).toHaveBeenCalledWith({
-            where: { admissionId: mockAdmissionId, type: OrderType.ADMISSION, active: true },
-          });
+          expect(prismaService.physicianOrder.count).not.toHaveBeenCalled();
           expect(prismaService.patientAdmission.updateMany).toHaveBeenCalledWith({
             where: { id: mockAdmissionId, patientClass: from, dischargeDate: null },
             data: { patientClass: PatientClass.INPATIENT, classSince: expect.any(Date) },
@@ -1145,33 +1077,19 @@ describe("Patients Module", () => {
       );
 
       it.each([PatientClass.EMERGENCY, PatientClass.OUTPATIENT])(
-        "should place a %s patient under observation once an observation order exists",
+        "should place a %s patient under observation without needing a physician order",
         async (from) => {
           (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(visit(from));
 
           await service.observeAdmission(mockAdmissionId, mockUser.id);
 
-          expect(prismaService.physicianOrder.count).toHaveBeenCalledWith({
-            where: { admissionId: mockAdmissionId, type: OrderType.OBSERVATION, active: true },
-          });
+          expect(prismaService.physicianOrder.count).not.toHaveBeenCalled();
           expect(prismaService.patientAdmission.updateMany).toHaveBeenCalledWith({
             where: { id: mockAdmissionId, patientClass: from, dischargeDate: null },
             data: { patientClass: PatientClass.OBSERVATION, classSince: expect.any(Date) },
           });
         },
       );
-
-      it("should refuse to admit without an admission order", async () => {
-        (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(
-          visit(PatientClass.EMERGENCY),
-        );
-        (prismaService.physicianOrder.count as jest.Mock).mockResolvedValue(0);
-
-        await expect(service.admitAdmission(mockAdmissionId, mockUser.id)).rejects.toThrow(
-          "A physician must write an admission order first",
-        );
-        expect(prismaService.patientAdmission.updateMany).not.toHaveBeenCalled();
-      });
 
       it("should refuse to admit an already admitted patient", async () => {
         (prismaService.patientAdmission.findUnique as jest.Mock).mockResolvedValue(

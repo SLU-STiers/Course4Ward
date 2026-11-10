@@ -303,32 +303,15 @@ export function ManageView({
     selected?.admissions?.some((admission) => !admission.dischargeDate),
   );
 
-  // Observation, admission and discharge orders happen once per admission; the
-  // nurse then carries them out (observe / admit / discharge). Mirrors the
-  // server's rules per patient class so an unavailable kind can't be picked;
+  // A discharge order happens once per admission; the nurse then carries it
+  // out. Mirrors the server's rules so it can't be picked when unavailable;
   // the server has the final say.
   const openAdmission = selected?.admissions?.find((admission) => !admission.dischargeDate);
-  const patientClass = openAdmission?.patientClass ?? "INPATIENT";
   const openAdmissionOrders = allOrders.filter(
     (order) => order.admissionId === openAdmission?.id && order.active !== false,
   );
   const hasOrder = (type: OrderType) => openAdmissionOrders.some((order) => order.type === type);
-  // A decision already ordered but not yet carried out by the nurse.
-  const pendingDecision = hasOrder("DISCHARGE")
-    ? "Patient already has a discharge order"
-    : hasOrder("ADMISSION")
-      ? "Admission already ordered; waiting for the nurse to admit"
-      : hasOrder("OBSERVATION") && patientClass !== "OBSERVATION"
-        ? "Observation already ordered; waiting for the nurse"
-        : undefined;
   const orderTypeBlockedReason: Partial<Record<OrderType, string>> = {
-    OBSERVATION:
-      patientClass === "OBSERVATION"
-        ? "Patient is already under observation"
-        : patientClass === "INPATIENT"
-          ? "An admitted patient cannot be placed under observation"
-          : pendingDecision,
-    ADMISSION: patientClass === "INPATIENT" ? "Patient is already admitted" : pendingDecision,
     DISCHARGE: hasOrder("DISCHARGE")
       ? "Patient already has a discharge order"
       : openAdmission?.physicianId && openAdmission.physicianId !== currentUserId
@@ -337,7 +320,7 @@ export function ManageView({
     // The nurse carries the move out by finishing the order; a newer transfer
     // replaces one still pending.
     TRANSFER:
-      patientClass !== "INPATIENT"
+      openAdmission?.patientClass !== "INPATIENT"
         ? "Only an admitted patient can be transferred"
         : hasOrder("DISCHARGE")
           ? "Patient already has a discharge order"
