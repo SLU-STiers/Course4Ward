@@ -367,6 +367,33 @@ describe('OrdersService', () => {
         ).rejects.toThrow('This patient already has a discharge order');
       });
 
+      it('should reject a discharge order from a consulting physician', async () => {
+        const { orderedById: _omit, ...ownOrder } = dto;
+        await expect(
+          service.create({ ...ownOrder, type: OrderType.DISCHARGE }, 'doctor-456', Role.PHYSICIAN),
+        ).rejects.toThrow('Only the attending physician can write a discharge order');
+        // Naming the attending as the ordering physician does not get around it.
+        await expect(
+          service.create({ ...dto, type: OrderType.DISCHARGE }, 'doctor-456', Role.PHYSICIAN),
+        ).rejects.toThrow('Only the attending physician can write a discharge order');
+        expect(prismaService.physicianOrder.create).not.toHaveBeenCalled();
+      });
+
+      it('should reject a nurse entering a discharge order on a consultant’s behalf', async () => {
+        await expect(
+          service.create(
+            { ...dto, type: OrderType.DISCHARGE, orderedById: 'doctor-456' },
+            'nurse-1',
+            Role.NURSE,
+          ),
+        ).rejects.toThrow('Only the attending physician can write a discharge order');
+      });
+
+      it('should still let a consulting physician write a general order', async () => {
+        await service.create(dto, 'doctor-456', Role.PHYSICIAN);
+        expect(prismaService.physicianOrder.create).toHaveBeenCalled();
+      });
+
       it('should only count active admission/discharge orders', async () => {
         await service.create({ ...dto, type: OrderType.DISCHARGE }, 'doctor-123', Role.PHYSICIAN);
 

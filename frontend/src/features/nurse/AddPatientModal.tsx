@@ -847,7 +847,7 @@ export function AddPatientModal({
                       <DoctorCard
                         key={id}
                         name={doctorName(doctor)}
-                        meta={`Consulting · ${doctor.userId}`}
+                        meta="Consulting"
                         action={
                           <button
                             type="button"
