@@ -70,6 +70,10 @@ function uniqueShown(values: string[]): string {
 export type CourseEntry = {
   dateLabel: string;
   text: string;
+  /** The day's summary; absent for the whole-stay fallback entry. */
+  requestId?: string;
+  /** The physician orders this day's summary was written from. */
+  orders: SummarizationRequest['orders'];
 };
 
 /** The entry's own date says which day it is, so a "Finished orders for …:" heading is dropped. */
@@ -81,9 +85,13 @@ export function courseEntries(draft: Cf4SummaryDraft): CourseEntry[] {
     .map((request) => ({
       dateLabel: formatDateMedium(request.summaryDate),
       text: request.summaryText.replace(DAY_HEADING, '').trim(),
+      requestId: request.id,
+      orders: request.orders,
     }))
     .filter((entry) => entry.text);
-  return days.length ? days : [{ dateLabel: draft.patient.coveragePeriod, text: draft.courseText }];
+  return days.length
+    ? days
+    : [{ dateLabel: draft.patient.coveragePeriod, text: draft.courseText, orders: [] }];
 }
 
 /**

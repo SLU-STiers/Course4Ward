@@ -157,9 +157,6 @@ export const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  uploadIconBadge: {
-    backgroundColor: '#475569',
-  },
   doneIconBadge: {
     backgroundColor: '#16a34a',
   },
@@ -262,97 +259,6 @@ export const styles: Record<string, CSSProperties> = {
     fontWeight: 600,
     cursor: 'pointer',
   },
-  uploadHeaderArea: {
-    display: 'flex',
-    gap: '12px',
-    alignItems: 'center',
-    marginBottom: '16px',
-  },
-  uploadCloudCircle: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    backgroundColor: '#f1f5f9',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  uploadTitle: {
-    margin: 0,
-    fontSize: '14px',
-    fontWeight: 700,
-    color: '#0f172a',
-  },
-  uploadSubtitle: {
-    margin: 0,
-    fontSize: '12px',
-    color: '#64748b',
-  },
-  uploadDivider: {
-    border: 'none',
-    borderTop: '1px solid #e2e8f0',
-    margin: '0 0 16px 0',
-  },
-  dragDropZone: {
-    border: '2px dashed #cbd5e1',
-    borderRadius: '8px',
-    padding: '32px',
-    textAlign: 'center',
-    marginBottom: '20px',
-  },
-  dragDropTitle: {
-    margin: '0 0 4px 0',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: '#334155',
-  },
-  dragDropSubtitle: {
-    margin: '0 0 16px 0',
-    fontSize: '12px',
-    color: '#94a3b8',
-  },
-  browseFileBtn: {
-    backgroundColor: '#f1f5f9',
-    color: '#334155',
-    padding: '8px 16px',
-    borderRadius: '6px',
-    fontSize: '13px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    display: 'inline-block',
-  },
-  uploadedFileCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: '8px',
-    padding: '12px',
-  },
-  pdfBadgeIcon: {
-    backgroundColor: '#ef4444',
-    color: '#fff',
-    fontWeight: 700,
-    fontSize: '10px',
-    padding: '4px 6px',
-    borderRadius: '4px',
-  },
-  uploadedFileName: {
-    fontSize: '13px',
-    fontWeight: 600,
-    color: '#0f172a',
-  },
-  uploadedFileMeta: {
-    fontSize: '11px',
-    color: '#64748b',
-  },
-  removeFileBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#94a3b8',
-    cursor: 'pointer',
-  },
-  /** Validation banner shown when "Proceed to Summary" is pressed too early. */
   exportSuccessBanner: {
     display: 'flex',
     alignItems: 'center',
@@ -398,33 +304,7 @@ export const styles: Record<string, CSSProperties> = {
     fontSize: '12px',
     fontWeight: 600,
   },
-  /** Patient picker shown on the existing-CF4 upload step. */
-  exportPatientPicker: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    marginBottom: '20px',
-  },
-  exportPatientLabel: {
-    fontSize: '12px',
-    fontWeight: 700,
-    color: '#334155',
-  },
-  exportPatientSelect: {
-    width: '100%',
-    padding: '10px 12px',
-    borderRadius: '8px',
-    border: '1px solid #cbd5e1',
-    backgroundColor: '#ffffff',
-    fontSize: '13px',
-    color: '#0f172a',
-    cursor: 'pointer',
-  },
-  exportPatientHint: {
-    fontSize: '11px',
-    color: '#94a3b8',
-  },
-  /** Step 3 — Course in the Ward Summary review. */
+  /** Course in the Ward Summary review. */
   summaryNavRow: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -833,6 +713,46 @@ export const styles: Record<string, CSSProperties> = {
   },
   courseDayText: {
     margin: 0,
+    whiteSpace: 'pre-wrap',
+  },
+  courseDayActions: {
+    marginLeft: 'auto',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  /** That day's physician orders, for checking the summary against its source. */
+  courseOrders: {
+    listStyle: 'none',
+    margin: '10px 0 0',
+    padding: '10px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    borderRadius: '8px',
+    backgroundColor: '#f8fafc',
+    border: '1px solid #e2e8f0',
+    fontSize: '12px',
+  },
+  courseOrderMeta: {
+    fontSize: '11px',
+    color: '#64748b',
+    marginBottom: '2px',
+  },
+  summaryDetailsToggle: {
+    marginTop: '10px',
+  },
+  summaryDetailsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+    gap: '10px 16px',
+    marginTop: '10px',
+    paddingTop: '10px',
+    borderTop: '1px solid #e2e8f0',
+  },
+  summaryDetailsValue: {
+    fontSize: '13px',
+    color: '#0f172a',
     whiteSpace: 'pre-wrap',
   },
   /** Wrapper that lets a click-catching button sit over the PDF iframe. */
