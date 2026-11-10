@@ -114,6 +114,7 @@ export function triageQueueKey(level: number | null | undefined, arrivedAt?: str
 export type TriageDisplay = {
   /** 5-level triage priority; null when none was recorded. */
   level: TriageLevel | null;
+  date: string;
   time: string;
   heartRate: string;
   respRate: string;
@@ -126,6 +127,29 @@ export type TriageDisplay = {
   recordedBy?: string;
 };
 
+/** `08:30 AM` for the 24h `HH:mm` the triage form records. */
+export function formatTriageTime(value: string | null | undefined): string {
+  const text = value?.trim();
+  if (!text) return '—';
+  const clock = /^(\d{1,2}):(\d{2})$/.exec(text);
+  if (!clock) return text;
+  const hours = Number(clock[1]);
+  return `${String(hours % 12 || 12).padStart(2, '0')}:${clock[2]} ${hours < 12 ? 'AM' : 'PM'}`;
+}
+
+/** `Nov 07, 2026` for the triage day, which the API sends as UTC midnight. */
+export function formatTriageDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
 /** Formats an admission's stored triage row and notes (`initialAssessment`) for display. */
 export function triageForDisplay(
   admission?: Pick<PatientAdmission, 'triage' | 'initialAssessment'> | null,
@@ -136,7 +160,8 @@ export function triageForDisplay(
   const recorder = triage?.recordedBy;
   return {
     level: triage?.triageLevel ?? null,
-    time: show(triage?.triageTime),
+    date: formatTriageDate(triage?.triageDate),
+    time: formatTriageTime(triage?.triageTime),
     heartRate: show(triage?.heartRate),
     respRate: show(triage?.respRate),
     spo2: show(triage?.spo2),
@@ -153,6 +178,7 @@ export function triageForDisplay(
 
 /** The vital-sign boxes of a triage assessment, in display order. */
 export const VITAL_FIELDS = [
+  { key: 'date', label: 'Date' },
   { key: 'time', label: 'Time' },
   { key: 'heartRate', label: 'Heart Rate', unit: 'bpm' },
   { key: 'respRate', label: 'Resp. Rate', unit: '/min' },

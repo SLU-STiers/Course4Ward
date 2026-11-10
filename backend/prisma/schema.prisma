@@ -19,6 +19,8 @@ enum Role {
   @@map("role")
 }
 
+/// ADMISSION / OBSERVATION are retired: kept so older orders still load, but
+/// new orders are DEFAULT or DISCHARGE only (see CreateOrderDto).
 enum OrderType {
   ADMISSION
   DISCHARGE
@@ -31,10 +33,6 @@ enum OrderType {
   @@map("order_type")
 }
 
-/// Kind of hospital encounter an admission record currently is.
-/// EMERGENCY / OUTPATIENT -> OBSERVATION needs an OBSERVATION order,
-/// any non-inpatient -> INPATIENT needs an ADMISSION order; the nurse
-/// carries both out. See PatientsService.
 /// Patient sex as recorded at registration (PhilHealth CF4 "Sex").
 enum Sex {
   MALE
@@ -55,6 +53,9 @@ enum InsuranceType {
   @@map("insurance_type")
 }
 
+/// Kind of hospital encounter an admission record currently is. The nurse
+/// moves EMERGENCY / OUTPATIENT -> OBSERVATION and any non-inpatient ->
+/// INPATIENT. See PatientsService.
 enum PatientClass {
   EMERGENCY
   OUTPATIENT
@@ -110,6 +111,7 @@ enum ActionType {
   CLAIM_PHYSICIAN_NOTIFIED
   CF4_GENERATED
   UPDATE_ORDER_STATUS
+  PATIENT_DISCHARGED
   TRANSFER_PATIENT
 }
 
@@ -289,6 +291,8 @@ model TriageAssessment {
   /// 5-level triage priority: 1 Resuscitation, 2 Emergent, 3 Urgent,
   /// 4 Less Urgent, 5 Non-Urgent. The migration adds a CHECK (1-5).
   triageLevel  Int?
+  /// Calendar day of the triage; the clock time is `triageTime` (24h HH:mm).
+  triageDate   DateTime? @db.Date
   triageTime   String?
   heartRate    Int?
   respRate     Int?

@@ -66,6 +66,34 @@ function uniqueShown(values: string[]): string {
   return seen.length ? seen.join('; ') : '—';
 }
 
+/** One day of a stay's Course in the Ward: a PDF row and a preview section. */
+export type CourseEntry = {
+  dateLabel: string;
+  text: string;
+  /** The day's summary; absent for the whole-stay fallback entry. */
+  requestId?: string;
+  /** The physician orders this day's summary was written from. */
+  orders: SummarizationRequest['orders'];
+};
+
+/** The entry's own date says which day it is, so a "Finished orders for …:" heading is dropped. */
+const DAY_HEADING = /^\s*Finished orders for [^\n]*:\s*\n?/i;
+
+/** One entry per approved day, oldest first; the whole stay as one entry when there are none. */
+export function courseEntries(draft: Cf4SummaryDraft): CourseEntry[] {
+  const days = draft.requests
+    .map((request) => ({
+      dateLabel: formatDateMedium(request.summaryDate),
+      text: request.summaryText.replace(DAY_HEADING, '').trim(),
+      requestId: request.id,
+      orders: request.orders,
+    }))
+    .filter((entry) => entry.text);
+  return days.length
+    ? days
+    : [{ dateLabel: draft.patient.coveragePeriod, text: draft.courseText, orders: [] }];
+}
+
 /**
  * One Course in the Ward for a stay. The PDF prints the model summary the
  * physician approved, not the raw orders and not a day-by-day order list.

@@ -321,7 +321,7 @@ describe('AuthService', () => {
       };
 
       (prismaService.passwordResetRequest.findUnique as jest.Mock).mockResolvedValue(request);
-      (prismaService.$transaction as jest.Mock).mockResolvedValue([request]);
+      (prismaService.passwordResetRequest.update as jest.Mock).mockResolvedValue(request);
 
       await expect(service.rejectPasswordReset('req-123', 'admin-456')).resolves.toEqual({
         message: 'Password reset request rejected.',
@@ -332,7 +332,11 @@ describe('AuthService', () => {
         },
       });
 
-      expect(prismaService.$transaction).toHaveBeenCalled();
+      expect(prismaService.passwordResetRequest.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'req-123' } }),
+      );
+      // Anyone can file a request, so rejecting it must not sign the real user out.
+      expect(prismaService.user.update).not.toHaveBeenCalled();
     });
   });
 

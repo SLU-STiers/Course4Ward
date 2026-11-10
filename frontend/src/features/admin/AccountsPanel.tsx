@@ -10,6 +10,7 @@ import { adminApi } from '../../services/domainApi';
 import { useAuthStore } from '../../store/authStore';
 import { styles } from './styles';
 import type { StaffAccount, Ward } from '../../types';
+import { PASSWORD_RULE_HINT, PERSON_NAME_PATTERN, passwordProblem } from '../../lib/passwordPolicy';
 
 import { ConfirmationDialog } from './ConfirmationDialog';
 
@@ -29,9 +30,25 @@ const ROLE_HINTS: Record<string, string> = {
 
 /** Matches the server's limit on staff first / last names. */
 const MAX_NAME_LENGTH = 50;
-const MIN_PASSWORD_LENGTH = 8;
 
 const roleLabel = (role: string) => ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role;
+
+/** Why the first / last name pair would be refused, or null. */
+function nameProblem(firstName: string, lastName: string): string | null {
+  if (!firstName.trim() || !lastName.trim()) return 'First and last name are required.';
+  if (!PERSON_NAME_PATTERN.test(firstName.trim()) || !PERSON_NAME_PATTERN.test(lastName.trim())) {
+    return 'Names may contain letters, spaces, hyphens, apostrophes, and periods only.';
+  }
+  return null;
+}
+
+/** Physicians need a specialty and nurses a ward; null when the selection is fine. */
+function wardProblem(role: string, wardIds: string[]): string | null {
+  if (wardIds.length) return null;
+  if (role === 'PHYSICIAN') return 'Assign at least one ward / specialty to this physician.';
+  if (role === 'NURSE') return 'Assign at least one ward to this nurse.';
+  return null;
+}
 
 /** Wards a nurse is assigned to, or a physician's wards / specialties. */
 const wardsOf = (user: StaffAccount) =>
@@ -124,12 +141,15 @@ export function AccountsPanel() {
     setAddOpen(true);
   };
   const needsWards = form.role === 'NURSE' || form.role === 'PHYSICIAN';
-  const passwordTooShort =
-    form.temporaryPassword.length > 0 && form.temporaryPassword.length < MIN_PASSWORD_LENGTH;
+  const addPasswordProblem = form.temporaryPassword ? passwordProblem(form.temporaryPassword) : null;
+  const addNameProblem =
+    form.firstName.trim() && form.lastName.trim() ? nameProblem(form.firstName, form.lastName) : null;
+  const addWardProblem = wardProblem(form.role, form.wardIds);
   const canCreate =
-    Boolean(form.firstName.trim() && form.lastName.trim() && form.role) &&
-    form.temporaryPassword.length >= MIN_PASSWORD_LENGTH &&
-    !(form.role === 'PHYSICIAN' && form.wardIds.length === 0) &&
+    Boolean(form.firstName.trim() && form.lastName.trim() && form.role && form.temporaryPassword) &&
+    !addNameProblem &&
+    !addPasswordProblem &&
+    !addWardProblem &&
     !createUser.isPending;
   const createError = (() => {
     if (!createUser.isError) return null;
@@ -138,13 +158,22 @@ export function AccountsPanel() {
     return Array.isArray(message) ? message.join(', ') : message || 'Could not create the account.';
   })();
 
+  /** Shown above the table after a save the admin has to act on, e.g. a new login ID to hand over. */
+  const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const updateUser = useMutation({
     mutationFn: () =>
       adminApi.updateUser(editingId as string, {
         ...editForm,
         wardIds: ['NURSE', 'PHYSICIAN'].includes(editForm.role) ? editForm.wardIds : undefined,
       }),
-    onSuccess: () => {
+    onSuccess: ({ data }) => {
+      const before = users?.find((user) => user.id === editingId);
+      if (before && data.userId !== before.userId) {
+        setAccountNotice(
+          `${data.firstName} ${data.lastName} is now a ${roleLabel(data.role)}. Their login ID changed from ` +
+            `${before.userId} to ${data.userId}, and they were signed out. Give them the new ID to sign in with.`,
+        );
+      }
       setEditingId(null);
       qc.invalidateQueries({ queryKey: ['admin-users'] });
     },
@@ -160,7 +189,10 @@ export function AccountsPanel() {
   // too); lock those controls rather than let them fail on save.
   const currentUserId = useAuthStore((state) => state.user?.id);
   const editingSelf = editingId !== null && editingId === currentUserId;
-  const editNameMissing = !editForm.firstName.trim() || !editForm.lastName.trim();
+  const editNameProblem = nameProblem(editForm.firstName, editForm.lastName);
+  const editWardProblem = wardProblem(editForm.role, editForm.wardIds);
+  const editingAccount = users?.find((user) => user.id === editingId);
+  const roleChanging = Boolean(editingAccount && editingAccount.role !== editForm.role);
 
   const beginEdit = (user: StaffAccount) => {
     updateUser.reset();
@@ -241,6 +273,14 @@ export function AccountsPanel() {
           onDirectionChange: (direction) => table.setSort({ ...table.sort, direction }),
         }}
       />
+      {accountNotice && (
+        <div role="status" style={form_.noticeBox}>
+          <span>{accountNotice}</span>
+          <button type="button" style={form_.noticeDismiss} onClick={() => setAccountNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
       <table style={styles.table}>
         <thead>
           <tr>
@@ -352,6 +392,11 @@ export function AccountsPanel() {
                 />
               </FormField>
             </div>
+            {addNameProblem && (
+              <span role="status" style={form_.hintError}>
+                {addNameProblem}
+              </span>
+            )}
           </section>
 
           <section style={form_.section}>
@@ -394,11 +439,11 @@ export function AccountsPanel() {
                 value={form.wardIds}
                 onChange={(wardIds) => setForm({ ...form, wardIds })}
                 legend={form.role === 'PHYSICIAN' ? 'Wards / specialties' : 'Assigned wards'}
-                required={form.role === 'PHYSICIAN'}
+                required
               />
-              {form.role === 'PHYSICIAN' && form.wardIds.length === 0 && (
+              {addWardProblem && (
                 <span role="status" style={form_.hintError}>
-                  Assign at least one ward / specialty to this physician.
+                  {addWardProblem}
                 </span>
               )}
             </section>
@@ -410,9 +455,9 @@ export function AccountsPanel() {
               <div style={{ position: 'relative' }}>
                 <input
                   id="add-temp-password"
-                  style={{ ...form_.input, paddingRight: 44, ...(passwordTooShort ? form_.inputInvalid : {}) }}
+                  style={{ ...form_.input, paddingRight: 44, ...(addPasswordProblem ? form_.inputInvalid : {}) }}
                   type={showPassword ? 'text' : 'password'}
-                  placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+                  placeholder="Letters and numbers, 8+ characters"
                   autoComplete="new-password"
                   value={form.temporaryPassword}
                   onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })}
@@ -427,10 +472,8 @@ export function AccountsPanel() {
                 </button>
               </div>
             </FormField>
-            <span style={passwordTooShort ? form_.hintError : form_.hint}>
-              {passwordTooShort
-                ? `Use at least ${MIN_PASSWORD_LENGTH} characters.`
-                : 'Share this password with the staff member securely.'}
+            <span style={addPasswordProblem ? form_.hintError : form_.hint}>
+              {addPasswordProblem ?? `${PASSWORD_RULE_HINT} Share it with the staff member securely.`}
             </span>
           </section>
 
@@ -485,9 +528,15 @@ export function AccountsPanel() {
               legend={editForm.role === 'PHYSICIAN' ? 'Assigned wards / specialties' : 'Assigned wards'}
             />
           )}
-          {editForm.role === 'PHYSICIAN' && editForm.wardIds.length === 0 && (
+          {editWardProblem && (
             <span role="status" style={{ fontSize: 13, color: '#b91c1c' }}>
-              Assign at least one ward / specialty to this physician.
+              {editWardProblem}
+            </span>
+          )}
+          {roleChanging && editingAccount && (
+            <span role="note" style={{ fontSize: 13, color: '#475569' }}>
+              Changing the role signs {editingAccount.firstName} out and gives them a new login ID for the{' '}
+              {roleLabel(editForm.role)} role.
             </span>
           )}
           <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
@@ -504,9 +553,9 @@ export function AccountsPanel() {
               You cannot change your own role or deactivate your own account. Ask another admin to do it.
             </span>
           )}
-          {editNameMissing && (
+          {editNameProblem && (
             <span role="status" style={{ fontSize: 13, color: '#b91c1c' }}>
-              First and last name are required.
+              {editNameProblem}
             </span>
           )}
           {updateError && (
@@ -518,16 +567,14 @@ export function AccountsPanel() {
             <button style={styles.secondaryButton} onClick={() => setEditingId(null)}>Cancel</button>
             <button
               style={styles.primaryButton}
-              disabled={
-                updateUser.isPending ||
-                editNameMissing ||
-                (editForm.role === 'PHYSICIAN' && !editForm.wardIds.length)
-              }
+              disabled={updateUser.isPending || Boolean(editNameProblem) || Boolean(editWardProblem)}
               onClick={() => {
                 const fullName = `${editForm.firstName || 'User'} ${editForm.lastName || ''}`.trim();
                 setConfirmation({
                   title: 'Save account changes',
-                  message: `Are you sure you want to save changes for ${fullName}?`,
+                  message: roleChanging
+                    ? `Are you sure you want to make ${fullName} a ${roleLabel(editForm.role)}? They will be signed out and get a new login ID.`
+                    : `Are you sure you want to save changes for ${fullName}?`,
                   confirmLabel: 'Save Changes',
                   onConfirm: () => {
                     setConfirmation(null);
@@ -736,6 +783,30 @@ const form_: Record<string, CSSProperties> = {
   wardOptionActive: { borderColor: '#93c5fd', backgroundColor: '#eff6ff' },
   hint: { fontSize: 12, color: '#64748b' },
   hintError: { fontSize: 12, fontWeight: 600, color: '#b91c1c' },
+  noticeBox: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+    padding: '10px 14px',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#1e40af',
+    backgroundColor: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    borderRadius: 8,
+  },
+  noticeDismiss: {
+    flexShrink: 0,
+    border: 'none',
+    background: 'none',
+    padding: 0,
+    color: '#1d4ed8',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
   errorBox: {
     padding: '10px 12px',
     fontSize: 13,

@@ -7,13 +7,15 @@ import {
   RequestPasswordResetDto,
   ConfirmPasswordResetDto,
 } from './dto/reset-password.dto';
-import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AllowTemporaryPassword } from '../common/decorators/allow-temporary-password.decorator';
+import { IsStrongPassword } from './password-policy';
 
 class ChangePasswordDto {
   @IsString()
-  @MinLength(8)
+  @IsStrongPassword()
   newPassword!: string;
 }
 
@@ -61,12 +63,14 @@ export class AuthController {
 
   @Get('session')
   @UseGuards(JwtAuthGuard)
+  @AllowTemporaryPassword()
   session(@CurrentUser() user: any) {
     return { authenticated: true, user };
   }
 
   @Get('profile')
   @UseGuards(JwtAuthGuard)
+  @AllowTemporaryPassword()
   profile(@CurrentUser() user: { id: string }) {
     return this.authService.accountProfile(user.id);
   }
@@ -124,6 +128,7 @@ export class AuthController {
 
   @Post('password-change')
   @UseGuards(JwtAuthGuard)
+  @AllowTemporaryPassword()
   changePassword(@Body() dto: ChangePasswordDto, @CurrentUser() user: any) {
     return this.authService.changePassword(user.id, dto.newPassword);
   }

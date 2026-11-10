@@ -13,21 +13,24 @@ export const normalizeRoom = (value: string) =>
 /** Room numbers carry their floor before the last two digits: 105 → 1, 1203 → 12. */
 export const floorOf = (number: string) => (number.length > 2 ? number.slice(0, -2) : '');
 
-/** The ward rooms with live occupancy; `reload` refreshes them, e.g. after a failed save. */
-export function useWardRooms(enabled = true) {
+/**
+ * The nurse's own ward rooms with live occupancy; `reload` refreshes them, e.g.
+ * after a failed save. `forTransfer` lists every ward (a transfer may go anywhere).
+ */
+export function useWardRooms(enabled = true, forTransfer = false) {
   const [rooms, setRooms] = useState<WardRoom[] | null>(null);
   const [failed, setFailed] = useState(false);
 
   const reload = useCallback(
     () =>
       patientsApi
-        .listRooms()
+        .listRooms(forTransfer)
         .then(({ data }) => {
           setRooms(data);
           setFailed(false);
         })
         .catch(() => setFailed(true)),
-    [],
+    [forTransfer],
   );
 
   useEffect(() => {
@@ -46,7 +49,7 @@ export function roomProblem(value: string, rooms: WardRoom[] | null, admissionId
   const number = normalizeRoom(value);
   if (!number || !rooms) return null;
   const room = rooms.find((candidate) => candidate.number === number);
-  if (!room) return `Room ${number} does not exist`;
+  if (!room) return `Room ${number} is not a room in your ward`;
   if (takenByOther(room, admissionId)) {
     return room.reserved ? `Room ${number} is reserved for a transfer` : `Room ${number} is occupied`;
   }

@@ -55,6 +55,11 @@ function must<T>(value: T | undefined, label: string): T {
   return value;
 }
 
+/** `YYYY-MM-DD` of an instant on the hospital's (Manila) calendar. */
+function manilaDateKey(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(date);
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
@@ -155,6 +160,7 @@ async function main() {
       create: {
         admissionId: a.id,
         triageLevel: triage.level,
+        triageDate: new Date(`${manilaDateKey(a.admissionDate)}T00:00:00.000Z`),
         triageTime: triage.time,
         heartRate: triage.heartRate,
         respRate: triage.respRate,

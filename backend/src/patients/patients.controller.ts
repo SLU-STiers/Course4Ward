@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -18,7 +19,9 @@ import { WardAccessService } from '../wards/ward-access.service';
 import {
   AddConsultingPhysicianDto,
   AssignRoomDto,
+  ChangeAttendingDto,
   CreatePatientDto,
+  ReadmitPatientDto,
   UpdatePatientDto,
 } from './dto/patient.dto';
 
@@ -46,8 +49,19 @@ export class PatientsController {
 
   @Get('rooms')
   @Roles(Role.NURSE, Role.PHYSICIAN)
-  listRooms() {
-    return this.patientsService.listRooms();
+  listRooms(@CurrentUser() user: any, @Query('forTransfer') forTransfer?: string) {
+    // A nurse places patients only in their own wards; a transfer order (the
+    // physician's decision, or a nurse entering it for them) may go to any ward.
+    const anyWard = user.role === Role.PHYSICIAN || forTransfer === 'true';
+    return this.patientsService.listRooms(anyWard ? undefined : user.id);
+  }
+
+  // Not ward-checked on the patient: a returning patient's last stay may have
+  // been in another ward. The new stay's room must be in the nurse's ward.
+  @Post(':id/admissions')
+  @Roles(Role.NURSE)
+  readmit(@Param('id') id: string, @Body() dto: ReadmitPatientDto, @CurrentUser() user: any) {
+    return this.patientsService.readmit(id, dto, user.id);
   }
 
   @Get()
@@ -108,6 +122,17 @@ export class PatientsController {
   async assignRoom(@Param('id') id: string, @Body() dto: AssignRoomDto, @CurrentUser() user: any) {
     await this.wardAccess.assertAdmission(user, id);
     return this.patientsService.assignRoom(id, dto.roomNumber, user.id);
+  }
+
+  @Patch('admissions/:id/attending')
+  @Roles(Role.NURSE)
+  async changeAttending(
+    @Param('id') id: string,
+    @Body() dto: ChangeAttendingDto,
+    @CurrentUser() user: any,
+  ) {
+    await this.wardAccess.assertAdmission(user, id);
+    return this.patientsService.changeAttending(id, dto.physicianId, user.id);
   }
 
   @Post('admissions/:id/consulting-physicians')

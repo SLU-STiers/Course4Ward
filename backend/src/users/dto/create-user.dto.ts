@@ -1,7 +1,9 @@
 import { Transform } from 'class-transformer';
-import { IsArray, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsEnum, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { NAME_PATTERN } from '../../patients/dto/patient.dto';
+import { IsStrongPassword } from '../../auth/password-policy';
 
 /** Longest first / last name accepted for a staff account. */
 export const MAX_NAME_LENGTH = 50;
@@ -14,6 +16,9 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty({ message: 'First name is required' })
   @MaxLength(MAX_NAME_LENGTH)
+  @Matches(NAME_PATTERN, {
+    message: 'First name may contain letters, spaces, hyphens, apostrophes, and periods only',
+  })
   firstName: string;
 
   @ApiProperty({ maxLength: MAX_NAME_LENGTH })
@@ -21,6 +26,9 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty({ message: 'Last name is required' })
   @MaxLength(MAX_NAME_LENGTH)
+  @Matches(NAME_PATTERN, {
+    message: 'Last name may contain letters, spaces, hyphens, apostrophes, and periods only',
+  })
   lastName: string;
 
   @ApiProperty({ enum: Role })
@@ -29,7 +37,7 @@ export class CreateUserDto {
 
   @ApiProperty({ description: 'Temporary password; user resets on first login' })
   @IsString()
-  @MinLength(8)
+  @IsStrongPassword()
   temporaryPassword: string;
 
   @ApiPropertyOptional({

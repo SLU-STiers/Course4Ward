@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeft, Check, Copy, Download, Maximize2, Minus, Plus, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronUp, Copy, Download, Maximize2, Minus, Plus, X } from 'lucide-react';
 
 import { Button, Modal, StatusBadge } from '../../components/ui';
-import { formatDateMedium } from '../../lib/format';
+import { ORDER_TEXT_STYLE } from '../../components/orders/SubmittedOrdersTimeline';
+import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
+import { formatDateMedium, formatTimeMedium } from '../../lib/format';
 import { buildCf4Document, cf4FileName, saveFile } from './cf4Document';
-import type { Cf4SummaryDraft, ExportSource } from './types';
+import { courseEntries } from './mappers';
+import type { Cf4SummaryDraft } from './types';
 import { styles } from './styles';
 
 type Cf4SummaryPreviewProps = {
@@ -16,14 +19,8 @@ type Cf4SummaryPreviewProps = {
   /** Index of the patient currently on screen. */
   index: number;
   onIndexChange: (index: number) => void;
-  /** Which export workflow produced these drafts. */
-  source: ExportSource;
   /** Attending physician recorded on the document. */
   evaluator: string;
-  /** Uploaded local PDF's name for the existing-CF4 workflow. */
-  sourceFileName?: string;
-  /** Uploaded existing CF4 PDF, retained locally for preview and population. */
-  sourceFile?: File;
   /** Validation/confirmation message shown above the footer. */
   error?: string;
   /** Success message after part of the batch was generated. */
@@ -67,10 +64,7 @@ export function Cf4SummaryPreview({
   drafts,
   index,
   onIndexChange,
-  source,
   evaluator,
-  sourceFileName,
-  sourceFile,
   error,
   notice,
   onBack,
@@ -78,10 +72,12 @@ export function Cf4SummaryPreview({
   onConfirm,
   confirming = false,
 }: Cf4SummaryPreviewProps) {
+  /** Days whose physician orders are shown under the summary. */
+  const [openOrders, setOpenOrders] = useState<string[]>([]);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [rendered, setRendered] = useState<{
     draft: Cf4SummaryDraft;
     url: string;
-    note?: string;
   } | null>(null);
   const [renderFailure, setRenderFailure] = useState<{
     draft: Cf4SummaryDraft;
@@ -146,22 +142,16 @@ export function Cf4SummaryPreview({
   const chart = active?.chart;
 
   /* Build one document per draft. The preview and download both use this same
-     Blob; a template PDF is retained and populated for the existing-CF4 flow. */
+     Blob, which is also exactly what confirming generates. */
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
     void (async () => {
       try {
-        const { blob, note } = await buildCf4Document(
-          active,
-          source,
-          evaluator,
-          sourceFile,
-          sourceFileName,
-        );
+        const { blob } = await buildCf4Document(active, evaluator);
         const url = URL.createObjectURL(blob);
         if (!cancelled) {
-          setRendered({ draft: active, url, note });
+          setRendered({ draft: active, url });
         } else {
           URL.revokeObjectURL(url);
         }
@@ -179,14 +169,14 @@ export function Cf4SummaryPreview({
     return () => {
       cancelled = true;
     };
-  }, [active, source, evaluator, sourceFileName, sourceFile, retryCount]);
+  }, [active, evaluator, retryCount]);
 
   useEffect(() => {
     if (!rendered) return;
     return () => URL.revokeObjectURL(rendered.url);
   }, [rendered]);
 
-  /* Ignore stale output while another patient/template is being prepared. */
+  /* Ignore stale output while another patient is being prepared. */
   const pdf = rendered?.draft === active ? rendered : null;
   const pdfUrl = pdf?.url ?? null;
   const renderError =
@@ -200,15 +190,23 @@ export function Cf4SummaryPreview({
   const hasPrevious = activeIndex > 0;
   const hasNext = activeIndex < total - 1;
 
+  const courseDays = courseEntries(active);
+
+  const toggleOrders = (requestId: string) =>
+    setOpenOrders((ids) =>
+      ids.includes(requestId) ? ids.filter((id) => id !== requestId) : [...ids, requestId],
+    );
+
   const handleCopy = () => {
-    void navigator.clipboard?.writeText(active.courseText).then(() => setCopied(true));
+    const text = courseDays.map((day) => `${day.dateLabel}\n${day.text}`).join('\n\n');
+    void navigator.clipboard?.writeText(text).then(() => setCopied(true));
   };
 
   /** Saves the exact document shown in the preview. */
   const handleDownload = () => {
     if (!pdfUrl) return;
     try {
-      saveFile(pdfUrl, cf4FileName(active, source));
+      saveFile(pdfUrl, cf4FileName(active));
     } catch (cause) {
       setDownloadFailure({
         draft: active,
@@ -236,13 +234,12 @@ export function Cf4SummaryPreview({
       </div>
 
       <div style={styles.summarySourceRow}>
-        <span style={styles.summarySourceTag}>
-          {source === 'new-cf4' ? 'New CF4' : 'Existing CF4'}
-        </span>
+        <span style={styles.summarySourceTag}>New CF4</span>
         <span style={styles.summarySourceHint}>
           {total > 1
             ? 'Review each selected patient below. One Course in the Ward PDF is generated per patient and covers that patient’s whole stay.'
             : 'Review the Course in the Ward for this patient’s whole stay. Confirming generates one PDF.'}
+          {' '}Open a day’s orders to compare them with its summary.
         </span>
       </div>
 
@@ -377,6 +374,43 @@ export function Cf4SummaryPreview({
               <StatusBadge status={patient.status} showDot />
             </div>
           </div>
+          {chart && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                style={styles.summaryDetailsToggle}
+                aria-expanded={detailsOpen}
+                onClick={() => setDetailsOpen((open) => !open)}
+                leadingIcon={
+                  detailsOpen
+                    ? <ChevronUp size={14} aria-hidden="true" />
+                    : <ChevronDown size={14} aria-hidden="true" />
+                }
+              >
+                {detailsOpen ? 'Hide patient details' : 'More patient details'}
+              </Button>
+              {detailsOpen && (
+                <div style={styles.summaryDetailsGrid}>
+                  {([
+                    ['Date of birth', chart.dateOfBirth],
+                    ['Contact number', chart.contactNumber],
+                    ['Address', chart.address],
+                    ['Religion', chart.religion],
+                    ['Emergency contact', chart.emergencyContact],
+                    ['Patient class', chart.patientClass],
+                    ['Triage', chart.triage],
+                    ['Initial assessment', chart.assessment],
+                  ] as const).map(([label, value]) => (
+                    <div key={label} style={styles.summaryMetaField}>
+                      <span style={styles.summaryMetaLabel}>{label}</span>
+                      <span style={styles.summaryDetailsValue}>{value || '—'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -435,7 +469,49 @@ export function Cf4SummaryPreview({
             className="ui-scroll"
             style={{ ...styles.summaryPanelBody, fontSize: `${fontSize}px` }}
           >
-            {active.courseText || 'No approved summaries for this stay.'}
+            {courseDays.map((day, dayIndex) => {
+              const requestId = day.requestId;
+              const ordersOpen = Boolean(requestId && openOrders.includes(requestId));
+              return (
+                <section key={requestId ?? `${day.dateLabel}-${dayIndex}`} style={styles.courseDay}>
+                  <h4 style={styles.courseDayHeader}>
+                    {courseDays.length > 1 && <span style={styles.courseDayNumber}>Day {dayIndex + 1}</span>}
+                    {day.dateLabel}
+                    {requestId && day.orders.length > 0 && (
+                      <span style={styles.courseDayActions}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-expanded={ordersOpen}
+                          onClick={() => toggleOrders(requestId)}
+                          leadingIcon={
+                            ordersOpen
+                              ? <ChevronUp size={14} aria-hidden="true" />
+                              : <ChevronDown size={14} aria-hidden="true" />
+                          }
+                        >
+                          {ordersOpen ? 'Hide orders' : `Orders (${day.orders.length})`}
+                        </Button>
+                      </span>
+                    )}
+                  </h4>
+                  <p style={styles.courseDayText}>{day.text || 'No approved summaries for this stay.'}</p>
+                  {ordersOpen && (
+                    <ul style={styles.courseOrders}>
+                      {day.orders.map((order) => (
+                        <li key={order.id}>
+                          <div style={styles.courseOrderMeta}>
+                            {formatTimeMedium(order.dateCreated)} · {order.doctor}
+                          </div>
+                          <div style={ORDER_TEXT_STYLE}>{order.content}</div>
+                          <OrderStatusSummary order={order} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              );
+            })}
           </div>
         </div>
 
@@ -473,7 +549,7 @@ export function Cf4SummaryPreview({
           }}
         >
           <div style={styles.summaryPanelHeader}>
-            <span style={styles.summaryPanelTitle}>Collated PDF Preview</span>
+            <span style={styles.summaryPanelTitle}>CF4 Preview</span>
             <div style={styles.summaryPanelActions}>
               <Button
                 size="sm"
@@ -522,9 +598,6 @@ export function Cf4SummaryPreview({
               {renderError ? 'PDF preview unavailable. See the error above.' : 'Preparing preview…'}
             </div>
           )}
-          {pdf?.note && (
-            <p role="status" style={styles.pdfPreviewNote}>{pdf.note}</p>
-          )}
         </div>
       </div>
       {!stacked && (
@@ -570,7 +643,7 @@ export function Cf4SummaryPreview({
         <Button
           variant="primary"
           loading={confirming}
-          disabled={confirming}
+          disabled={confirming || !pdf}
           onClick={() => {
             setChosenIds(drafts.map((draft) => draft.patient.id));
             setConfirmOpen(true);

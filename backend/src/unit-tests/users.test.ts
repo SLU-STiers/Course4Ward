@@ -44,6 +44,9 @@ describe('UsersService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockPrismaService.$transaction.mockReset();
+    mockPrismaService.$transaction.mockImplementation(async (callback) => callback(mockPrismaService));
+    mockPrismaService.patientAdmission.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -80,6 +83,7 @@ describe('UsersService', () => {
     };
 
     mockPrismaService.$transaction.mockImplementation(async (callback) => callback(tx));
+    mockPrismaService.ward.count.mockResolvedValue(1);
 
     await service.create(
       {
@@ -87,6 +91,7 @@ describe('UsersService', () => {
         lastName: 'Doe',
         role: Role.NURSE,
         temporaryPassword: 'StrongPass123',
+        wardIds: ['ward-er'],
       },
       'admin-1',
     );
@@ -279,6 +284,51 @@ describe('UsersService', () => {
     });
   });
 
+  describe('physicians with admitted patients', () => {
+    const physician = {
+      id: 'doctor-1',
+      userId: 'DOC001',
+      firstName: 'Ana',
+      lastName: 'Reyes',
+      role: Role.PHYSICIAN,
+      isActive: true,
+      wards: [],
+      physicianWards: [{ ward: { id: 'ward-er', name: 'ER' } }],
+    };
+
+    it('refuses to deactivate the attending physician of admitted patients', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(physician);
+      mockPrismaService.patientAdmission.findMany.mockResolvedValue([
+        { patient: { firstName: 'Rosa', lastName: 'Villanueva' } },
+      ]);
+
+      await expect(service.update('doctor-1', { isActive: false }, 'admin-1')).rejects.toThrow(
+        /still the attending physician of 1 admitted patient/,
+      );
+      expect(mockPrismaService.user.update).not.toHaveBeenCalled();
+    });
+
+    it('signs the user out and gives a new login id when the role changes', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(physician);
+      mockPrismaService.userIdCounter.findUnique.mockResolvedValue({ role: Role.CLAIMS_PROCESSOR, nextNumber: 4 });
+      mockPrismaService.userIdCounter.update.mockResolvedValue({});
+      mockPrismaService.user.findMany.mockResolvedValue([]);
+      mockPrismaService.user.update.mockResolvedValue({ ...physician, userId: 'CLM004', role: Role.CLAIMS_PROCESSOR });
+
+      await service.update('doctor-1', { role: Role.CLAIMS_PROCESSOR }, 'admin-1');
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            role: Role.CLAIMS_PROCESSOR,
+            userId: expect.stringMatching(/^CLM/),
+            sessionVersion: { increment: 1 },
+          }),
+        }),
+      );
+    });
+  });
+
   describe('ward assignment', () => {
     const input = (role: Role, wardIds: string[]) => ({
       firstName: 'Jane',
@@ -325,6 +375,12 @@ describe('UsersService', () => {
             },
           }),
         }),
+      );
+    });
+
+    it('requires at least one ward for a nurse', async () => {
+      await expect(service.create(input(Role.NURSE, []), 'admin-1')).rejects.toThrow(
+        'Nurses must be assigned at least one ward',
       );
     });
 

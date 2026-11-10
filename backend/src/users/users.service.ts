@@ -23,6 +23,22 @@ function wardNames(user: { wards?: WardLinks; physicianWards?: WardLinks }): str
 
 const yesNo = (value: boolean) => (value ? 'Yes' : 'No');
 
+/** Login id prefix per role, e.g. NRS014. */
+const ID_PREFIXES: Record<Role, string> = {
+  ADMIN: 'ADM',
+  PHYSICIAN: 'DOC',
+  NURSE: 'NRS',
+  CLAIMS_PROCESSOR: 'CLM',
+};
+
+/** Two admins creating / re-roling at once can still race for one id. */
+function rethrowIdRace(error: unknown): never {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    throw new ConflictException('Another account was created at the same time. Please try again.');
+  }
+  throw error;
+}
+
 function formatList(names: string[]) {
   if (names.length <= 1) return names[0] ?? '';
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
@@ -68,52 +84,48 @@ export class UsersService {
     if (role === Role.PHYSICIAN && !ids.length) {
       throw new BadRequestException('Physicians must be assigned at least one ward / specialty');
     }
+    // A nurse with no ward sees every patient as restricted yet could register patients.
+    if (role === Role.NURSE && !ids.length) {
+      throw new BadRequestException('Nurses must be assigned at least one ward');
+    }
     if (!ids.length) return ids;
     const found = await this.prisma.ward.count({ where: { id: { in: ids } } });
     if (found !== ids.length) throw new BadRequestException('One or more wards do not exist');
     return ids;
   }
 
+  /**
+   * The next unused login id for `role` (DOC001, NRS014, ...). `nextNumber` is
+   * never trusted below the highest id already taken, so a counter that lags
+   * behind the accounts (e.g. seeded users) cannot hand out a duplicate.
+   */
+  private async nextUserId(tx: Prisma.TransactionClient, role: Role) {
+    const prefix = ID_PREFIXES[role];
+    const existingCounter = await tx.userIdCounter.findUnique({ where: { role } });
+    const taken = await tx.user.findMany({
+      where: { userId: { startsWith: prefix } },
+      select: { userId: true },
+    });
+    const highestTaken = taken.reduce((max, { userId }) => {
+      const match = new RegExp(`^${prefix}(\\d+)$`).exec(userId);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+    const nextUserNumber = Math.max(existingCounter?.nextNumber ?? 1, highestTaken + 1);
+
+    if (existingCounter) {
+      await tx.userIdCounter.update({ where: { role }, data: { nextNumber: nextUserNumber + 1 } });
+    } else {
+      await tx.userIdCounter.create({ data: { role, nextNumber: nextUserNumber + 1 } });
+    }
+    return `${prefix}${String(nextUserNumber).padStart(3, '0')}`;
+  }
+
   async create(dto: CreateUserDto, actingAdminId: string) {
     const wardIds = await this.wardIdsFor(dto.role, dto.wardIds);
     const passwordHash = await bcrypt.hash(dto.temporaryPassword, 12);
-    const prefixes: Record<Role, string> = {
-      ADMIN: 'ADM',
-      PHYSICIAN: 'DOC',
-      NURSE: 'NRS',
-      CLAIMS_PROCESSOR: 'CLM',
-    };
 
-    const prefix = prefixes[dto.role];
     const user = await this.prisma.$transaction(async (tx) => {
-      // `nextNumber` is the next unused number for the role. It is never
-      // trusted below the highest id already taken, so a counter that lags
-      // behind the accounts (e.g. seeded users) cannot hand out a duplicate.
-      const existingCounter = await tx.userIdCounter.findUnique({
-        where: { role: dto.role },
-      });
-      const taken = await tx.user.findMany({
-        where: { userId: { startsWith: prefix } },
-        select: { userId: true },
-      });
-      const highestTaken = taken.reduce((max, { userId }) => {
-        const match = new RegExp(`^${prefix}(\\d+)$`).exec(userId);
-        return match ? Math.max(max, Number(match[1])) : max;
-      }, 0);
-      const nextUserNumber = Math.max(existingCounter?.nextNumber ?? 1, highestTaken + 1);
-
-      if (existingCounter) {
-        await tx.userIdCounter.update({
-          where: { role: dto.role },
-          data: { nextNumber: nextUserNumber + 1 },
-        });
-      } else {
-        await tx.userIdCounter.create({
-          data: { role: dto.role, nextNumber: nextUserNumber + 1 },
-        });
-      }
-
-      const userId = `${prefix}${String(nextUserNumber).padStart(3, '0')}`;
+      const userId = await this.nextUserId(tx, dto.role);
 
       return tx.user.create({
         data: {
@@ -132,13 +144,7 @@ export class UsersService {
         },
         select: this.safeSelect,
       });
-    }).catch((error: unknown) => {
-      // Two admins creating the same role at once can still race for one id.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Another account was created at the same time. Please try again.');
-      }
-      throw error;
-    });
+    }).catch(rethrowIdRace);
 
     await this.auditLog.record({
       userId: actingAdminId,
@@ -178,18 +184,26 @@ export class UsersService {
 
     const { wardIds: requestedWardIds, ...fields } = dto;
     const role = dto.role ?? existing.role;
-    await this.assertAdminAccessKept(existing, role, dto.isActive ?? existing.isActive, actingAdminId);
+    const isActive = dto.isActive ?? existing.isActive;
+    const roleChanged = role !== existing.role;
+    await this.assertAdminAccessKept(existing, role, isActive, actingAdminId);
+    if (existing.role === Role.PHYSICIAN && existing.isActive && (roleChanged || !isActive)) {
+      await this.assertNotAttending(existing);
+    }
     // Replace ward assignments when sent, and clear both relation types on role changes.
     const wardIds =
-      requestedWardIds !== undefined || role !== existing.role
+      requestedWardIds !== undefined || roleChanged
         ? await this.wardIdsFor(role, requestedWardIds)
         : undefined;
 
     const statusChanged = dto.isActive !== undefined && dto.isActive !== existing.isActive;
-    const user = await this.prisma.user.update({
+    // A new role signs the user out (their session still carries the old one)
+    // and gives them a login id with the new role's prefix.
+    const user = await this.prisma.$transaction(async (tx) => tx.user.update({
       where: { id },
       data: {
         ...fields,
+        ...(roleChanged ? { userId: await this.nextUserId(tx, role) } : {}),
         ...(wardIds !== undefined
           ? {
               wards: {
@@ -206,15 +220,16 @@ export class UsersService {
               },
             }
           : {}),
-        ...(statusChanged ? { sessionVersion: { increment: 1 } } : {}),
+        ...(statusChanged || roleChanged ? { sessionVersion: { increment: 1 } } : {}),
       },
       select: this.safeSelect,
-    });
+    })).catch(rethrowIdRace);
 
     const changes: AuditChange[] = [];
     const compare = (field: string, from: string, to: string) => {
       if (from !== to) changes.push({ field, from, to });
     };
+    compare('Login ID', existing.userId, user.userId);
     compare('First name', existing.firstName, user.firstName);
     compare('Last name', existing.lastName, user.lastName);
     compare('Role', ROLE_LABELS[existing.role], ROLE_LABELS[user.role]);
@@ -284,6 +299,27 @@ export class UsersService {
     if (otherActiveAdmins === 0) {
       throw new BadRequestException('At least one active admin account must remain.');
     }
+  }
+
+  /**
+   * Only the attending physician can write a discharge order, so a physician
+   * cannot be deactivated or moved to another role while they still attend
+   * patients who have not been discharged: those patients could never leave.
+   */
+  private async assertNotAttending(physician: { id: string; firstName: string; lastName: string }) {
+    const attending = await this.prisma.patientAdmission.findMany({
+      where: { physicianId: physician.id, dischargeDate: null },
+      select: { patient: { select: { firstName: true, lastName: true } } },
+      orderBy: { admissionDate: 'asc' },
+    });
+    if (!attending.length) return;
+    const names = attending.slice(0, 3).map(({ patient }) => fullName(patient));
+    const more = attending.length > names.length ? ` and ${attending.length - names.length} more` : '';
+    throw new BadRequestException(
+      `Dr. ${fullName(physician)} is still the attending physician of ${attending.length} admitted patient${
+        attending.length === 1 ? '' : 's'
+      } (${names.join(', ')}${more}). Have the nurse change their attending physician first.`,
+    );
   }
 
   /**

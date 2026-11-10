@@ -284,6 +284,7 @@ export const addPatient: Record<string, CSSProperties> = {
   grid4: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 },
   label: { display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6 },
   required: { color: '#dc2626', marginLeft: 3 },
+  optional: { fontWeight: 500, color: '#94a3b8' },
   subsectionTitle: {
     margin: '18px 0 10px',
     paddingTop: 14,
@@ -297,6 +298,7 @@ export const addPatient: Record<string, CSSProperties> = {
   inputInvalid: { borderColor: '#dc2626', backgroundColor: '#fef2f2' },
   inputReadOnly: { backgroundColor: '#f1f5f9', color: '#475569', cursor: 'default' },
   fieldError: { display: 'block', marginTop: 4, fontSize: 12, fontWeight: 600, color: '#b91c1c' },
+  fieldHint: { display: 'block', marginTop: 4, fontSize: 12, fontWeight: 600, color: '#64748b' },
   draftNotice: {
     display: 'flex',
     alignItems: 'center',
@@ -548,6 +550,19 @@ export const addPatient: Record<string, CSSProperties> = {
     backgroundColor: '#ffffff',
   },
   footerHint: { marginRight: 'auto', fontSize: 12, fontWeight: 600, color: '#b91c1c' },
+  duplicateNotice: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+    padding: '12px 24px',
+    borderTop: '1px solid #fde68a',
+    backgroundColor: '#fffbeb',
+    color: '#92400e',
+    fontSize: 13,
+    fontWeight: 600,
+    lineHeight: 1.45,
+  },
 };
 
 /* Per-order execution status + nurse comment, inside the orders timeline. */

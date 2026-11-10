@@ -2,9 +2,20 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { patientsApi } from '../../services/domainApi';
-import type { InsuranceType, PhysicianOption, Sex, TriageLevel } from '../../types';
+import type { DuplicatePatientError, InsuranceType, PhysicianOption, Sex, TriageLevel } from '../../types';
 import { useAuthStore } from '../../store/authStore';
-import { formatDateMedium } from '../../lib/format';
+import { computeAge, formatDateMedium, todayValue } from '../../lib/format';
+import { apiErrorMessage } from '../../lib/apiError';
+import {
+  DATE_PATTERN,
+  NAME_PATTERN,
+  RELIGIONS,
+  RELIGION_OTHER,
+  dateOfBirthError,
+  oldestBirthDate,
+  sanitizeName,
+  sanitizePhoneNumber,
+} from './patientForm';
 import { INSURANCE_LABEL, SEX_LABEL } from '../../lib/patient';
 import { TRIAGE_LEVELS, triageLevelInfo } from '../../lib/triage';
 import { addPatient as s, TEAL, ui } from './styles';
@@ -13,40 +24,11 @@ import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPick
 import { TimePickerField } from './TimePickerField';
 import { PhysicianWardSelect } from './PhysicianWardSelect';
 
-/** How the physician gave the order; '' = written / signed order. */
-type OrderChannel = '' | 'VERBAL' | 'CALL' | 'SMS' | 'OTHER';
-
 const REGISTRATION_CLASS = {
   value: 'INPATIENT',
   label: 'Inpatient',
-  hint: "Needs the physician's admission order before the patient is registered.",
-  order: 'Admission',
+  hint: 'The patient is registered as an inpatient and assigned to a room in your ward.',
 } as const;
-
-const ORDER_CHANNELS: [OrderChannel, string][] = [
-  ['', 'Written / signed order'],
-  ['VERBAL', 'Verbal'],
-  ['CALL', 'Phone call'],
-  ['SMS', 'SMS'],
-  ['OTHER', 'Other'],
-];
-
-/** Religions common in the Philippines; anything else goes under "Others". */
-const RELIGIONS = [
-  'Roman Catholic',
-  'Islam',
-  'Iglesia ni Cristo',
-  'Born Again Christian',
-  'Protestant',
-  'Aglipayan (Philippine Independent Church)',
-  'Seventh-day Adventist',
-  "Jehovah's Witness",
-  'Latter-day Saints (Mormon)',
-  'Buddhism',
-  'None',
-];
-/** Religion dropdown value that reveals the "please specify" input. */
-const RELIGION_OTHER = 'OTHER';
 
 /** General complaints offered in the Chief Complaint checklist. */
 const CHIEF_COMPLAINTS = [
@@ -78,13 +60,11 @@ export type AddPatientFormResult = {
   firstName: string;
   middleName: string;
   lastName: string;
-  /** Kept as typed text so an empty field is distinguishable from age 0 (newborn). */
-  age: string;
+  /** YYYY-MM-DD from the date input; printed on the CF4, so never estimated. */
+  dateOfBirth: string;
   /** '' until the nurse picks one: there is deliberately no default. */
   gender: Sex | '';
   patientClass: 'INPATIENT';
-  registrationOrder: string;
-  registrationOrderChannel: OrderChannel;
   physicianId: string;
   consultingPhysicianIds: string[];
   /** The patient's own contact / mobile number. */
@@ -102,6 +82,9 @@ export type AddPatientFormResult = {
   contactPersonAddress: string;
   /** 5-level triage priority; null until the nurse picks one. */
   triageLevel: TriageLevel | null;
+  /** `YYYY-MM-DD`; starts as today. */
+  triageDate: string;
+  /** 24h `HH:mm`; starts as the current time. */
   triageTime: string;
   heartRate: string;
   respRate: string;
@@ -117,11 +100,9 @@ const emptyForm = (): AddPatientFormResult => ({
   firstName: '',
   middleName: '',
   lastName: '',
-  age: '',
+  dateOfBirth: '',
   gender: '',
   patientClass: 'INPATIENT' as const,
-  registrationOrder: '',
-  registrationOrderChannel: '',
   physicianId: '',
   consultingPhysicianIds: [],
   contactNumber: '',
@@ -134,6 +115,7 @@ const emptyForm = (): AddPatientFormResult => ({
   contactPersonNumber: '',
   contactPersonAddress: '',
   triageLevel: null,
+  triageDate: '',
   triageTime: '',
   heartRate: '',
   respRate: '',
@@ -173,18 +155,6 @@ const VITAL_RULES: VitalRule[] = [
 /** Vitals that only accept whole numbers (temperature allows one decimal). */
 const WHOLE_VITALS = new Set<VitalKey>(['heartRate', 'respRate', 'spo2', 'pain']);
 
-const MAX_AGE = 130;
-const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M} .'\u2019-]*$/u;
-const sanitizeName = (value: string) => value.replace(/[^\p{L}\p{M} .'\u2019-]/gu, '');
-const sanitizePhoneNumber = (value: string) => value.replace(/\D/g, '').slice(0, 11);
-
-/** Returns the message to show under the Age field, or null when the value is valid. */
-function ageError(value: string): string | null {
-  if (value.trim() === '') return 'Age is required.';
-  if (!/^\d+$/.test(value)) return 'Age must be a whole number of years.';
-  if (Number(value) > MAX_AGE) return `Age must be between 0 and ${MAX_AGE}.`;
-  return null;
-}
 
 // Unsaved entries survive the modal being closed (Cancel, backdrop click, browser
 // back) until the patient is registered or the nurse discards them. sessionStorage
@@ -207,7 +177,10 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       firstName: sanitizeName(typeof draft.form?.firstName === 'string' ? draft.form.firstName : ''),
       middleName: sanitizeName(typeof draft.form?.middleName === 'string' ? draft.form.middleName : ''),
       lastName: sanitizeName(typeof draft.form?.lastName === 'string' ? draft.form.lastName : ''),
-      age: String(draft.form?.age ?? ''),
+      dateOfBirth:
+        typeof draft.form?.dateOfBirth === 'string' && DATE_PATTERN.test(draft.form.dateOfBirth)
+          ? draft.form.dateOfBirth
+          : '',
       gender: toSex(draft.form?.gender),
       contactNumber: sanitizePhoneNumber(
         typeof draft.form?.contactNumber === 'string' ? draft.form.contactNumber : '',
@@ -221,10 +194,21 @@ function loadDraft(ownerId: string | undefined): AddPatientDraft | null {
       insurance: toInsurance(draft.form?.insurance),
       ...toReligion(draft.form?.religion, draft.form?.religionOther),
       triageLevel: triageLevelInfo(draft.form?.triageLevel)?.level ?? null,
+      triageDate:
+        typeof draft.form?.triageDate === 'string' && DATE_PATTERN.test(draft.form.triageDate)
+          ? draft.form.triageDate
+          : '',
       chiefComplaints: toComplaints(draft.form?.chiefComplaints),
     };
     // Fields of older versions of this form.
-    for (const legacy of ['admissionStatus', 'admissionOrder', 'admissionOrderChannel']) {
+    for (const legacy of [
+      'admissionStatus',
+      'admissionOrder',
+      'admissionOrderChannel',
+      'registrationOrder',
+      'registrationOrderChannel',
+      'age',
+    ]) {
       delete (form as Partial<Record<string, unknown>>)[legacy];
     }
     return {
@@ -246,8 +230,22 @@ function saveDraft(draft: AddPatientDraft | null) {
   }
 }
 
+const nowClock = () => {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+};
+
+/** Triage is usually recorded as the patient arrives, so blank date and time default to now. */
+const withTriageNow = (form: AddPatientFormResult): AddPatientFormResult => ({
+  ...form,
+  triageDate: form.triageDate || todayValue(),
+  triageTime: form.triageTime || nowClock(),
+});
+
+/** The defaulted triage date and time alone don't make a draft worth keeping. */
 const isPristine = (form: AddPatientFormResult, roomNumber: string) =>
-  roomNumber === '' && JSON.stringify(form) === JSON.stringify(emptyForm());
+  roomNumber === '' &&
+  JSON.stringify({ ...form, triageDate: '', triageTime: '' }) === JSON.stringify(emptyForm());
 
 const isSex = (value: unknown): value is Sex => typeof value === 'string' && value in SEX_LABEL;
 
@@ -289,7 +287,7 @@ type FieldKey =
   | 'firstName'
   | 'middleName'
   | 'lastName'
-  | 'age'
+  | 'dateOfBirth'
   | 'gender'
   | 'contactNumber'
   | 'insurance'
@@ -302,6 +300,7 @@ type FieldKey =
   | 'contactPersonAddress'
   | 'room'
   | 'triageLevel'
+  | 'triageDate'
   | 'triageTime'
   | 'heartRate'
   | 'respRate'
@@ -312,8 +311,7 @@ type FieldKey =
   | 'chiefComplaints'
   | 'notes'
   | 'physician'
-  | 'consultingPhysician'
-  | 'registrationOrder';
+  | 'consultingPhysician';
 
 type RegistrationProblem = { field: FieldKey; message: string };
 
@@ -340,7 +338,6 @@ function registrationProblems(
   roomNumber: string,
   rooms: Parameters<typeof roomProblem>[1],
   toWard: boolean,
-  needsOrder: boolean,
 ): RegistrationProblem[] {
   const problems: RegistrationProblem[] = [];
   const add = (field: FieldKey, message: string) => problems.push({ field, message });
@@ -363,8 +360,8 @@ function registrationProblems(
   else if (!NAME_PATTERN.test(lastName)) {
     add('lastName', 'Last name may contain letters, spaces, hyphens, apostrophes, and periods only.');
   }
-  const age = ageError(form.age);
-  if (age) add('age', age);
+  const dateOfBirth = dateOfBirthError(form.dateOfBirth);
+  if (dateOfBirth) add('dateOfBirth', dateOfBirth);
   if (!form.gender) add('gender', 'Sex is required.');
   required('contactNumber', form.contactNumber, 'Personal number');
   if (form.contactNumber.trim() && !/^\d{11}$/.test(form.contactNumber)) {
@@ -406,6 +403,10 @@ function registrationProblems(
 
   // Triage assessment
   if (!form.triageLevel) add('triageLevel', 'Triage level (ESI) is required.');
+  required('triageDate', form.triageDate, 'Triage date');
+  if (form.triageDate && form.triageDate > todayValue()) {
+    add('triageDate', 'Triage date cannot be in the future.');
+  }
   required('triageTime', form.triageTime, 'Triage time');
   for (const rule of VITAL_RULES) {
     const raw = String(form[rule.key]).trim();
@@ -435,12 +436,6 @@ function registrationProblems(
 
   // Care team
   if (!form.physicianId) add('physician', 'Attending physician is required.');
-  if (!form.consultingPhysicianIds.length) add('consultingPhysician', 'Add a consulting physician.');
-
-  // Admission order
-  if (needsOrder && !form.registrationOrder.trim()) {
-    add('registrationOrder', 'The physician’s admission order is required.');
-  }
 
   return problems;
 }
@@ -454,25 +449,28 @@ export function AddPatientModal({
 }) {
   const ownerId = useAuthStore((state) => state.user?.id);
   const [initialDraft] = useState(() => loadDraft(ownerId));
-  const [form, setForm] = useState<AddPatientFormResult>(() => initialDraft?.form ?? emptyForm());
+  const [form, setForm] = useState<AddPatientFormResult>(() =>
+    withTriageNow(initialDraft?.form ?? emptyForm()),
+  );
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
   const [pendingDoctorId, setPendingDoctorId] = useState('');
   const [roomNumber, setRoomNumber] = useState(() => initialDraft?.roomNumber ?? '');
   const [draftRestored, setDraftRestored] = useState(initialDraft !== null);
-  const [ageTouched, setAgeTouched] = useState(initialDraft !== null);
+  const [dobTouched, setDobTouched] = useState(initialDraft !== null);
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  /** The server found this person already registered. */
+  const [duplicate, setDuplicate] = useState<DuplicatePatientError | null>(null);
   const [saving, setSaving] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
-  const ageMessage = ageError(form.age);
+  const dobMessage = dateOfBirthError(form.dateOfBirth);
+  const age = dobMessage ? null : computeAge(form.dateOfBirth);
   const classOption = REGISTRATION_CLASS;
   const toWard = form.patientClass === 'INPATIENT';
   const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(toWard);
-  /** 'Admission' when the class needs a physician order. */
-  const orderName = classOption.order;
-  const showAgeError = ageTouched && ageMessage !== null;
-  const problems = registrationProblems(form, roomNumber, rooms, toWard, Boolean(orderName));
+  const showDobError = dobTouched && dobMessage !== null;
+  const problems = registrationProblems(form, roomNumber, rooms, toWard);
   const ready = problems.length === 0;
 
   /**
@@ -481,12 +479,7 @@ export function AddPatientModal({
    */
   const problemFor = (field: FieldKey) => {
     if (!submitAttempted) return undefined;
-    const message = problems.find((problem) => problem.field === field)?.message;
-    if (!message) return undefined;
-    if (field === 'consultingPhysician' && pendingDoctorId) {
-      return 'Click Add to include the consulting physician.';
-    }
-    return message;
+    return problems.find((problem) => problem.field === field)?.message;
   };
 
   const fieldError = (field: FieldKey) => {
@@ -500,12 +493,13 @@ export function AddPatientModal({
   }, [ownerId, form, roomNumber]);
 
   const discardDraft = () => {
-    setForm(emptyForm());
+    setForm(withTriageNow(emptyForm()));
     setRoomNumber('');
     setPendingDoctorId('');
-    setAgeTouched(false);
+    setDobTouched(false);
     setSubmitAttempted(false);
     setServerError(null);
+    setDuplicate(null);
     setDraftRestored(false);
   };
 
@@ -518,6 +512,7 @@ export function AddPatientModal({
 
   const updateForm = (update: (prev: AddPatientFormResult) => AddPatientFormResult) => {
     setServerError(null);
+    setDuplicate(null);
     setForm(update);
   };
 
@@ -555,82 +550,97 @@ export function AddPatientModal({
     (doctor) => doctor.id !== form.physicianId && !form.consultingPhysicianIds.includes(doctor.id),
   );
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setServerError(null);
-
-    const found = registrationProblems(form, roomNumber, rooms, toWard, Boolean(orderName));
-    if (found.length) {
-      if (found.some((problem) => problem.field === 'age')) setAgeTouched(true);
-      setSubmitAttempted(true);
-      focusField(formRef.current, found[0].field);
-      return;
-    }
-
-    const firstName = form.firstName.trim();
-    const middleName = form.middleName.trim();
-    const lastName = form.lastName.trim();
+  /** This stay: what a re-admission sends for a patient already on record. */
+  const admissionPayload = () => {
     const complaints = form.chiefComplaints.filter((complaint) => CHIEF_COMPLAINTS.includes(complaint));
-    const registrationOrder = form.registrationOrder.trim();
-    const religion = form.religion === RELIGION_OTHER ? form.religionOther.trim() : form.religion;
-    const insuranceOther = form.insuranceOther.trim();
+    return {
+      // No admissionDate: admission is always today, stamped by the server with the current time.
+      patientClass: form.patientClass,
+      roomNumber: toWard ? normalizeRoom(roomNumber) : undefined,
+      physicianId: form.physicianId,
+      additionalPhysicianIds: form.consultingPhysicianIds,
+      triageLevel: form.triageLevel ?? undefined,
+      triageDate: form.triageDate || undefined,
+      triageTime: form.triageTime || undefined,
+      heartRate: toNumber(form.heartRate),
+      respRate: toNumber(form.respRate),
+      spo2: toNumber(form.spo2),
+      bp: form.bp.replace(/\s+/g, '') || undefined,
+      temp: toNumber(form.temp),
+      pain: toNumber(form.pain),
+      // No chief-complaint column: it leads the initial assessment text.
+      notes: `Chief complaint: ${complaints.join(', ')}.\n\n${form.notes.trim()}`,
+    };
+  };
 
+  const detailsPayload = () => ({
+    firstName: form.firstName.trim(),
+    middleName: form.middleName.trim() || undefined,
+    lastName: form.lastName.trim(),
+    dateOfBirth: form.dateOfBirth,
+    gender: form.gender,
+    contactNumber: form.contactNumber.trim() || undefined,
+    address: form.address.trim() || undefined,
+    insurance: form.insurance || undefined,
+    insuranceOther: form.insurance === 'OTHER' ? form.insuranceOther.trim() : undefined,
+    religion: form.religion === RELIGION_OTHER ? form.religionOther.trim() : form.religion,
+    contactPersonName: form.contactPersonName.trim() || undefined,
+    contactPersonNumber: form.contactPersonNumber.trim() || undefined,
+    contactPersonAddress: form.contactPersonAddress.trim() || undefined,
+  });
+
+  const save = async (request: () => Promise<unknown>, failure: string) => {
+    setServerError(null);
     setSaving(true);
     try {
-      await patientsApi.create({
-        firstName,
-        middleName: middleName || undefined,
-        lastName,
-        age: Number(form.age),
-        gender: form.gender,
-        // No admissionDate: admission is always today, stamped by the server with the current time.
-        patientClass: form.patientClass,
-        // Inpatient only with the physician's admission order, which is
-        // filed on their behalf in the same request.
-        ...(orderName && {
-          registrationOrder,
-          registrationOrderChannel: form.registrationOrderChannel || undefined,
-        }),
-        roomNumber: toWard ? normalizeRoom(roomNumber) : undefined,
-        contactNumber: form.contactNumber.trim() || undefined,
-        address: form.address.trim() || undefined,
-        insurance: form.insurance || undefined,
-        insuranceOther: form.insurance === 'OTHER' ? insuranceOther : undefined,
-        religion,
-        contactPersonName: form.contactPersonName.trim() || undefined,
-        contactPersonNumber: form.contactPersonNumber.trim() || undefined,
-        contactPersonAddress: form.contactPersonAddress.trim() || undefined,
-        physicianId: form.physicianId,
-        additionalPhysicianIds: form.consultingPhysicianIds,
-        triageLevel: form.triageLevel ?? undefined,
-        triageTime: form.triageTime || undefined,
-        heartRate: toNumber(form.heartRate),
-        respRate: toNumber(form.respRate),
-        spo2: toNumber(form.spo2),
-        bp: form.bp.replace(/\s+/g, '') || undefined,
-        temp: toNumber(form.temp),
-        pain: toNumber(form.pain),
-        // No chief-complaint column: it leads the initial assessment text.
-        notes: `Chief complaint: ${complaints.join(', ')}.\n\n${form.notes.trim()}`,
-      });
+      await request();
       saveDraft(null);
       onCreated();
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Someone may have just taken the room: refresh what is free.
       if (toWard) reloadRooms();
-      const message = err?.response?.data?.message;
-      setServerError(
-        Array.isArray(message)
-          ? message.join(', ')
-          : message || 'Could not register the patient. Please try again.',
-      );
+      const body = (err as { response?: { data?: Partial<DuplicatePatientError> } })?.response?.data;
+      if (body?.code === 'PATIENT_ALREADY_REGISTERED' && body.existingPatientId) {
+        setDuplicate(body as DuplicatePatientError);
+      } else {
+        setServerError(apiErrorMessage(err, failure));
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  const attending = physicianById(form.physicianId);
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    setServerError(null);
+    setDuplicate(null);
+
+    const found = registrationProblems(form, roomNumber, rooms, toWard);
+    if (found.length) {
+      if (found.some((problem) => problem.field === 'dateOfBirth')) setDobTouched(true);
+      setSubmitAttempted(true);
+      focusField(formRef.current, found[0].field);
+      return;
+    }
+
+    void save(
+      () => patientsApi.create({ ...detailsPayload(), ...admissionPayload() }),
+      'Could not register the patient. Please try again.',
+    );
+  };
+
+  /** Starts this stay on the record the server matched, instead of a second record. */
+  const readmitExisting = () => {
+    if (!duplicate || duplicate.admitted) return;
+    const patientId = duplicate.existingPatientId;
+    setDuplicate(null);
+    void save(
+      () => patientsApi.readmit(patientId, admissionPayload()),
+      'Could not re-admit the patient. Please try again.',
+    );
+  };
+
   const selectedTriage = triageLevelInfo(form.triageLevel);
 
   return (
@@ -707,25 +717,30 @@ export function AddPatientModal({
                 />
                 {fieldError('lastName')}
               </Field>
-              <Field label="Age" required>
+              <Field label="Date of Birth" required>
                 <input
-                  id={fieldId('age')}
-                  style={{ ...s.input, ...(showAgeError ? s.inputInvalid : {}) }}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={3}
-                  value={form.age}
-                  onChange={(e) => setField('age', e.target.value.replace(/\D/g, ''))}
-                  onBlur={() => setAgeTouched(true)}
-                  placeholder="Years (0 for newborns)"
-                  aria-invalid={showAgeError}
-                  aria-describedby={showAgeError ? 'add-patient-age-error' : undefined}
+                  id={fieldId('dateOfBirth')}
+                  style={{ ...s.input, ...(showDobError ? s.inputInvalid : {}) }}
+                  type="date"
+                  min={oldestBirthDate()}
+                  max={todayValue()}
+                  value={form.dateOfBirth}
+                  onChange={(e) => setField('dateOfBirth', e.target.value)}
+                  onBlur={() => setDobTouched(true)}
+                  aria-invalid={showDobError}
+                  aria-describedby={showDobError ? 'add-patient-dob-error' : 'add-patient-dob-age'}
                   required
                 />
-                {showAgeError && (
-                  <span id="add-patient-age-error" style={s.fieldError}>
-                    {ageMessage}
+                {showDobError ? (
+                  <span id="add-patient-dob-error" style={s.fieldError}>
+                    {dobMessage}
                   </span>
+                ) : (
+                  age !== null && (
+                    <span id="add-patient-dob-age" style={s.fieldHint}>
+                      {age === 1 ? '1 year old' : `${age} years old`}
+                    </span>
+                  )
                 )}
               </Field>
               <Field label="Sex" required>
@@ -955,6 +970,10 @@ export function AddPatientModal({
             </div>
             <div style={s.grid4}>
               <div>
+                <Vital id={fieldId('triageDate')} label="Date" type="date" max={todayValue()} value={form.triageDate} onChange={(v) => setField('triageDate', v)} required />
+                {fieldError('triageDate')}
+              </div>
+              <div>
                 <TimePickerField id={fieldId('triageTime')} value={form.triageTime} onChange={(v) => setField('triageTime', v)} required />
                 {fieldError('triageTime')}
               </div>
@@ -1026,7 +1045,7 @@ export function AddPatientModal({
 
             <div style={{ marginTop: 16 }}>
               <span style={s.label}>
-                Consulting Physicians<span style={s.required}>*</span>
+                Consulting Physicians <span style={s.optional}>(optional)</span>
               </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {form.consultingPhysicianIds.length ? (
@@ -1066,7 +1085,6 @@ export function AddPatientModal({
                   disabled={!availableToAdd.length}
                   placeholder={availableToAdd.length ? 'Select a consulting physician' : 'No other physicians available'}
                   ariaLabel="Consulting physician to add"
-                  required={form.consultingPhysicianIds.length === 0}
                 />
                 <button
                   type="button"
@@ -1082,59 +1100,32 @@ export function AddPatientModal({
                   + Add
                 </button>
               </div>
-              {fieldError('consultingPhysician')}
+              {pendingDoctorId && (
+                <span style={s.fieldHint}>Click Add to include the consulting physician.</span>
+              )}
             </div>
           </Section>
-
-          {orderName && (
-            <Section
-              icon={SECTION_ICONS.triage}
-              title={`${orderName} Order`}
-              hint={`The physician's ${orderName.toLowerCase()} order, entered on their behalf`}
-            >
-              <Field label="Order" required>
-                <textarea
-                  id={fieldId('registrationOrder')}
-                  style={s.textarea}
-                  value={form.registrationOrder}
-                  onChange={(e) => setField('registrationOrder', e.target.value)}
-                  placeholder={
-                    toWard
-                      ? 'e.g. Admit to Medical Ward. CBC, chest x-ray PA view.'
-                      : 'e.g. For observation. Monitor vital signs every hour.'
-                  }
-                  maxLength={2000}
-                  required
-                />
-                {fieldError('registrationOrder')}
-              </Field>
-              <div style={{ ...s.grid2, marginTop: 12 }}>
-                <Field label="Ordered By">
-                  <input
-                    style={{ ...s.input, ...s.inputReadOnly }}
-                    value={attending ? doctorName(attending) : 'Select the attending physician'}
-                    readOnly
-                    aria-readonly="true"
-                    title="The order is attributed to the attending physician"
-                  />
-                </Field>
-                <Field label="Order Given As" required>
-                  <select
-                    style={s.select}
-                    value={form.registrationOrderChannel}
-                    onChange={(e) => setField('registrationOrderChannel', e.target.value as OrderChannel)}
-                  >
-                    {ORDER_CHANNELS.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-            </Section>
-          )}
         </div>
+
+        {duplicate && (
+          <div style={s.duplicateNotice} role="alert">
+            <span>
+              {duplicate.message}.
+              {!duplicate.admitted &&
+                ' Re-admitting keeps their existing record and adds this stay to it; the details entered here for this stay are used.'}
+            </span>
+            {!duplicate.admitted && (
+              <button
+                type="button"
+                style={{ ...ui.primaryBtn, height: 36, padding: '0 14px', flexShrink: 0 }}
+                onClick={readmitExisting}
+                disabled={saving}
+              >
+                Re-admit existing patient
+              </button>
+            )}
+          </div>
+        )}
 
         <footer style={s.footer}>
           <span style={s.footerHint} role="status" aria-live="polite">

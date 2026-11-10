@@ -107,6 +107,11 @@ export const ACTION_META: Record<AuditLogAction, ActionMeta> = {
     description: 'Updated patient demographics',
     badge: 'in-progress',
   },
+  PATIENT_DISCHARGED: {
+    label: 'Patient discharged',
+    description: 'Discharged a patient or ended an outpatient visit',
+    badge: 'completed',
+  },
   TRANSFER_PATIENT: {
     label: 'Patient transferred',
     description: 'Moved a patient to another room by carrying out a transfer order',

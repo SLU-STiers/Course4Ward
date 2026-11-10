@@ -24,6 +24,7 @@ export type AuditAction =
   | 'PATIENT_CREATED'
   | 'PATIENT_UPDATED'
   | 'REGISTER_PATIENT'
+  | 'PATIENT_DISCHARGED'
   | 'ORDER_CREATED'
   | 'ORDER_STATUS_UPDATED'
   | 'SUMMARY_GENERATED_AI'
@@ -51,6 +52,7 @@ export const ACTION_MAP: Record<AuditAction, ActionType> = {
   PATIENT_CREATED: ActionType.REGISTER_PATIENT,
   PATIENT_UPDATED: ActionType.PATIENT_UPDATED,
   REGISTER_PATIENT: ActionType.REGISTER_PATIENT,
+  PATIENT_DISCHARGED: ActionType.PATIENT_DISCHARGED,
   ORDER_CREATED: ActionType.CREATE_ORDER,
   ORDER_STATUS_UPDATED: ActionType.UPDATE_ORDER_STATUS,
   SUMMARY_GENERATED_AI: ActionType.REQUEST_SUMMARY,
@@ -90,6 +92,7 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   PASSWORD_RESET: 'Password reset',
   REGISTER_PATIENT: 'Patient registered',
   PATIENT_UPDATED: 'Patient record updated',
+  PATIENT_DISCHARGED: 'Patient discharged',
   TRANSFER_PATIENT: 'Patient transferred',
 };
 

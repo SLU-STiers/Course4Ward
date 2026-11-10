@@ -21,6 +21,7 @@ export const AVAILABLE_DOCTORS = [
 ];
 const DEFAULT_TRIAGE: TriageAssessment = {
   level: null,
+  date: '—',
   time: '08:00 AM',
   heartRate: '86 bpm',
   respRate: '18 /min',
@@ -88,10 +89,11 @@ export const INITIAL_CHARTS: Record<string, PatientChart> = {
 };
 /** `15 Apr 2026` -> `2026-04-15`, the sort key `AdmissionRecord` requires. */
 const asAdmissionRecords = (
-  rows: Array<Omit<AdmissionRecord, 'admittedOnRaw'>>,
+  rows: Array<Omit<AdmissionRecord, 'admittedOnRaw' | 'patientId'>>,
 ): AdmissionRecord[] =>
   rows.map((row) => ({
     ...row,
+    patientId: row.id,
     admittedOnRaw: toDateInputValue(new Date(row.admittedOn)),
   }));
 

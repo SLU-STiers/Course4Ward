@@ -1,7 +1,7 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsEnum, IsIn, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { OrderStatus, OrderType } from '@prisma/client';
+import { CommunicationChannel, OrderStatus, OrderType } from '@prisma/client';
 import { normalizeRoom } from '../../patients/dto/patient.dto';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -26,13 +26,23 @@ export class CreateOrderDto {
   @MaxLength(2000)
   orderContent: string;
 
-  // OBSERVATION / ADMISSION / DISCHARGE: one-off decisions the nurse carries
-  // out (observe, admit, discharge); which are allowed depends on the
-  // admission's patient class. DEFAULT: every other (general / progress) order.
-  @ApiPropertyOptional({ enum: OrderType, default: OrderType.DEFAULT })
+  // DISCHARGE: a one-off decision the nurse carries out. TRANSFER: move an
+  // inpatient to `transferRoomNumber` once the nurse finishes it. DEFAULT: every other
+  // (general / progress) order. OBSERVATION / ADMISSION orders are retired:
+  // older ones still show, but no new ones can be written.
+  @ApiPropertyOptional({ enum: [OrderType.DEFAULT, OrderType.DISCHARGE, OrderType.TRANSFER], default: OrderType.DEFAULT })
   @IsOptional()
-  @IsEnum(OrderType)
+  @IsIn([OrderType.DEFAULT, OrderType.DISCHARGE, OrderType.TRANSFER], {
+    message: 'Order type must be a general, discharge or transfer order',
+  })
   type?: OrderType;
+
+  // Nurse orders on a physician's behalf: how the physician gave it. Omit for
+  // a written / signed order. Kept out of `orderContent`, which feeds the AI summary.
+  @ApiPropertyOptional({ enum: CommunicationChannel })
+  @IsOptional()
+  @IsEnum(CommunicationChannel)
+  communicationChannel?: CommunicationChannel;
 
   // TRANSFER only (required there): the free room the patient moves to. The
   // room is reserved until the nurse finishes the order.

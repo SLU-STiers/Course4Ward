@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { OrderStatus, OrderType, Prisma, PrismaClient } from '@prisma/client';
 
 /** Room checks and writes run serializably so two nurses cannot take the same room at once. */
@@ -35,9 +35,15 @@ export function pendingTransferWhere(exceptAdmissionId?: string): Prisma.Physici
 /**
  * Room `number`, if it exists and no other undischarged admission holds it or
  * has it reserved by a pending transfer. `exceptAdmissionId`'s own room and
- * reservation do not count against it.
+ * reservation do not count against it. With `wardIds` (a nurse placing a
+ * patient), the room must also be in one of those wards.
  */
-export async function freeRoom(tx: Prisma.TransactionClient, number: string, exceptAdmissionId?: string) {
+export async function freeRoom(
+  tx: Prisma.TransactionClient,
+  number: string,
+  exceptAdmissionId?: string,
+  wardIds?: Set<string>,
+) {
   const room = await tx.room.findUnique({
     where: { number },
     select: {
@@ -57,6 +63,11 @@ export async function freeRoom(tx: Prisma.TransactionClient, number: string, exc
     },
   });
   if (!room || !room.isActive) throw new NotFoundException(`Room ${number} does not exist`);
+  if (wardIds && (!room.ward || !wardIds.has(room.ward.id))) {
+    throw new ForbiddenException(
+      `Room ${number} is in ${room.ward?.name ?? 'no ward'}, which is not one of your wards`,
+    );
+  }
   if (room.admissions.length) throw new ConflictException(`Room ${number} is occupied`);
   if (room.transferOrders.length) {
     throw new ConflictException(`Room ${number} is reserved for a pending transfer`);
