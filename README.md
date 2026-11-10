@@ -102,7 +102,7 @@ JWT_SECRET=<insert key>
 6. Open Visual Studio Code
 7. Open the file with the project
 8. Open the terminal and type:
-- run: docker compose up --build
+- docker compose up --build
 9. Type the following in the terminal to run the project entirely:
 - docker compose up
 
