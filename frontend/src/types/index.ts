@@ -102,10 +102,7 @@ export interface DuplicatePatientError {
   admitted: boolean;
 }
 
-/**
- * Backend `PatientClass`. EMERGENCY / OUTPATIENT need no order; OBSERVATION
- * and INPATIENT need a physician's observation / admission order.
- */
+/** Backend `PatientClass`: the kind of encounter an admission currently is. */
 export type PatientClass = 'EMERGENCY' | 'OUTPATIENT' | 'OBSERVATION' | 'INPATIENT';
 
 export interface PatientAdmission {
