@@ -18,6 +18,8 @@ import { ReportsService } from './reports.service';
 import { BatchTestService } from './batch-test.service';
 import { ActivityTrendQueryDto, ReportRangeDto } from './dto/report-range.dto';
 import { StartBatchTestDto } from './dto/batch-test.dto';
+import { RunMissedSummaryDto } from './dto/missed-summaries.dto';
+import { CourseInWardService } from '../course-in-ward/course-in-ward.service';
 
 /**
  * Admin reporting. Read-only aggregates over the clinical tables plus the
@@ -32,6 +34,7 @@ export class ReportsController {
   constructor(
     private reportsService: ReportsService,
     private batchTest: BatchTestService,
+    private courseInWard: CourseInWardService,
   ) {}
 
   /** Current distributions + flow counts for the selected window. */
@@ -50,6 +53,19 @@ export class ReportsController {
       from: query.from ? new Date(query.from) : undefined,
       to: query.to ? new Date(query.to) : undefined,
     });
+  }
+
+  /** Past patient-days the nightly batch missed (no summary, finished orders unlinked). */
+  @Get('missed-summaries')
+  missedSummaries() {
+    return this.courseInWard.missedNightlyDays();
+  }
+
+  /** Runs the nightly batch now for a missed day (or one patient of it); waits for the LLM. */
+  @Post('missed-summaries/run')
+  @HttpCode(200)
+  runMissedSummary(@Body() dto: RunMissedSummaryDto) {
+    return this.courseInWard.runBatchSummaries(dto.day, dto.patientId);
   }
 
   /** The batch-test console: current run status and its live output. */

@@ -684,14 +684,16 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
    * still has FINISHED orders that day not linked to a summary. Patients are processed
    * one at a time so the local LLM is never flooded; one failure doesn't stop
    * the rest. Audit entries are attributed to the attending physician.
+   * `patientId` limits the run to one patient (the admin's catch-up button).
    */
-  async runBatchSummaries(day: string = dayKeyOf(new Date())!) {
+  async runBatchSummaries(day: string = dayKeyOf(new Date())!, patientId?: string) {
     const start = dayStart(day);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
 
     const admissions = await this.prisma.patientAdmission.findMany({
       where: {
+        ...(patientId ? { patientId } : {}),
         orders: {
           some: {
             dateCreated: { gte: start, lt: end },
@@ -715,6 +717,76 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     }
     this.logger.log(`[batch] ${day}: summarized ${done}/${patients.size} patient(s)`);
     return { day, patients: patients.size, summarized: done };
+  }
+
+  /**
+   * Patient-days before today that the nightly batch should have drafted but
+   * didn't (server off at `SUMMARY_BATCH_TIME`, AI down, ...): FINISHED orders
+   * not linked to a summary, on a day with no Course in the Ward at all. Days
+   * that already have one are left out: an order finished after the summary
+   * is the physician's to handle (see `notifyFinishedAfterSummary`).
+   */
+  async missedNightlyDays() {
+    const orders = await this.prisma.physicianOrder.findMany({
+      where: {
+        status: OrderStatus.FINISHED,
+        summarizationId: null,
+        dateCreated: { lt: dayStart(dayKeyOf(new Date())!) },
+      },
+      select: {
+        dateCreated: true,
+        admission: {
+          select: {
+            patientId: true,
+            dischargeDate: true,
+            patient: { select: { firstName: true, lastName: true } },
+            physician: { select: { firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+    if (!orders.length) return [];
+
+    const patientIds = [...new Set(orders.map((order) => order.admission.patientId))];
+    const summaries = await this.prisma.courseInWard.findMany({
+      where: { patientId: { in: patientIds } },
+      select: { patientId: true, summaryDate: true },
+    });
+    const summarized = new Set(summaries.map((s) => `${s.patientId}:${dayKeyOf(s.summaryDate)}`));
+
+    const rows = new Map<
+      string,
+      {
+        day: string;
+        patientId: string;
+        patientName: string;
+        physicianName: string | null;
+        discharged: boolean;
+        orders: number;
+      }
+    >();
+    for (const order of orders) {
+      const day = dayKeyOf(order.dateCreated);
+      const key = `${order.admission.patientId}:${day}`;
+      if (!day || summarized.has(key)) continue;
+      const row = rows.get(key);
+      if (row) {
+        row.orders++;
+        continue;
+      }
+      const { patient, physician } = order.admission;
+      rows.set(key, {
+        day,
+        patientId: order.admission.patientId,
+        patientName: fullName(patient),
+        physicianName: physician ? fullName(physician) : null,
+        discharged: order.admission.dischargeDate != null,
+        orders: 1,
+      });
+    }
+    return [...rows.values()].sort(
+      (a, b) => b.day.localeCompare(a.day) || a.patientName.localeCompare(b.patientName),
+    );
   }
 
   /**

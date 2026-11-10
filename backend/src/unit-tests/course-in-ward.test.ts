@@ -942,6 +942,38 @@ describe('CourseInWardService', () => {
     });
   });
 
+  describe('missedNightlyDays', () => {
+    const admission = (patientId: string, firstName: string) => ({
+      patientId,
+      dischargeDate: null,
+      patient: { firstName, lastName: 'Cruz' },
+      physician: { firstName: 'Ana', lastName: 'Reyes' },
+    });
+
+    it('lists past patient-days without a summary, one row per day, newest first', async () => {
+      mockPrismaService.physicianOrder.findMany.mockResolvedValueOnce([
+        { dateCreated: new Date(2026, 10, 8, 9), admission: admission('p1', 'Juan') },
+        { dateCreated: new Date(2026, 10, 8, 15), admission: admission('p1', 'Juan') },
+        { dateCreated: new Date(2026, 10, 9, 10), admission: admission('p1', 'Juan') },
+        { dateCreated: new Date(2026, 10, 7, 10), admission: admission('p2', 'Maria') },
+      ]);
+      // p1 already has a draft on the 9th: an order finished late, not a missed run.
+      mockPrismaService.courseInWard.findMany.mockResolvedValueOnce([
+        { patientId: 'p1', summaryDate: new Date(2026, 10, 9) },
+      ]);
+
+      const rows = await service.missedNightlyDays();
+
+      expect(rows).toEqual([
+        expect.objectContaining({ day: '2026-11-08', patientId: 'p1', orders: 2, physicianName: 'Ana Reyes' }),
+        expect.objectContaining({ day: '2026-11-07', patientId: 'p2', orders: 1, patientName: 'Maria Cruz' }),
+      ]);
+      const where = mockPrismaService.physicianOrder.findMany.mock.calls[0][0].where;
+      expect(where).toMatchObject({ status: 'FINISHED', summarizationId: null });
+      expect(where.dateCreated.lt.getHours()).toBe(0);
+    });
+  });
+
   describe('findOne', () => {
     const mockSummaryId = 'summary-789';
     const mockSummary = {
