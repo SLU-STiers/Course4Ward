@@ -116,6 +116,12 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
         ) : (
           <div style={s.actions}>
             {finishBlocked && <span style={s.error}>{finishBlocked}</span>}
+            {order.type === 'TRANSFER' && status === 'FINISHED' && order.status !== 'FINISHED' && order.transferRoom && (
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#075985' }}>
+                Saving moves the patient to room {order.transferRoom.number}
+                {order.transferRoom.ward ? ` (${order.transferRoom.ward.name})` : ''}.
+              </span>
+            )}
             {dischargeNoteMissing && !finishBlocked && (
               <span style={s.error}>
                 Add a note to mark this discharge done. The patient is discharged when you save.

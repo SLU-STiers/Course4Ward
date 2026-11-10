@@ -389,6 +389,10 @@ export function ManagementPortalView({
                       if (saved.type === 'DISCHARGE' && saved.status === 'FINISHED' && saved.nurseComment) {
                         loadPatients();
                       }
+                      // The patient is in their new room now (maybe outside this nurse's wards).
+                      if (saved.type === 'TRANSFER' && saved.status === 'FINISHED') {
+                        loadPatients();
+                      }
                     }}
                   />
                 ) : (
@@ -435,6 +439,14 @@ export function ManagementPortalView({
             key={detailPatient.admissionId}
             admissionId={detailPatient.admissionId}
             careTeamNames={careTeamNames}
+            attendingName={detailPatient.assignedDoctor}
+            currentRoom={detailPatient.room}
+            canTransfer={
+              detailPatient.patientClass === 'INPATIENT' &&
+              !(ordersByPatient[detailPatient.id] ?? []).some(
+                (set) => set.order?.type === 'DISCHARGE' && set.order.active !== false,
+              )
+            }
             onSaved={(saved) => addOrder(detailPatient.id, saved)}
           />
         </Section>

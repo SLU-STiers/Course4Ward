@@ -5,6 +5,7 @@ import { isAxiosError } from 'axios';
 import { Button } from '../../components/ui';
 import { ordersApi, patientsApi } from '../../services/domainApi';
 import type { PhysicianOrder } from '../../types';
+import { RoomPicker, normalizeRoom, roomProblem, useWardRooms } from './RoomPicker';
 import { addPatient as s } from './styles';
 
 type PhysicianOption = { id: string; firstName: string; lastName: string };
@@ -25,11 +26,20 @@ function apiErrorMessage(error: unknown): string {
 export function OnBehalfOrderForm({
   admissionId,
   careTeamNames,
+  attendingName,
+  currentRoom,
+  canTransfer,
   onSaved,
 }: {
   admissionId: string;
   /** "Dr. First Last" of the attending and consultants; only they can be ordered on behalf of. */
   careTeamNames: string[];
+  /** "Dr. First Last" of the attending: the only physician a transfer order can come from. */
+  attendingName?: string | null;
+  /** The patient's room now, which a transfer cannot target. */
+  currentRoom?: string;
+  /** Admitted (inpatient) and not yet ordered home: a transfer can be entered. */
+  canTransfer: boolean;
   onSaved: (order: PhysicianOrder) => void;
 }) {
   const careTeamKey = careTeamNames.join('\u0000');
@@ -39,6 +49,9 @@ export function OnBehalfOrderForm({
   const [channel, setChannel] = useState<OrderChannel>('SMS');
   const [physicianId, setPhysicianId] = useState('');
   const [orderContent, setOrderContent] = useState('');
+  const [isTransfer, setIsTransfer] = useState(false);
+  const [transferRoom, setTransferRoom] = useState('');
+  const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(isTransfer);
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [sentBy, setSentBy] = useState<string | null>(null);
@@ -73,8 +86,38 @@ export function OnBehalfOrderForm({
     };
   }, [careTeamKey]);
 
+  // A transfer can only come from the attending physician.
+  const choosable = isTransfer
+    ? physicians.filter((physician) => `Dr. ${physician.firstName} ${physician.lastName}` === attendingName)
+    : physicians;
+  const transferProblem = isTransfer
+    ? !choosable.length
+      ? 'Only the attending physician can order a transfer, and none is assigned.'
+      : !transferRoom.trim()
+        ? 'Choose the room to transfer the patient to.'
+        : normalizeRoom(transferRoom) === currentRoom
+          ? 'The patient is already in this room.'
+          : roomProblem(transferRoom, rooms)
+    : null;
+
   const canSubmit =
-    !saving && !loadingPhysicians && !physicianError && Boolean(physicianId) && Boolean(orderContent.trim());
+    !saving &&
+    !loadingPhysicians &&
+    !physicianError &&
+    choosable.some((physician) => physician.id === physicianId) &&
+    Boolean(orderContent.trim()) &&
+    !transferProblem;
+
+  const chooseKind = (transfer: boolean) => {
+    setIsTransfer(transfer);
+    setSubmitError(null);
+    setSentBy(null);
+    if (!transfer) return;
+    const attending = physicians.find(
+      (physician) => `Dr. ${physician.firstName} ${physician.lastName}` === attendingName,
+    );
+    setPhysicianId(attending?.id ?? '');
+  };
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -86,10 +129,16 @@ export function OnBehalfOrderForm({
         admissionId,
         orderedById: physicianId,
         orderContent: `Received via ${channel}.\n${orderContent.trim()}`,
+        ...(isTransfer && { type: 'TRANSFER' as const, transferRoomNumber: normalizeRoom(transferRoom) }),
       });
       const physician = physicians.find((option) => option.id === physicianId);
       setSentBy(physician ? `Dr. ${physician.firstName} ${physician.lastName}` : 'the physician');
       setOrderContent('');
+      if (isTransfer) {
+        setIsTransfer(false);
+        setTransferRoom('');
+        void reloadRooms();
+      }
       onSaved(data);
     } catch (error: unknown) {
       setSubmitError(apiErrorMessage(error));
@@ -118,6 +167,29 @@ export function OnBehalfOrderForm({
         </div>
       </fieldset>
 
+      {canTransfer && (
+        <fieldset style={styles.fieldset}>
+          <legend style={s.label}>Order type</legend>
+          <div style={{ ...s.segmented, gridTemplateColumns: 'repeat(2, 1fr)' }} role="radiogroup">
+            {[
+              { transfer: false, label: 'General' },
+              { transfer: true, label: 'Transfer' },
+            ].map((option) => (
+              <button
+                key={option.label}
+                type="button"
+                role="radio"
+                aria-checked={isTransfer === option.transfer}
+                style={{ ...s.segment, ...(isTransfer === option.transfer ? s.segmentActive : {}) }}
+                onClick={() => chooseKind(option.transfer)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
       <label>
         <span style={s.label}>Ordered By / On Behalf Of</span>
         <select
@@ -127,7 +199,7 @@ export function OnBehalfOrderForm({
           disabled={loadingPhysicians || Boolean(physicianError)}
         >
           <option value="">{loadingPhysicians ? 'Loading physicians...' : 'Select a physician'}</option>
-          {physicians.map((physician) => (
+          {choosable.map((physician) => (
             <option key={physician.id} value={physician.id}>
               Dr. {physician.firstName} {physician.lastName}
             </option>
@@ -138,6 +210,30 @@ export function OnBehalfOrderForm({
         <p role="alert" style={styles.error}>
           {physicianError}
         </p>
+      )}
+
+      {isTransfer && (
+        <div>
+          <span style={s.label}>
+            Transfer to room{currentRoom ? ` (now in room ${currentRoom})` : ''}
+          </span>
+          <RoomPicker
+            value={transferRoom}
+            onChange={(value) => {
+              setTransferRoom(value);
+              setSentBy(null);
+            }}
+            rooms={rooms}
+            failed={roomsFailed}
+            disabled={saving}
+          />
+          {transferProblem && !transferRoom.trim() && (
+            <p style={{ ...styles.hint, marginTop: 4 }}>{transferProblem}</p>
+          )}
+          <p style={{ ...styles.hint, marginTop: 4 }}>
+            The room is reserved when you send the order. Mark the order Finished once the patient has moved.
+          </p>
+        </div>
       )}
 
       <label>
@@ -151,7 +247,7 @@ export function OnBehalfOrderForm({
           }}
           maxLength={2000}
           rows={5}
-          placeholder="Type the physician's order"
+          placeholder={isTransfer ? 'Reason for the transfer, as the physician gave it' : "Type the physician's order"}
         />
       </label>
 
@@ -179,4 +275,5 @@ const styles: Record<string, CSSProperties> = {
   fieldset: { margin: 0, padding: 0, border: 0, minWidth: 0 },
   error: { margin: 0, fontSize: 12, fontWeight: 600, color: '#b91c1c' },
   success: { margin: 0, fontSize: 12, fontWeight: 600, color: '#15803d' },
+  hint: { margin: 0, fontSize: 12, color: '#64748b' },
 };
