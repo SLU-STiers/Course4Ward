@@ -14,7 +14,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 class ChangePasswordDto {
   @IsString()
   @MinLength(8)
-  newPassword: string;
+  newPassword!: string;
 }
 
 const RESET_TOKEN_COOKIE = 'resetToken';
@@ -22,7 +22,7 @@ const RESET_TOKEN_COOKIE_OPTIONS = { httpOnly: true, sameSite: 'lax' as const, p
 
 class LogoutDto {
   @IsIn(LOGOUT_REASONS)
-  reason: LogoutReason;
+  reason!: LogoutReason;
 
   /** Lets an idle sign-out end the session after the access token expired. */
   @IsOptional()
@@ -32,7 +32,7 @@ class LogoutDto {
 
 class RefreshTokenDto {
   @IsString()
-  refreshToken: string;
+  refreshToken!: string;
 }
 
 @ApiTags('auth')

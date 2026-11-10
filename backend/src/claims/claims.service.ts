@@ -73,11 +73,12 @@ export class ClaimsService {
     });
 
     if (!approved) {
+      const processorName = await this.auditLog.userLabel(claimsProcessorId);
       await this.notifications.create({
         userId: physicianId,
         type: NotificationType.REVIEW_REQUESTED,
         title: 'Course in the Ward review requested',
-        message: `A claims processor opened a request for **${patientName}**'s summary (${dayLabel(summary.summaryDate)}). Please review and approve it.`,
+        message: `**${processorName}** (Claims Processor) requested a review of **${patientName}**'s Course in the Ward for ${dayLabel(summary.summaryDate)}.`,
         requestId: claim.id,
       });
     }
@@ -203,9 +204,12 @@ export class ClaimsService {
         ]),
       },
     });
+    const physicianName = await this.auditLog.userLabel(physicianId);
     await this.notifications.notifyUsers([request.processorId], {
+      type: NotificationType.REVIEW_REQUESTED,
       title: 'Course in the Ward summary approved',
-      message: `The physician approved **${patientName}**'s summary for ${dayLabel(summary.summaryDate)}. It is ready for CF4 processing.`,
+      message: `**${physicianName}** approved **${patientName}**'s Course in the Ward for ${dayLabel(summary.summaryDate)}. It is ready for CF4 processing.`,
+      requestId: request.id,
     });
     return { ...updatedRequest, summary };
   }
@@ -236,13 +240,14 @@ export class ClaimsService {
       `${existing.processor.firstName} ${existing.processor.lastName}`.trim();
     const note = message?.trim();
 
+    const day = dayLabel(existing.summary.summaryDate);
     await this.notifications.create({
       userId: existing.physicianId,
       type: NotificationType.REVIEW_REQUESTED,
       title: 'Review requested again',
       message: note
-        ? `${processorName} (Claims Processor) asked you to review ${patientName}'s summary again: "${note}"`
-        : `${processorName} (Claims Processor) asked you to review ${patientName}'s summary again.`,
+        ? `**${processorName}** (Claims Processor) requested another review of **${patientName}**'s Course in the Ward for ${day}: "${note}"`
+        : `**${processorName}** (Claims Processor) requested another review of **${patientName}**'s Course in the Ward for ${day}.`,
       requestId: claimId,
     });
 
@@ -295,6 +300,7 @@ export class ClaimsService {
     await this.notifications.notifyUsers([claim.physicianId], {
       title: 'CF4 generated',
       message: `A PhilHealth CF4 was generated for **${fullName(claim.summary.patient)}**'s summary for ${dayLabel(claim.summary.summaryDate)}.`,
+      requestId: claim.id,
     });
 
     // The actual CF4 document (PDF) would be rendered here from

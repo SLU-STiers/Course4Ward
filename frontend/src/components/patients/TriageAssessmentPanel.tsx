@@ -11,14 +11,25 @@ import { VITAL_FIELDS, triageLevelInfo, type TriageDisplay } from '../../lib/tri
 export function TriageAssessmentPanel({ triage }: { triage: TriageDisplay }) {
   const info = triageLevelInfo(triage.level);
   return (
-    <div>
-      <div style={styles.levelRow}>
-        <span style={styles.label}>Emergency Severity Index (ESI)</span>
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div
+        style={{
+          ...styles.levelCard,
+          backgroundColor: info?.background ?? '#f8fafc',
+          borderColor: info ? `${info.color}33` : '#e2e8f0',
+        }}
+      >
         <TriageBadge level={triage.level} />
-        {info && (
-          <span style={styles.levelHint}>
-            {info.tag} · {info.target}
-          </span>
+        {info ? (
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...styles.levelName, color: info.color }}>{info.name}</div>
+            <div style={styles.levelHint}>
+              {info.tag} · {info.target}
+            </div>
+            <p style={styles.levelDescription}>{info.description}</p>
+          </div>
+        ) : (
+          <p style={styles.levelHint}>No ESI level was recorded for this admission.</p>
         )}
       </div>
 
@@ -40,7 +51,7 @@ export function TriageAssessmentPanel({ triage }: { triage: TriageDisplay }) {
         })}
       </div>
 
-      <div style={{ marginTop: 14 }}>
+      <div>
         <span style={styles.label}>Notes</span>
         <div style={styles.notes}>{triage.notes}</div>
       </div>
@@ -52,17 +63,26 @@ export function TriageAssessmentPanel({ triage }: { triage: TriageDisplay }) {
 
 const styles: Record<string, CSSProperties> = {
   label: { display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6 },
-  levelRow: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 14 },
-  levelHint: { fontSize: 12, color: '#64748b' },
-  vitals: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 },
+  levelCard: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: '12px 14px',
+    border: '1px solid #e2e8f0',
+    borderRadius: 12,
+  },
+  levelName: { fontSize: 15, fontWeight: 800, lineHeight: 1.3 },
+  levelHint: { marginTop: 2, fontSize: 12, fontWeight: 600, color: '#64748b' },
+  levelDescription: { margin: '6px 0 0', fontSize: 13, lineHeight: 1.45, color: '#334155' },
+  vitals: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 10 },
   vital: {
     display: 'block',
     minWidth: 0,
     boxSizing: 'border-box',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
     border: '1px solid #e2e8f0',
     borderRadius: 10,
-    padding: '8px 10px',
+    padding: '10px 12px',
   },
   vitalLabel: {
     display: 'block',
@@ -71,19 +91,12 @@ const styles: Record<string, CSSProperties> = {
     color: '#64748b',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
   },
-  vitalRow: { display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 4, minWidth: 0 },
+  vitalRow: { display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 4, marginTop: 4, minWidth: 0 },
   vitalValue: {
-    flex: 1,
-    minWidth: 0,
     fontSize: 16,
     fontWeight: 700,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
+    lineHeight: 1.3,
   },
   vitalUnit: { fontSize: 11, fontWeight: 600, color: '#94a3b8', whiteSpace: 'nowrap' },
   notes: {

@@ -130,7 +130,7 @@ export function NotificationPanel({
               <NotificationMessage text={item.message} />
             </span>
 
-            {item.patientId ? (
+            {item.requestId || item.patientId ? (
               <ChevronRight className="ui-notification__go" size={16} aria-hidden="true" />
             ) : item.isRead ? null : (
               <span className="ui-notification__dot" aria-hidden="true" />

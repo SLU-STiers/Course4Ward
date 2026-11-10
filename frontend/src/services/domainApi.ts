@@ -16,6 +16,8 @@ import type {
   PhysicianRequest,
   ActivityTrend,
   AiStats,
+  BatchTestState,
+  BatchTestVariant,
   AdminUserInput,
   AuditLogAggregate,
   AuditLogAggregateQuery,
@@ -206,6 +208,12 @@ export const adminApi = {
     api.get<ActivityTrend>('/admin/reports/activity-trend', { params }),
   /** AI summarization / embedding timings and embedding coverage. */
   aiStats: (params?: ReportRangeParams) => api.get<AiStats>('/admin/reports/ai', { params }),
+  /** Summarization batch test: status + live output, start, stop, finished report. */
+  batchTestState: () => api.get<BatchTestState>('/admin/reports/batch-test'),
+  startBatchTest: (data: { variants: BatchTestVariant[]; limit?: number; evalOnly: boolean }) =>
+    api.post<BatchTestState>('/admin/reports/batch-test', data),
+  stopBatchTest: () => api.post<BatchTestState>('/admin/reports/batch-test/stop'),
+  batchTestReport: () => api.get<Blob>('/admin/reports/batch-test/report', { responseType: 'blob' }),
   /** One page of reset requests, filtered and sorted server-side. */
   getResetRequests: (params?: PasswordResetQuery) =>
     api.get<PasswordResetRequestPage>('/admin/password-reset-requests', { params }),

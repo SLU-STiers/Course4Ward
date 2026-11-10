@@ -1,7 +1,8 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { claimsApi } from '../../services/domainApi';
+import { ORDER_POLL_MS, usePolling } from '../../hooks/usePolling';
 import type { PhysicianRequest } from '../../types';
 import { Button, DataTableToolbar, Pagination, StatusBadge } from '../../components/ui';
 import { patientTableStyles } from '../../components/patientList/PatientTable';
@@ -12,20 +13,36 @@ import { REQUESTS_TABLE_STATE } from './listState';
 import { ReviewSummaryModal } from './ReviewSummaryModal';
 import { fullName } from '../../lib/patient';
 
-export function RequestsView() {
+export function RequestsView({
+  focusRequestId,
+  onFocusHandled,
+}: {
+  /** Claim the bell just opened. The review modal opens once that row is loaded. */
+  focusRequestId?: string | null;
+  onFocusHandled?: () => void;
+}) {
   const [items, setItems] = useState<PhysicianRequest[]>([]);
   const [selected, setSelected] = useState<PhysicianRequest | null>(null);
 
-  const loadRequests = () => {
+  const loadRequests = useCallback(() => {
     claimsApi
       .physicianRequests()
       .then(({ data }) => setItems(data))
       .catch(() => setItems([]));
-  };
+  }, []);
 
   useEffect(() => {
     loadRequests();
-  }, []);
+  }, [loadRequests]);
+  usePolling(loadRequests, ORDER_POLL_MS);
+
+  useEffect(() => {
+    if (!focusRequestId) return;
+    const match = items.find((request) => request.id === focusRequestId);
+    if (!match) return;
+    setSelected(match);
+    onFocusHandled?.();
+  }, [focusRequestId, items, onFocusHandled]);
 
   const isPending = (request: PhysicianRequest) =>
     request.status === "PENDING" ||
@@ -80,7 +97,7 @@ export function RequestsView() {
         sortProps={{
           title: "Sort requests by",
           options: [
-            { value: "requestedAt", label: "Submitted date" },
+            { value: "requestedAt", label: "Requested on" },
             { value: "patient", label: "Patient name" },
           ],
           value: table.sort.field,
@@ -95,8 +112,8 @@ export function RequestsView() {
         <thead>
           <tr>
             <th style={requests.th}>Patient</th>
-            <th style={requests.th}>Submitted By</th>
-            <th style={requests.th}>Submitted On</th>
+            <th style={requests.th}>Requested by</th>
+            <th style={requests.th}>Requested on</th>
             <th style={requests.th}>Status</th>
             <th style={{ ...requests.th, textAlign: "right" }}>Action</th>
           </tr>

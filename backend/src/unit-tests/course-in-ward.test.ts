@@ -81,6 +81,7 @@ const mockConfigService = {
 const mockNotificationsService = {
   notifyRole: jest.fn().mockResolvedValue([]),
   notifyUsers: jest.fn().mockResolvedValue([]),
+  create: jest.fn().mockResolvedValue({}),
 };
 
 describe('CourseInWardService', () => {

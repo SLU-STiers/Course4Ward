@@ -687,7 +687,7 @@ export function ManageView({
       <Panel
         id="patients"
         defaultSize="50"
-        minSize="360px"
+        minSize="28"
         style={manage.panelFill}
       >
         <section style={manage.listCard}>
@@ -696,6 +696,7 @@ export function ManageView({
           </div>
 
           <DataTableToolbar
+            className="ui-toolbar--wrap"
             searchProps={{
               value: table.query,
               onChange: table.setQuery,
@@ -821,8 +822,8 @@ export function ManageView({
               </Button>
             ) : null}
           </DataTableToolbar>
-          <div style={manage.tableScroll}>
-            <table style={{ ...patientTableStyles.table, tableLayout: "auto" }}>
+          <div className="ui-scroll" style={manage.tableScroll}>
+            <table style={{ ...patientTableStyles.table, tableLayout: "auto", minWidth: 720 }}>
               <thead>
                 <tr style={patientTableStyles.thRow}>
                   <th style={patientTableStyles.th}>Patient</th>
@@ -977,9 +978,12 @@ export function ManageView({
         </section>
       </Panel>
 
-      <Separator className="ui-split-separator ui-split-separator--column" />
+      <Separator
+        className="ui-split-separator ui-split-separator--column"
+        aria-label="Drag to resize the patient list"
+      />
 
-      <Panel id="chart" defaultSize="50" minSize="340px" style={manage.panelFill}>
+      <Panel id="chart" defaultSize="50" minSize="32" style={manage.panelFill}>
         {!selected ? (
           <section style={manage.orderCard}>
             <p style={manage.listHint}>
@@ -996,14 +1000,14 @@ export function ManageView({
             <Group
               orientation="vertical"
               id="physician-manage-chart"
-              style={{ ...manage.panelGroup, flex: "1 1 auto", height: "auto" }}
+              style={{ ...manage.panelGroup, flex: "1 1 auto", minHeight: 0, overflow: "hidden" }}
             >
               {/* Orders on top, AI summary below — drag the handle between them
                   to trade height between the two. */}
               <Panel
                 id="orders"
-                defaultSize="62"
-                minSize="260px"
+                defaultSize="58"
+                minSize="30"
                 style={manage.panelFill}
               >
                 <SubmittedOrdersTimeline
@@ -1147,13 +1151,16 @@ export function ManageView({
                 />
               </Panel>
 
-              <Separator className="ui-split-separator ui-split-separator--row" />
+              <Separator
+                className="ui-split-separator ui-split-separator--row"
+                aria-label="Drag to resize the orders and the summary"
+              />
 
 
               <Panel
                 id="summary"
-                defaultSize="38"
-                minSize="160px"
+                defaultSize="42"
+                minSize="26"
                 style={manage.panelFill}
               >
                 <AiSummaryCard

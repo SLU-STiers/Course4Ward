@@ -50,6 +50,10 @@ brag-output*/
 }
 # Raw fine-tuning source spreadsheet (derived JSONL files are committed)
 fine_tuning_data/*.xlsx
+# batch_test.py output (each run makes its own)
+fine_tuning_data/batch_results.csv
+fine_tuning_data/batch_report.html
+fine_tuning_data/batch_report.pdf
 
 # Fine-tuned GGUF weights (multi-GB, kept local for now)
 fine-tuned models/

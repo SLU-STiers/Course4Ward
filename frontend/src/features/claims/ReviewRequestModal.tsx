@@ -1,7 +1,10 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { TriageAssessmentPanel } from '../../components/patients/TriageAssessmentPanel';
+import { ORDER_TEXT_STYLE } from '../../components/orders/SubmittedOrdersTimeline';
+import { OrderStatusSummary } from '../../components/orders/OrderStatusSummary';
+import { formatDateMedium } from '../../lib/format';
 
 import type { SummarizationRequest } from './types';
 
@@ -12,11 +15,12 @@ const STATUS_BADGE: Record<SummarizationRequest['status'], CSSProperties> = {
 };
 
 export function ReviewRequestModal({
-  request,
+  requests,
   onClose,
   onRequestRevisions,
 }: {
-  request: SummarizationRequest;
+  /** Every Course in the Ward day of this patient's stay, oldest first. */
+  requests: SummarizationRequest[];
   onClose: () => void;
   /** Receives the message typed in the notify box; it lands on the
    *  physician's notification bell. Rejects when sending fails. */
@@ -26,6 +30,14 @@ export function ReviewRequestModal({
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const message = notificationMessage.trim();
+  const stay = useMemo(
+    () => [...requests].sort((a, b) => new Date(a.summaryDate).getTime() - new Date(b.summaryDate).getTime()),
+    [requests],
+  );
+  const request = stay[0];
+  const pendingCount = stay.filter((day) => day.status === 'Pending Review').length;
+  const rejectedCount = stay.filter((day) => day.status === 'Rejected').length;
+  const stayStatus = pendingCount ? 'Pending Review' : rejectedCount ? 'Rejected' : 'Approved';
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -46,6 +58,8 @@ export function ReviewRequestModal({
       setSending(false);
     }
   };
+
+  if (!request) return null;
 
   const fields = [
     { label: 'Patient ID', value: request.patient.patientId },
@@ -69,8 +83,10 @@ export function ReviewRequestModal({
               Review AI Summarization
             </h2>
             <div style={s.headerMeta}>
-              <span style={{ ...s.badge, ...STATUS_BADGE[request.status] }}>{request.status}</span>
-              <span style={s.requestId}>Request ID: {request.id}</span>
+              <span style={{ ...s.badge, ...STATUS_BADGE[stayStatus] }}>{stayStatus}</span>
+              <span>
+                Admitted {request.patient.admissionDate} · {stay.length} {stay.length === 1 ? 'day' : 'days'}
+              </span>
             </div>
           </div>
           <button type="button" aria-label="Close" style={s.closeBtn} onClick={onClose} disabled={sending}>
@@ -104,17 +120,44 @@ export function ReviewRequestModal({
           </section>
 
           <section>
-            <h4 style={s.sectionLabel}>Physician Reviewed</h4>
-            <div style={s.summaryCard}>
-              <div style={s.summaryHeader}>
-                <span style={s.summaryHeaderTitle}>
-                  <span aria-hidden="true">✦</span> AI Summarized Content
-                </span>
-                <span style={s.summaryMeta}>
-                  Generated: {request.date} at {request.time}
-                </span>
-              </div>
-              <div style={s.summaryContent}>{request.summaryText || 'No summary text.'}</div>
+            <h4 style={s.sectionLabel}>Course in the Ward</h4>
+            <div style={{ display: 'grid', gap: 12 }}>
+              {stay.map((day) => {
+                const seen = new Set<string>();
+                const orders = day.orders.filter((order) => {
+                  if (seen.has(order.id)) return false;
+                  seen.add(order.id);
+                  return true;
+                });
+                return (
+                  <div key={day.id} style={s.summaryCard}>
+                    <div style={s.summaryHeader}>
+                      <span style={s.summaryHeaderTitle}>{formatDateMedium(day.summaryDate)}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={s.summaryMeta}>Dr. {day.doctor}</span>
+                        <span style={{ ...s.badge, ...STATUS_BADGE[day.status] }}>{day.status}</span>
+                      </span>
+                    </div>
+                    <div style={s.summaryContent}>{day.summaryText || 'No summary text for this day.'}</div>
+                    <div style={s.orders}>
+                      <div style={s.ordersLabel}>Physician orders</div>
+                      {orders.length === 0 ? (
+                        <p style={s.ordersEmpty}>No physician orders for this day.</p>
+                      ) : (
+                        orders.map((order) => (
+                          <div key={order.id} style={s.order}>
+                            <div style={s.orderMeta}>
+                              {formatDateMedium(order.dateCreated)} · Dr. {order.doctor}
+                            </div>
+                            <div style={ORDER_TEXT_STYLE}>{order.content}</div>
+                            <OrderStatusSummary order={order} />
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
 
@@ -337,6 +380,28 @@ const s: Record<string, CSSProperties> = {
     whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere',
   },
+  orders: {
+    display: 'grid',
+    gap: 10,
+    padding: '0 16px 16px',
+  },
+  ordersLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    color: '#64748b',
+  },
+  ordersEmpty: { margin: 0, fontSize: 13, color: '#64748b' },
+  order: {
+    display: 'grid',
+    gap: 6,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+  },
+  orderMeta: { fontSize: 12, color: '#64748b' },
   checklist: {
     border: '1px solid #e2e8f0',
     borderRadius: 12,

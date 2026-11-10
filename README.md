@@ -102,7 +102,7 @@ JWT_SECRET=<insert key>
 6. Open Visual Studio Code
 7. Open the file with the project
 8. Open the terminal and type:
-- run: docker compose up --build
+- docker compose up --build
 9. Type the following in the terminal to run the project entirely:
 - docker compose up
 
@@ -169,6 +169,31 @@ The following technologies are used in the development of the Course4Ward Web Ap
 # Development and Deployment
 - GitHub
 - Docker
+
+# **Testing**
+
+Run the backend unit and workflow integration tests from `backend`:
+
+```sh
+npm test -- --runInBand
+```
+
+Run the frontend domain unit and dashboard integration tests from `frontend`:
+
+```sh
+npm test
+```
+
+Run the AI service unit and endpoint integration tests from `ai_service`:
+
+```sh
+python -m unittest discover -s unit-tests
+python -m unittest discover -s integration-tests
+```
+
+The backend tests use mocked persistence and AI dependencies. The AI endpoint
+integration tests call the FastAPI endpoint functions with model dependencies
+stubbed, so neither the database nor Ollama needs to be running.
 
 
 TO BE ADDED:

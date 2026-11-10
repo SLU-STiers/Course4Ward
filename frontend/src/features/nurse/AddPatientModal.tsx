@@ -356,8 +356,7 @@ function registrationProblems(
   else if (!NAME_PATTERN.test(firstName)) {
     add('firstName', 'First name may contain letters, spaces, hyphens, apostrophes, and periods only.');
   }
-  if (!middleName) add('middleName', 'Middle name is required.');
-  else if (!NAME_PATTERN.test(middleName)) {
+  if (middleName && !NAME_PATTERN.test(middleName)) {
     add('middleName', 'Middle name may contain letters, spaces, hyphens, apostrophes, and periods only.');
   }
   if (!lastName) add('lastName', 'Last name is required.');
@@ -580,7 +579,7 @@ export function AddPatientModal({
     try {
       await patientsApi.create({
         firstName,
-        middleName,
+        middleName: middleName || undefined,
         lastName,
         age: Number(form.age),
         gender: form.gender,
@@ -685,15 +684,14 @@ export function AddPatientModal({
                 />
                 {fieldError('firstName')}
               </Field>
-              <Field label="Middle Name" required>
+              <Field label="Middle Name">
                 <input
                   id={fieldId('middleName')}
                   style={s.input}
                   value={form.middleName}
                   onChange={(e) => setField('middleName', sanitizeName(e.target.value))}
-                  placeholder="e.g. Santos"
+                  placeholder="Optional"
                   maxLength={150}
-                  required
                 />
                 {fieldError('middleName')}
               </Field>
