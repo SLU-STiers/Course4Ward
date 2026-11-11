@@ -37,12 +37,26 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
   const finalized = order.status === 'FINISHED' && Boolean(order.nurseComment);
   const dischargeNoteMissing = order.type === 'DISCHARGE' && status === 'FINISHED' && !comment.trim();
   const finishingBlocked = status === 'FINISHED' && Boolean(finishBlocked);
+  const trimmedComment = comment.trimEnd();
+  const quickCompleteNote = /(?:^|\n)Completed\s*$/i.test(comment)
+    ? comment
+    : [trimmedComment, 'Completed'].filter(Boolean).join('\n');
+  const quickCompleteDisabled =
+    Boolean(finishBlocked) ||
+    quickCompleteNote.length > 1000 ||
+    (status === 'FINISHED' && quickCompleteNote === comment);
   const savedIndex = ORDER_STATUS_OPTIONS.findIndex((option) => option.value === order.status);
   const dirty = status !== order.status || comment !== (order.nurseComment ?? '');
 
   const reset = () => {
     setStatus(order.status);
     setComment(order.nurseComment ?? '');
+    setError(null);
+  };
+
+  const quickComplete = () => {
+    setStatus('FINISHED');
+    setComment(quickCompleteNote);
     setError(null);
   };
 
@@ -128,6 +142,15 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
               </span>
             )}
             {error && <span style={s.error}>{error}</span>}
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={quickComplete}
+              disabled={saving || quickCompleteDisabled}
+              title='Sets the status to Finished and adds "Completed" to the note. Review and Save to submit.'
+            >
+              Quick complete
+            </Button>
             <Button size="sm" variant="ghost" onClick={reset} disabled={saving || !dirty}>
               Reset
             </Button>
