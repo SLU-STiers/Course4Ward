@@ -89,7 +89,7 @@ export function BatchTestConsole() {
         <h4 style={styles.reportCardTitle}>Summarization batch test</h4>
         <span style={styles.reportCardHint}>
           Sends real physician orders through the AI service and checks every summary. About 20–50 s
-          per order group; all 88 groups take 30–60 minutes.
+          per order group; all 109 groups take 40–75 minutes.
         </span>
       </div>
 
