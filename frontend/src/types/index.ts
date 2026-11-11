@@ -500,7 +500,7 @@ export interface MissedSummaryDay {
   orders: number;
 }
 
-export type BatchTestVariant = 'standard' | 'fine_tuned';
+export type BatchTestVariant = 'standard' | 'standard_no_rag' | 'fine_tuned' | 'fine_tuned_rag';
 
 /** `GET /admin/reports/batch-test`: the admin batch-test console. */
 export interface BatchTestState {
@@ -514,6 +514,36 @@ export interface BatchTestState {
   exitCode: number | null;
   log: string[];
   reportAvailable: boolean;
+  /** The last finished run's statistics (`batch_results.json`), or null. */
+  stats: BatchTestStats | null;
+}
+
+/** min/avg/max of one measure across a variant's summaries. */
+export interface BatchTestRange {
+  avg: number;
+  min: number;
+  max: number;
+}
+
+export interface BatchTestVariantStats {
+  calls: number;
+  pass: number;
+  warn: number;
+  fail: number;
+  /** Seconds per summary, over successful calls. */
+  time: { avg: number; median: number; p95: number; max: number } | null;
+  /** Keyed by measure: words, sentences, number_coverage, rouge1/2/L, rag_refs, rag_similarity. */
+  metrics: Partial<Record<string, BatchTestRange>>;
+  /** [check, summaries] pairs, most frequent first. */
+  fail_reasons: [string, number][];
+  warn_reasons: [string, number][];
+}
+
+export interface BatchTestStats {
+  generatedAt: string;
+  /** Test setup, label → value, as printed in the report. */
+  meta: Record<string, string | number>;
+  variants: Partial<Record<BatchTestVariant, BatchTestVariantStats>>;
 }
 
 export interface ActivityTrendPoint {

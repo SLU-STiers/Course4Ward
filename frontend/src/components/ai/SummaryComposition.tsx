@@ -3,7 +3,7 @@
  * the timeline of the orders it was composed from: when, who ordered, who
  * carried it out, and which of its keywords made it into the summary.
  */
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { formatDateMedium, formatTimeMedium } from '../../lib/format';
 import { orderTypeLabel } from '../orders/orderType';
 import { splitOnTerms, termsInSummary, type SummarySourceOrder } from './summaryKeywords';
@@ -72,6 +72,20 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 700,
   },
   missing: { marginTop: '6px', fontSize: '11px', fontWeight: 600, color: '#92400e' },
+  filterRow: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px', marginTop: '8px' },
+  filterLabel: { fontSize: '11px', fontWeight: 700, color: '#64748b', marginRight: '2px' },
+  filterChip: {
+    fontSize: '11px',
+    fontWeight: 700,
+    padding: '2px 8px',
+    borderRadius: '999px',
+    border: '1px solid #ddd6fe',
+    backgroundColor: '#ffffff',
+    color: '#5b21b6',
+    cursor: 'pointer',
+  },
+  filterChipActive: { backgroundColor: '#6d28d9', borderColor: '#6d28d9', color: '#ffffff' },
+  filterCount: { opacity: 0.75, fontWeight: 600 },
 };
 
 const name = (person?: { firstName: string; lastName: string } | null) =>
@@ -93,30 +107,73 @@ export function HighlightedSummary({ text, orders }: { text: string; orders: Sum
   );
 }
 
+/** Filter value for orders with no ordering doctor recorded. */
+const UNKNOWN_DOCTOR = '__unknown__';
+
 export function CompositionPanel({ text, orders }: { text: string; orders: SummarySourceOrder[] }) {
+  // The panel stays mounted while the physician switches versions, so the
+  // chosen doctor carries over to every version.
+  const [doctor, setDoctor] = useState<string | null>(null);
+
+  const doctorCounts = new Map<string, number>();
+  for (const order of orders) {
+    const key = name(order.orderedBy) ?? UNKNOWN_DOCTOR;
+    doctorCounts.set(key, (doctorCounts.get(key) ?? 0) + 1);
+  }
+  const doctors = [...doctorCounts.keys()].sort((a, b) =>
+    a === UNKNOWN_DOCTOR ? 1 : b === UNKNOWN_DOCTOR ? -1 : a.localeCompare(b),
+  );
+  // A doctor who no longer has orders here (list reloaded) falls back to "All".
+  const activeDoctor = doctor && doctorCounts.has(doctor) ? doctor : null;
+
   if (orders.length === 0)
-    return <p style={styles.empty}>No finished orders yet, so there is no composition to show.</p>;
+    return <p style={styles.empty}>No accomplished orders yet, so there is no composition to show.</p>;
   const rows = [...orders]
     .sort((a, b) => (a.dateCreated ?? '').localeCompare(b.dateCreated ?? ''))
     .map((order) => ({ order, terms: termsInSummary(order.orderContent, text) }));
   const reflected = rows.filter((row) => row.terms.length > 0).length;
+  const shown = activeDoctor
+    ? rows.filter(({ order }) => (name(order.orderedBy) ?? UNKNOWN_DOCTOR) === activeDoctor)
+    : rows;
+
+  const filterChip = (key: string | null, label: string, count: number) => {
+    const active = activeDoctor === key;
+    return (
+      <button
+        key={key ?? 'all'}
+        type="button"
+        aria-pressed={active}
+        onClick={() => setDoctor(key)}
+        style={{ ...styles.filterChip, ...(active ? styles.filterChipActive : {}) }}
+      >
+        {label} <span style={styles.filterCount}>{count}</span>
+      </button>
+    );
+  };
 
   return (
     <div style={styles.panel}>
       <div style={styles.head}>
-        {orders.length} finished order{orders.length === 1 ? '' : 's'}
+        {orders.length} accomplished order{orders.length === 1 ? '' : 's'}
         <span style={{ ...styles.pill, ...(reflected === rows.length ? styles.pillAll : styles.pillSome) }}>
           {reflected} of {rows.length} reflected
         </span>
       </div>
+      <div style={styles.filterRow} role="group" aria-label="Filter orders by ordering doctor">
+        <span style={styles.filterLabel}>Ordered by:</span>
+        {filterChip(null, 'All doctors', orders.length)}
+        {doctors.map((key) =>
+          filterChip(key, key === UNKNOWN_DOCTOR ? 'Unknown' : `Dr. ${key}`, doctorCounts.get(key) ?? 0),
+        )}
+      </div>
       <ol style={styles.timeline} aria-label="Orders this summary was composed from">
-        {rows.map(({ order, terms }, index) => {
+        {shown.map(({ order, terms }, index) => {
           const used = terms.length > 0;
           const orderedBy = name(order.orderedBy);
           const doneBy = name(order.executedBy);
           return (
             <li key={order.id} style={styles.item}>
-              {index < rows.length - 1 && <span style={styles.rail} aria-hidden="true" />}
+              {index < shown.length - 1 && <span style={styles.rail} aria-hidden="true" />}
               <span
                 style={{ ...styles.dot, border: `2px solid ${used ? TEAL : AMBER}` }}
                 aria-hidden="true"

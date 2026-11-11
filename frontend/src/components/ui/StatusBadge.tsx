@@ -32,7 +32,7 @@ interface StatusConfig {
 }
 
 const STATUS_CONFIG: Record<StatusValue, StatusConfig> = {
-  completed: { tone: 'success', label: 'Completed' },
+  completed: { tone: 'success', label: 'Accomplished' },
   approved: { tone: 'success', label: 'Approved' },
   success: { tone: 'success', label: 'Success' },
   active: { tone: 'success', label: 'Active' },

@@ -12,8 +12,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/domainApi';
 import { apiErrorMessage } from '../../lib/apiError';
 import { Button } from '../../components/ui';
+import { Kpi } from './charts';
 import { styles } from './styles';
-import type { BatchTestState, BatchTestVariant } from '../../types';
+import type { BatchTestState, BatchTestStats, BatchTestVariant } from '../../types';
 
 const QUERY_KEY = ['admin-batch-test'];
 
@@ -101,14 +102,14 @@ export function BatchTestConsole() {
           <div style={consoleStyles.options}>
             <fieldset style={consoleStyles.fieldset} disabled={running}>
               <legend style={consoleStyles.legend}>Model</legend>
-              {(['standard', 'fine_tuned'] as const).map((variant) => (
+              {(Object.keys(VARIANT_OPTIONS) as BatchTestVariant[]).map((variant) => (
                 <label key={variant} style={consoleStyles.check}>
                   <input
                     type="checkbox"
                     checked={variants.includes(variant)}
                     onChange={() => toggleVariant(variant)}
                   />
-                  {variant === 'standard' ? 'Base (with RAG)' : 'Fine-tuned'}
+                  {VARIANT_OPTIONS[variant]}
                 </label>
               ))}
             </fieldset>
@@ -171,9 +172,93 @@ export function BatchTestConsole() {
           <pre ref={logRef} style={consoleStyles.terminal} aria-label="Batch test output" tabIndex={0}>
             {data?.log.length ? data.log.join('\n') : 'Output appears here when a batch test runs.'}
           </pre>
+
+          {data?.stats ? <BatchTestStatsPanel stats={data.stats} /> : null}
         </>
       )}
     </article>
+  );
+}
+
+const VARIANT_LABELS: Record<BatchTestVariant, string> = {
+  standard: 'Base model (with RAG)',
+  standard_no_rag: 'Base model (no RAG)',
+  fine_tuned: 'Fine-tuned model',
+  fine_tuned_rag: 'Fine-tuned model (with RAG)',
+};
+
+/** Checkbox labels, in display order. */
+const VARIANT_OPTIONS: Record<BatchTestVariant, string> = {
+  standard: 'Base (with RAG)',
+  standard_no_rag: 'Base (no RAG)',
+  fine_tuned: 'Fine-tuned',
+  fine_tuned_rag: 'Fine-tuned + RAG',
+};
+
+/** `0.5`, `12`, `—`: a few decimals at most, no trailing zeros. */
+const num = (value: number | undefined, digits = 2) =>
+  value === undefined ? '—' : String(Number(value.toFixed(digits)));
+
+/** The last finished run's statistics, one tile row per model. */
+function BatchTestStatsPanel({ stats }: { stats: BatchTestStats }) {
+  const variants = (Object.keys(stats.variants) as BatchTestVariant[]).filter((v) => stats.variants[v]);
+  const setup = ['Order groups', 'RAG references']
+    .filter((key) => stats.meta[key] !== undefined)
+    .map((key) => ` · ${key}: ${stats.meta[key]}`)
+    .join('');
+  return (
+    <section aria-label="Last batch test statistics" style={consoleStyles.stats}>
+      <span style={styles.reportCardHint}>
+        Last finished run · {new Date(stats.generatedAt).toLocaleString()}
+        {setup}
+      </span>
+      {variants.map((variant) => {
+        const s = stats.variants[variant]!;
+        const m = s.metrics;
+        const problems = [
+          ...s.fail_reasons.map(([check, count]) => `FAIL ${check} ×${count}`),
+          ...s.warn_reasons.map(([check, count]) => `WARN ${check} ×${count}`),
+        ];
+        return (
+          <div key={variant} style={consoleStyles.variant}>
+            <h5 style={consoleStyles.variantTitle}>{VARIANT_LABELS[variant] ?? variant}</h5>
+            <div className="admin-kpi-grid" style={styles.kpiGrid}>
+              <Kpi
+                label="Pass rate"
+                value={s.calls ? `${Math.round((100 * s.pass) / s.calls)}%` : '—'}
+                hint={`${s.calls} summaries · ${s.fail} failed · ${s.warn} warned`}
+              />
+              <Kpi
+                label="Typical time"
+                value={s.time ? `${num(s.time.median, 1)} s` : '—'}
+                hint={s.time ? `p95 ${num(s.time.p95, 1)} s · max ${num(s.time.max, 1)} s` : 'no successful calls'}
+              />
+              <Kpi label="Number coverage" value={num(m.number_coverage?.avg)} hint="of the orders' numbers kept" />
+              <Kpi
+                label="ROUGE-1 / 2 / L"
+                value={[m.rouge1, m.rouge2, m.rougeL].map((r) => num(r?.avg)).join(' / ')}
+                hint="average F1 vs approved summary"
+              />
+              <Kpi
+                label="Length"
+                value={`${num(m.words?.avg, 0)} words`}
+                hint={`${num(m.sentences?.avg, 1)} sentences on average`}
+              />
+              <Kpi
+                label="RAG"
+                value={m.rag_refs ? `${num(m.rag_refs.avg, 1)} refs` : 'none'}
+                hint={
+                  m.rag_similarity
+                    ? `top similarity ${num(m.rag_similarity.avg)} (${num(m.rag_similarity.min)}–${num(m.rag_similarity.max)})`
+                    : 'no references sent'
+                }
+              />
+            </div>
+            <p style={styles.reportEmpty}>{problems.length ? problems.join(' · ') : 'No problems found.'}</p>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 
@@ -222,6 +307,14 @@ const consoleStyles = {
     color: 'var(--c4w-color-text-secondary, #475569)',
   },
   field: { display: 'flex', flexDirection: 'column' },
+  stats: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  variant: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  variantTitle: {
+    margin: 0,
+    fontSize: '12px',
+    fontWeight: 700,
+    color: 'var(--c4w-color-text-primary, #0f172a)',
+  },
   actions: { display: 'flex', gap: '8px', marginLeft: 'auto' },
   // Stays dark in both themes so it reads as a terminal.
   terminal: {
