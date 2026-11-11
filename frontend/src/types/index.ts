@@ -489,7 +489,7 @@ export interface MissedSummaryDay {
   orders: number;
 }
 
-export type BatchTestVariant = 'standard' | 'fine_tuned' | 'fine_tuned_rag';
+export type BatchTestVariant = 'standard' | 'standard_no_rag' | 'fine_tuned' | 'fine_tuned_rag';
 
 /** `GET /admin/reports/batch-test`: the admin batch-test console. */
 export interface BatchTestState {

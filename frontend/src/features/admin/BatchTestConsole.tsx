@@ -182,6 +182,7 @@ export function BatchTestConsole() {
 
 const VARIANT_LABELS: Record<BatchTestVariant, string> = {
   standard: 'Base model (with RAG)',
+  standard_no_rag: 'Base model (no RAG)',
   fine_tuned: 'Fine-tuned model',
   fine_tuned_rag: 'Fine-tuned model (with RAG)',
 };
@@ -189,6 +190,7 @@ const VARIANT_LABELS: Record<BatchTestVariant, string> = {
 /** Checkbox labels, in display order. */
 const VARIANT_OPTIONS: Record<BatchTestVariant, string> = {
   standard: 'Base (with RAG)',
+  standard_no_rag: 'Base (no RAG)',
   fine_tuned: 'Fine-tuned',
   fine_tuned_rag: 'Fine-tuned + RAG',
 };
@@ -248,9 +250,7 @@ function BatchTestStatsPanel({ stats }: { stats: BatchTestStats }) {
                 hint={
                   m.rag_similarity
                     ? `top similarity ${num(m.rag_similarity.avg)} (${num(m.rag_similarity.min)}–${num(m.rag_similarity.max)})`
-                    : variant === 'fine_tuned'
-                      ? 'the fine-tuned model gets no references'
-                      : 'no references sent'
+                    : 'no references sent'
                 }
               />
             </div>

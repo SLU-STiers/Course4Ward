@@ -5,8 +5,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
-/** `fine_tuned_rag`: the fine-tuned model given RAG references (test-only; production sends it none). */
-export const BATCH_TEST_VARIANTS = ['standard', 'fine_tuned', 'fine_tuned_rag'] as const;
+/** Test-only: `standard_no_rag` = base model without references, `fine_tuned_rag` = fine-tuned with them. */
+export const BATCH_TEST_VARIANTS = ['standard', 'standard_no_rag', 'fine_tuned', 'fine_tuned_rag'] as const;
 export type BatchTestVariant = (typeof BATCH_TEST_VARIANTS)[number];
 
 export interface BatchTestOptions {
