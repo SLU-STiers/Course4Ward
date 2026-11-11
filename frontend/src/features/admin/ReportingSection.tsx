@@ -24,7 +24,7 @@ import {
 import { adminApi } from '../../services/domainApi';
 import { Button, EmptyState, LoadingState, StatusBadge } from '../../components/ui';
 import { actionMeta, roleLabel } from './activityLabels';
-import { BarList, ColumnChart, DonutChart, FunnelChart, StatRows, TrendChart } from './charts';
+import { BarList, ColumnChart, DonutChart, FunnelChart, Kpi, StatRows, TrendChart } from './charts';
 import { segmentColor } from './chartTheme';
 import { BatchTestConsole } from './BatchTestConsole';
 import { styles } from './styles';
@@ -1080,18 +1080,6 @@ function BreakdownTable({
         ))}
       </tbody>
     </table>
-  );
-}
-
-function Kpi({ label, value, hint }: { label: string; value: number | string; hint: string }) {
-  return (
-    <div style={styles.kpiTile}>
-      <span style={styles.kpiLabel} title={label}>
-        {label}
-      </span>
-      <span style={styles.kpiValue}>{value}</span>
-      <span style={styles.kpiHint}>{hint}</span>
-    </div>
   );
 }
 
