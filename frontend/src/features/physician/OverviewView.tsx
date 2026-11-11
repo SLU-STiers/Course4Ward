@@ -11,9 +11,11 @@ import { CalendarWidget } from './CalendarWidget';
 import { BedIcon, HeartIcon, WheelchairIcon } from './icons';
 import { OVERVIEW_FILTER_STATE, OVERVIEW_PAGE_STATE } from './listState';
 import { mapPatient } from './patient';
-import { triageQueueKey } from '../../lib/triage';
 import { TodoListWidget } from './TodoListWidget';
 import type { DashboardPatient, OverviewFilter } from './types';
+
+const admittedAtMs = (patient: DashboardPatient) =>
+  patient.admittedAt ? new Date(patient.admittedAt).getTime() : 0;
 
 export function OverviewView({
   onOpenPatient,
@@ -22,9 +24,9 @@ export function OverviewView({
   onOpenPatient?: (patient: DashboardPatient) => void;
 }) {
   // The status filter and page are remembered: switching tabs and coming back
-  // returns to the same list instead of the default "all" view.
+  // returns to the same list instead of the default admitted view.
   const [page, setPage] = useSessionState(OVERVIEW_PAGE_STATE, 0);
-  const [filter, setFilter] = useSessionState<OverviewFilter>(OVERVIEW_FILTER_STATE, "all");
+  const [filter, setFilter] = useSessionState<OverviewFilter>(OVERVIEW_FILTER_STATE, "admitted");
   const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const pageSize = 8;
 
@@ -45,19 +47,16 @@ export function OverviewView({
   const dischargedCount = patients.filter(
     (p) => p.status === "discharged",
   ).length;
-  // Active patients first, most urgent then longest waiting; discharged
-  // patients after them in their existing (most recently updated) order.
+  // Newest admissions first. When showing everyone, admitted still ranks above discharged.
   const filteredPatients = (
     filter === "all" ? patients : patients.filter((p) => p.status === filter)
   )
     .slice()
     .sort((a, b) => {
-      if (a.status !== b.status) return a.status === "admitted" ? -1 : 1;
-      if (a.status === "discharged") return 0;
-      return (
-        triageQueueKey(b.triageLevel, b.admittedAt) -
-        triageQueueKey(a.triageLevel, a.admittedAt)
-      );
+      if (filter === "all" && a.status !== b.status) {
+        return a.status === "admitted" ? -1 : 1;
+      }
+      return admittedAtMs(b) - admittedAtMs(a);
     });
 
   const pageCount = Math.max(1, Math.ceil(filteredPatients.length / pageSize));
