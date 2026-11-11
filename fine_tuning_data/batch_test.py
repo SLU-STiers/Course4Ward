@@ -7,6 +7,7 @@ reference in summaries.json, and writes a CSV.
 
   python fine_tuning_data/batch_test.py                          # all 88 groups, base model
   python fine_tuning_data/batch_test.py --variant standard fine_tuned fine_tuned_rag --eval-only
+  python fine_tuning_data/batch_test.py --variant standard_no_rag standard --report   # RAG effect
   python fine_tuning_data/batch_test.py --limit 10 --runs 3      # consistency: same group 3x
   python fine_tuning_data/batch_test.py --report                 # + batch_report.html / .pdf
   python fine_tuning_data/batch_test.py --report-from fine_tuning_data/batch_results.csv
@@ -33,12 +34,18 @@ against the reference.
 
 RAG: like the backend, the standard variant gets up to 3 approved summaries of
 similar orders as references (the fine-tuned one gets none, as in production;
-fine_tuned_rag is the fine-tuned model given the same references, test-only). The corpus is
+fine_tuned_rag is the fine-tuned model given the same references, test-only;
+standard_no_rag is the base model without them). The corpus is
 summaries.json: every order of every group is embedded once through the
 service's /embed, and a group may only retrieve what production could have
 had approved by then: other admissions, or earlier days of its own. --no-rag
-sends none, to measure what RAG adds. Besides the CSV, a <out>.json with the
-per-variant statistics is written for the admin dashboard.
+sends none at all. Retrieval runs for every group either way, so the report's
+RAG analysis can show: the similarity of every retrieved reference, embedding
+time, the effect of RAG (each with/without pair in the run, compared group by
+group) and a copy check (wording and terms the summary shares with the
+references but not with its orders; the no-RAG variants are the baseline).
+Besides the CSV, a <out>.json with the per-variant statistics is written for
+the admin dashboard.
 """
 import argparse
 import csv
@@ -124,8 +131,13 @@ def request_body(group, variant, temperature, references=()):
 
 
 # Test variant -> the ai_service variant it calls; RAG_VARIANTS also get references.
-SERVICE_VARIANT = {"standard": "standard", "fine_tuned": "fine_tuned", "fine_tuned_rag": "fine_tuned"}
+SERVICE_VARIANT = {"standard": "standard", "standard_no_rag": "standard",
+                   "fine_tuned": "fine_tuned", "fine_tuned_rag": "fine_tuned"}
 RAG_VARIANTS = {"standard", "fine_tuned_rag"}
+# (without RAG, with RAG): the report compares each pair present in a run.
+RAG_PAIRS = [("standard_no_rag", "standard"), ("fine_tuned", "fine_tuned_rag")]
+# A word in at least this share of approved summaries is house style ("administered"), not clinical content.
+STYLE_SHARE = 0.10
 RAG_LIMIT = 3          # summaries per request, as CourseInWardService.retrieveReferences
 RAG_ORDERS = 3         # best-matching source orders kept per summary
 EMBED_CHUNK = 64       # texts per /embed call
@@ -158,6 +170,32 @@ def retrieve(index, group, query, limit=RAG_LIMIT):
         if len(entry["orders"]) < RAG_ORDERS:
             entry["orders"].append(text)
     return sorted(best.values(), key=lambda e: -e["sim"])[:limit]
+
+
+def rouge2_precision(generated, reference):
+    """Share of the generated text's word pairs that also occur in `reference` (0..1)."""
+    a, b = WORD.findall((generated or "").lower()), WORD.findall((reference or "").lower())
+    if len(a) < 2 or len(b) < 2:
+        return None
+    pairs_a, pairs_b = Counter(zip(a, a[1:])), Counter(zip(b, b[1:]))
+    return round(sum((pairs_a & pairs_b).values()) / (len(a) - 1), 2)
+
+
+def style_vocabulary(references, share=STYLE_SHARE):
+    """Words common to many approved summaries: wording the references are meant to teach."""
+    counts = Counter(w for text in references.values() for w in set(WORD.findall(text.lower())))
+    return {w for w, c in counts.items() if c >= share * len(references)}
+
+
+def copied_terms(summary, orders_text, reference_texts, style):
+    """Summary words that a reference has but the orders don't (and that aren't house style).
+
+    ponytail: word-level, so a correct expansion the orders abbreviate ("creatinine"
+    for "Crea") counts too; the no-RAG baseline on the same references nets that out.
+    """
+    own = set(WORD.findall(orders_text.lower())) | style
+    in_refs = {w for text in reference_texts for w in WORD.findall(text.lower())}
+    return sorted({w for w in WORD.findall((summary or "").lower()) if w in in_refs and w not in own})
 
 
 def post_json(url, body, timeout):
@@ -281,7 +319,7 @@ def main():
     ap.add_argument("--limit", type=int, help="first N groups")
     ap.add_argument("--runs", type=int, default=1, help="repeat each group N times")
     ap.add_argument("--temperature", type=float, default=0.1)
-    ap.add_argument("--no-rag", action="store_true", help="send the standard variant no RAG references")
+    ap.add_argument("--no-rag", action="store_true", help="no retrieval at all: no variant gets references")
     ap.add_argument("--timeout", type=int, default=600, help="seconds per request")
     ap.add_argument("--out", default=str(HERE / "batch_results.csv"))
     ap.add_argument("--report", nargs="?", const=str(HERE / "batch_report.html"), metavar="HTML",
@@ -327,20 +365,39 @@ def main():
         print(f"ai_service not reachable at {base}/health: {exc}")
         return 1
 
-    # RAG corpus + queries, embedded once up front (the fine-tuned model gets no references).
-    rag = bool(RAG_VARIANTS & set(args.variant)) and not args.no_rag
-    index, queries = [], {}
+    # RAG corpus embedded once up front. Retrieval runs for every group, also for
+    # variants that are sent no references: the copy check needs them as a baseline.
+    rag = not args.no_rag
+    hits_by_group, embed_meta, rag_off = {}, {}, "none (--no-rag)" if args.no_rag else "none"
+    index = []
     if rag:
         corpus = [(g, text) for g in all_groups if g["group_id"] in references for text in g["orders"]]
         print(f"Embedding {len(corpus)} reference orders + {len(groups)} queries for RAG...")
         try:
-            vectors = embed(base, [text for _, text in corpus]
-                            + ["\n".join(g["orders"]) for g in groups], args.timeout)
+            started = time.time()
+            vectors = embed(base, [text for _, text in corpus], args.timeout)
+            corpus_s = time.time() - started
             index = [(g, text, v) for (g, text), v in zip(corpus, vectors)]
-            queries = {g["group_id"]: v for g, v in zip(groups, vectors[len(corpus):])}
+            # One query per call, as the backend embeds one per summary: this is the real per-summary cost.
+            query_s = []
+            for g in groups:
+                started = time.time()
+                query = embed(base, ["\n".join(g["orders"])], args.timeout)[0]
+                query_s.append(time.time() - started)
+                hits_by_group[g["group_id"]] = retrieve(index, g, query)
+            embed_meta = {
+                "Embedding time (reference corpus)":
+                    f"{corpus_s:.1f} s for {len(corpus)} orders, batched "
+                    f"({1000 * corpus_s / max(1, len(corpus)):.0f} ms per order)",
+                "Embedding time (query, per summary)":
+                    f"avg {1000 * statistics.mean(query_s):.0f} ms, median {1000 * statistics.median(query_s):.0f} ms, "
+                    f"max {1000 * max(query_s):.0f} ms over {len(query_s)} queries",
+            }
         except Exception as exc:  # the backend also summarizes without references when retrieval fails
-            print(f"RAG disabled, /embed failed: {type(exc).__name__}: {exc}")
-            rag = False
+            rag_off = f"none: /embed failed ({type(exc).__name__}: {str(exc)[:200]})"
+            print(f"RAG disabled, {rag_off}")
+            rag, hits_by_group = False, {}
+    style = style_vocabulary(references)
 
     total = len(groups) * len(args.variant) * args.runs
     print(f"Testing {len(groups)} group(s) x {len(args.variant)} variant(s) x {args.runs} run(s) = {total} calls\n")
@@ -349,10 +406,10 @@ def main():
     for variant in args.variant:
         for group in groups:
             orders_text = "\n".join(group["orders"])
-            hits = retrieve(index, group, queries[group["group_id"]]) \
-                if rag and variant in RAG_VARIANTS else []
+            hits = hits_by_group.get(group["group_id"], [])
+            hit_texts = [references[h["group_id"]] for h in hits]
             refs = [{"approvedSummary": references[h["group_id"]], "sourceOrders": h["orders"],
-                     "similarity": round(h["sim"], 4)} for h in hits]
+                     "similarity": round(h["sim"], 4)} for h in hits] if variant in RAG_VARIANTS else []
             for run in range(1, args.runs + 1):
                 n += 1
                 started = time.time()
@@ -391,7 +448,15 @@ def main():
                     # None (not 0) when this variant never gets references, so averages leave it out.
                     "rag_refs": len(refs) if rag and variant in RAG_VARIANTS else None,
                     "rag_similarity": refs[0]["similarity"] if refs else None,
+                    "rag_mean_similarity": round(statistics.mean(r["similarity"] for r in refs), 4)
+                    if refs else None,
+                    # What retrieval found for this group, whether or not this variant was sent it.
+                    "rag_similarities": " ".join(f"{h['sim']:.4f}" for h in hits),
                     "rag_from": " ".join(h["group_id"] for h in hits),
+                    "ref_overlap": max(filter(None, (rouge2_precision(summary, t) for t in hit_texts)),
+                                       default=None) if hit_texts and summary else None,
+                    "copied_terms": " ".join(copied_terms(summary, orders_text, hit_texts, style))
+                    if hit_texts and summary else "",
                     "fails": " | ".join(fails), "warns": " | ".join(warns),
                     "summary": summary or "",
                 })
@@ -403,8 +468,9 @@ def main():
 
     print_report(rows, args.variant)
     print(f"\nWrote {args.out}")
-    models = {"standard": health.get("model"), "fine_tuned": health.get("fine_tuned_model"),
-              "fine_tuned_rag": health.get("fine_tuned_model")}
+    models = {"standard": health.get("model"), "standard_no_rag": health.get("model"),
+              "fine_tuned": health.get("fine_tuned_model"), "fine_tuned_rag": health.get("fine_tuned_model")}
+    sent_to = [VARIANT_LABELS[v] for v in args.variant if v in RAG_VARIANTS]
     meta = {
         "AI service": base,
         "Models": ", ".join(f"{VARIANT_LABELS[v]}: {models.get(v) or '?'}" for v in args.variant),
@@ -412,7 +478,10 @@ def main():
         "Runs per group": args.runs,
         "Temperature": args.temperature,
         "RAG references": (f"up to {RAG_LIMIT} per summary from {len(index)} embedded orders "
-                           f"({health.get('embedding_model', '?')})") if rag else "none",
+                           f"({health.get('embedding_model', '?')}); sent to "
+                           f"{', '.join(sent_to) or 'no variant in this run (copy-check baseline only)'}")
+        if rag else rag_off,
+        **embed_meta,
         "Summaries tested": len(rows),
     }
     write_stats(rows, Path(args.out).with_suffix(".json"), meta)
@@ -424,7 +493,8 @@ def main():
 METRICS = [("sentences", "Sentences"), ("words", "Words"),
            ("number_coverage", "Number coverage"),
            ("rouge1", "ROUGE-1"), ("rouge2", "ROUGE-2"), ("rougeL", "ROUGE-L"),
-           ("rag_refs", "RAG references"), ("rag_similarity", "RAG top similarity")]
+           ("rag_refs", "RAG references"), ("rag_similarity", "RAG top similarity"),
+           ("rag_mean_similarity", "RAG mean similarity"), ("ref_overlap", "Reference overlap")]
 
 
 def variant_stats(rows, variant):
@@ -485,9 +555,190 @@ def print_report(rows, variants):
 
 
 # ---------------------------------------------------------------- report
-VARIANT_LABELS = {"standard": "Base model (with RAG)", "fine_tuned": "Fine-tuned model",
-                  "fine_tuned_rag": "Fine-tuned model (with RAG)"}
-SHORT_LABELS = {"standard": "Base", "fine_tuned": "Fine-tuned", "fine_tuned_rag": "Fine-tuned + RAG"}
+VARIANT_LABELS = {"standard": "Base model (with RAG)", "standard_no_rag": "Base model (no RAG)",
+                  "fine_tuned": "Fine-tuned model", "fine_tuned_rag": "Fine-tuned model (with RAG)"}
+SHORT_LABELS = {"standard": "Base + RAG", "standard_no_rag": "Base", "fine_tuned": "Fine-tuned",
+                "fine_tuned_rag": "Fine-tuned + RAG"}
+
+
+# ------------------------------------------------------------ RAG analysis
+def _floats(text):
+    return [float(x) for x in (text or "").split()]
+
+
+def retrieval_stats(rows):
+    """Similarity of what retrieval found, once per group (it is the same for every variant)."""
+    per_group = {}
+    for r in rows:
+        if r["rag_similarities"] and r["group_id"] not in per_group:
+            per_group[r["group_id"]] = _floats(r["rag_similarities"])
+    if not per_group:
+        return None
+    sims = list(per_group.values())
+    every = [x for s in sims for x in s]
+    bins = [("0.90 and above", lambda x: x >= 0.9), ("0.80 to 0.89", lambda x: 0.8 <= x < 0.9),
+            ("0.70 to 0.79", lambda x: 0.7 <= x < 0.8), ("below 0.70", lambda x: x < 0.7)]
+    return {
+        "groups": len(sims),
+        "refs_per_group": statistics.mean(len(s) for s in sims),
+        "by_rank": [(rank + 1, [s[rank] for s in sims if len(s) > rank]) for rank in range(RAG_LIMIT)],
+        "all": every,
+        "bins": [(label, sum(map(test, every))) for label, test in bins],
+    }
+
+
+# (label, value of one row, decimals, direction: 1 higher is better, -1 lower is better, 0 neither)
+EFFECT_MEASURES = [
+    ("Pass rate (%)", lambda r: 100.0 * (r["status"] == "PASS"), 0, 1),
+    ("Number coverage", lambda r: r["number_coverage"], 2, 1),
+    ("ROUGE-1", lambda r: r["rouge1"], 2, 1),
+    ("ROUGE-2", lambda r: r["rouge2"], 2, 1),
+    ("ROUGE-L", lambda r: r["rougeL"], 2, 1),
+    ("Words", lambda r: r["words"], 0, 0),
+    ("Time (s)", lambda r: r["seconds"], 1, -1),
+]
+
+
+def rag_effect(rows, without, with_rag):
+    """Each measure without vs with RAG over the groups both variants ran, compared group by group.
+
+    -> [(label, mean_without, mean_with, difference, (better, same, worse) or None, digits)], or None.
+    """
+    def per_group(variant, value, include_errors):
+        values = {}
+        for r in rows:
+            if r["variant"] != variant or (not include_errors and r["fails"].startswith("error")):
+                continue
+            v = value(r)
+            if v is not None:
+                values.setdefault(r["group_id"], []).append(v)
+        return {g: statistics.mean(v) for g, v in values.items()}
+
+    out = []
+    for label, value, digits, direction in EFFECT_MEASURES:
+        is_pass = label.startswith("Pass")
+        a, b = per_group(without, value, is_pass), per_group(with_rag, value, is_pass)
+        common = sorted(a.keys() & b.keys())
+        if not common:
+            continue
+        mean_a, mean_b = statistics.mean(a[g] for g in common), statistics.mean(b[g] for g in common)
+        tally = None
+        if direction:
+            deltas = [direction * (b[g] - a[g]) for g in common]
+            tally = (sum(d > 1e-9 for d in deltas), sum(abs(d) <= 1e-9 for d in deltas),
+                     sum(d < -1e-9 for d in deltas))
+        out.append((label, mean_a, mean_b, mean_b - mean_a, tally, digits))
+    return out or None
+
+
+def copy_stats(rows, variant):
+    """How much of a variant's wording / terms also sit in the retrieved references."""
+    mine = [r for r in rows if r["variant"] == variant and r["summary"] and r["rag_from"]]
+    if not mine:
+        return None
+    overlaps = [r["ref_overlap"] for r in mine if r["ref_overlap"] is not None]
+    with_terms = [r for r in mine if r["copied_terms"]]
+    terms = Counter(t for r in mine for t in r["copied_terms"].split())
+    return {
+        "summaries": len(mine),
+        "overlap": statistics.mean(overlaps) if overlaps else None,
+        "with_terms": len(with_terms),
+        "terms_per_summary": statistics.mean(len(r["copied_terms"].split()) for r in mine),
+        "top_terms": terms.most_common(12),
+    }
+
+
+def rag_section(rows, meta):
+    """The report's "RAG analysis" section, or "" when the run had no retrieval."""
+    esc, fmt = html.escape, fmt_number
+    retrieval = retrieval_stats(rows)
+    if not retrieval:
+        return ""
+    variants = list(dict.fromkeys(r["variant"] for r in rows))
+
+    def stat_row(label, values):
+        if not values:
+            return f"<tr><td>{esc(label)}</td><td colspan='5'>—</td></tr>"
+        return (f"<tr><td>{esc(label)}</td><td>{len(values)}</td><td>{fmt(statistics.mean(values))}</td>"
+                f"<td>{fmt(statistics.median(values))}</td><td>{fmt(min(values))}</td><td>{fmt(max(values))}</td></tr>")
+
+    sim_rows = "".join(stat_row(f"Reference #{rank}" + (" (top-1)" if rank == 1 else ""), values)
+                       for rank, values in retrieval["by_rank"])
+    sim_rows += stat_row("All references", retrieval["all"])
+    total = len(retrieval["all"]) or 1
+    bin_rows = "".join(f"<tr><td>{esc(label)}</td><td>{count}</td><td>{round(100 * count / total)}%</td></tr>"
+                       for label, count in retrieval["bins"])
+    timing = "".join(f"<tr><td>{esc(k)}</td><td>{esc(str(v))}</td></tr>"
+                     for k, v in meta.items() if k.startswith("Embedding time"))
+
+    effects = []
+    for without, with_rag in RAG_PAIRS:
+        if without in variants and with_rag in variants:
+            result = rag_effect(rows, without, with_rag)
+            if not result:
+                continue
+            body = "".join(
+                f"<tr><td>{esc(label)}</td><td>{fmt(a, d)}</td><td>{fmt(b, d)}</td>"
+                f"<td>{'+' if diff > 0 else ''}{fmt(diff, max(d, 2) if d else 0)}</td>"
+                f"<td>{' / '.join(map(str, tally)) if tally else '—'}</td></tr>"
+                for label, a, b, diff, tally, d in result)
+            effects.append(
+                f"<h3>{esc(VARIANT_LABELS[without])} vs {esc(VARIANT_LABELS[with_rag])}</h3>"
+                f"<table><tr><th>Measure</th><th>Without RAG</th><th>With RAG</th><th>Difference</th>"
+                f"<th>Groups better / same / worse</th></tr>{body}</table>")
+    effect_html = "".join(effects) or (
+        '<p class="desc">This run has no with/without pair, so the effect of RAG cannot be measured. '
+        "Run Base (no RAG) with Base (with RAG), or Fine-tuned with Fine-tuned + RAG, on the same groups.</p>")
+
+    copy_rows = ""
+    for v in variants:
+        c = copy_stats(rows, v)
+        if not c:
+            continue
+        baseline = " (baseline: not sent references)" if v not in RAG_VARIANTS else ""
+        terms = ", ".join(f"{t} ({n})" for t, n in c["top_terms"]) or "—"
+        copy_rows += (f"<tr><td>{esc(VARIANT_LABELS.get(v, v))}{esc(baseline)}</td><td>{c['summaries']}</td>"
+                      f"<td>{fmt(c['overlap'])}</td>"
+                      f"<td>{c['with_terms']} ({round(100 * c['with_terms'] / c['summaries'])}%)</td>"
+                      f"<td>{fmt(c['terms_per_summary'], 1)}</td><td>{esc(terms)}</td></tr>")
+
+    return f"""
+<section>
+  <h2>RAG analysis</h2>
+  <p class="desc">Retrieval-augmented generation (RAG) gives the model up to {RAG_LIMIT} approved summaries of
+  similar orders as style examples. Retrieval embeds every order of every approved summary and ranks them by
+  cosine similarity to the day's orders, exactly as the backend does with pgvector; a day can only retrieve
+  other admissions or earlier days of its own admission, never its own approved summary.</p>
+  <div class="cols">
+    <div><h3>Retrieval similarity</h3>
+      <p class="desc">Cosine similarity (0 to 1) of what retrieval found for {retrieval['groups']} order groups,
+      {fmt(retrieval['refs_per_group'], 1)} references each on average. It compares embeddings, so read it as
+      how close the examples were, not as a percentage of anything.</p>
+      <table><tr><th>Reference</th><th>N</th><th>Avg</th><th>Median</th><th>Min</th><th>Max</th></tr>{sim_rows}</table></div>
+    <div><h3>Similarity distribution</h3>
+      <p class="desc">All retrieved references, by similarity band.</p>
+      <table><tr><th>Similarity</th><th>References</th><th>Share</th></tr>{bin_rows}</table>
+      <h3>Embedding time</h3>
+      <p class="desc">The reference corpus is embedded once per run; production embeds it as orders are written.
+      Each summary costs one query embedding.</p>
+      <table>{timing or '<tr><td>Not measured in this run.</td></tr>'}</table></div>
+  </div>
+  <h3>Effect of RAG</h3>
+  <p class="desc">The same order groups with and without references. Averages are over the groups both variants
+  ran; "better / same / worse" counts groups where RAG raised, kept or lowered the measure (for time, faster is
+  better; for length there is no better).</p>
+  {effect_html}
+  <h3>Copy check</h3>
+  <p class="desc">References are style guidance only: the summary must not take clinical content from them.
+  <b>Reference overlap</b> is the share of the summary's word pairs found in its closest reference (house style
+  such as "was administered" counts too). <b>Copied terms</b> are words the summary shares with a reference but
+  not with its own orders, leaving out words common to {round(100 * STYLE_SHARE)}% or more of approved summaries.
+  A correct expansion of an abbreviation can count, so compare each RAG variant with its no-RAG baseline, which is
+  measured against the same references it was never sent.</p>
+  <table><tr><th>Model</th><th>Summaries</th><th>Reference overlap</th><th>With copied terms</th>
+  <th>Terms per summary</th><th>Most frequent copied terms</th></tr>
+  {copy_rows or '<tr><td colspan="6">No summaries to check.</td></tr>'}</table>
+</section>"""
 
 
 def fmt_number(value, digits=2):
@@ -508,8 +759,10 @@ def read_rows(path):
     for r in rows:
         # CSVs from before ROUGE-2/L had ROUGE-1 only, as "reference_similarity".
         r.setdefault("rouge1", r.get("reference_similarity"))
+        for field in ("rag_similarities", "rag_from", "copied_terms"):  # absent from older CSVs
+            r[field] = r.get(field) or ""
         for field in ("seconds", "wall_seconds", "sentences", "words", "number_coverage", *ROUGE_KEYS,
-                      "rag_refs", "rag_similarity"):
+                      "rag_refs", "rag_similarity", "rag_mean_similarity", "ref_overlap"):
             r[field] = num(r.get(field))
     return rows
 
@@ -643,6 +896,7 @@ in common, 1 = identical): <b>ROUGE-1</b> counts shared words, <b>ROUGE-2</b> sh
 lower than ROUGE-1. All three reward shared wording, not correctness, and drop when the summary is much shorter than
 its reference, so read them as a comparison between models on the same orders, not as a pass mark.</p>
 {''.join(sections)}
+{rag_section(rows, meta)}
 
 <h2>All results</h2>
 <table class="results"><tr><th>Group</th><th>Model</th><th>Run</th><th>Result</th><th>Orders</th><th>Time (s)</th>
@@ -705,6 +959,26 @@ def self_test():
     body = request_body(g, "standard", 0.1)
     assert body["admissions"][0]["admissionDate"] == "2026-03-09" and body["references"] == []
     assert request_body(g, "fine_tuned_rag", 0.1, [{"approvedSummary": "x"}])["variant"] == "fine_tuned"
+    assert request_body(g, "standard_no_rag", 0.1)["variant"] == "standard"
+
+    # Copy check: "vancomycin" is only in the reference; "given" is house style; "ceftriaxone" is in the orders.
+    assert rouge2_precision("a b c", "x a b") == 0.5
+    assert copied_terms("Ceftriaxone and vancomycin were given.", "Start Ceftriaxone",
+                        ["Vancomycin was given."], {"given", "was", "were", "and"}) == ["vancomycin"]
+    assert style_vocabulary({"1": "was given", "2": "was started"}, share=1.0) == {"was"}
+
+    # Effect of RAG: paired per group, direction-aware.
+    def row(variant, group, status, rl, secs):
+        return {"variant": variant, "group_id": group, "status": status, "fails": "", "number_coverage": None,
+                "rouge1": None, "rouge2": None, "rougeL": rl, "words": None, "seconds": secs}
+    effect = {e[0]: e for e in rag_effect([
+        row("fine_tuned", "a", "PASS", 0.2, 10), row("fine_tuned", "b", "FAIL", 0.4, 10),
+        row("fine_tuned_rag", "a", "PASS", 0.3, 12), row("fine_tuned_rag", "b", "PASS", 0.4, 8),
+    ], "fine_tuned", "fine_tuned_rag")}
+    assert effect["ROUGE-L"][4] == (1, 1, 0) and abs(effect["ROUGE-L"][3] - 0.05) < 1e-9, effect
+    assert effect["Pass rate (%)"][1:4] == (50, 100, 50)
+    assert effect["Time (s)"][4] == (1, 0, 1)  # one faster (better), one slower
+    assert "Words" not in effect  # no values -> no row
 
     # RAG: own day and later days of the same admission are never retrieved; one entry per summary.
     other = {"group_id": "2-day-1", "admission_id": "2", "day": 1}
