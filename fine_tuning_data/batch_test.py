@@ -5,7 +5,7 @@ group per request, so each is timed on its own and one failure can't sink the
 rest), checks each summary automatically, compares it with the approved
 reference in summaries.json, and writes a CSV.
 
-  python fine_tuning_data/batch_test.py                          # all 88 groups, base model
+  python fine_tuning_data/batch_test.py                          # all 109 groups, base model
   python fine_tuning_data/batch_test.py --variant standard fine_tuned fine_tuned_rag --eval-only
   python fine_tuning_data/batch_test.py --variant standard_no_rag standard --report   # RAG effect
   python fine_tuning_data/batch_test.py --limit 10 --runs 3      # consistency: same group 3x
@@ -17,7 +17,7 @@ Setup: Python 3.8+, standard library only (no pip install, no venv).
 Needs ai_service running (default http://localhost:8000) with Ollama behind it
 serving qwen3.5:4b; --variant fine_tuned also needs the course4ward-summarizer
 model imported into Ollama (its weights are not in git). --self-test and
---report-from need neither. A full 88-group run takes about 30-60 minutes.
+--report-from need neither. A full 109-group run takes about 40-75 minutes.
 Exit code 1 when any summary fails a hard check, so it can gate a model change.
 
 Hard checks (FAIL): call failed/empty, bullet or numbered list, a physician
@@ -26,7 +26,7 @@ the orders (likely invented dose).
 Soft checks (WARN): future/imperative wording, more than MAX_SENTENCES sentences.
 Summaries should be as short as the orders allow, but there is no hard cap on
 length, so it never fails a summary; word and sentence counts are just reported.
-All 88 approved references pass every hard check, so a FAIL is the model's.
+All 109 approved references pass every hard check, so a FAIL is the model's.
 
 Metrics: time, sentences, words, number coverage (share of the orders' doses/
 rates/counts kept: a completeness proxy) and ROUGE-1, ROUGE-2 and ROUGE-L F1
@@ -68,7 +68,8 @@ HERE = Path(__file__).resolve().parent
 # disagree): 19 day-groups from 1 to 28 orders. Widened from the first three on
 # 2026-11-10; a model trained before then saw 2026002052 and 2026003328, so compare
 # it with --only on the first three admissions' groups instead.
-EVAL_ADMISSIONS = {"2026002210", "2026002236", "2026002238", "2026002052", "2026003328"}
+EVAL_ADMISSIONS = {"2026002210", "2026002236", "2026002238", "2026002052", "2026003328",
+                   "2026004012", "2026004057", "2026004133", "2026004190", "2026004215", "2026004288", "2026004306"}
 
 # Length is a WARN past this, never a FAIL: no hard cap, just "as short as possible".
 MAX_SENTENCES = 15
@@ -242,7 +243,7 @@ def check(summary, orders_text, allowed_numbers=()):
         fails.append("numbers not in orders: " + ", ".join(f"{n:g}" for n in invented))
 
     present = PRESENT_TENSE.findall(summary)
-    if present:  # none of the 88 approved references trips this, so it is a hard fail
+    if present:  # none of the 109 approved references trips this, so it is a hard fail
         fails.append("present tense: " + ", ".join(sorted({p.lower() for p in present})[:3]))
     if re.search(r"\b(will|please|kindly)\b", summary, re.I):
         warns.append("future/imperative wording")

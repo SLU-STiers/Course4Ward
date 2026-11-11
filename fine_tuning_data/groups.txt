@@ -1174,3 +1174,98 @@ IM CARDIO  Please carry out suggestions of GYNE  - For iron sucrose infusion for
 ### 2026003328-day-1 | Day 1 of Admission #2026003328 (2026-04-18)
 ANESTHESIA POST OP ORDERS  To PACU Moderate high back rest  O2 inhalation at 5 LPM/FM to be discontinued prior to transout MVS q15 x 2 hours, q30 x 2 hours, then hourly thereafter until stable    Diet: May resume diet once full awake  IVF: PNSS 1L x SKVO while on BT then 100cc/hr after BT  IVF TF: PLRS 500cc x 100cc/hr then KVO once eating well   Repeat CBCP 6hrs post transfusion   Meds: 1. Ketorolac (Ketomed) 30mg IV Q6 x 4 doses (3pm-9pm-3am-9am)  2. Paracetamol 1g (Parcetol) IV Q6 x 4 doses in between Ketorolac (6pm-12am-6am-12pm)  3. Paracetamol 500mg/tab, 1 tab TID after IV pain meds prn for pain  WOF: hypertension/hypotension, bradycardia/tachycardia, headache, profuse bleeding, breakthrough pain, nausea, vomiting  Refer accordingly Dr. J. Fernandez/Parpali
 
+### 2026004012-day-1 | Day 1 of Admission #2026004012 (2026-03-14)
+1. Admit to Medical Ward under Dr. Salvador IVF: PNSS 1L x 80cc/hr Diet: Soft diet, low salt Diagnostics: - CBC, Na, K, Crea, BUN - CXR PA/L - Blood CS x 2 sites - Sputum GSCS # Community Acquired Pneumonia, moderate risk - Ceftriaxone 2g IV OD ANST - Azithromycin 500mg 1 tab OD x 3 days - Salbutamol + Ipratropium 1 neb q6h - Paracetamol 500mg 1 tab q4h PRN for T>=37.8 O2 at 2-3 LPM via nasal cannula to keep O2 sat >=94% MVS q4h, I&O q shift WOF desaturation, tachypnea, hypotension /Salvador/Reyes
+2. ROD Clarification: Ceftriaxone ANST (-), may give 1st dose now /Reyes
+3. Refer to IM-Pulmo for co-management Thank you /Salvador
+4. IM PULMO Thank you for this referral. Continue present antibiotics. Add NAC 600mg 1 tab OD. Request ABG now. CPT after each neb. /Bautista/Reyes
+
+### 2026004012-day-2 | Day 2 of Admission #2026004012 (2026-03-15)
+1. IM ROD NOTES IVF: PNSS 1L x 80cc/hr Diet: Soft diet, low salt # CAP-MR - Ceftriaxone 2g IV OD - Day 2 - Azithromycin 500mg 1 tab OD - Day 2 of 3 - Salbutamol + Ipratropium 1 neb q6h with CPT - NAC 600mg 1 tab OD # Hypertension Stage 2 - Amlodipine 10mg 1 tab OD - Losartan 50mg 1 tab OD Awaiting: Blood CS, Sputum GSCS O2 at 2-3 LPM via NC MVS q4h /Reyes
+2. Na 131 K 3.2 Give KCl 20mEqs in 100cc PNSS to run for 2 hours x 2 cycles. Repeat Na and K after 2nd cycle /Reyes
+3. IM PULMO Wean O2 to 1 LPM, discontinue if O2 sat >= 95% at room air. /Bautista
+
+### 2026004012-day-3 | Day 3 of Admission #2026004012 (2026-03-16)
+1. IM ROD NOTES IVF: Heplock Diet: Soft diet, low salt # CAP-MR - Ceftriaxone 2g IV OD - Day 3 - Salbutamol + Ipratropium 1 neb q8h with CPT - NAC 600mg 1 tab OD # HPN Stage 2 - Amlodipine 10mg 1 tab OD - Losartan 50mg 1 tab OD Repeat Na 134 K 3.9 Blood CS: no growth after 48 hrs O2 discontinued /Reyes
+2. IM PULMO For shift of Ceftriaxone to Cefuroxime 500mg 1 tab BID tomorrow if afebrile for 24 hrs. Repeat CXR PA in AM. /Bautista
+
+### 2026004012-day-4 | Day 4 of Admission #2026004012 (2026-03-17)
+1. IM PULMO Shift Ceftriaxone to Cefuroxime 500mg 1 tab BID to complete 7 days. Repeat CXR: resolving infiltrates. Cleared from pulmo standpoint. /Bautista
+2. May go home Home meds: - Cefuroxime 500mg 1 tab BID x 4 days - NAC 600mg 1 tab OD x 5 days - Amlodipine 10mg 1 tab OD - Losartan 50mg 1 tab OD Follow up at OPD after 1 week with CBC and CXR /Salvador
+
+### 2026004057-day-1 | Day 1 of Admission #2026004057 (2026-03-18)
+1. Admit to Medical Ward IVF: PLRS 1L x 120cc/hr Diet: DAT, avoid dark colored foods Diagnostics: - CBC with platelet q12h - NS1 Ag, Dengue IgM/IgG - Na, K, Crea, SGPT # Dengue fever with warning signs - Paracetamol 500mg 1 tab q4h PRN for T>=38 - Omeprazole 40mg IV OD - Avoid NSAIDs Monitor I&O q4h MVS q2h WOF bleeding, abdominal pain, hypotension, narrowing pulse pressure /Mendoza/Dizon
+2. NS1 (+) Platelet 98 Hct 44 Increase IVF to 150cc/hr x 4 hours then regulate to 120cc/hr /Dizon
+3. Refer to IM-IDS for co-management /Mendoza
+
+### 2026004057-day-2 | Day 2 of Admission #2026004057 (2026-03-19)
+1. IM-IDS Thank you for the referral. Continue hydration. Platelet 72. Repeat CBC q8h. Transfuse platelet concentrate only if with active bleeding. /Lim/Dizon
+2. ROD NOTES IVF: PLRS 1L x 120cc/hr Diet: DAT # Dengue fever with warning signs, critical phase - Paracetamol 500mg 1 tab q4h PRN for fever - Omeprazole 40mg IV OD - Strict I&O q4h, target UO >= 0.5 ml/kg/hr MVS q1h WOF bleeding /Dizon
+3. Decrease IVF to 100cc/hr. Hct 46. Repeat Hct in 4 hours /Dizon
+
+### 2026004057-day-3 | Day 3 of Admission #2026004057 (2026-03-20)
+1. ROD NOTES Platelet 85, Hct 41 IVF: PLRS 1L x 80cc/hr Diet: DAT # Dengue fever, recovery phase - Paracetamol 500mg 1 tab q4h PRN for fever - Omeprazole 40mg IV OD - CBC q12h MVS q4h /Dizon
+2. IM-IDS Patient in recovery phase. May shift Omeprazole to 40mg 1 cap OD before breakfast. Discontinue IVF once tolerating oral fluids well. /Lim
+
+### 2026004133-day-1 | Day 1 of Admission #2026004133 (2026-03-21)
+1. GS Admitting orders Admit to Surgery Ward under Dr. Ocampo IVF: PNSS 1L x 30 gtts/min Diet: Low fat diet, NPO post midnight for OR Diagnostics: - CBC, PT/PTT, Crea, Na, K - SGPT, Alkaline phosphatase, Bilirubin - 12L ECG, CXR PA # Cholecystolithiasis - For Laparoscopic Cholecystectomy tomorrow 8AM - Secure consent - Ketorolac 30mg IV q8h PRN for pain - Omeprazole 40mg IV OD Refer to IM for CP clearance Refer to Anesthesia /Ocampo/Garcia
+2. IM Notes RCRI 0, low risk. Cleared from IM standpoint for the contemplated procedure. Continue present meds. /Torres
+3. Anesthesia Notes ASA II. NPO post midnight. Cefazolin 2g IV to be given 30 mins prior to incision, to bring to OR. Midazolam 2mg IV on call to OR. /Santiago
+
+### 2026004133-day-2 | Day 2 of Admission #2026004133 (2026-03-22)
+1. Pre-op: NPO, IVF PNSS 1L x 30gtts/min, bring Cefazolin 2g to OR /Garcia
+2. Post-op orders s/p Laparoscopic Cholecystectomy To PACU then to room once stable IVF: PLRS 1L x 100cc/hr Diet: NPO for 6 hours then clear liquids, progress to soft diet as tolerated Meds: - Cefazolin 1g IV q8h x 2 doses - Ketorolac 30mg IV q8h x 3 doses then PRN - Omeprazole 40mg IV OD - Ondansetron 4mg IV q8h PRN for nausea and vomiting Early ambulation Incentive spirometry 10x/hour while awake MVS q15min until stable then q4h WOF bleeding, abdominal pain, fever /Ocampo/Garcia
+3. Patient vomited x1. Give Ondansetron 4mg IV now /Garcia
+
+### 2026004133-day-3 | Day 3 of Admission #2026004133 (2026-03-23)
+1. GS Notes Tolerated soft diet. Ambulatory. Shift to oral meds: - Cefuroxime 500mg 1 tab BID x 5 days - Celecoxib 200mg 1 cap BID x 5 days - Omeprazole 40mg 1 cap OD x 7 days Heplock IVF /Ocampo
+2. May go home. Follow up at GS OPD after 1 week. Keep wound dry. /Garcia
+
+### 2026004190-day-1 | Day 1 of Admission #2026004190 (2026-03-24)
+1. ER IM Notes # DKA, T2DM uncontrolled IVF: PNSS 1L x 1 hour then 500cc/hr x 2 hours then 250cc/hr Insulin drip: Regular insulin 100 units in 100cc PNSS at 0.1 u/kg/hr = 6 cc/hr CBG q1h, adjust per protocol K 3.8: incorporate KCl 20mEqs to each liter of IVF Diagnostics: ABG, serum ketones, Na, K, Cl, Mg, Crea, BUN, CBC, Urinalysis, HbA1c Diet: NPO Admit to ICU /Villareal/Cruz
+2. ICU ROD CBG 250. Shift IVF to D5 0.45NaCl 1L x 150cc/hr. Continue insulin drip. Repeat ABG and K after 4 hours /Cruz
+3. Repeat K 3.3. Hold insulin drip for now. KCl 20mEqs in 100cc PNSS x 1 hour now, repeat K after /Cruz
+
+### 2026004190-day-2 | Day 2 of Admission #2026004190 (2026-03-25)
+1. ICU ROD K 4.1. Resume insulin drip at 6cc/hr. Repeat ABG: HCO3 18, AG 12. Diet: Diabetic diet 1800 kcal/day once anion gap closed /Cruz
+2. IM-Endo Anion gap closed. Start Insulin glargine 20 units SC OD at 10PM, Insulin lispro 6 units SC TID with meals. Discontinue insulin drip 2 hours after first SC glargine dose. CBG pre-meals and HS. May transfer to ward /Villareal/Santos
+
+### 2026004215-day-1 | Day 1 of Admission #2026004215 (2026-03-26)
+1. ER IM Notes # Acute ischemic stroke, left MCA territory, beyond window for thrombolysis Admit to Neuro ICU IVF: PNSS 1L x 80cc/hr Diet: NPO pending swallow screen, then for NGT if failed Diagnostics: - Plain cranial CT scan - CBC, Na, K, Crea, FBS, Lipid profile - 12L ECG - Carotid doppler Meds: - Aspirin 160mg via NGT now then 80mg OD - Atorvastatin 80mg 1 tab ODHS - Omeprazole 40mg IV OD Permissive hypertension: treat only if BP > 220/120 Elevate HOB 30 degrees Neuro VS q1h, aspiration precautions /Fernandez/Aquino
+2. Failed swallow screen. Insert NGT. Start OF 1500 kcal/day divided into 6 feedings /Aquino
+3. Refer to Neurology for co-management and to Rehab Medicine for early PT /Fernandez
+
+### 2026004215-day-2 | Day 2 of Admission #2026004215 (2026-03-27)
+1. Neuro Notes Thank you for this referral. CT: hypodensity left frontoparietal. Continue present management. Add Citicoline 1g IV q12h. Start Clopidogrel 75mg 1 tab OD via NGT for DAPT x 21 days. /Ramos/Aquino
+2. ROD NOTES IVF: PNSS 1L x 60cc/hr Diet: OF 1500 kcal/day in 6 feedings via NGT # AIS - Aspirin 80mg OD via NGT - Clopidogrel 75mg OD via NGT - Atorvastatin 80mg ODHS - Citicoline 1g IV q12h - Omeprazole 40mg IV OD Neuro VS q2h Turn to sides q2h /Aquino
+3. Rehab Notes Start bedside PT: passive ROM exercises of affected extremities BID, positioning /Gomez
+
+### 2026004215-day-3 | Day 3 of Admission #2026004215 (2026-03-28)
+1. ROD NOTES Repeat swallow screen passed. Remove NGT. Diet: Mechanically soft diet, 1500 kcal/day, with aspiration precautions. Shift Omeprazole to 40mg 1 cap OD. IVF heplock /Aquino
+2. Neuro Notes Shift Citicoline to 500mg 1 tab BID. May transfer to ward. /Ramos
+
+### 2026004288-day-1 | Day 1 of Admission #2026004288 (2026-03-29)
+1. Pedia Admitting Orders Admit to Pedia Ward Wt 14kg # AGE with moderate dehydration IVF: D5LRS 500cc, 280cc to run for 4 hours then 50cc/hr Diet: ORS 10cc after each loose stool, BRAT diet as tolerated Diagnostics: - CBC, Na, K - Fecalysis, Stool culture Meds: - Zinc sulfate 20mg/5ml 5ml OD x 14 days - Paracetamol 120mg/5ml 6ml q4h PRN for T>=37.8 - Erceflora 1 vial BID I&O q4h, weigh diapers MVS q4h WOF signs of dehydration, seizures /Lopez/Navarro
+2. Fecalysis: many pus cells. Start Metronidazole 15mg/kg/day = 70mg IV q8h /Navarro
+
+### 2026004288-day-2 | Day 2 of Admission #2026004288 (2026-03-30)
+1. Pedia ROD Still with 4 episodes of loose stools. IVF: D5LRS 500cc x 50cc/hr Diet: BRAT diet, ORS 10cc after each loose stool Meds: - Metronidazole 70mg IV q8h - Zinc sulfate 5ml OD - Erceflora 1 vial BID - Paracetamol 6ml q4h PRN Repeat Na and K in AM /Navarro
+2. Na 132 K 3.3. Incorporate KCl 10mEqs to IVF /Navarro
+
+### 2026004288-day-3 | Day 3 of Admission #2026004288 (2026-03-31)
+1. Pedia ROD No loose stools since 2AM. Tolerating feeding well. Shift Metronidazole to 125mg/5ml 3ml q8h PO to complete 7 days. IVF: D5LRS x KVO /Navarro
+2. May go home. Home meds: Metronidazole 125mg/5ml 3ml q8h, Zinc sulfate 20mg/5ml 5ml OD to complete 14 days, ORS after each loose stool. /Lopez
+
+### 2026004306-day-1 | Day 1 of Admission #2026004306 (2026-04-01)
+1. ER IM Notes # Upper GI bleeding probably from peptic ulcer disease # Anemia secondary to blood loss Admit to Medical Ward IVF: PNSS 1L x 100cc/hr Diet: NPO Diagnostics: - CBC STAT then q8h - PT/PA, PTT - BUN, Crea, Na, K - Blood typing and crossmatching Meds: - Pantoprazole 80mg IV bolus then 8mg/hr drip - Tranexamic acid 500mg IV q8h Transfuse 2 units PRBC, properly typed and crossmatched, each to run for 4 hours, Furosemide 20mg IV in between units Insert IFC, strict I&O MVS q1h WOF hematemesis, melena, hypotension, tachycardia /Castro/Pascual
+2. Refer to GS-Endoscopy for EGD /Castro
+3. GI Notes For EGD tomorrow 9AM. Continue NPO and PPI drip. Secure consent. /Herrera
+
+### 2026004306-day-2 | Day 2 of Admission #2026004306 (2026-04-02)
+1. Post-EGD orders: Findings: Forrest IIa gastric ulcer, s/p endoscopic hemostasis. Continue PPI drip x 72 hours. May start clear liquids after 6 hours, then soft diet if tolerated. Start H. pylori testing (rapid urease test done, awaiting result). /Herrera
+2. ROD NOTES Hgb post-transfusion 9.2. Decrease IVF to 80cc/hr. Discontinue Tranexamic acid. CBC q12h /Pascual
+
+### 2026004306-day-3 | Day 3 of Admission #2026004306 (2026-04-03)
+1. GI Notes Rapid urease test positive. Start H. pylori eradication: - Amoxicillin 1g 1 tab BID x 14 days - Clarithromycin 500mg 1 tab BID x 14 days - Continue PPI drip until tomorrow then shift to Pantoprazole 40mg 1 tab BID /Herrera
+2. ROD NOTES Diet: Soft diet IVF: PNSS 1L x 80cc/hr Remove IFC MVS q4h /Pascual
+
