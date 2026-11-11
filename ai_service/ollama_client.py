@@ -18,6 +18,9 @@ FINE_TUNED_MODEL = os.getenv("FINE_TUNED_MODEL", "finetuned-qwen")
 # or the fine-tuned one.
 ModelVariant = Literal["standard", "fine_tuned"]
 MODELS = {"standard": MODEL, "fine_tuned": FINE_TUNED_MODEL}
+# Context window per request; overrides the Modelfile's num_ctx (often 4096),
+# which a long day of orders plus RAG references can exceed.
+NUM_CTX = int(os.getenv("NUM_CTX", "8192"))
 
 # ------------------ FastAPI App ------------------------------------------
 app = FastAPI(title="Doctor's Orders Summarizer – Batch")
@@ -249,7 +252,7 @@ def generate_summary(
         "messages": [{"role": "user", "content": user_content}],
         "stream": False,
         "think": False,
-        "options": {"temperature": temperature}
+        "options": {"temperature": temperature, "num_ctx": NUM_CTX}
     }
 
     start_time = time.time()
