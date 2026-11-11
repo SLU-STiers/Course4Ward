@@ -31,6 +31,7 @@ const mockPrismaService = {
     count: jest.fn(),
     create: jest.fn(),
     findMany: jest.fn(),
+    findFirst: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
   },
@@ -198,7 +199,7 @@ describe("Claims Module", () => {
         expect(auditLogService.record).not.toHaveBeenCalled();
       });
 
-      it("should address an unapproved summary to the attending physician as PENDING", async () => {
+      it("should address an unapproved summary to the attending as PHYSICIAN_VALIDATION_REQUESTED", async () => {
         (prismaService.courseInWard.findUnique as jest.Mock).mockResolvedValue({
           ...mockSummary,
           validatorId: null,
@@ -222,7 +223,7 @@ describe("Claims Module", () => {
             summaryId: mockCourseInWardId,
             physicianId: "physician-attending",
             processorId: mockUser.id,
-            status: "PENDING",
+            status: "PHYSICIAN_VALIDATION_REQUESTED",
           },
         });
       });
@@ -430,7 +431,7 @@ describe("Claims Module", () => {
         expect(notificationsService.create).toHaveBeenCalledWith({
           userId: mockClaim.physicianId,
           type: NotificationType.REVIEW_REQUESTED,
-          title: "Review requested again",
+          title: "Course in the Ward review requested",
           message: expect.stringContaining("Please re-check the dosage."),
           requestId: mockClaimId,
         });
@@ -470,6 +471,22 @@ describe("Claims Module", () => {
         ).not.toHaveBeenCalled();
         expect(notificationsService.create).not.toHaveBeenCalled();
         expect(auditLogService.record).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("approveForPhysician", () => {
+      it("should refuse approval when claims has not requested validation", async () => {
+        (
+          prismaService.summaryApprovalRequest.findFirst as jest.Mock
+        ).mockResolvedValue({ ...mockClaim, status: "PENDING" });
+
+        await expect(
+          service.approveForPhysician(mockClaimId, mockClaim.physicianId),
+        ).rejects.toThrow(
+          "Claims has not requested physician validation for this claim yet",
+        );
+
+        expect(prismaService.$transaction).not.toHaveBeenCalled();
       });
     });
 

@@ -54,10 +54,14 @@ export function ReviewSummaryModal({
   request,
   onClose,
   onApprove,
+  onDayApproved,
 }: {
   request: PhysicianRequest;
   onClose: () => void;
+  /** Final stay sign-off (Approve request). Closes the review. */
   onApprove: () => Promise<void>;
+  /** After a single day is approved — refresh the list, keep the modal open. */
+  onDayApproved?: () => void;
 }) {
   const patientId = request.summary.patient.id;
   const requestDay = summaryDayKey(request.summary);
@@ -136,7 +140,10 @@ export function ReviewSummaryModal({
     const summary = summaryByDay.get(day);
     return !summary || !summary.summaryContent.trim();
   });
-  const approvalBlocked = busy !== null || editing || missingDays.length > 0;
+  const claimsRequestedValidation =
+    request.status === 'PHYSICIAN_VALIDATION_REQUESTED';
+  const approvalBlocked =
+    busy !== null || editing || missingDays.length > 0 || !claimsRequestedValidation;
 
   const replaceSummary = (updated: CourseInWard[]) =>
     setSummaries((previous) => mergeSummaries(previous, updated));
@@ -188,29 +195,30 @@ export function ReviewSummaryModal({
     setSelectedDay(direction < 0 ? candidates[candidates.length - 1] : candidates[0]);
   };
 
-  // Same as Manage: approve the day on screen. Approving the requested day
-  // also completes the claim and closes this review.
+  // Per-day Approve: sign off this day only, keep the claim open and the modal
+  // open. "Approve request" is the whole-stay / claim sign-off.
   const approveDay = () => {
     if (!daySummary || !canApproveDay || busy) return;
-    if (daySummary.id === request.summary.id) {
-      setBusy('approving');
-      setError(null);
-      void onApprove()
-        .catch(() => setError('Approval failed. Please try again.'))
-        .finally(() => setBusy(null));
-      return;
-    }
     setBusy('approving');
     setError(null);
     void courseInWardApi
-      .approve(daySummary.id)
-      .then(({ data }) => replaceSummary([{ ...daySummary, ...data }]))
+      .approve(daySummary.id, { completeClaim: false })
+      .then(({ data }) => {
+        const updated = { ...daySummary, ...data };
+        replaceSummary([updated]);
+        onDayApproved?.();
+        const nextUnapproved = days.find((day) => {
+          if (day === activeDay) return false;
+          const entry = summaryByDay.get(day);
+          return Boolean(entry && entry.status !== 'APPROVED' && entry.summaryContent.trim());
+        });
+        if (nextUnapproved) setSelectedDay(nextUnapproved);
+      })
       .catch(() => setError('Approval failed. Please try again.'))
       .finally(() => setBusy(null));
   };
 
-  // Approving the request signs off every day reviewed here: each other day's
-  // summary is approved first, then the request's own summary.
+  // Whole-stay Approve request: finish any remaining days, then complete the claim.
   const approveAll = () => {
     if (approvalBlocked) return;
     setBusy('approving');
@@ -222,7 +230,9 @@ export function ReviewSummaryModal({
         (entry): entry is CourseInWard =>
           Boolean(entry) && entry!.status !== 'APPROVED' && entry!.id !== request.summary.id,
       );
-    void Promise.all(others.map((entry) => courseInWardApi.approve(entry.id)))
+    void Promise.all(
+      others.map((entry) => courseInWardApi.approve(entry.id, { completeClaim: false })),
+    )
       .then(() => onApprove())
       .catch(() => setError('Approval failed. Please try again.'))
       .finally(() => setBusy(null));
@@ -250,15 +260,17 @@ export function ReviewSummaryModal({
           <Button type="button" variant="secondary" onClick={onClose} disabled={busy !== null}>
             Close
           </Button>
-          <Button
-            type="button"
-            variant="primary"
-            disabled={approvalBlocked}
-            loading={busy === 'approving'}
-            onClick={approveAll}
-          >
-            Approve request
-          </Button>
+          {claimsRequestedValidation ? (
+            <Button
+              type="button"
+              variant="primary"
+              disabled={approvalBlocked}
+              loading={busy === 'approving'}
+              onClick={approveAll}
+            >
+              Approve request
+            </Button>
+          ) : null}
         </>
       }
     >

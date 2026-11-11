@@ -5,14 +5,14 @@ const MODEL_STORAGE_KEY = 'course4ward.summaryModel';
 
 /**
  * The physician's chosen AI model, remembered in this browser when it can be.
- * Defaults to the fine-tuned model until they pick the base one.
+ * Defaults to the base (standard) model — the fine-tuned Ollama tag is optional.
  */
 export function useSummaryModel() {
   const [model, setModel] = useState<SummaryModel>(() => {
     try {
-      return localStorage.getItem(MODEL_STORAGE_KEY) === 'standard' ? 'standard' : 'fine_tuned';
+      return localStorage.getItem(MODEL_STORAGE_KEY) === 'fine_tuned' ? 'fine_tuned' : 'standard';
     } catch {
-      return 'fine_tuned';
+      return 'standard';
     }
   });
   const choose = (next: SummaryModel) => {

@@ -39,11 +39,11 @@ export class ClaimsService {
     private notifications: NotificationsService,
   ) {}
 
-  // A claim wraps one Course in the Ward entry for processor review. It can be
-  // opened before the physician has approved the summary: the claim is then
-  // addressed to the attending physician and stays PENDING until they approve
-  // it (via the Requests view or the workspace). An already-approved summary
-  // starts VALIDATED, so CF4 can be generated straight away.
+  // A claim wraps one Course in the Ward entry for processor review. When the
+  // claims processor files it, an unapproved day is PHYSICIAN_VALIDATION_REQUESTED
+  // so the attending can approve from Requests. Discharge auto-opens stay as
+  // PENDING until claims explicitly requests validation. Already-approved
+  // summaries start VALIDATED so CF4 can be generated straight away.
   async createFromSummary(courseInWardId: string, claimsProcessorId: string) {
     const opened = await this.openClaim(courseInWardId, claimsProcessorId);
     if (!opened.approved) {
@@ -132,7 +132,7 @@ export class ClaimsService {
       summaryId: courseInWardId,
       physicianId,
       processorId: claimsProcessorId,
-      status: approved ? 'VALIDATED' : 'PENDING',
+      status: approved ? 'VALIDATED' : 'PHYSICIAN_VALIDATION_REQUESTED',
     });
     if (!claim) throw new ConflictException('A claim already exists for this summary');
 
@@ -146,7 +146,10 @@ export class ClaimsService {
           ['Patient', patientName],
           ['Summary day', dayLabel(summary.summaryDate)],
           ['Validating physician', await this.auditLog.userLabel(physicianId)],
-          ['Claim status', approved ? 'Validated (summary already approved)' : 'Waiting for physician'],
+          [
+            'Claim status',
+            approved ? 'Validated (summary already approved)' : 'Physician validation requested',
+          ],
         ]),
       },
     });
@@ -296,9 +299,28 @@ export class ClaimsService {
     });
   }
 
+  /**
+   * Claims requests for the signed-in physician — attending only.
+   * Consulting physicians do not see or approve claim requests for patients
+   * where they are only on the care team as a consultant.
+   */
   findForPhysician(physicianId: string) {
     return this.prisma.summaryApprovalRequest.findMany({
-      where: { physicianId },
+      where: {
+        physicianId,
+        // PENDING = claim opened (e.g. on discharge) but claims has not asked
+        // for validation yet — hide those until they request.
+        status: { not: 'PENDING' },
+        // Belt-and-suspenders: the request must also belong to an admission
+        // this physician currently attends (not merely consults on).
+        summary: {
+          orders: {
+            some: {
+              admission: { physicianId },
+            },
+          },
+        },
+      },
       orderBy: { requestedAt: 'desc' },
       include: {
         processor: { select: { firstName: true, lastName: true, role: true } },
@@ -320,6 +342,11 @@ export class ClaimsService {
       where: { id, physicianId },
     });
     if (!request) throw new NotFoundException('Physician request not found');
+    if (request.status !== 'PHYSICIAN_VALIDATION_REQUESTED') {
+      throw new BadRequestException(
+        'Claims has not requested physician validation for this claim yet',
+      );
+    }
     await assertAttending(this.prisma, request.summaryId, physicianId);
 
     const [summary, updatedRequest] = await this.prisma.$transaction([
@@ -385,15 +412,16 @@ export class ClaimsService {
     const processorName =
       `${existing.processor.firstName} ${existing.processor.lastName}`.trim();
     const note = message?.trim();
+    const again = existing.status === 'PHYSICIAN_VALIDATION_REQUESTED';
 
     const day = dayLabel(existing.summary.summaryDate);
     await this.notifications.create({
       userId: existing.physicianId,
       type: NotificationType.REVIEW_REQUESTED,
-      title: 'Review requested again',
+      title: again ? 'Review requested again' : 'Course in the Ward review requested',
       message: note
-        ? `**${processorName}** (Claims Processor) requested another review of **${patientName}**'s Course in the Ward for ${day}: "${note}"`
-        : `**${processorName}** (Claims Processor) requested another review of **${patientName}**'s Course in the Ward for ${day}.`,
+        ? `**${processorName}** (Claims Processor) requested ${again ? 'another review' : 'a review'} of **${patientName}**'s Course in the Ward for ${day}: "${note}"`
+        : `**${processorName}** (Claims Processor) requested ${again ? 'another review' : 'a review'} of **${patientName}**'s Course in the Ward for ${day}.`,
       requestId: claimId,
     });
 

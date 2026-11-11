@@ -13,8 +13,8 @@ import { REQUESTS_TABLE_STATE } from './listState';
 import { ReviewSummaryModal } from './ReviewSummaryModal';
 import { fullName } from '../../lib/patient';
 
-const isPending = (request: PhysicianRequest) =>
-  request.status === "PENDING" ||
+/** Claims has asked the attending to validate — only these can be approved. */
+const isAwaitingPhysician = (request: PhysicianRequest) =>
   request.status === "PHYSICIAN_VALIDATION_REQUESTED";
 
 /** Every claim of one patient's stay, shown as a single request row. */
@@ -40,7 +40,7 @@ function groupByStay(items: PhysicianRequest[]): StayRequest[] {
     const byDay = [...requests].sort((a, b) =>
       a.summary.summaryDate.localeCompare(b.summary.summaryDate),
     );
-    const pending = byDay.filter(isPending);
+    const pending = byDay.filter(isAwaitingPhysician);
     return {
       key,
       primary: pending[0] ?? byDay[0],
@@ -233,6 +233,7 @@ export function RequestsView({
           key={selected.id}
           request={selected}
           onClose={() => setSelected(null)}
+          onDayApproved={loadRequests}
           onApprove={async () => {
             await claimsApi.approvePhysicianRequest(selected.id);
             await loadRequests();

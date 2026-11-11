@@ -65,6 +65,18 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: '6px',
     whiteSpace: 'nowrap',
   },
+  /** Consulting physician approvals under the day strip. */
+  banner: {
+    margin: '8px 12px 0',
+    padding: '8px 12px',
+    borderRadius: 8,
+    backgroundColor: '#ecfdf5',
+    border: '1px solid #a7f3d0',
+    color: '#065f46',
+    fontSize: 12,
+    fontWeight: 600,
+    lineHeight: 1.45,
+  },
   dayBar: {
     display: 'flex',
     alignItems: 'center',
@@ -171,6 +183,8 @@ export interface AiSummaryCardProps {
   children?: ReactNode;
   /** Rendered beside the "AI Summarized" title, e.g. the AI model toggle. */
   titleExtra?: ReactNode;
+  /** Shown under the day strip — e.g. consulting approvals. */
+  banner?: ReactNode;
   /** Footer actions. */
   actions?: ReactNode;
   /** Fill a resizable panel and scroll the body internally. */
@@ -190,6 +204,7 @@ export function AiSummaryCard({
   emptyMessage,
   children,
   titleExtra,
+  banner,
   actions,
   fill,
 }: AiSummaryCardProps) {
@@ -236,6 +251,8 @@ export function AiSummaryCard({
           </button>
         </div>
       ) : null}
+
+      {banner ? <div style={styles.banner}>{banner}</div> : null}
 
       <div style={styles.body}>
         {children ??
