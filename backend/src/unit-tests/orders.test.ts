@@ -753,7 +753,10 @@ describe('OrdersService', () => {
       expect(prismaService.$transaction).toHaveBeenCalled();
       expect(prismaService.patientAdmission.update).toHaveBeenCalledWith({
         where: { id: 'admission-123' },
-        data: { roomId: 'room-305' },
+        data: expect.objectContaining({
+          roomId: 'room-305',
+          roomNumber: '305',
+        }),
       });
       expect(auditLogService.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'PATIENT_TRANSFERRED' }),

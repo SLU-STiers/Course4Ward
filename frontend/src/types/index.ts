@@ -114,6 +114,8 @@ export interface PatientAdmission {
   /** When the admission entered its current class (e.g. start of observation). */
   classSince?: string;
   initialAssessment?: string | null;
+  /** Past / present medical and surgical history (CF4 Part III). */
+  medicalSurgicalHistory?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
   /** Attending physician's id (physician-scoped lists). */
   physicianId?: string | null;
@@ -152,6 +154,10 @@ export interface AdmissionTriage {
   /** Prisma Decimal — serialized as a string. */
   temperature: string | number | null;
   painScore: number | null;
+  /** Centimetres; Prisma Decimal may arrive as a string. */
+  heightCm?: string | number | null;
+  /** Kilograms; Prisma Decimal may arrive as a string. */
+  weightKg?: string | number | null;
   createdAt: string;
   /** Nurse who recorded the triage. */
   recordedBy?: { firstName: string; lastName: string } | null;
@@ -302,6 +308,11 @@ export interface ClaimRecord {
         dischargeDate?: string | null;
         patientClass?: PatientClass;
         initialAssessment?: string | null;
+        medicalSurgicalHistory?: string | null;
+        /** Snapshot kept after discharge for CF4. */
+        roomNumber?: string | null;
+        /** Snapshot kept after discharge for CF4. */
+        wardName?: string | null;
         physician?: { firstName: string; lastName: string } | null;
         room?: { number: string; ward?: { name: string } | null } | null;
         triage?: AdmissionTriage | null;

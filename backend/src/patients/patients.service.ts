@@ -32,6 +32,8 @@ function buildTriage(dto: ReadmitPatientDto, nurseId: string) {
     bpDiastolic,
     temperature: dto.temp,
     painScore: dto.pain,
+    heightCm: dto.heightCm,
+    weightKg: dto.weightKg,
   };
   const hasAny = Object.values(triage).some((value) => value !== undefined && value !== null);
   return hasAny ? { ...triage, recordedById: nurseId } : null;
@@ -53,6 +55,8 @@ export const triageSelect = {
     bpDiastolic: true,
     temperature: true,
     painScore: true,
+    heightCm: true,
+    weightKg: true,
     createdAt: true,
     recordedBy: { select: { firstName: true, lastName: true } },
   },
@@ -98,6 +102,7 @@ const registeredAdmissions = {
     patientClass: true,
     classSince: true,
     initialAssessment: true,
+    medicalSurgicalHistory: true,
     physician: { select: { id: true, firstName: true, lastName: true } },
     additionalPhysicians: additionalPhysiciansSelect,
     triage: triageSelect,
@@ -187,7 +192,11 @@ export class PatientsService {
     await this.assertNotRegistered(dto, dateOfBirth);
     const plan = await this.planAdmission(dto, nurseId);
 
-    const createPatient = (db: Prisma.TransactionClient, roomId: string | null) => db.patient.create({
+    const createPatient = (
+      db: Prisma.TransactionClient,
+      roomId: string | null,
+      roomSnapshot: { roomNumber: string; wardName: string | null } | null = null,
+    ) => db.patient.create({
       data: {
         firstName: dto.firstName.trim(),
         middleName: dto.middleName?.trim() || null,
@@ -202,16 +211,20 @@ export class PatientsService {
         contactPersonName: dto.contactPersonName || null,
         contactPersonNumber: dto.contactPersonNumber || null,
         contactPersonAddress: dto.contactPersonAddress || null,
-        admissions: { create: this.admissionData(plan, dto, nurseId, roomId) },
+        admissions: { create: this.admissionData(plan, dto, nurseId, roomId, roomSnapshot) },
       },
       include: { admissions: registeredAdmissions },
     });
 
     const roomNumber = dto.roomNumber;
     const patient = roomNumber
-      ? await this.inRoomTransaction(async (tx) =>
-          createPatient(tx, await this.freeRoomId(tx, roomNumber, nurseId)),
-        )
+      ? await this.inRoomTransaction(async (tx) => {
+          const room = await this.takeRoom(tx, roomNumber, nurseId);
+          return createPatient(tx, room.id, {
+            roomNumber: room.number,
+            wardName: room.ward?.name ?? null,
+          });
+        })
       : await createPatient(this.prisma, null);
 
     const patientName = fullName(patient);
@@ -265,9 +278,18 @@ export class PatientsService {
           `${fullName(patient)} is still admitted; discharge the current stay before re-admitting them`,
         );
       }
-      const roomId = dto.roomNumber ? await this.freeRoomId(tx, dto.roomNumber, nurseId) : null;
+      const room = dto.roomNumber ? await this.takeRoom(tx, dto.roomNumber, nurseId) : null;
       await tx.patientAdmission.create({
-        data: { patientId, ...this.admissionData(plan, dto, nurseId, roomId) },
+        data: {
+          patientId,
+          ...this.admissionData(
+            plan,
+            dto,
+            nurseId,
+            room?.id ?? null,
+            room ? { roomNumber: room.number, wardName: room.ward?.name ?? null } : null,
+          ),
+        },
       });
     });
 
@@ -378,6 +400,7 @@ export class PatientsService {
       requiredIds,
       admissionDate: dto.admissionDate ? new Date(dto.admissionDate) : new Date(),
       initialAssessment: (dto.notes ?? dto.initialAssessment ?? '').trim() || null,
+      medicalSurgicalHistory: dto.medicalSurgicalHistory?.trim() || null,
     };
   }
 
@@ -386,6 +409,7 @@ export class PatientsService {
     dto: ReadmitPatientDto,
     nurseId: string,
     roomId: string | null,
+    roomSnapshot: { roomNumber: string; wardName: string | null } | null = null,
   ) {
     const triage = buildTriage(dto, nurseId);
     return {
@@ -393,8 +417,12 @@ export class PatientsService {
       patientClass: plan.patientClass,
       classSince: plan.admissionDate,
       initialAssessment: plan.initialAssessment,
+      medicalSurgicalHistory: plan.medicalSurgicalHistory,
       physicianId: dto.physicianId,
       roomId,
+      ...(roomSnapshot
+        ? { roomNumber: roomSnapshot.roomNumber, wardName: roomSnapshot.wardName }
+        : {}),
       additionalPhysicians: plan.additionalPhysicianIds.length
         ? { create: plan.additionalPhysicianIds.map((physicianId) => ({ physicianId })) }
         : undefined,
@@ -453,6 +481,7 @@ export class PatientsService {
                   patientClass: true,
                   classSince: true,
                   initialAssessment: true,
+                  medicalSurgicalHistory: true,
                   physician: { select: { firstName: true, lastName: true } },
                   additionalPhysicians: additionalPhysiciansSelect,
                   triage: triageSelect,
@@ -467,6 +496,7 @@ export class PatientsService {
                   patientClass: true,
                   classSince: true,
                   initialAssessment: true,
+                  medicalSurgicalHistory: true,
                   // Lets the physician UI tell attending from consultant.
                   physicianId: true,
                   triage: triageSelect,
@@ -492,6 +522,7 @@ export class PatientsService {
             patientClass: true,
             classSince: true,
             initialAssessment: true,
+            medicalSurgicalHistory: true,
             physician: { select: { firstName: true, lastName: true } },
             additionalPhysicians: additionalPhysiciansSelect,
             triage: triageSelect,
@@ -547,11 +578,17 @@ export class PatientsService {
       if (current.patientClass !== PatientClass.INPATIENT) {
         throw new BadRequestException('A room can only be assigned to an admitted patient');
       }
-      const roomId = roomNumber ? await this.freeRoomId(tx, roomNumber, userId, admissionId) : null;
+      const room = roomNumber ? await this.takeRoom(tx, roomNumber, userId, admissionId) : null;
       const updated = await tx.patientAdmission.update({
         where: { id: admissionId },
-        data: { roomId },
-        select: { id: true, room: roomSelect },
+        data: room
+          ? {
+              roomId: room.id,
+              roomNumber: room.number,
+              wardName: room.ward?.name ?? null,
+            }
+          : { roomId: null },
+        select: { id: true, room: roomSelect, roomNumber: true, wardName: true },
       });
       return { updated, previousRoom: current.room?.number ?? null };
     });
@@ -575,18 +612,17 @@ export class PatientsService {
   }
 
   /**
-   * The id of room `number`, if it exists, is in one of the nurse's wards and
-   * is neither held by another undischarged admission nor reserved for
-   * another admission's pending transfer.
+   * Takes room `number` if it exists, is in one of the nurse's wards, and is
+   * free (or already held/reserved by `exceptAdmissionId`).
    */
-  private async freeRoomId(
+  private async takeRoom(
     tx: Prisma.TransactionClient,
     number: string,
     nurseId: string,
     exceptAdmissionId?: string,
   ) {
     const { wardIds } = await this.wardAccess.wardsOf(nurseId);
-    return (await freeRoom(tx, number, exceptAdmissionId, wardIds)).id;
+    return freeRoom(tx, number, exceptAdmissionId, wardIds);
   }
 
   private inRoomTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {

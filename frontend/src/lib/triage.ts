@@ -122,6 +122,8 @@ export type TriageDisplay = {
   bp: string;
   temp: string;
   pain: string;
+  height: string;
+  weight: string;
   notes: string;
   /** Nurse who recorded the triage, e.g. `Maria Santos`; absent when unknown. */
   recordedBy?: string;
@@ -157,6 +159,8 @@ export function triageForDisplay(
   const triage = admission?.triage;
   const show = (value: string | number | null | undefined) =>
     value === null || value === undefined || value === '' ? '—' : String(value);
+  const decimal = (value: string | number | null | undefined) =>
+    value === null || value === undefined || value === '' ? '—' : Number(value).toFixed(1);
   const recorder = triage?.recordedBy;
   return {
     level: triage?.triageLevel ?? null,
@@ -171,6 +175,8 @@ export function triageForDisplay(
         : '—',
     temp: triage?.temperature != null ? Number(triage.temperature).toFixed(1) : '—',
     pain: show(triage?.painScore),
+    height: decimal(triage?.heightCm),
+    weight: decimal(triage?.weightKg),
     notes: admission?.initialAssessment?.trim() || 'No notes recorded.',
     recordedBy: recorder ? `${recorder.firstName} ${recorder.lastName}` : undefined,
   };
@@ -186,4 +192,6 @@ export const VITAL_FIELDS = [
   { key: 'bp', label: 'Blood Pressure', unit: 'mmHg' },
   { key: 'temp', label: 'Temp', unit: '°C' },
   { key: 'pain', label: 'Pain', unit: '/10' },
+  { key: 'height', label: 'Height', unit: 'cm' },
+  { key: 'weight', label: 'Weight', unit: 'kg' },
 ] as const;

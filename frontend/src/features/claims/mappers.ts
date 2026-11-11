@@ -1,7 +1,7 @@
 /** Part of the claims dashboard — see index.tsx for the screen shell. */
 
 import type { ClaimRecord } from '../../types';
-import { calculateAge, computeAge, formatDateMedium, formatTimeMedium, toDateInputValue } from '../../lib/format';
+import { calculateAge, computeAge, formatDateMedium, formatDatePhilHealth, formatTimeMedium, toDateInputValue } from '../../lib/format';
 import { triageForDisplay, triageLevelInfo, VITAL_FIELDS } from '../../lib/triage';
 import { INSURANCE_LABEL, PATIENT_CLASS_LABEL, admissionStatus, daysInCare, fullName, initials, sexLabel, statusColor } from '../../lib/patient';
 
@@ -40,11 +40,20 @@ function chartFor(claim: ClaimRecord, doctor: string): StayChart {
     .map((part) => part?.trim())
     .filter(Boolean)
     .join(' · ');
-  const ward = admission?.room?.ward?.name;
-  const room = admission?.room?.number;
+  // Prefer the discharge-safe snapshots; fall back to the live room while occupied.
+  const ward =
+    admission?.wardName?.trim()
+    || admission?.room?.ward?.name?.trim()
+    || '';
+  const room =
+    admission?.roomNumber?.trim()
+    || admission?.room?.number?.trim()
+    || '';
   const attending = admission?.physician
     ? `${admission.physician.firstName} ${admission.physician.lastName}`
     : doctor;
+
+  const dischargeOrder = claim.summary.orders.find((order) => order.type === 'DISCHARGE');
 
   return {
     dateOfBirth: patient.dateOfBirth ? formatDateMedium(patient.dateOfBirth) : '—',
@@ -55,9 +64,13 @@ function chartFor(claim: ClaimRecord, doctor: string): StayChart {
     emergencyContact: emergency || '—',
     attending,
     location: [ward, room ? `Room ${room}` : ''].filter(Boolean).join(' · ') || '—',
+    ward: ward || '—',
+    room: room || '—',
     patientClass: admission?.patientClass ? PATIENT_CLASS_LABEL[admission.patientClass] : '—',
     triage: triageLine(admission),
     assessment: shown(admission?.initialAssessment),
+    medicalSurgicalHistory: shown(admission?.medicalSurgicalHistory),
+    dischargeDiagnosis: shown(dischargeOrder?.orderContent),
   };
 }
 
@@ -83,7 +96,7 @@ const DAY_HEADING = /^\s*Finished orders for [^\n]*:\s*\n?/i;
 export function courseEntries(draft: Cf4SummaryDraft): CourseEntry[] {
   const days = draft.requests
     .map((request) => ({
-      dateLabel: formatDateMedium(request.summaryDate),
+      dateLabel: formatDatePhilHealth(request.summaryDate) || formatDateMedium(request.summaryDate),
       text: request.summaryText.replace(DAY_HEADING, '').trim(),
       requestId: request.id,
       orders: request.orders,
@@ -121,9 +134,24 @@ export function buildStayDraft(patient: CF4Patient, requests: SummarizationReque
       emergencyContact: first?.chart.emergencyContact ?? '—',
       attending: uniqueShown(ordered.map((request) => request.chart.attending)),
       location: uniqueShown(ordered.map((request) => request.chart.location)),
+      // Prefer the earliest day's placement / assessment so CF4 ticks and room
+      // come from admission, not a `;`-joined mash of later notes.
+      ward: ordered.map((request) => request.chart.ward).find((value) => value && value !== '—') ?? '—',
+      room: ordered.map((request) => request.chart.room).find((value) => value && value !== '—') ?? '—',
       patientClass: uniqueShown(ordered.map((request) => request.chart.patientClass)),
       triage: uniqueShown(ordered.map((request) => request.chart.triage)),
-      assessment: uniqueShown(ordered.map((request) => request.chart.assessment)),
+      assessment: first?.chart.assessment ?? '—',
+      medicalSurgicalHistory: uniqueShown(
+        ordered.map((request) => request.chart.medicalSurgicalHistory),
+      ),
+      dischargeDiagnosis:
+        uniqueShown(
+          ordered.flatMap((request) =>
+            request.orders
+              .filter((order) => order.type === 'DISCHARGE')
+              .map((order) => order.content),
+          ),
+        ) || uniqueShown(ordered.map((request) => request.chart.dischargeDiagnosis)),
     },
   };
 }

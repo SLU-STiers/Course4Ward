@@ -215,10 +215,16 @@ model PatientAdmission {
   /// When the admission entered its current class (e.g. start of observation).
   classSince           DateTime             @default(now())
   initialAssessment    String?
+  /// Past / present medical and surgical history for CF4 Part III.
+  medicalSurgicalHistory String?
   patientId            String
   physicianId          String?
-  /// The ward room of an admitted patient; freed once the admission is discharged.
+  /// The ward room of an admitted patient; occupancy frees once discharged.
   roomId               String?
+  /// Last assigned room number — kept after discharge for CF4 / claims.
+  roomNumber           String?
+  /// Last assigned ward name — kept after discharge for CF4 / claims.
+  wardName             String?
   patient              Patient              @relation(fields: [patientId], references: [id])
   physician            User?                @relation(fields: [physicianId], references: [id])
   room                 Room?                @relation(fields: [roomId], references: [id])
@@ -301,6 +307,10 @@ model TriageAssessment {
   bpDiastolic  Int?
   temperature  Decimal? @db.Decimal(4, 1)
   painScore    Int?
+  /// Height in centimetres (CF4 physical examination).
+  heightCm     Decimal? @db.Decimal(5, 1)
+  /// Weight in kilograms (CF4 physical examination).
+  weightKg     Decimal? @db.Decimal(5, 1)
   recordedById String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

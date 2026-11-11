@@ -360,6 +360,9 @@ describe("Claims Module", () => {
                         dischargeDate: true,
                         patientClass: true,
                         initialAssessment: true,
+                        medicalSurgicalHistory: true,
+                        roomNumber: true,
+                        wardName: true,
                         physician: { select: { firstName: true, lastName: true } },
                         room: { select: { number: true, ward: { select: { name: true } } } },
                         triage: expect.objectContaining({
