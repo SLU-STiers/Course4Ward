@@ -62,7 +62,7 @@ export function buildAiReportPdf(input: {
   y += 8;
   paragraph(
     'This report describes how the AI components of Course4Ward performed: the language model ' +
-      'that drafts each Course in the Ward summary from the finished physician orders of a day, ' +
+      'that drafts each Course in the Ward summary from the accomplished physician orders of a day, ' +
       'and the embedding model that lets the system look up similar past orders as references ' +
       '(retrieval-augmented generation, RAG). Durations are measured over successful calls only; ' +
       'failed calls are counted separately.',

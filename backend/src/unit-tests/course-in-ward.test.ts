@@ -372,7 +372,7 @@ describe('CourseInWardService', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.generateSummary(mockPatientId, mockRequestedById, '2026-03-04')
-      ).rejects.toThrow('No finished orders recorded for this patient on 2026-03-04');
+      ).rejects.toThrow('No accomplished orders recorded for this patient on 2026-03-04');
       expect(mockOllamaClient.summarizeBatch).not.toHaveBeenCalled();
     });
 

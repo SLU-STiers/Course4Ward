@@ -77,7 +77,7 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
                 disabled={locked}
                 title={
                   finalized
-                    ? 'This order is finished and its note has been submitted'
+                    ? 'This order is accomplished and its note has been submitted'
                     : option.value === 'FINISHED' && finishBlocked
                       ? finishBlocked
                       : locked
@@ -111,7 +111,7 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
         />
         {finalized ? (
           <span style={s.lockedNote}>
-            This order is finished and its note has been submitted, so it can no longer be edited.
+            This order is accomplished and its note has been submitted, so it can no longer be edited.
           </span>
         ) : (
           <div style={s.actions}>
@@ -124,7 +124,7 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
             )}
             {dischargeNoteMissing && !finishBlocked && (
               <span style={s.error}>
-                Add a note to mark this discharge done. The patient is discharged when you save.
+                Add a note to mark this discharge accomplished. The patient is discharged when you save.
               </span>
             )}
             {error && <span style={s.error}>{error}</span>}

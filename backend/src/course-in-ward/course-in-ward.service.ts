@@ -373,7 +373,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     if (!patient) throw new NotFoundException('Patient not found');
     if (dayOrders.length === 0) {
       throw new BadRequestException(
-        `No finished orders recorded for this patient on ${targetDay}`,
+        `No accomplished orders recorded for this patient on ${targetDay}`,
       );
     }
 

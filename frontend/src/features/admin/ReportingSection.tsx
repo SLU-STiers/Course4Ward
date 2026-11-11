@@ -80,7 +80,7 @@ const PRESET_BUCKET: Record<RangePreset, TrendBucket> = {
 const ORDER_STATUS_LABELS: Record<string, string> = {
   TO_ACCOMPLISH: 'To accomplish',
   ONGOING: 'Ongoing',
-  FINISHED: 'Finished',
+  FINISHED: 'Accomplished',
 };
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
@@ -607,7 +607,7 @@ function AiStatsPanel({
           {
             title: 'Summarization time',
             description:
-              'How long the language model took to write a Course in the Ward draft from a day\'s finished physician orders. "Median" is the typical call, "95th percentile" the slow end that 1 call in 20 exceeds. "Orders per call" and "Summary length" show how much went in and came out per successful call.',
+              'How long the language model took to write a Course in the Ward draft from a day\'s accomplished physician orders. "Median" is the typical call, "95th percentile" the slow end that 1 call in 20 exceeds. "Orders per call" and "Summary length" show how much went in and came out per successful call.',
             rows: summaryRows,
           },
           {
@@ -889,7 +889,7 @@ function MissedSummariesCard({ focus }: { focus: boolean }) {
       ) : isError ? (
         <p style={styles.reportEmpty}>Could not load the missed days.</p>
       ) : !days.length ? (
-        <p style={styles.reportEmpty}>Every past day with finished orders has a summary.</p>
+        <p style={styles.reportEmpty}>Every past day with accomplished orders has a summary.</p>
       ) : (
         <ul style={missedStyles.list}>
           {days.map((group) => {

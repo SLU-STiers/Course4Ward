@@ -251,7 +251,7 @@ export function OnBehalfOrderForm({
             <p style={{ ...styles.hint, marginTop: 4 }}>{transferProblem}</p>
           )}
           <p style={{ ...styles.hint, marginTop: 4 }}>
-            The room is reserved when you send the order. Mark the order Finished once the patient has moved.
+            The room is reserved when you send the order. Mark the order Accomplished once the patient has moved.
           </p>
         </div>
       )}

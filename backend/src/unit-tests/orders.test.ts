@@ -457,7 +457,7 @@ describe('OrdersService', () => {
       expect(mockNotificationsService.notifyUsers).toHaveBeenCalledWith(
         ['doctor-789', 'doctor-123'],
         expect.objectContaining({
-          title: 'Order finished after summary',
+          title: 'Order accomplished after summary',
           message: expect.stringContaining(
             '**Angela Reyes** accomplished an order for **Juan Dela Cruz**',
           ),
