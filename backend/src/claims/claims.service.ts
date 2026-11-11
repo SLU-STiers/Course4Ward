@@ -275,6 +275,10 @@ export class ClaimsService {
                     patientClass: true,
                     // The claim review and the CF4 show the stay, not only the day.
                     initialAssessment: true,
+                    medicalSurgicalHistory: true,
+                    // Snapshots survive discharge; live `room` is only while occupied.
+                    roomNumber: true,
+                    wardName: true,
                     physician: { select: { firstName: true, lastName: true } },
                     room: { select: { number: true, ward: { select: { name: true } } } },
                     triage: triageSelect,

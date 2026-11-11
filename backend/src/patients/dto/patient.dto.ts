@@ -241,6 +241,28 @@ export class CreatePatientDto {
   @Max(10, { message: 'Pain score must be between 0 and 10' })
   pain?: number;
 
+  @ApiPropertyOptional({ description: 'Height in centimetres', example: 165 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 1 }, { message: 'Height must be a number with at most 1 decimal' })
+  @Min(20, { message: 'Height must be at least 20 cm' })
+  @Max(300, { message: 'Height must be at most 300 cm' })
+  heightCm?: number;
+
+  @ApiPropertyOptional({ description: 'Weight in kilograms', example: 60 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 1 }, { message: 'Weight must be a number with at most 1 decimal' })
+  @Min(0.5, { message: 'Weight must be at least 0.5 kg' })
+  @Max(500, { message: 'Weight must be at most 500 kg' })
+  weightKg?: number;
+
+  @ApiPropertyOptional({ description: 'Past / present medical and surgical history for CF4' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  medicalSurgicalHistory?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

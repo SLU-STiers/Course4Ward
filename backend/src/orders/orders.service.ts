@@ -510,7 +510,14 @@ export class OrdersService {
     if (!target) throw new NotFoundException('The transfer room no longer exists');
 
     const to = await freeRoom(tx, target.number, order.admissionId);
-    await tx.patientAdmission.update({ where: { id: order.admissionId }, data: { roomId: to.id } });
+    await tx.patientAdmission.update({
+      where: { id: order.admissionId },
+      data: {
+        roomId: to.id,
+        roomNumber: to.number,
+        wardName: to.ward?.name ?? null,
+      },
+    });
     return { patientId: admission.patientId, from: admission.room, to };
   }
 

@@ -321,11 +321,26 @@ async function main() {
   for (const [key, number] of Object.entries(admissionRooms)) {
     const room = await prisma.room.findUnique({
       where: { number },
-      select: { id: true, admissions: { where: { dischargeDate: null }, take: 1, select: { id: true } } },
+      select: {
+        id: true,
+        number: true,
+        ward: { select: { name: true } },
+        admissions: { where: { dischargeDate: null }, take: 1, select: { id: true } },
+      },
     });
-    if (!room || room.admissions.length) continue;
+    if (!room) continue;
+    const admissionId = must(admissionIds.get(key), `admission '${key}'`);
+    // Always keep ward/room text for CF4, even after discharge frees the live room.
+    await prisma.patientAdmission.update({
+      where: { id: admissionId },
+      data: {
+        roomNumber: room.number,
+        wardName: room.ward?.name ?? null,
+      },
+    });
+    if (room.admissions.length) continue;
     await prisma.patientAdmission.updateMany({
-      where: { id: must(admissionIds.get(key), `admission '${key}'`), roomId: null, dischargeDate: null },
+      where: { id: admissionId, roomId: null, dischargeDate: null },
       data: { roomId: room.id },
     });
   }
