@@ -185,7 +185,7 @@ export function SummaryHistory({
             <span style={manage.historyLegend}>
               <span>
                 <mark style={manage.historyLegendTeal}>Teal</mark> words in the
-                selected card come from the finished doctor's orders listed in
+                selected card come from the accomplished doctor's orders listed in
                 the panel.
               </span>
               <span>

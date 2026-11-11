@@ -346,7 +346,7 @@ export class OrdersService {
     // A finished order with a submitted note is the nurse's final record of
     // it; neither the status nor the note can change after that.
     if (order.status === OrderStatus.FINISHED && order.nurseComment) {
-      throw new BadRequestException('This order is finished and its note has already been submitted');
+      throw new BadRequestException('This order is accomplished and its note has already been submitted');
     }
 
     if (ORDER_STATUS_RANK[dto.status] < ORDER_STATUS_RANK[order.status]) {
@@ -636,7 +636,7 @@ export class OrdersService {
       const regenerate =
         "after that day's Course in the Ward was written. Regenerate the summary to include it.";
       await this.notifications.notifyUsers(physicianIds, {
-        title: movedText ? 'Patient transferred' : summary ? 'Order finished after summary' : 'Order accomplished',
+        title: movedText ? 'Patient transferred' : summary ? 'Order accomplished after summary' : 'Order accomplished',
         message: movedText
           ? summary
             ? `${movedText} The transfer order is from ${day} and was carried out ${regenerate}`
