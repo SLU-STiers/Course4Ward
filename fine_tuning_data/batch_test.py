@@ -6,7 +6,7 @@ rest), checks each summary automatically, compares it with the approved
 reference in summaries.json, and writes a CSV.
 
   python fine_tuning_data/batch_test.py                          # all 88 groups, base model
-  python fine_tuning_data/batch_test.py --variant standard fine_tuned --eval-only
+  python fine_tuning_data/batch_test.py --variant standard fine_tuned fine_tuned_rag --eval-only
   python fine_tuning_data/batch_test.py --limit 10 --runs 3      # consistency: same group 3x
   python fine_tuning_data/batch_test.py --report                 # + batch_report.html / .pdf
   python fine_tuning_data/batch_test.py --report-from fine_tuning_data/batch_results.csv
@@ -30,6 +30,15 @@ All 88 approved references pass every hard check, so a FAIL is the model's.
 Metrics: time, sentences, words, number coverage (share of the orders' doses/
 rates/counts kept: a completeness proxy) and ROUGE-1, ROUGE-2 and ROUGE-L F1
 against the reference.
+
+RAG: like the backend, the standard variant gets up to 3 approved summaries of
+similar orders as references (the fine-tuned one gets none, as in production;
+fine_tuned_rag is the fine-tuned model given the same references, test-only). The corpus is
+summaries.json: every order of every group is embedded once through the
+service's /embed, and a group may only retrieve what production could have
+had approved by then: other admissions, or earlier days of its own. --no-rag
+sends none, to measure what RAG adds. Besides the CSV, a <out>.json with the
+per-variant statistics is written for the admin dashboard.
 """
 import argparse
 import csv
@@ -96,12 +105,13 @@ def load_groups(path):
     return groups
 
 
-def request_body(group, variant, temperature):
+def request_body(group, variant, temperature, references=()):
     """The camelCase payload the backend sends, for a single admission-day."""
     admitted = date.fromisoformat(group["date"]) - timedelta(days=group["day"] - 1)
     return {
         "temperature": temperature,
-        "variant": variant,
+        "variant": SERVICE_VARIANT[variant],
+        "references": list(references),
         "admissions": [{
             "admissionId": group["admission_id"],
             "admissionDate": admitted.isoformat(),
@@ -111,6 +121,43 @@ def request_body(group, variant, temperature):
             ],
         }],
     }
+
+
+# Test variant -> the ai_service variant it calls; RAG_VARIANTS also get references.
+SERVICE_VARIANT = {"standard": "standard", "fine_tuned": "fine_tuned", "fine_tuned_rag": "fine_tuned"}
+RAG_VARIANTS = {"standard", "fine_tuned_rag"}
+RAG_LIMIT = 3          # summaries per request, as CourseInWardService.retrieveReferences
+RAG_ORDERS = 3         # best-matching source orders kept per summary
+EMBED_CHUNK = 64       # texts per /embed call
+
+
+def embed(base, texts, timeout):
+    """Texts -> L2-normalized vectors through the service's /embed."""
+    vectors = []
+    for i in range(0, len(texts), EMBED_CHUNK):
+        vectors += post_json(base + "/embed", {"texts": texts[i:i + EMBED_CHUNK]}, timeout)["embeddings"]
+    return vectors
+
+
+def retrieve(index, group, query, limit=RAG_LIMIT):
+    """The backend's pgvector retrieval, in memory.
+
+    `index` is [(group, order_text, vector)] over the approved corpus. Ranks
+    every order by cosine similarity (a dot product: the vectors are
+    normalized), keeps the top limit*8 like the SQL, then groups them per
+    summary: best similarity, up to RAG_ORDERS source orders.
+    """
+    scored = sorted(
+        ((sum(a * b for a, b in zip(query, vec)), g, text) for g, text, vec in index
+         # Only what was approved before this day: other admissions, or this one's earlier days.
+         if g["admission_id"] != group["admission_id"] or g["day"] < group["day"]),
+        key=lambda item: -item[0])[: limit * 8]
+    best = {}
+    for sim, g, text in scored:
+        entry = best.setdefault(g["group_id"], {"group_id": g["group_id"], "sim": sim, "orders": []})
+        if len(entry["orders"]) < RAG_ORDERS:
+            entry["orders"].append(text)
+    return sorted(best.values(), key=lambda e: -e["sim"])[:limit]
 
 
 def post_json(url, body, timeout):
@@ -226,7 +273,7 @@ def main():
     sys.stdout.reconfigure(errors="replace")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default="http://localhost:8000", help="ai_service base URL")
-    ap.add_argument("--variant", nargs="+", default=["standard"], choices=["standard", "fine_tuned"])
+    ap.add_argument("--variant", nargs="+", default=["standard"], choices=list(SERVICE_VARIANT))
     ap.add_argument("--groups", default=str(HERE / "groups.txt"))
     ap.add_argument("--references", default=str(HERE / "summaries.json"))
     ap.add_argument("--only", nargs="+", metavar="GROUP_ID", help="test just these group ids")
@@ -234,6 +281,7 @@ def main():
     ap.add_argument("--limit", type=int, help="first N groups")
     ap.add_argument("--runs", type=int, default=1, help="repeat each group N times")
     ap.add_argument("--temperature", type=float, default=0.1)
+    ap.add_argument("--no-rag", action="store_true", help="send the standard variant no RAG references")
     ap.add_argument("--timeout", type=int, default=600, help="seconds per request")
     ap.add_argument("--out", default=str(HERE / "batch_results.csv"))
     ap.add_argument("--report", nargs="?", const=str(HERE / "batch_report.html"), metavar="HTML",
@@ -261,7 +309,7 @@ def main():
                       "Order groups": len({r["group_id"] for r in rows})})
         return 0
 
-    groups = load_groups(Path(args.groups))
+    all_groups = groups = load_groups(Path(args.groups))
     if args.eval_only:
         groups = [g for g in groups if g["admission_id"] in EVAL_ADMISSIONS]
     if args.only:
@@ -279,6 +327,21 @@ def main():
         print(f"ai_service not reachable at {base}/health: {exc}")
         return 1
 
+    # RAG corpus + queries, embedded once up front (the fine-tuned model gets no references).
+    rag = bool(RAG_VARIANTS & set(args.variant)) and not args.no_rag
+    index, queries = [], {}
+    if rag:
+        corpus = [(g, text) for g in all_groups if g["group_id"] in references for text in g["orders"]]
+        print(f"Embedding {len(corpus)} reference orders + {len(groups)} queries for RAG...")
+        try:
+            vectors = embed(base, [text for _, text in corpus]
+                            + ["\n".join(g["orders"]) for g in groups], args.timeout)
+            index = [(g, text, v) for (g, text), v in zip(corpus, vectors)]
+            queries = {g["group_id"]: v for g, v in zip(groups, vectors[len(corpus):])}
+        except Exception as exc:  # the backend also summarizes without references when retrieval fails
+            print(f"RAG disabled, /embed failed: {type(exc).__name__}: {exc}")
+            rag = False
+
     total = len(groups) * len(args.variant) * args.runs
     print(f"Testing {len(groups)} group(s) x {len(args.variant)} variant(s) x {args.runs} run(s) = {total} calls\n")
 
@@ -286,13 +349,17 @@ def main():
     for variant in args.variant:
         for group in groups:
             orders_text = "\n".join(group["orders"])
+            hits = retrieve(index, group, queries[group["group_id"]]) \
+                if rag and variant in RAG_VARIANTS else []
+            refs = [{"approvedSummary": references[h["group_id"]], "sourceOrders": h["orders"],
+                     "similarity": round(h["sim"], 4)} for h in hits]
             for run in range(1, args.runs + 1):
                 n += 1
                 started = time.time()
                 summary, error, service_s = None, None, None
                 try:
                     data = post_json(base + "/generate-summary/batch",
-                                     request_body(group, variant, args.temperature), args.timeout)
+                                     request_body(group, variant, args.temperature, refs), args.timeout)
                     result = data["results"][0]
                     summary, error = result.get("summary"), result.get("error")
                     service_s = result.get("processing_time_seconds")
@@ -313,7 +380,7 @@ def main():
 
                 print(f"[{n}/{total}] {status:4} {variant:10} {group['group_id']:22} "
                       f"{service_s if service_s is not None else wall:>6}s"
-                      f"  R1/R2/RL={shown}  {'; '.join(fails + warns)}")
+                      f"  R1/R2/RL={shown}  RAG={len(refs)}  {'; '.join(fails + warns)}")
                 rows.append({
                     "variant": variant, "group_id": group["group_id"], "run": run,
                     "status": status, "orders": len(group["orders"]),
@@ -321,6 +388,10 @@ def main():
                     "sentences": metrics.get("sentences"), "words": metrics.get("words"),
                     "number_coverage": metrics.get("number_coverage"),
                     **scores,
+                    # None (not 0) when this variant never gets references, so averages leave it out.
+                    "rag_refs": len(refs) if rag and variant in RAG_VARIANTS else None,
+                    "rag_similarity": refs[0]["similarity"] if refs else None,
+                    "rag_from": " ".join(h["group_id"] for h in hits),
                     "fails": " | ".join(fails), "warns": " | ".join(warns),
                     "summary": summary or "",
                 })
@@ -332,22 +403,28 @@ def main():
 
     print_report(rows, args.variant)
     print(f"\nWrote {args.out}")
+    models = {"standard": health.get("model"), "fine_tuned": health.get("fine_tuned_model"),
+              "fine_tuned_rag": health.get("fine_tuned_model")}
+    meta = {
+        "AI service": base,
+        "Models": ", ".join(f"{VARIANT_LABELS[v]}: {models.get(v) or '?'}" for v in args.variant),
+        "Order groups": f"{len(groups)} ({'held-out eval admissions only' if args.eval_only else 'from groups.txt'})",
+        "Runs per group": args.runs,
+        "Temperature": args.temperature,
+        "RAG references": (f"up to {RAG_LIMIT} per summary from {len(index)} embedded orders "
+                           f"({health.get('embedding_model', '?')})") if rag else "none",
+        "Summaries tested": len(rows),
+    }
+    write_stats(rows, Path(args.out).with_suffix(".json"), meta)
     if args.report:
-        models = {"standard": health.get("model"), "fine_tuned": health.get("fine_tuned_model")}
-        write_report(rows, args.report, references, {
-            "AI service": base,
-            "Models": ", ".join(f"{VARIANT_LABELS[v]}: {models.get(v) or '?'}" for v in args.variant),
-            "Order groups": f"{len(groups)} ({'held-out eval admissions only' if args.eval_only else 'from groups.txt'})",
-            "Runs per group": args.runs,
-            "Temperature": args.temperature,
-            "Summaries tested": len(rows),
-        })
+        write_report(rows, args.report, references, meta)
     return 1 if any(r["status"] == "FAIL" for r in rows) else 0
 
 
 METRICS = [("sentences", "Sentences"), ("words", "Words"),
            ("number_coverage", "Number coverage"),
-           ("rouge1", "ROUGE-1"), ("rouge2", "ROUGE-2"), ("rougeL", "ROUGE-L")]
+           ("rouge1", "ROUGE-1"), ("rouge2", "ROUGE-2"), ("rougeL", "ROUGE-L"),
+           ("rag_refs", "RAG references"), ("rag_similarity", "RAG top similarity")]
 
 
 def variant_stats(rows, variant):
@@ -377,6 +454,21 @@ def variant_stats(rows, variant):
     }
 
 
+def write_stats(rows, path, meta):
+    """<out>.json: every variant's statistics, read by the admin dashboard."""
+    variants = {}
+    for variant in dict.fromkeys(r["variant"] for r in rows):
+        s = variant_stats(rows, variant)
+        variants[variant] = {
+            **{k: s[k] for k in ("calls", "pass", "warn", "fail", "fail_reasons", "warn_reasons")},
+            "time": dict(zip(("avg", "median", "p95", "max"), s["time"])) if s["time"] else None,
+            "metrics": {k: dict(zip(("avg", "min", "max"), v)) for k, v in s["metrics"].items()},
+        }
+    path.write_text(json.dumps({"generatedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                "meta": meta, "variants": variants}, indent=2), encoding="utf-8")
+    print(f"Wrote {path}")
+
+
 def print_report(rows, variants):
     print("\n" + "=" * 72)
     for variant in variants:
@@ -393,7 +485,9 @@ def print_report(rows, variants):
 
 
 # ---------------------------------------------------------------- report
-VARIANT_LABELS = {"standard": "Base model (with RAG)", "fine_tuned": "Fine-tuned model"}
+VARIANT_LABELS = {"standard": "Base model (with RAG)", "fine_tuned": "Fine-tuned model",
+                  "fine_tuned_rag": "Fine-tuned model (with RAG)"}
+SHORT_LABELS = {"standard": "Base", "fine_tuned": "Fine-tuned", "fine_tuned_rag": "Fine-tuned + RAG"}
 
 
 def fmt_number(value, digits=2):
@@ -414,7 +508,8 @@ def read_rows(path):
     for r in rows:
         # CSVs from before ROUGE-2/L had ROUGE-1 only, as "reference_similarity".
         r.setdefault("rouge1", r.get("reference_similarity"))
-        for field in ("seconds", "wall_seconds", "sentences", "words", "number_coverage", *ROUGE_KEYS):
+        for field in ("seconds", "wall_seconds", "sentences", "words", "number_coverage", *ROUGE_KEYS,
+                      "rag_refs", "rag_similarity"):
             r[field] = num(r.get(field))
     return rows
 
@@ -476,7 +571,7 @@ def write_report(rows, path, references, meta):
 
     result_rows = "".join(
         f'<tr class="{r["status"].lower()}"><td>{esc(r["group_id"])}</td>'
-        f'<td>{"Fine-tuned" if r["variant"] == "fine_tuned" else "Base"}</td><td>{esc(str(r["run"]))}</td>'
+        f'<td>{SHORT_LABELS.get(r["variant"], r["variant"])}</td><td>{esc(str(r["run"]))}</td>'
         f'<td><b>{r["status"]}</b></td><td>{esc(str(r["orders"]))}</td><td>{fmt(r["seconds"], 1)}</td>'
         f'<td>{fmt(r["words"], 0)}</td><td>{fmt(r["number_coverage"])}</td>'
         + "".join(f"<td>{fmt(r[k])}</td>" for k in ROUGE_KEYS) +
@@ -608,7 +703,17 @@ def self_test():
     assert single["orders"] == ["Single order, no number prefix"], single
     assert "1,000 ml" in g["orders"][0]
     body = request_body(g, "standard", 0.1)
-    assert body["admissions"][0]["admissionDate"] == "2026-03-09"
+    assert body["admissions"][0]["admissionDate"] == "2026-03-09" and body["references"] == []
+    assert request_body(g, "fine_tuned_rag", 0.1, [{"approvedSummary": "x"}])["variant"] == "fine_tuned"
+
+    # RAG: own day and later days of the same admission are never retrieved; one entry per summary.
+    other = {"group_id": "2-day-1", "admission_id": "2", "day": 1}
+    index = [(g, "a", [1.0, 0.0]), (single, "b", [1.0, 0.0]),
+             (other, "c", [0.6, 0.8]), (other, "d", [0.0, 1.0])]
+    hits = retrieve(index, g, [1.0, 0.0])
+    assert [h["group_id"] for h in hits] == ["2-day-1"] and hits[0]["orders"] == ["c", "d"], hits
+    assert abs(hits[0]["sim"] - 0.6) < 1e-9
+    assert [h["group_id"] for h in retrieve(index, single, [1.0, 0.0])] == ["1-day-2", "2-day-1"]
 
     orders = "\n".join(g["orders"])
     good = "Ceftriaxone 2 g IV q24h was started and 1000 ml PNSS was continued. CBC and creatinine were requested."

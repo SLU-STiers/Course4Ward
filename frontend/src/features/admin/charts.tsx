@@ -454,3 +454,16 @@ export function StatRows({
     </div>
   );
 }
+
+/** One headline number in a `.admin-kpi-grid`. */
+export function Kpi({ label, value, hint }: { label: string; value: number | string; hint: string }) {
+  return (
+    <div style={styles.kpiTile}>
+      <span style={styles.kpiLabel} title={label}>
+        {label}
+      </span>
+      <span style={styles.kpiValue}>{value}</span>
+      <span style={styles.kpiHint}>{hint}</span>
+    </div>
+  );
+}

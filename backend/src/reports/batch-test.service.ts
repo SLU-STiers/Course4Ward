@@ -1,11 +1,12 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChildProcess, spawn } from 'child_process';
-import { existsSync, mkdirSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
-export const BATCH_TEST_VARIANTS = ['standard', 'fine_tuned'] as const;
+/** `fine_tuned_rag`: the fine-tuned model given RAG references (test-only; production sends it none). */
+export const BATCH_TEST_VARIANTS = ['standard', 'fine_tuned', 'fine_tuned_rag'] as const;
 export type BatchTestVariant = (typeof BATCH_TEST_VARIANTS)[number];
 
 export interface BatchTestOptions {
@@ -67,6 +68,22 @@ export class BatchTestService {
     return join(this.outDir, 'batch_report.html');
   }
 
+  /** Per-variant statistics the script writes next to its CSV (`<out>.json`). */
+  private get statsFile() {
+    return join(this.outDir, 'batch_results.json');
+  }
+
+  /** The last finished run's statistics; it outlives a backend restart, like the report. */
+  private readStats(): unknown {
+    if (this.status === 'running' || !existsSync(this.statsFile)) return null;
+    try {
+      return JSON.parse(readFileSync(this.statsFile, 'utf8'));
+    } catch (error) {
+      this.logger.warn(`Unreadable batch test stats: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
   state() {
     return {
       /** False when the script is not deployed next to the backend (e.g. in Docker). */
@@ -79,6 +96,7 @@ export class BatchTestService {
       log: this.partial ? [...this.log, this.partial] : this.log,
       reportAvailable:
         this.status !== 'running' && (existsSync(this.reportPdf) || existsSync(this.reportHtml)),
+      stats: this.readStats(),
     };
   }
 
@@ -91,7 +109,7 @@ export class BatchTestService {
     }
     mkdirSync(this.outDir, { recursive: true });
     // A run that dies before writing its report must not serve the previous one.
-    for (const file of [this.reportPdf, this.reportHtml]) rmSync(file, { force: true });
+    for (const file of [this.reportPdf, this.reportHtml, this.statsFile]) rmSync(file, { force: true });
 
     const args = [
       this.script,
