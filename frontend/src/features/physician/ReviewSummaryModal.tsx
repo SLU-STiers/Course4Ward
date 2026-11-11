@@ -57,7 +57,7 @@ export function ReviewSummaryModal({
 }: {
   request: PhysicianRequest;
   onClose: () => void;
-  onApprove: () => Promise<void>;
+  onApprove: () => Promise<CourseInWard>;
 }) {
   const patientId = request.summary.patient.id;
   const requestDay = summaryDayKey(request.summary);
@@ -188,14 +188,15 @@ export function ReviewSummaryModal({
     setSelectedDay(direction < 0 ? candidates[candidates.length - 1] : candidates[0]);
   };
 
-  // Same as Manage: approve the day on screen. Approving the requested day
-  // also completes the claim and closes this review.
+  // Approving the requested day completes its claim but keeps this stay review
+  // open so the physician can continue through the remaining days.
   const approveDay = () => {
     if (!daySummary || !canApproveDay || busy) return;
     if (daySummary.id === request.summary.id) {
       setBusy('approving');
       setError(null);
       void onApprove()
+        .then((updated) => replaceSummary([updated]))
         .catch(() => setError('Approval failed. Please try again.'))
         .finally(() => setBusy(null));
       return;
@@ -224,6 +225,7 @@ export function ReviewSummaryModal({
       );
     void Promise.all(others.map((entry) => courseInWardApi.approve(entry.id)))
       .then(() => onApprove())
+      .then(() => onClose())
       .catch(() => setError('Approval failed. Please try again.'))
       .finally(() => setBusy(null));
   };
