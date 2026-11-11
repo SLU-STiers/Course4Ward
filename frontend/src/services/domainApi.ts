@@ -186,7 +186,8 @@ export const claimsApi = {
   /** Summaries that do not have a claim yet. */
   eligibleSummaries: () => api.get<EligibleSummary[]>('/claims/eligible-summaries'),
   physicianRequests: () => api.get<PhysicianRequest[]>('/claims/physician-requests'),
-  approvePhysicianRequest: (id: string) => api.patch(`/claims/${id}/approve`),
+  approvePhysicianRequest: (id: string) =>
+    api.patch<{ summary: CourseInWard }>(`/claims/${id}/approve`),
   /** `message` is the note typed in the review modal; it lands on the
    *  physician's notification bell. */
   notifyPhysician: (id: string, message?: string) =>
