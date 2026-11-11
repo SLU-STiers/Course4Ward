@@ -32,9 +32,8 @@ FINE_TUNED_MODEL = os.getenv("FINE_TUNED_MODEL", "finetuned-qwen")
 # or the fine-tuned one.
 ModelVariant = Literal["standard", "fine_tuned"]
 MODELS = {"standard": MODEL, "fine_tuned": FINE_TUNED_MODEL}
-# Context window per request; overrides the Modelfile's num_ctx (often 4096),
-# which a long day of orders plus RAG references can exceed.
-NUM_CTX = int(os.getenv("NUM_CTX", "8192"))
+# Context window per request; overrides the Modelfile's num_ctx.
+NUM_CTX = int(os.getenv("NUM_CTX", "16384"))
 
 
 def _ollama_model_names() -> set[str]:

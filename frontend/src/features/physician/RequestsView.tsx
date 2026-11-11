@@ -235,9 +235,9 @@ export function RequestsView({
           onClose={() => setSelected(null)}
           onDayApproved={loadRequests}
           onApprove={async () => {
-            await claimsApi.approvePhysicianRequest(selected.id);
+            const { data } = await claimsApi.approvePhysicianRequest(selected.id);
             await loadRequests();
-            setSelected(null);
+            return data.summary;
           }}
         />
       )}

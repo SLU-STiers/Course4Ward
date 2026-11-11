@@ -57,6 +57,7 @@ class OllamaClientUnitTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(post.call_args.kwargs["json"]["model"], "test-model")
         self.assertEqual(post.call_args.kwargs["json"]["options"]["temperature"], 0.4)
+        self.assertEqual(post.call_args.kwargs["json"]["options"]["num_ctx"], ollama_client.NUM_CTX)
 
     def test_embeddings_load_model_once_and_return_numpy_array(self):
         created_models = []
