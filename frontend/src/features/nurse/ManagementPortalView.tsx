@@ -443,12 +443,10 @@ export function ManagementPortalView({
             careTeamNames={careTeamNames}
             attendingName={detailPatient.assignedDoctor}
             currentRoom={detailPatient.room}
-            canTransfer={
-              detailPatient.patientClass === 'INPATIENT' &&
-              !(ordersByPatient[detailPatient.id] ?? []).some(
-                (set) => set.order?.type === 'DISCHARGE' && set.order.active !== false,
-              )
-            }
+            dischargeOrdered={(ordersByPatient[detailPatient.id] ?? []).some(
+              (set) => set.order?.type === 'DISCHARGE' && set.order.active !== false,
+            )}
+            isInpatient={detailPatient.patientClass === 'INPATIENT'}
             onSaved={(saved) => addOrder(detailPatient.id, saved)}
           />
         </Section>

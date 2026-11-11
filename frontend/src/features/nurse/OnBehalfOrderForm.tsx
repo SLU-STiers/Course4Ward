@@ -10,6 +10,7 @@ import { addPatient as s } from './styles';
 import { ORDER_CHANNELS, type OrderChannel } from './patientForm';
 
 type PhysicianOption = { id: string; firstName: string; lastName: string };
+type OrderKind = 'DEFAULT' | 'DISCHARGE' | 'TRANSFER';
 
 /** Short labels for the segmented control; the same choices as the registration form's order. */
 const CHANNEL_SHORT_LABEL: Record<OrderChannel, string> = {
@@ -34,20 +35,30 @@ export function OnBehalfOrderForm({
   careTeamNames,
   attendingName,
   currentRoom,
-  canTransfer,
+  dischargeOrdered,
+  isInpatient,
   onSaved,
 }: {
   admissionId: string;
   /** "Dr. First Last" of the attending and consultants; only they can be ordered on behalf of. */
   careTeamNames: string[];
-  /** "Dr. First Last" of the attending: the only physician a transfer order can come from. */
+  /** "Dr. First Last" of the attending: the only physician a discharge or transfer order can come from. */
   attendingName?: string | null;
   /** The patient's room now, which a transfer cannot target. */
   currentRoom?: string;
-  /** Admitted (inpatient) and not yet ordered home: a transfer can be entered. */
-  canTransfer: boolean;
+  /** An active discharge order exists: no second one, and no transfer. */
+  dischargeOrdered: boolean;
+  /** Only an admitted patient can be transferred. */
+  isInpatient: boolean;
   onSaved: (order: PhysicianOrder) => void;
 }) {
+  const kinds: { kind: OrderKind; label: string }[] = dischargeOrdered
+    ? []
+    : [
+        { kind: 'DEFAULT', label: 'General' },
+        { kind: 'DISCHARGE', label: 'Discharge' },
+        ...(isInpatient ? [{ kind: 'TRANSFER' as const, label: 'Transfer' }] : []),
+      ];
   const careTeamKey = careTeamNames.join('\u0000');
   const [physicians, setPhysicians] = useState<PhysicianOption[]>([]);
   const [loadingPhysicians, setLoadingPhysicians] = useState(true);
@@ -55,7 +66,10 @@ export function OnBehalfOrderForm({
   const [channel, setChannel] = useState<OrderChannel>('');
   const [physicianId, setPhysicianId] = useState('');
   const [orderContent, setOrderContent] = useState('');
-  const [isTransfer, setIsTransfer] = useState(false);
+  const [kind, setKind] = useState<OrderKind>('DEFAULT');
+  const isTransfer = kind === 'TRANSFER';
+  // Only the attending physician sends the patient home or moves them.
+  const attendingOnly = kind !== 'DEFAULT';
   const [transferRoom, setTransferRoom] = useState('');
   const { rooms, failed: roomsFailed, reload: reloadRooms } = useWardRooms(isTransfer, true);
   const [saving, setSaving] = useState(false);
@@ -92,14 +106,13 @@ export function OnBehalfOrderForm({
     };
   }, [careTeamKey]);
 
-  // A transfer can only come from the attending physician.
-  const choosable = isTransfer
+  const choosable = attendingOnly
     ? physicians.filter((physician) => `Dr. ${physician.firstName} ${physician.lastName}` === attendingName)
     : physicians;
-  const transferProblem = isTransfer
-    ? !choosable.length
-      ? 'Only the attending physician can order a transfer, and none is assigned.'
-      : !transferRoom.trim()
+  const transferProblem = attendingOnly && !choosable.length
+    ? `Only the attending physician can order a ${isTransfer ? 'transfer' : 'discharge'}, and none is assigned.`
+    : isTransfer
+      ? !transferRoom.trim()
         ? 'Choose the room to transfer the patient to.'
         : normalizeRoom(transferRoom) === currentRoom
           ? 'The patient is already in this room.'
@@ -114,11 +127,11 @@ export function OnBehalfOrderForm({
     Boolean(orderContent.trim()) &&
     !transferProblem;
 
-  const chooseKind = (transfer: boolean) => {
-    setIsTransfer(transfer);
+  const chooseKind = (next: OrderKind) => {
+    setKind(next);
     setSubmitError(null);
     setSentBy(null);
-    if (!transfer) return;
+    if (next === 'DEFAULT') return;
     const attending = physicians.find(
       (physician) => `Dr. ${physician.firstName} ${physician.lastName}` === attendingName,
     );
@@ -136,13 +149,14 @@ export function OnBehalfOrderForm({
         orderedById: physicianId,
         orderContent: orderContent.trim(),
         communicationChannel: channel || undefined,
+        ...(kind === 'DISCHARGE' && { type: 'DISCHARGE' as const }),
         ...(isTransfer && { type: 'TRANSFER' as const, transferRoomNumber: normalizeRoom(transferRoom) }),
       });
       const physician = physicians.find((option) => option.id === physicianId);
       setSentBy(physician ? `Dr. ${physician.firstName} ${physician.lastName}` : 'the physician');
       setOrderContent('');
+      setKind('DEFAULT');
       if (isTransfer) {
-        setIsTransfer(false);
         setTransferRoom('');
         void reloadRooms();
       }
@@ -175,21 +189,18 @@ export function OnBehalfOrderForm({
         </div>
       </fieldset>
 
-      {canTransfer && (
+      {kinds.length > 0 && (
         <fieldset style={styles.fieldset}>
           <legend style={s.label}>Order type</legend>
-          <div style={{ ...s.segmented, gridTemplateColumns: 'repeat(2, 1fr)' }} role="radiogroup">
-            {[
-              { transfer: false, label: 'General' },
-              { transfer: true, label: 'Transfer' },
-            ].map((option) => (
+          <div style={{ ...s.segmented, gridTemplateColumns: `repeat(${kinds.length}, 1fr)` }} role="radiogroup">
+            {kinds.map((option) => (
               <button
-                key={option.label}
+                key={option.kind}
                 type="button"
                 role="radio"
-                aria-checked={isTransfer === option.transfer}
-                style={{ ...s.segment, ...(isTransfer === option.transfer ? s.segmentActive : {}) }}
-                onClick={() => chooseKind(option.transfer)}
+                aria-checked={kind === option.kind}
+                style={{ ...s.segment, ...(kind === option.kind ? s.segmentActive : {}) }}
+                onClick={() => chooseKind(option.kind)}
               >
                 {option.label}
               </button>
@@ -219,6 +230,7 @@ export function OnBehalfOrderForm({
           {physicianError}
         </p>
       )}
+      {kind === 'DISCHARGE' && transferProblem && <p style={styles.hint}>{transferProblem}</p>}
 
       {isTransfer && (
         <div>
@@ -255,7 +267,13 @@ export function OnBehalfOrderForm({
           }}
           maxLength={2000}
           rows={5}
-          placeholder={isTransfer ? 'Reason for the transfer, as the physician gave it' : "Type the physician's order"}
+          placeholder={
+            isTransfer
+              ? 'Reason for the transfer, as the physician gave it'
+              : kind === 'DISCHARGE'
+                ? 'Discharge instructions, as the physician gave them'
+                : "Type the physician's order"
+          }
         />
       </label>
 
