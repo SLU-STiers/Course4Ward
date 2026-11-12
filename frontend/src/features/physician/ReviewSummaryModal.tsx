@@ -1,7 +1,7 @@
 /** Part of the physician dashboard — see index.tsx for the screen shell. */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, History, Pencil, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, History, Pencil, RefreshCw } from 'lucide-react';
 import type { CourseInWard, PhysicianOrder, PhysicianRequest } from '../../types';
 import { courseInWardApi, ordersApi } from '../../services/domainApi';
 import { formatDateLongFromKey, formatDateMedium, toDateKey } from '../../lib/format';
@@ -15,6 +15,98 @@ import { useAuthStore } from '../../store/authStore';
 import { manage } from './styles';
 import { SummaryHistory } from './SummaryHistory';
 import { mergeSummaries, summariesPerDay, summaryDayKey } from './summaries';
+
+/** `Nov 7` from a `YYYY-MM-DD` key, read as a local calendar date. */
+function shortDay(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+const NOTICE_TONE = {
+  warning: { background: '#fffbeb', border: '#f59e0b', text: '#92400e', chip: '#fef3c7' },
+  success: { background: '#f0fdf4', border: '#22c55e', text: '#166534', chip: '#dcfce7' },
+} as const;
+
+/**
+ * What still stands between the physician and "Approve request", with each
+ * outstanding day as a button that jumps straight to it.
+ */
+function ApprovalChecklist({
+  missingDays,
+  unapprovedDays,
+  totalDays,
+  activeDay,
+  onGoToDay,
+}: {
+  missingDays: string[];
+  unapprovedDays: string[];
+  totalDays: number;
+  activeDay: string;
+  onGoToDay: (day: string) => void;
+}) {
+  const ready = missingDays.length === 0 && unapprovedDays.length === 0;
+  const tone = NOTICE_TONE[ready ? 'success' : 'warning'];
+  const approved = totalDays - missingDays.length - unapprovedDays.length;
+  const Icon = ready ? CheckCircle2 : AlertTriangle;
+
+  const dayGroup = (label: string, list: string[]) =>
+    list.length ? (
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
+        {list.map((day) => (
+          <button
+            key={day}
+            type="button"
+            onClick={() => onGoToDay(day)}
+            aria-current={day === activeDay ? 'date' : undefined}
+            style={{
+              border: `1px solid ${tone.border}`,
+              background: day === activeDay ? tone.border : tone.chip,
+              color: day === activeDay ? '#ffffff' : tone.text,
+              borderRadius: 999,
+              padding: '2px 10px',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {shortDay(day)}
+          </button>
+        ))}
+      </div>
+    ) : null;
+
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        gap: 10,
+        alignItems: 'flex-start',
+        padding: '12px 14px',
+        borderRadius: 10,
+        border: `1px solid ${tone.border}`,
+        borderLeftWidth: 5,
+        background: tone.background,
+        color: tone.text,
+      }}
+    >
+      <Icon size={20} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+      <div style={{ display: 'grid', gap: 6 }}>
+        <strong style={{ fontSize: 14 }}>
+          {ready
+            ? `All ${totalDays} ${totalDays === 1 ? 'day is' : 'days are'} approved. You can now approve the request.`
+            : `Approve request is locked: ${approved} of ${totalDays} ${totalDays === 1 ? 'day' : 'days'} approved.`}
+        </strong>
+        {dayGroup('No AI summary yet (generate it first):', missingDays)}
+        {dayGroup('Waiting for your review and approval:', unapprovedDays)}
+      </div>
+    </div>
+  );
+}
 
 const STATUS_LABEL: Record<CourseInWard['status'], string> = {
   DRAFT_AI: 'AI draft',
@@ -150,8 +242,18 @@ export function ReviewSummaryModal({
     (entry) => entry.status === 'PHYSICIAN_VALIDATION_REQUESTED',
   );
   const claimsRequestedValidation = awaitingRequests.length > 0;
+  /** Days the physician still has to read and approve one by one. */
+  const unapprovedDays = days.filter((day) => {
+    const summary = summaryByDay.get(day);
+    return Boolean(summary?.summaryContent.trim()) && summary!.status !== 'APPROVED';
+  });
+  const approvedDayCount = days.length - missingDays.length - unapprovedDays.length;
   const approvalBlocked =
-    busy !== null || editing || missingDays.length > 0 || !claimsRequestedValidation;
+    busy !== null ||
+    editing ||
+    missingDays.length > 0 ||
+    unapprovedDays.length > 0 ||
+    !claimsRequestedValidation;
 
   const replaceSummary = (updated: CourseInWard[]) =>
     setSummaries((previous) => mergeSummaries(previous, updated));
@@ -226,24 +328,14 @@ export function ReviewSummaryModal({
       .finally(() => setBusy(null));
   };
 
-  // Whole-stay Approve request: approve the days no claim covers, then onApprove
-  // validates every awaiting claim (which approves those days' summaries too).
-  const approveAll = () => {
+  // Whole-stay Approve request: only once the physician has approved every day
+  // one by one. It signs off the request; it never approves a summary itself.
+  const approveRequest = () => {
     if (approvalBlocked) return;
     setBusy('approving');
     setError(null);
-    const claimedSummaryIds = new Set(awaitingRequests.map((entry) => entry.summary.id));
-    const others = days
-      .map((day) => summaryByDay.get(day))
-      .filter(
-        (entry): entry is CourseInWard =>
-          Boolean(entry) && entry!.status !== 'APPROVED' && !claimedSummaryIds.has(entry!.id),
-      );
-    void Promise.all(
-      others.map((entry) => courseInWardApi.approve(entry.id, { completeClaim: false })),
-    )
-      .then(() => onApprove())
-      .catch(() => setError('Approval failed. Please try again.'))
+    void onApprove()
+      .catch((err) => setError(apiErrorMessage(err, 'Approval failed. Please try again.')))
       .finally(() => setBusy(null));
   };
 
@@ -261,9 +353,31 @@ export function ReviewSummaryModal({
       closeOnBackdrop={busy === null}
       footer={
         <>
-          {missingDays.length > 0 && (
-            <span style={{ marginRight: 'auto', fontSize: 12, color: '#64748b' }}>
-              Some days have no AI summarization yet.
+          {claimsRequestedValidation && (
+            <span
+              style={{
+                marginRight: 'auto',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 13,
+                fontWeight: 700,
+                color: approvalBlocked && busy === null ? '#b45309' : '#15803d',
+              }}
+            >
+              {missingDays.length > 0 || unapprovedDays.length > 0 ? (
+                <>
+                  <AlertTriangle size={16} aria-hidden="true" />
+                  {missingDays.length > 0
+                    ? `${missingDays.length} ${missingDays.length === 1 ? 'day has' : 'days have'} no AI summary yet`
+                    : `${approvedDayCount} of ${days.length} days approved`}
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={16} aria-hidden="true" />
+                  All days approved
+                </>
+              )}
             </span>
           )}
           <Button type="button" variant="secondary" onClick={onClose} disabled={busy !== null}>
@@ -275,7 +389,7 @@ export function ReviewSummaryModal({
               variant="primary"
               disabled={approvalBlocked}
               loading={busy === 'approving'}
-              onClick={approveAll}
+              onClick={approveRequest}
             >
               Approve request
             </Button>
@@ -284,6 +398,17 @@ export function ReviewSummaryModal({
       }
     >
       <div style={{ display: 'grid', gap: 16 }}>
+        {claimsRequestedValidation && (
+          <ApprovalChecklist
+            missingDays={missingDays}
+            unapprovedDays={unapprovedDays}
+            totalDays={days.length}
+            activeDay={activeDay}
+            onGoToDay={(day) => {
+              if (busy === null) setSelectedDay(day);
+            }}
+          />
+        )}
         <section>
           <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#334155' }}>
             Physician orders · {formatDateLongFromKey(activeDay)}

@@ -488,6 +488,48 @@ describe("Claims Module", () => {
 
         expect(prismaService.$transaction).not.toHaveBeenCalled();
       });
+
+      const attendingPatient = {
+        ...mockPatient,
+        admissions: [{ ...mockPatient.admissions[0], physicianId: "physician-123" }],
+      };
+      const awaitingClaim = { ...mockClaim, status: "PHYSICIAN_VALIDATION_REQUESTED" };
+
+      it("should refuse the request while the day's summary is not yet approved", async () => {
+        (prismaService.summaryApprovalRequest.findFirst as jest.Mock).mockResolvedValue(awaitingClaim);
+        (prismaService.courseInWard.findUnique as jest.Mock)
+          .mockResolvedValueOnce({ ...mockSummary, patient: attendingPatient })
+          .mockResolvedValueOnce({
+            ...mockSummary,
+            status: SummaryStatus.DRAFT_AI,
+            approvedStatus: null,
+          });
+
+        await expect(
+          service.approveForPhysician(mockClaimId, "physician-123"),
+        ).rejects.toThrow(/before approving the request/);
+
+        expect(prismaService.summaryApprovalRequest.update).not.toHaveBeenCalled();
+      });
+
+      it("should validate the request once the physician approved that day", async () => {
+        (prismaService.summaryApprovalRequest.findFirst as jest.Mock).mockResolvedValue(awaitingClaim);
+        (prismaService.courseInWard.findUnique as jest.Mock)
+          .mockResolvedValueOnce({ ...mockSummary, patient: attendingPatient })
+          .mockResolvedValueOnce(mockSummary);
+        (prismaService.summaryApprovalRequest.update as jest.Mock).mockResolvedValue({
+          ...awaitingClaim,
+          status: "VALIDATED",
+        });
+
+        const result = await service.approveForPhysician(mockClaimId, "physician-123");
+
+        expect(prismaService.summaryApprovalRequest.update).toHaveBeenCalledWith({
+          where: { id: mockClaimId },
+          data: { status: "VALIDATED" },
+        });
+        expect(result.status).toBe("VALIDATED");
+      });
     });
 
     describe("generateCf4", () => {

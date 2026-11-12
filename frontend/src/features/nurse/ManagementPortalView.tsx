@@ -155,7 +155,8 @@ export function ManagementPortalView({
     setSelectedId(focusPatient.id);
     onFocusHandled?.();
   }, [focusPatient, onFocusHandled]);
-  const [selectedDate, setSelectedDate] = useState('');
+  /** `null` = not chosen yet (the next load picks the newest day); `''` = Show all. */
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSet[]>>({});
   const [summariesByPatient, setSummariesByPatient] = useState<Record<string, CourseInWard[]>>({});
 
@@ -189,9 +190,11 @@ export function ManagementPortalView({
       const newest = [...new Set(mapped.map((order) => order.dateKey))].sort().reverse()[0] ?? '';
       const previousNewest = newestDayRef.current[patientId];
       newestDayRef.current[patientId] = newest;
-      // Someone reading the newest day follows it onto a newer one.
+      // Someone reading the newest day follows it onto a newer one. "Show all"
+      // ('') is a deliberate choice, so a refresh leaves it alone.
       setSelectedDate((current) =>
-        !current || (previousNewest && current === previousNewest && newest !== previousNewest)
+        current === null ||
+        (previousNewest && current === previousNewest && newest !== previousNewest)
           ? newest
           : current,
       );
@@ -281,8 +284,9 @@ export function ManagementPortalView({
     setSelectedId(id);
     if (id === selectedId) loadSummaries(id);
     const sets = ordersByPatient[id] ?? [];
-    const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0] ?? '';
-    setSelectedDate(latest);
+    const latest = [...new Set(sets.map((o) => o.dateKey))].sort().reverse()[0];
+    // No cached orders yet: leave it unchosen so the load picks the newest day.
+    setSelectedDate(latest ?? null);
   };
 
   /* Swap in the saved copy of an order after the nurse updates its status. */
@@ -359,7 +363,7 @@ export function ManagementPortalView({
       <SubmittedOrdersTimeline
         title="Order Timeline"
         dateValue={activeDate}
-        onDateChange={setSelectedDate}
+        onDateChange={(date) => setSelectedDate(date)}
         onPrev={() => shiftDate(1)}
         onNext={() => shiftDate(-1)}
         prevDisabled={!hasPrevDate}

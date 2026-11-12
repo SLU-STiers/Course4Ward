@@ -73,7 +73,7 @@ export function PhysicianDashboard() {
         items: [
           { id: "overview", label: "Overview", icon: <DashboardIcon /> },
           { id: "manage", label: "Manage", icon: <ManageIcon /> },
-          { id: "requests", label: "Requests", icon: <RequestsIcon /> },
+          { id: "requests", label: "Request for Summary Review", icon: <RequestsIcon /> },
         ],
         profile: (
           <SidebarProfile

@@ -349,28 +349,29 @@ export class ClaimsService {
     }
     await assertAttending(this.prisma, request.summaryId, physicianId);
 
-    const [summary, updatedRequest] = await this.prisma.$transaction([
-      this.prisma.courseInWard.update({
-        where: { id: request.summaryId },
-        data: {
-          status: SummaryStatus.APPROVED,
-          approvedStatus: true,
-          validatorId: physicianId,
-          validatedAt: new Date(),
-        },
-      }),
-      this.prisma.summaryApprovalRequest.update({
-        where: { id },
-        data: { status: 'VALIDATED' },
-      }),
-    ]);
+    // The physician reviews and approves every day one by one; the request
+    // sign-off never approves a summary on their behalf.
+    const summary = await this.prisma.courseInWard.findUnique({
+      where: { id: request.summaryId },
+    });
+    if (!summary) throw new NotFoundException('Course in the Ward summary not found');
+    if (summary.status !== SummaryStatus.APPROVED || !summary.approvedStatus) {
+      throw new BadRequestException(
+        `Approve the summary for ${dayLabel(summary.summaryDate)} before approving the request`,
+      );
+    }
+
+    const updatedRequest = await this.prisma.summaryApprovalRequest.update({
+      where: { id },
+      data: { status: 'VALIDATED' },
+    });
 
     const patientName = await this.auditLog.patientName({ summaryId: request.summaryId });
     await this.auditLog.record({
       userId: physicianId,
       action: 'SUMMARY_APPROVED',
       details: {
-        summary: `Approved ${patientName}'s summary for ${dayLabel(summary.summaryDate)} from a claim request`,
+        summary: `Signed off the summary review request for ${patientName}'s ${dayLabel(summary.summaryDate)}`,
         items: detailItems([
           ['Patient', patientName],
           ['Summary day', dayLabel(summary.summaryDate)],

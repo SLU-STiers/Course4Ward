@@ -127,7 +127,7 @@ export function RequestsView({
   return (
     <section style={requests.card}>
       {/* Same card-title scale as the Claims Processor "Patient Overview" card. */}
-      <h2 style={patientTableStyles.cardTitle}>Requests</h2>
+      <h2 style={patientTableStyles.cardTitle}>Request for Summary Review</h2>
 
       <DataTableToolbar
         searchProps={{
