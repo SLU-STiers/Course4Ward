@@ -230,6 +230,8 @@ export const adminApi = {
   /** AI summarization / embedding timings and embedding coverage. */
   aiStats: (params?: ReportRangeParams) => api.get<AiStats>('/admin/reports/ai', { params }),
   /** Past patient-days the nightly summary batch missed, and a catch-up run for one. */
+  backfillEmbeddings: () =>
+    api.post<{ found: number; embedded: number; failed: number }>('/admin/reports/embeddings/backfill'),
   missedSummaries: () => api.get<MissedSummaryDay[]>('/admin/reports/missed-summaries'),
   runMissedSummary: (data: { day: string; patientId?: string }) =>
     api.post<{ day: string; patients: number; summarized: number }>(
