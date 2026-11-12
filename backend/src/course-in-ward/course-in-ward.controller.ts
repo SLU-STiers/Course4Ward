@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -20,6 +21,7 @@ import { assertPatientCareTeam, assertSummaryCareTeam } from './summary-access';
 import {
   GenerateSummaryDto,
   EditSummaryDto,
+  NotifyAttendingDto,
   RegenerateSummaryDto,
 } from './dto/course-in-ward.dto';
 
@@ -100,14 +102,41 @@ export class CourseInWardController {
 
   @Patch(':id/approve')
   @Roles(Role.PHYSICIAN)
-  approve(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.courseInWardService.approve(id, user.id);
+  approve(
+    @Param('id') id: string,
+    @Query('completeClaim') completeClaim: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    // Per-day approve from Requests passes completeClaim=false so the claim
+    // stays open until "Approve request".
+    return this.courseInWardService.approve(
+      id,
+      user.id,
+      completeClaim === undefined ? true : completeClaim !== 'false',
+    );
+  }
+
+  /**
+   * Consulting physician tells the attending they reviewed / endorse this day's
+   * draft (once per Manila day, discharged stays only). Does not approve claims.
+   */
+  @Post(':id/notify-attending')
+  @Roles(Role.PHYSICIAN)
+  notifyAttending(
+    @Param('id') id: string,
+    @Body() dto: NotifyAttendingDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.courseInWardService.notifyAttending(id, user.id, dto.message);
   }
 
   @Get('patient/:patientId')
   @Roles(Role.PHYSICIAN, Role.NURSE, Role.CLAIMS_PROCESSOR)
   async findForPatient(@Param('patientId') patientId: string, @CurrentUser() user: any) {
     await this.wardAccess.assertPatient(user, patientId);
-    return this.courseInWardService.findForPatient(patientId);
+    return this.courseInWardService.findForPatient(
+      patientId,
+      user.role === Role.PHYSICIAN ? user.id : undefined,
+    );
   }
 }

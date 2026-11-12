@@ -50,6 +50,17 @@ export class EditSummaryDto {
   editedText: string;
 }
 
+export class NotifyAttendingDto {
+  @ApiProperty({
+    required: false,
+    description: 'Optional note for the attending physician.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  message?: string;
+}
+
 export class RegenerateSummaryDto {
   @ApiProperty({ required: false, description: INSTRUCTIONS_DESCRIPTION })
   @IsOptional()

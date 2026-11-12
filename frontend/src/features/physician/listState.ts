@@ -12,7 +12,7 @@ export const MANAGE_SELECTED_STATE = "physician.manage.selected";
 export const REQUESTS_TABLE_STATE = "physician.requests.table";
 
 /** Overview has no sort control — just the status filter and the page. */
-export const OVERVIEW_FILTER_STATE = "physician.overview.filter";
+export const OVERVIEW_FILTER_STATE = "physician.overview.filter.v2";
 export const OVERVIEW_PAGE_STATE = "physician.overview.page";
 
 /** The To-do widget's own patient filter and selection. */

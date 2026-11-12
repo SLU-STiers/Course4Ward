@@ -61,6 +61,10 @@ const mockPrismaService = {
     delete: jest.fn(),
     deleteMany: jest.fn(),
   },
+  summaryConsultantNotice: {
+    findMany: jest.fn().mockResolvedValue([]),
+    create: jest.fn(),
+  },
 };
 
 const mockAuditLogService = {
@@ -895,7 +899,7 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.summaryApprovalRequest.updateMany).toHaveBeenCalledWith({
         where: {
           summaryId: mockSummaryId,
-          status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] },
+          status: 'PHYSICIAN_VALIDATION_REQUESTED',
         },
         data: { status: 'VALIDATED' },
       });

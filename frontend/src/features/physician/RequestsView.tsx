@@ -13,8 +13,8 @@ import { REQUESTS_TABLE_STATE } from './listState';
 import { ReviewSummaryModal } from './ReviewSummaryModal';
 import { fullName } from '../../lib/patient';
 
-const isPending = (request: PhysicianRequest) =>
-  request.status === "PENDING" ||
+/** Claims has asked the attending to validate — only these can be approved. */
+const isAwaitingPhysician = (request: PhysicianRequest) =>
   request.status === "PHYSICIAN_VALIDATION_REQUESTED";
 
 /** Every claim of one patient's stay, shown as a single request row. */
@@ -40,7 +40,7 @@ function groupByStay(items: PhysicianRequest[]): StayRequest[] {
     const byDay = [...requests].sort((a, b) =>
       a.summary.summaryDate.localeCompare(b.summary.summaryDate),
     );
-    const pending = byDay.filter(isPending);
+    const pending = byDay.filter(isAwaitingPhysician);
     return {
       key,
       primary: pending[0] ?? byDay[0],
@@ -78,6 +78,19 @@ export function RequestsView({
   usePolling(loadRequests, ORDER_POLL_MS);
 
   const stays = useMemo(() => groupByStay(items), [items]);
+  const selectedStay = useMemo(
+    () =>
+      selected
+        ? (stays.find((stay) => stay.requests.some((request) => request.id === selected.id)) ?? {
+            key: selected.id,
+            primary: selected,
+            requests: [selected],
+            pendingCount: isAwaitingPhysician(selected) ? 1 : 0,
+            requestedAt: selected.requestedAt,
+          })
+        : null,
+    [selected, stays],
+  );
 
   // A notification points at one day's claim; the review opens on that stay.
   useEffect(() => {
@@ -114,7 +127,7 @@ export function RequestsView({
   return (
     <section style={requests.card}>
       {/* Same card-title scale as the Claims Processor "Patient Overview" card. */}
-      <h2 style={patientTableStyles.cardTitle}>Requests</h2>
+      <h2 style={patientTableStyles.cardTitle}>Request for Summary Review</h2>
 
       <DataTableToolbar
         searchProps={{
@@ -228,15 +241,24 @@ export function RequestsView({
         />
       </div>
 
-      {selected && (
+      {selected && selectedStay && (
         <ReviewSummaryModal
           key={selected.id}
           request={selected}
+          stayRequests={selectedStay.requests}
           onClose={() => setSelected(null)}
+          onDayApproved={loadRequests}
           onApprove={async () => {
-            await claimsApi.approvePhysicianRequest(selected.id);
-            await loadRequests();
+            // One sign-off for the whole stay: every day still awaiting the
+            // physician is validated, so the stay shows as Reviewed.
+            await Promise.all(
+              selectedStay.requests
+                .filter(isAwaitingPhysician)
+                .map((request) => claimsApi.approvePhysicianRequest(request.id)),
+            );
+            // The stay is signed off: close the review so it cannot be approved twice.
             setSelected(null);
+            loadRequests();
           }}
         />
       )}

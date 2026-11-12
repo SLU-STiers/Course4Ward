@@ -164,7 +164,20 @@ export const courseInWardApi = {
       `/course-in-ward/${id}/regenerate`,
       instructions?.trim() ? { instructions: instructions.trim(), model } : { model },
     ),
-  approve: (id: string) => api.patch<CourseInWard>(`/course-in-ward/${id}/approve`),
+  approve: (id: string, options?: { completeClaim?: boolean }) =>
+    api.patch<CourseInWard>(`/course-in-ward/${id}/approve`, undefined, {
+      params:
+        options?.completeClaim === false ? { completeClaim: 'false' } : undefined,
+    }),
+  /**
+   * Consulting physician → attending: endorse / flag this day's draft (once per
+   * day, discharged stays only). Does not approve the claim.
+   */
+  notifyAttending: (id: string, message?: string) =>
+    api.post<CourseInWard>(
+      `/course-in-ward/${id}/notify-attending`,
+      message?.trim() ? { message: message.trim() } : {},
+    ),
   /** Earlier texts of a summary, newest first (the last 3 are kept). */
   versions: (id: string) => api.get<SummaryVersion[]>(`/course-in-ward/${id}/versions`),
   /** Makes an earlier text current again; the replaced text becomes a version. */
@@ -186,7 +199,8 @@ export const claimsApi = {
   /** Summaries that do not have a claim yet. */
   eligibleSummaries: () => api.get<EligibleSummary[]>('/claims/eligible-summaries'),
   physicianRequests: () => api.get<PhysicianRequest[]>('/claims/physician-requests'),
-  approvePhysicianRequest: (id: string) => api.patch(`/claims/${id}/approve`),
+  approvePhysicianRequest: (id: string) =>
+    api.patch<{ summary: CourseInWard }>(`/claims/${id}/approve`),
   /** `message` is the note typed in the review modal; it lands on the
    *  physician's notification bell. */
   notifyPhysician: (id: string, message?: string) =>

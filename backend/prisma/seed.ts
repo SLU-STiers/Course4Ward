@@ -1,4 +1,4 @@
-import { PatientClass, PrismaClient } from '@prisma/client';
+import { OrderStatus, PatientClass, PrismaClient, SummaryStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
   admissionRooms as baseAdmissionRooms,
@@ -295,6 +295,66 @@ async function main() {
     });
   }
 
+  // 7b) Discharged stays need a Course in the Ward before they show under
+  // Claims → Discharged patients. Draft missing days from finished orders, but
+  // do not open a claim — Claims requests the physician from that list.
+  // Drop leftover auto-opened claims so re-seeds restore the intake list.
+  const seededClaimIds = approvalRequests.map((request) => request.id);
+  const removedAutoClaims = await prisma.summaryApprovalRequest.deleteMany({
+    where: { id: { notIn: seededClaimIds } },
+  });
+  let dischargedSummariesDrafted = 0;
+  {
+    const discharged = await prisma.patientAdmission.findMany({
+      where: { dischargeDate: { not: null } },
+      select: {
+        id: true,
+        patientId: true,
+        orders: {
+          where: { status: OrderStatus.FINISHED, active: true, summarizationId: null },
+          orderBy: { dateCreated: 'asc' },
+          select: { id: true, dateCreated: true, orderContent: true },
+        },
+      },
+    });
+
+    const dayKeyOf = (value: Date) => {
+      const y = value.getFullYear();
+      const m = String(value.getMonth() + 1).padStart(2, '0');
+      const d = String(value.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+    const dayStartOf = (key: string) => {
+      const [y, m, d] = key.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    };
+
+    for (const admission of discharged) {
+      const unlinkedByDay = new Map<string, typeof admission.orders>();
+      for (const order of admission.orders) {
+        const day = dayKeyOf(order.dateCreated);
+        unlinkedByDay.set(day, [...(unlinkedByDay.get(day) ?? []), order]);
+      }
+      for (const [day, dayOrders] of unlinkedByDay) {
+        const summary = await prisma.courseInWard.create({
+          data: {
+            patientId: admission.patientId,
+            summaryDate: dayStartOf(day),
+            status: SummaryStatus.DRAFT_EDITED,
+            summaryContent: `Finished orders for ${day}:\n${dayOrders
+              .map((order) => `• ${order.orderContent}`)
+              .join('\n')}`,
+          },
+        });
+        await prisma.physicianOrder.updateMany({
+          where: { id: { in: dayOrders.map((order) => order.id) } },
+          data: { summarizationId: summary.id },
+        });
+        dischargedSummariesDrafted += 1;
+      }
+    }
+  }
+
   // 8) Audit logs.
   for (const l of auditLogs) {
     await prisma.auditLog.upsert({
@@ -350,7 +410,9 @@ async function main() {
   console.log('\nMock data seeded (idempotent — safe to re-run):');
   console.log(`  users=${users.length} patients=${patients.length} admissions=${admissions.length}`);
   console.log(`  orders=${orders.length} notes=${notes.length} coursesInWard=${coursesInWard.length}`);
-  console.log(`  approvalRequests=${approvalRequests.length} auditLogs=${auditLogs.length}`);
+  console.log(
+    `  approvalRequests=${approvalRequests.length} (removed ${removedAutoClaims.count} auto-claims, drafted ${dischargedSummariesDrafted} discharged days) auditLogs=${auditLogs.length}`,
+  );
   console.log(`\nDemo accounts (password: ${DEMO_PASSWORD}):`);
   for (const u of users) {
     console.log(`  ${u.role.padEnd(width)} ${u.userId}`);

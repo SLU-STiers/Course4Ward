@@ -2,25 +2,77 @@ import os
 import time
 import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import List, Literal, Optional
 
 import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+# Load ai_service/.env when present (uvicorn does not load it by itself).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 # ------------------ Configuration (can be set via .env) ------------------
 OLLAMA_CHAT_URL = os.getenv("OLLAMA_CHAT_URL", "http://localhost:11434/api/chat")
-MODEL = os.getenv("MODEL", "qwen3.5:4b")       # change as needed
+OLLAMA_TAGS_URL = os.getenv(
+    "OLLAMA_TAGS_URL",
+    OLLAMA_CHAT_URL.replace("/api/chat", "/api/tags"),
+)
+MODEL = os.getenv("MODEL", "qwen3.5:latest")  # change as needed
 # Fine-tuned summarizer imported into Ollama (see fine_tuning_data/).
+# When that tag is not pulled, requests fall back to MODEL (see resolve_model).
 FINE_TUNED_MODEL = os.getenv("FINE_TUNED_MODEL", "finetuned-qwen")
 
 # Which model a request asks for: the base model (guided by RAG references)
 # or the fine-tuned one.
 ModelVariant = Literal["standard", "fine_tuned"]
 MODELS = {"standard": MODEL, "fine_tuned": FINE_TUNED_MODEL}
-# Context window per request; overrides the Modelfile's num_ctx (often 4096),
-# which a long day of orders plus RAG references can exceed.
-NUM_CTX = int(os.getenv("NUM_CTX", "8192"))
+# Context window per request; overrides the Modelfile's num_ctx.
+NUM_CTX = int(os.getenv("NUM_CTX", "16384"))
+
+
+def _ollama_model_names() -> set[str]:
+    """Tags currently installed in Ollama (`name` and bare name without `:tag`)."""
+    try:
+        response = requests.get(OLLAMA_TAGS_URL, timeout=5)
+        response.raise_for_status()
+        names: set[str] = set()
+        for entry in response.json().get("models") or []:
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            names.add(name)
+            names.add(name.split(":", 1)[0])
+        return names
+    except requests.exceptions.RequestException as exc:
+        print(f"Could not list Ollama models: {exc}")
+        return set()
+
+
+def resolve_model(variant: ModelVariant) -> str:
+    """
+    Ollama tag for `variant`. If the fine-tuned tag is not installed, use the
+    base MODEL so summarization still works on machines without the fine-tune.
+    """
+    requested = MODELS[variant]
+    if variant == "standard":
+        return requested
+    installed = _ollama_model_names()
+    if not installed:
+        return requested
+    if requested in installed or requested.split(":", 1)[0] in installed:
+        return requested
+    print(
+        f"Fine-tuned model '{requested}' is not installed in Ollama; "
+        f"falling back to '{MODEL}'."
+    )
+    return MODEL
+
 
 # ------------------ FastAPI App ------------------------------------------
 app = FastAPI(title="Doctor's Orders Summarizer – Batch")
@@ -432,7 +484,7 @@ async def generate_summary_batch(req: BatchSummaryRequest):
                 group_label=label,
                 references=[r.model_dump(exclude_none=True) for r in req.references],
                 instructions=req.instructions,
-                model=MODELS[req.variant],
+                model=resolve_model(req.variant),
             )
 
             results.append(GroupResult(
@@ -500,11 +552,18 @@ async def health_check():
         embedding_model = EMBED_MODEL_NAME
     except Exception:  # pragma: no cover - optional dependency
         pass
+    installed = sorted(_ollama_model_names())
     return {
         "status": "ok",
         "model": MODEL,
         "fine_tuned_model": FINE_TUNED_MODEL,
+        "fine_tuned_available": bool(
+            FINE_TUNED_MODEL in installed
+            or FINE_TUNED_MODEL.split(":", 1)[0] in installed
+        ),
+        "resolved_fine_tuned_model": resolve_model("fine_tuned"),
         "embedding_model": embedding_model,
+        "installed_models": installed,
     }
 
 # ------------------ (Optional) Run directly ------------------------------

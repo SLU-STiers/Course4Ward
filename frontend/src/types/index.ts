@@ -220,6 +220,18 @@ export interface CourseInWard {
   version?: number;
   /** Attending physician of the summary's admission: the only one who may approve it. */
   attendingPhysicianId?: string | null;
+  /** True when the summary's admission is already discharged. */
+  admissionDischarged?: boolean;
+  /** True when the signed-in physician is consulting (not attending) on this admission. */
+  viewerIsConsulting?: boolean;
+  /** When this consulting viewer already notified the attending today (ISO). */
+  myConsultantNoticeAt?: string | null;
+  /** Consulting physicians who approved / endorsed this day's draft for the attending. */
+  consultantApprovals?: Array<{
+    physicianId: string;
+    name: string;
+    notifiedAt: string;
+  }>;
 }
 
 /**

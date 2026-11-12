@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** The admission fields that decide who may work on a summary. */
@@ -8,6 +8,23 @@ export interface CareTeamAdmission {
   dischargeDate: Date | null;
   physicianId: string | null;
   additionalPhysicians: { physicianId: string }[];
+}
+
+/** Manila calendar day `YYYY-MM-DD` for once-per-day consulting notices. */
+export function manilaDayKey(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(date);
+}
+
+export function isAttending(admission: CareTeamAdmission | null, physicianId: string) {
+  return !!admission?.physicianId && admission.physicianId === physicianId;
+}
+
+export function isConsultingOnly(admission: CareTeamAdmission | null, physicianId: string) {
+  return (
+    !!admission &&
+    !isAttending(admission, physicianId) &&
+    admission.additionalPhysicians.some((p) => p.physicianId === physicianId)
+  );
 }
 
 export const CARE_TEAM_ADMISSION_SELECT = {
@@ -93,6 +110,42 @@ export async function assertSummaryCareTeam(
   if (!isOnCareTeam(await loadSummaryAdmission(prisma, summaryId), physicianId)) {
     throw new ForbiddenException('You are not on this patient’s care team for this admission.');
   }
+}
+
+/**
+ * Consulting-only physicians may notify the attending after discharge that they
+ * reviewed / endorse a day's draft. Attending keeps final approval for claims.
+ */
+export async function assertConsultingCanNotifyAttending(
+  prisma: PrismaService,
+  summaryId: string,
+  physicianId: string,
+) {
+  const admission = await loadSummaryAdmission(prisma, summaryId);
+  if (!admission) {
+    throw new ForbiddenException('This summary has no admission to notify about.');
+  }
+  if (!admission.physicianId) {
+    throw new BadRequestException(
+      'This admission has no attending physician to notify yet.',
+    );
+  }
+  if (isAttending(admission, physicianId)) {
+    throw new BadRequestException(
+      'You are the attending physician — approve the summary yourself instead of notifying.',
+    );
+  }
+  if (!isConsultingOnly(admission, physicianId)) {
+    throw new ForbiddenException(
+      'Only a consulting physician on this admission can notify the attending.',
+    );
+  }
+  if (!admission.dischargeDate) {
+    throw new BadRequestException(
+      'Notify the attending only after the patient is discharged.',
+    );
+  }
+  return admission;
 }
 
 /** Generating a summary needs the physician on one of the patient's admissions. */

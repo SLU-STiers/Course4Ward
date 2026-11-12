@@ -916,27 +916,17 @@ export interface SeedApprovalRequest {
   status: string; // PENDING | PHYSICIAN_VALIDATION_REQUESTED | CF4_GENERATED
 }
 
+// Only completed CF4 claims are seeded. Every other discharged Course in the
+// Ward stays unclaimed so it appears under Claims → Discharged patients until
+// the processor clicks Request claim (which notifies the attending).
 export const approvalRequests: SeedApprovalRequest[] = [
   { id: uid(701), courseKey: 'c1', physicianUserId: 'DOC002', processorUserId: 'CLM001', requestedAt: daysAgo(28, 14), status: 'CF4_GENERATED' },
-  { id: uid(702), courseKey: 'c2', physicianUserId: 'DOC002', processorUserId: 'CLM001', requestedAt: daysAgo(4, 9), status: 'PHYSICIAN_VALIDATION_REQUESTED' },
-  { id: uid(703), courseKey: 'c6', physicianUserId: 'DOC001', processorUserId: 'CLM001', requestedAt: daysAgo(45, 10), status: 'PENDING' },
-  { id: uid(704), courseKey: 'c7', physicianUserId: 'DOC004', processorUserId: 'CLM002', requestedAt: daysAgo(2, 11), status: 'PHYSICIAN_VALIDATION_REQUESTED' },
   { id: uid(705), courseKey: 'c9', physicianUserId: 'DOC006', processorUserId: 'CLM003', requestedAt: daysAgo(9, 8), status: 'CF4_GENERATED' },
   { id: uid(706), courseKey: 'c10', physicianUserId: 'DOC004', processorUserId: 'CLM002', requestedAt: daysAgo(3, 14), status: 'CF4_GENERATED' },
   { id: uid(707), courseKey: 'c11', physicianUserId: 'DOC002', processorUserId: 'CLM004', requestedAt: daysAgo(13, 10), status: 'CF4_GENERATED' },
   { id: uid(708), courseKey: 'c12', physicianUserId: 'DOC001', processorUserId: 'CLM001', requestedAt: daysAgo(20, 9), status: 'CF4_GENERATED' },
   { id: uid(709), courseKey: 'c14', physicianUserId: 'DOC003', processorUserId: 'CLM003', requestedAt: daysAgo(32, 15), status: 'CF4_GENERATED' },
   { id: uid(710), courseKey: 'c16', physicianUserId: 'DOC005', processorUserId: 'CLM004', requestedAt: daysAgo(9, 11), status: 'CF4_GENERATED' },
-  { id: uid(711), courseKey: 'c17', physicianUserId: 'DOC001', processorUserId: 'CLM001', requestedAt: daysAgo(3, 16), status: 'PHYSICIAN_VALIDATION_REQUESTED' },
-  { id: uid(712), courseKey: 'c18', physicianUserId: 'DOC005', processorUserId: 'CLM002', requestedAt: daysAgo(21, 10), status: 'PHYSICIAN_VALIDATION_REQUESTED' },
-  { id: uid(713), courseKey: 'c3', physicianUserId: 'DOC001', processorUserId: 'CLM001', requestedAt: daysAgo(0, 9), status: 'PENDING' },
-  { id: uid(714), courseKey: 'c4', physicianUserId: 'DOC002', processorUserId: 'CLM003', requestedAt: daysAgo(0, 10), status: 'PENDING' },
-  { id: uid(715), courseKey: 'c5', physicianUserId: 'DOC002', processorUserId: 'CLM004', requestedAt: daysAgo(0, 8), status: 'PENDING' },
-  { id: uid(716), courseKey: 'c8', physicianUserId: 'DOC003', processorUserId: 'CLM001', requestedAt: daysAgo(0, 11), status: 'PENDING' },
-  { id: uid(717), courseKey: 'c13', physicianUserId: 'DOC006', processorUserId: 'CLM002', requestedAt: daysAgo(1, 9), status: 'PENDING' },
-  { id: uid(718), courseKey: 'c15', physicianUserId: 'DOC004', processorUserId: 'CLM003', requestedAt: daysAgo(0, 12), status: 'PENDING' },
-  { id: uid(719), courseKey: 'c19', physicianUserId: 'DOC004', processorUserId: 'CLM004', requestedAt: daysAgo(0, 13), status: 'PENDING' },
-  { id: uid(720), courseKey: 'c20', physicianUserId: 'DOC006', processorUserId: 'CLM001', requestedAt: daysAgo(1, 10), status: 'PENDING' },
 ];
 
 // ---------------------------------------------------------------------------

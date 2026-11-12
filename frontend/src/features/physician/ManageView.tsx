@@ -94,6 +94,7 @@ export function ManageView({
   const [savingOrders, setSavingOrders] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [approvingSummary, setApprovingSummary] = useState(false);
+  const [notifyingAttending, setNotifyingAttending] = useState(false);
   /** Every Course in the Ward loaded for a patient — one summary per order day. */
   const [summariesByPatient, setSummariesByPatient] = useState<
     Record<string, CourseInWard[]>
@@ -381,8 +382,34 @@ export function ManageView({
     orderDays[orderDays.length - 1] ??
     null;
   const summary = summaryDay ? summariesByDay.get(summaryDay) : undefined;
-  // Approve is offered to the attending physician of the summary's admission
-  // only (compared against `currentUserId`, declared at the top).
+  // Approve = attending only. Consulting may endorse after discharge (notifies attending).
+  const isAttendingForSummary = Boolean(
+    summary?.attendingPhysicianId &&
+      currentUserId &&
+      summary.attendingPhysicianId === currentUserId,
+  );
+  const isConsultingForSummary = Boolean(
+    summary?.viewerIsConsulting ||
+      (summary &&
+        currentUserId &&
+        summary.attendingPhysicianId &&
+        summary.attendingPhysicianId !== currentUserId),
+  );
+  const stayDischarged =
+    Boolean(summary?.admissionDischarged) || selected?.status === "discharged";
+  const canNotifyAttending = Boolean(
+    isConsultingForSummary &&
+      stayDischarged &&
+      summary &&
+      summary.status !== "APPROVED" &&
+      !summary.myConsultantNoticeAt,
+  );
+  // Attending (and other consultants) see who endorsed; the endorser already
+  // has "You approved — attending notified" and should not see their own name.
+  const consultantApprovalBanner = summary?.consultantApprovals
+    ?.filter((approval) => approval.physicianId !== currentUserId)
+    .map((approval) => `${approval.name} approved this summarization`)
+    .join("\n") || undefined;
   const summaryText =
     summaryDraft && summaryDay && summaryDraft.day === summaryDay
       ? summaryDraft.text
@@ -571,7 +598,7 @@ export function ManageView({
   };
 
   const approveSummary = (summaryId: string) => {
-    if (!selected || approvingSummary) return;
+    if (!selected || approvingSummary || !isAttendingForSummary) return;
     setApprovingSummary(true);
     setOrderError(null);
     void courseInWardApi
@@ -583,6 +610,30 @@ export function ManageView({
       })
       .catch(() => setOrderError("The summary could not be approved. Please try again."))
       .finally(() => setApprovingSummary(false));
+  };
+
+  /** Consulting → attending: endorse this day's draft (once per day after discharge). */
+  const notifyAttending = (summaryId: string) => {
+    if (!selected || notifyingAttending || !canNotifyAttending) return;
+    setNotifyingAttending(true);
+    setOrderError(null);
+    void courseInWardApi
+      .notifyAttending(
+        summaryId,
+        "I approve this day's Course in the Ward summary.",
+      )
+      .then(({ data }) => {
+        replaceSummary(selected.id, data);
+      })
+      .catch((err) =>
+        setOrderError(
+          apiErrorMessage(
+            err,
+            "Could not notify the attending physician. Try again later.",
+          ),
+        ),
+      )
+      .finally(() => setNotifyingAttending(false));
   };
 
   const regenerateSummary = (summaryId: string) => {
@@ -1230,6 +1281,13 @@ export function ManageView({
                       : "No summary yet"
                   }
                   badgeMuted={!summary}
+                  banner={
+                    consultantApprovalBanner ? (
+                      <span style={{ whiteSpace: "pre-line" }}>
+                        {consultantApprovalBanner}
+                      </span>
+                    ) : undefined
+                  }
                   dayLabel={
                     summaryDay
                       ? formatDateLongFromKey(summaryDay)
@@ -1376,7 +1434,31 @@ export function ManageView({
                                 Compare Versions
                               </AiActionButton>
                               <span style={manage.aiActionSpacer} />
-                              {summary.status !== "APPROVED" && (
+                              {isConsultingForSummary &&
+                                summary.status !== "APPROVED" &&
+                                stayDischarged && (
+                                  summary.myConsultantNoticeAt ? (
+                                    <span style={{ fontSize: 12, color: "#047857" }}>
+                                      You approved — attending notified
+                                    </span>
+                                  ) : (
+                                    <AiActionButton
+                                      className="ui-ai-btn--primary"
+                                      disabled={
+                                        notifyingAttending || regeneratingSummary || !canNotifyAttending
+                                      }
+                                      aria-busy={notifyingAttending}
+                                      title="Tell the attending you approve this day's summary"
+                                      onClick={() => notifyAttending(summary.id)}
+                                    >
+                                      <Check size={14} aria-hidden="true" />
+                                      {notifyingAttending
+                                        ? "Sending..."
+                                        : "Approve summary"}
+                                    </AiActionButton>
+                                  )
+                                )}
+                              {isAttendingForSummary && summary.status !== "APPROVED" && (
                                 <AiActionButton
                                   className="ui-ai-btn--primary"
                                   disabled={approvingSummary || regeneratingSummary}
@@ -1387,6 +1469,13 @@ export function ManageView({
                                   {approvingSummary ? "Approving..." : "Approve"}
                                 </AiActionButton>
                               )}
+                              {isConsultingForSummary &&
+                                !stayDischarged &&
+                                summary.status !== "APPROVED" && (
+                                  <span style={{ fontSize: 12, color: "#64748b" }}>
+                                    Approve summary after discharge
+                                  </span>
+                                )}
                             </>
                           )}
                         </div>
