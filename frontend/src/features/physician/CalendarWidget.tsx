@@ -7,8 +7,14 @@ import { monthCells, sameDay } from './calendar';
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from '../../components/icons/NavIcons';
 
 export function CalendarWidget() {
-  const [cursor, setCursor] = useState(new Date(2026, 5, 1));
-  const [selected, setSelected] = useState(new Date(2026, 5, 30));
+  const [cursor, setCursor] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [selected, setSelected] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  });
   const [pickerOpen, setPickerOpen] = useState(false);
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -18,7 +24,7 @@ export function CalendarWidget() {
     year: "numeric",
   });
   const monthNames = Array.from({ length: 12 }, (_, index) =>
-    new Date(2026, index, 1).toLocaleString("en-US", { month: "short" }),
+    new Date(2000, index, 1).toLocaleString("en-US", { month: "short" }),
   );
   const pickerYears = Array.from({ length: 9 }, (_, index) => year - 4 + index);
 
