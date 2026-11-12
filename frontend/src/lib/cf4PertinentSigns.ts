@@ -74,7 +74,7 @@ const LEGACY_CHIEF_COMPLAINT_TO_CF4: Record<string, Cf4PertinentSign | 'Others'>
  * Free-text HPI phrases → CF4 ticks. Longer phrases are matched first so
  * "coffee-ground" wins over a bare "ground", etc.
  */
-const ASSESSMENT_PHRASE_TO_CF4: Array<{ phrase: string; sign: Cf4PertinentSign }> = [
+const ASSESSMENT_PHRASE_TO_CF4 = ([
   { phrase: 'altered mental sensorium', sign: 'Altered mental sensorium' },
   { phrase: 'coffee-ground', sign: 'Hematemesis' },
   { phrase: 'coffee ground', sign: 'Hematemesis' },
@@ -154,7 +154,10 @@ const ASSESSMENT_PHRASE_TO_CF4: Array<{ phrase: string; sign: Cf4PertinentSign }
   { phrase: 'cough', sign: 'Cough' },
   { phrase: 'wheezing', sign: 'Dyspnea' },
   { phrase: 'pain', sign: 'Pain (site)' },
-].sort((a, b) => b.phrase.length - a.phrase.length);
+] satisfies Array<{ phrase: string; sign: Cf4PertinentSign }> as Array<{
+  phrase: string;
+  sign: Cf4PertinentSign;
+}>).sort((a, b) => b.phrase.length - a.phrase.length);
 
 function normalizeToken(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
