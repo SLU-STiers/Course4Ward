@@ -52,13 +52,19 @@ function requestOrdersByDay(request: PhysicianRequest, patientOrders: PhysicianO
 
 export function ReviewSummaryModal({
   request,
+  stayRequests = [request],
   onClose,
   onApprove,
   onDayApproved,
 }: {
   request: PhysicianRequest;
+  /** Every claim of this stay (one per day), including `request`. */
+  stayRequests?: PhysicianRequest[];
   onClose: () => void;
-  /** Final stay sign-off (Approve request). Closes the review. */
+  /**
+   * Final stay sign-off (Approve request): validates every claim of the stay
+   * still awaiting the physician. Closes the review.
+   */
   onApprove: () => Promise<void>;
   /** After a single day is approved — refresh the list, keep the modal open. */
   onDayApproved?: () => void;
@@ -140,8 +146,10 @@ export function ReviewSummaryModal({
     const summary = summaryByDay.get(day);
     return !summary || !summary.summaryContent.trim();
   });
-  const claimsRequestedValidation =
-    request.status === 'PHYSICIAN_VALIDATION_REQUESTED';
+  const awaitingRequests = stayRequests.filter(
+    (entry) => entry.status === 'PHYSICIAN_VALIDATION_REQUESTED',
+  );
+  const claimsRequestedValidation = awaitingRequests.length > 0;
   const approvalBlocked =
     busy !== null || editing || missingDays.length > 0 || !claimsRequestedValidation;
 
@@ -218,17 +226,18 @@ export function ReviewSummaryModal({
       .finally(() => setBusy(null));
   };
 
-  // Whole-stay Approve request: finish any remaining days, then complete the claim.
+  // Whole-stay Approve request: approve the days no claim covers, then onApprove
+  // validates every awaiting claim (which approves those days' summaries too).
   const approveAll = () => {
     if (approvalBlocked) return;
     setBusy('approving');
     setError(null);
+    const claimedSummaryIds = new Set(awaitingRequests.map((entry) => entry.summary.id));
     const others = days
-      .filter((day) => day !== requestDay)
       .map((day) => summaryByDay.get(day))
       .filter(
         (entry): entry is CourseInWard =>
-          Boolean(entry) && entry!.status !== 'APPROVED' && entry!.id !== request.summary.id,
+          Boolean(entry) && entry!.status !== 'APPROVED' && !claimedSummaryIds.has(entry!.id),
       );
     void Promise.all(
       others.map((entry) => courseInWardApi.approve(entry.id, { completeClaim: false })),

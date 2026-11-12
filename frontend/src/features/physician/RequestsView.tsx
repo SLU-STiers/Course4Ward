@@ -78,6 +78,19 @@ export function RequestsView({
   usePolling(loadRequests, ORDER_POLL_MS);
 
   const stays = useMemo(() => groupByStay(items), [items]);
+  const selectedStay = useMemo(
+    () =>
+      selected
+        ? (stays.find((stay) => stay.requests.some((request) => request.id === selected.id)) ?? {
+            key: selected.id,
+            primary: selected,
+            requests: [selected],
+            pendingCount: isAwaitingPhysician(selected) ? 1 : 0,
+            requestedAt: selected.requestedAt,
+          })
+        : null,
+    [selected, stays],
+  );
 
   // A notification points at one day's claim; the review opens on that stay.
   useEffect(() => {
@@ -228,15 +241,24 @@ export function RequestsView({
         />
       </div>
 
-      {selected && (
+      {selected && selectedStay && (
         <ReviewSummaryModal
           key={selected.id}
           request={selected}
+          stayRequests={selectedStay.requests}
           onClose={() => setSelected(null)}
           onDayApproved={loadRequests}
           onApprove={async () => {
-            await claimsApi.approvePhysicianRequest(selected.id);
-            await loadRequests();
+            // One sign-off for the whole stay: every day still awaiting the
+            // physician is validated, so the stay shows as Reviewed.
+            await Promise.all(
+              selectedStay.requests
+                .filter(isAwaitingPhysician)
+                .map((request) => claimsApi.approvePhysicianRequest(request.id)),
+            );
+            // The stay is signed off: close the review so it cannot be approved twice.
+            setSelected(null);
+            loadRequests();
           }}
         />
       )}
