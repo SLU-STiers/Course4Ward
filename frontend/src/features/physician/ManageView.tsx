@@ -1268,6 +1268,7 @@ export function ManageView({
               >
                 <AiSummaryCard
                   fill
+                  disclaimer
                   badgeLabel={
                     summary
                       ? selected &&

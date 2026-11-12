@@ -160,7 +160,20 @@ const styles: Record<string, CSSProperties> = {
   modelHelpList: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' },
   modelHelpName: { fontWeight: 700, color: '#6b21a8' },
   modelOptionActive: { background: '#7c00b8', color: '#ffffff' },
+  /** Small reminder under the actions that the AI can be wrong. */
+  disclaimer: {
+    margin: '10px 0 0',
+    fontSize: '11px',
+    lineHeight: 1.45,
+    color: '#64748b',
+    textAlign: 'center',
+    flexShrink: 0,
+  },
 };
+
+/** Default wording of the "AI can make mistakes" reminder. */
+export const AI_SUMMARY_DISCLAIMER =
+  "AI-generated summaries can be inaccurate or incomplete. Always verify against the patient's chart and orders before approving.";
 
 export interface AiSummaryCardProps {
   /** Badge text, e.g. "AI Draft ready" / "No summary yet". */
@@ -189,6 +202,8 @@ export interface AiSummaryCardProps {
   actions?: ReactNode;
   /** Fill a resizable panel and scroll the body internally. */
   fill?: boolean;
+  /** Show the "AI can make mistakes" reminder; `true` uses the default wording. */
+  disclaimer?: boolean | string;
 }
 
 export function AiSummaryCard({
@@ -207,6 +222,7 @@ export function AiSummaryCard({
   banner,
   actions,
   fill,
+  disclaimer,
 }: AiSummaryCardProps) {
   return (
     <section style={fill ? { ...styles.card, ...styles.cardFill } : styles.card}>
@@ -262,6 +278,11 @@ export function AiSummaryCard({
             <p style={styles.empty}>{emptyMessage}</p>
           ))}
         {actions ? <div style={styles.actions}>{actions}</div> : null}
+        {disclaimer ? (
+          <p role="note" style={styles.disclaimer}>
+            {typeof disclaimer === 'string' ? disclaimer : AI_SUMMARY_DISCLAIMER}
+          </p>
+        ) : null}
       </div>
     </section>
   );

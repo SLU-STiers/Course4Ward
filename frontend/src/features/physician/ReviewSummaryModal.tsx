@@ -446,6 +446,7 @@ export function ReviewSummaryModal({
         </section>
 
         <AiSummaryCard
+          disclaimer
           badgeLabel={daySummary ? STATUS_LABEL[daySummary.status] : 'No summary yet'}
           badgeMuted={!daySummary}
           dayLabel={formatDateLongFromKey(activeDay)}
