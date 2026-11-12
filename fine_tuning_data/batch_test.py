@@ -32,8 +32,10 @@ length, so it never fails a summary; word and sentence counts are just reported.
 All 109 approved references pass every hard check, so a FAIL is the model's.
 
 Metrics: time, sentences, words, number coverage (share of the orders' doses/
-rates/counts kept: a completeness proxy) and ROUGE-1, ROUGE-2 and ROUGE-L F1
-against the reference.
+rates/counts kept: a completeness proxy), term coverage (share of the order
+terms the approved summary kept that this one kept too) with the "missed" list
+per summary (doses as "medicine dose unit", then tests/procedures), and ROUGE-1,
+ROUGE-2 and ROUGE-L F1 against the reference.
 
 RAG: like the backend, the standard variant gets up to 3 approved summaries of
 similar orders as references (the fine-tuned one gets none, as in production;
@@ -81,6 +83,18 @@ HEADER = re.compile(r"^### (\S+) \| Day (\d+) of Admission #(\S+) \((\d{4}-\d{2}
 ORDER_START = re.compile(r"^(\d+)\. (.*)")
 NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 WORD = re.compile(r"[a-z0-9]+(?:[.'/-][a-z0-9]+)*")
+TERM = re.compile(r"[A-Za-z][A-Za-z0-9]*")
+# "Metoclopramide 10 mg", "Empagliflozin/Linagliptin 25/5 mg", "Pantoprazole (Amphoter) 40mg".
+DOSE = re.compile(
+    r"\b([A-Za-z][A-Za-z/-]*[A-Za-z])(?:\s*\([^)]*\))?\s+(\d+(?:[.,/]\d+)*)\s*"
+    r"(mg|mcg|ug|g|grams?|ml|cc|units?|iu|meqs?|mmol|tabs?|caps?|amps?|vials?|puffs?|drops?)\b", re.I)
+DRUG_ENDING = re.compile(r"(?:cillin|mycin|micin|floxacin|azole|tidine|olol|pril|sartan|statin|semide|bactam|"
+                         r"penem|cycline|parin|gliflozin|gliptin|dipine|azepam|ectomy|otomy|ostomy|scopy|"
+                         r"graphy|dialysis)$")
+# Routes, frequencies and units are written in capitals but are part of a dose, not a term of their own.
+NOT_TERMS = {"iv", "im", "po", "sc", "sq", "sl", "od", "bid", "tid", "qid", "hs", "prn", "stat", "now", "sivp",
+             "ivtt", "ivp", "ac", "pc", "mg", "mcg", "ml", "cc", "kg", "units", "iu", "meq", "meqs", "tab", "tabs",
+             "am", "pm", "in", "at", "of", "to", "for", "with", "then"}  # "160 meqs in 340 ml", "AM labs"
 # "is given", "are being monitored", "is receiving", "currently" — the prompt
 # demands past tense, so these mean the model drifted into present tense.
 PRESENT_TENSE = re.compile(
@@ -191,36 +205,79 @@ def style_vocabulary(references, share=STYLE_SHARE):
     return {w for w, c in counts.items() if c >= share * len(references)}
 
 
-def copied_terms(summary, orders_text, reference_texts, style):
-    """Summary words that a reference has but the orders don't (and that aren't house style).
+def terms(text):
+    """Lower-case words for the term checks; "empagliflozin/linagliptin" -> both names."""
+    return set(TERM.findall((text or "").lower()))
 
-    ponytail: word-level, so a correct expansion the orders abbreviate ("creatinine"
-    for "Crea") counts too; the no-RAG baseline on the same references nets that out.
+
+def order_terms(groups):
+    """Words physicians use for a medicine, test or procedure, learned from the orders.
+
+    A word counts when it is mostly written as an abbreviation (CBC, WAB, NSTEMI),
+    at least a third of the time right before a dose ("metoclopramide 10 mg"), or it
+    has a drug/procedure ending (-cillin, -ectomy). Plain English ("deferred",
+    "please", "evening") is none of these.
+    ponytail: heuristic; misses a lower-case test written without a dose ("lipase",
+    "crea"). Add a hand list of such terms if the check needs them.
     """
-    own = set(WORD.findall(orders_text.lower())) | style
-    in_refs = {w for text in reference_texts for w in WORD.findall(text.lower())}
-    return sorted({w for w in WORD.findall((summary or "").lower()) if w in in_refs and w not in own})
+    total, caps, dosed = Counter(), Counter(), Counter()
+    for g in groups:
+        for text in g["orders"]:
+            for tok in TERM.findall(text):
+                total[tok.lower()] += 1
+                caps[tok.lower()] += len(tok) > 1 and tok.isupper()
+            for name, _, _ in DOSE.findall(text):
+                for part in terms(name):
+                    dosed[part] += 1
+    return {w for w, n in total.items() if re.search(r"[a-z]{2}", w) and w not in NOT_TERMS
+            and not re.fullmatch(r"q\d+h?", w)  # q6h, q8
+            and (2 * caps[w] > n or 3 * dosed[w] >= n or DRUG_ENDING.search(w))}
 
 
-def clinical_vocabulary(groups, style):
-    """Words physicians write in orders (drugs, tests, procedures), minus house style and bare numbers."""
-    return {w for g in groups for text in g["orders"] for w in WORD.findall(text.lower())
-            if re.search(r"[a-z]{3}", w)} - style
+def copied_terms(summary, orders_text, reference_texts, clinical):
+    """Order terms (not house style) in the summary that a reference has but the orders don't.
+
+    ponytail: a correct expansion the orders abbreviate counts too; the no-RAG
+    baseline on the same references nets that out.
+    """
+    in_refs = set().union(*map(terms, reference_texts))
+    return sorted(terms(summary) & clinical & in_refs - terms(orders_text))
 
 
 def borrowed_terms(summary, orders_text, approved, references, clinical):
     """Order terms (a medicine, test, procedure) the summary names that only a reference has.
 
-    A term counts when some physician order uses it (`clinical`), a retrieved reference
-    has it (its approved text or the source orders sent with it), and neither this
-    day's orders nor its approved summary does: the approved summary is how a
+    A term counts when it is an order term (`clinical`, house style removed), a retrieved
+    reference has it (its approved text or the source orders sent with it), and neither
+    this day's orders nor its approved summary does: the approved summary is how a
     legitimate expansion ("creatinine" for "Crea") stays out.
-    ponytail: word-level; a multi-word name shows as its distinctive word(s).
     """
-    own = set(WORD.findall(orders_text.lower())) | set(WORD.findall((approved or "").lower()))
-    in_refs = {w for text in references for w in WORD.findall(text.lower())}
-    return sorted({w for w in WORD.findall((summary or "").lower())
-                   if w in clinical and w in in_refs and w not in own})
+    in_refs = set().union(*map(terms, references))
+    return sorted(terms(summary) & clinical & in_refs - terms(orders_text) - terms(approved))
+
+
+def missed_items(summary, orders_text, approved, vocab):
+    """What the approved summary kept from the orders but this summary left out.
+
+    Doses first, as "name dose unit" ("metoclopramide 10 mg": the name or the number
+    is missing), then other order terms (tests, procedures). Only items the approved
+    summary has count, so an order the physician left out is never "missed".
+    ponytail: word-level; a summary writing "chest x-ray" where the approved one has
+    "CXR" shows CXR as missed.
+    """
+    if not approved or not summary:
+        return []
+    have, keep = terms(summary), terms(approved)
+    have_n, keep_n = numbers_in(summary), numbers_in(approved)
+    missed, named = [], set()
+    for name, dose, unit in DOSE.findall(orders_text):
+        parts, n = terms(name) & vocab, numbers_in(dose)
+        named |= parts
+        if parts and parts <= keep and n <= keep_n and not (parts <= have and n <= have_n):
+            item = f"{name.lower()} {dose} {unit.lower()}"
+            if item not in missed:
+                missed.append(item)
+    return missed + sorted((terms(orders_text) & vocab & keep) - have - named)
 
 
 def post_json(url, body, timeout):
@@ -423,7 +480,8 @@ def main():
             print(f"RAG disabled, {rag_off}")
             rag, hits_by_group = False, {}
     style = style_vocabulary(references)
-    clinical = clinical_vocabulary(all_groups, style)
+    vocab = order_terms(all_groups)
+    clinical = vocab - style  # for the RAG checks: common terms (CBC, IV) are what references teach
 
     total = len(groups) * len(args.variant) * args.runs
     print(f"Testing {len(groups)} group(s) x {len(args.variant)} variant(s) x {args.runs} run(s) = {total} calls\n")
@@ -464,6 +522,11 @@ def main():
                                           hit_payloads, clinical) if hit_payloads and summary else []
                 if borrowed and refs:
                     warns.append("terms only in references: " + ", ".join(borrowed))
+                approved = references.get(group["group_id"])
+                missed = missed_items(summary, orders_text, approved, vocab)
+                # Completeness: share of the order terms the approved summary kept that this one kept too.
+                essential = terms(orders_text) & vocab & terms(approved) if approved and summary else set()
+                term_coverage = round(len(essential & terms(summary)) / len(essential), 2) if essential else None
                 status = "FAIL" if fails else ("WARN" if warns else "PASS")
                 scores = rouge(summary, references.get(group["group_id"]))
                 shown = "/".join("-" if scores[k] is None else f"{scores[k]:.2f}" for k in ROUGE_KEYS)
@@ -477,6 +540,8 @@ def main():
                     "seconds": service_s if service_s is not None else wall, "wall_seconds": wall,
                     "sentences": metrics.get("sentences"), "words": metrics.get("words"),
                     "number_coverage": metrics.get("number_coverage"),
+                    "term_coverage": term_coverage,
+                    "missed": " | ".join(missed),
                     **scores,
                     # None (not 0) when this variant never gets references, so averages leave it out.
                     "rag_refs": len(refs) if rag and variant in RAG_VARIANTS else None,
@@ -488,7 +553,7 @@ def main():
                     "rag_from": " ".join(h["group_id"] for h in hits),
                     "ref_overlap": max(filter(None, (rouge2_precision(summary, t) for t in hit_texts)),
                                        default=None) if hit_texts and summary else None,
-                    "copied_terms": " ".join(copied_terms(summary, orders_text, hit_texts, style))
+                    "copied_terms": " ".join(copied_terms(summary, orders_text, hit_texts, clinical))
                     if hit_texts and summary else "",
                     "borrowed_terms": " ".join(borrowed),
                     "fails": " | ".join(fails), "warns": " | ".join(warns),
@@ -525,7 +590,7 @@ def main():
 
 
 METRICS = [("sentences", "Sentences"), ("words", "Words"),
-           ("number_coverage", "Number coverage"),
+           ("number_coverage", "Number coverage"), ("term_coverage", "Term coverage"),
            ("rouge1", "ROUGE-1"), ("rouge2", "ROUGE-2"), ("rougeL", "ROUGE-L"),
            ("rag_refs", "RAG references"), ("rag_similarity", "RAG top similarity"),
            ("rag_mean_similarity", "RAG mean similarity"), ("ref_overlap", "Reference overlap")]
@@ -625,6 +690,7 @@ def retrieval_stats(rows):
 EFFECT_MEASURES = [
     ("Pass rate (%)", lambda r: 100.0 * (r["status"] == "PASS"), 0, 1),
     ("Number coverage", lambda r: r["number_coverage"], 2, 1),
+    ("Term coverage", lambda r: r.get("term_coverage"), 2, 1),
     ("ROUGE-1", lambda r: r["rouge1"], 2, 1),
     ("ROUGE-2", lambda r: r["rouge2"], 2, 1),
     ("ROUGE-L", lambda r: r["rougeL"], 2, 1),
@@ -783,8 +849,10 @@ def rag_section(rows, meta):
   <h3>Copy check</h3>
   <p class="desc">References are style guidance only: the summary must not take clinical content from them.
   <b>Reference overlap</b> is the share of the summary's word pairs found in its closest reference (house style
-  such as "was administered" counts too). <b>Copied terms</b> are words the summary shares with a reference but
-  not with its own orders, leaving out words common to {round(100 * STYLE_SHARE)}% or more of approved summaries.
+  such as "was administered" counts too). <b>Copied terms</b> are order terms (medicines, tests, procedures: words
+  physicians write as abbreviations, before a dose, or with a drug ending; plain words such as "deferred" are not
+  counted) the summary shares with a reference but not with its own orders, leaving out terms common to
+  {round(100 * STYLE_SHARE)}% or more of approved summaries.
   A correct expansion of an abbreviation can count, so compare each RAG variant with its no-RAG baseline, which is
   measured against the same references it was never sent.</p>
   <table><tr><th>Model</th><th>Summaries</th><th>Reference overlap</th><th>With copied terms</th>
@@ -822,9 +890,9 @@ def read_rows(path):
     for r in rows:
         # CSVs from before ROUGE-2/L had ROUGE-1 only, as "reference_similarity".
         r.setdefault("rouge1", r.get("reference_similarity"))
-        for field in ("rag_similarities", "rag_from", "copied_terms", "borrowed_terms"):  # absent from older CSVs
+        for field in ("rag_similarities", "rag_from", "copied_terms", "borrowed_terms", "missed"):  # absent from older CSVs
             r[field] = r.get(field) or ""
-        for field in ("seconds", "wall_seconds", "sentences", "words", "number_coverage", *ROUGE_KEYS,
+        for field in ("seconds", "wall_seconds", "sentences", "words", "number_coverage", "term_coverage", *ROUGE_KEYS,
                       "rag_refs", "rag_similarity", "rag_mean_similarity", "ref_overlap"):
             r[field] = num(r.get(field))
     return rows
@@ -852,7 +920,8 @@ def write_report(rows, path, references, meta):
             tile("Summaries", s["calls"], f"{s['fail']} failed · {s['warn']} warned"),
             tile("Pass rate", rate, "no FAIL and no WARN"),
             tile("Typical time", f"{fmt(t[1], 1)} s" if t else "—", f"p95 {fmt(t[2], 1)} s" if t else ""),
-            tile("Coverage", fmt(m.get("number_coverage", (None,))[0]), "of the orders' numbers kept"),
+            tile("Coverage", f'{fmt(m.get("number_coverage", (None,))[0])} / {fmt(m.get("term_coverage", (None,))[0])}',
+                 "numbers / order terms kept"),
             tile("ROUGE-1 / 2 / L",
                  " / ".join(fmt(m.get(k, (None,))[0]) for k in ROUGE_KEYS), "average F1 vs reference"),
             tile("Length", f"{fmt(m.get('words', (None,))[0], 0)} words",
@@ -889,7 +958,7 @@ def write_report(rows, path, references, meta):
         f'<tr class="{r["status"].lower()}"><td>{esc(r["group_id"])}</td>'
         f'<td>{SHORT_LABELS.get(r["variant"], r["variant"])}</td><td>{esc(str(r["run"]))}</td>'
         f'<td><b>{r["status"]}</b></td><td>{esc(str(r["orders"]))}</td><td>{fmt(r["seconds"], 1)}</td>'
-        f'<td>{fmt(r["words"], 0)}</td><td>{fmt(r["number_coverage"])}</td>'
+        f'<td>{fmt(r["words"], 0)}</td><td>{fmt(r["number_coverage"])} / {fmt(r.get("term_coverage"))}</td>'
         + "".join(f"<td>{fmt(r[k])}</td>" for k in ROUGE_KEYS) +
         f'<td>{esc("; ".join(filter(None, [r["fails"], r["warns"]])).replace(" | ", "; "))}</td></tr>'
         for r in rows)
@@ -898,6 +967,8 @@ def write_report(rows, path, references, meta):
         f'<div class="sample"><h4>{esc(r["group_id"])} · {esc(VARIANT_LABELS.get(r["variant"], r["variant"]))}'
         f' · run {esc(str(r["run"]))} · <span class="{r["status"].lower()}">{r["status"]}</span></h4>'
         f'<p class="lbl">Generated</p><p>{esc(r["summary"]) or "<i>No summary returned.</i>"}</p>'
+        + (f'<p class="lbl">Missed (in the orders and the approved summary, not here)</p>'
+           f'<p class="warn">{esc(r["missed"].replace(" | ", "; "))}</p>' if r.get("missed") else "")
         + (f'<p class="lbl">Approved reference</p><p class="ref">{esc(references[r["group_id"]])}</p>'
            if r["group_id"] in references else "")
         + "</div>"
@@ -953,7 +1024,10 @@ orders, which usually means an invented dose.</td></tr>
 </table>
 <p class="desc">Every approved reference summary passes all FAIL checks, so a FAIL points at the AI, not the test.
 <b>Number coverage</b> is the share of the orders' numbers (doses, rates, counts) that the summary kept: a rough
-measure of completeness. <b>ROUGE</b> compares the summary's wording with the reference summary (F1, 0 = nothing
+measure of completeness. <b>Term coverage</b> is the share of the order terms (medicines, tests, procedures) that
+the approved summary kept and this summary kept too; each summary's appendix entry lists what it <b>missed</b>,
+doses as "medicine dose unit". A term the approved summary words differently ("chest x-ray" for "CXR") can show as
+missed, so read it as a pointer, not a verdict. <b>ROUGE</b> compares the summary's wording with the reference summary (F1, 0 = nothing
 in common, 1 = identical): <b>ROUGE-1</b> counts shared words, <b>ROUGE-2</b> shared word pairs (keeping phrases such as
 "600 mg IV" together), and <b>ROUGE-L</b> the longest run of words in the same order. ROUGE-2 and ROUGE-L are naturally
 lower than ROUGE-1. All three reward shared wording, not correctness, and drop when the summary is much shorter than
@@ -1027,14 +1101,26 @@ def self_test():
     # Copy check: "vancomycin" is only in the reference; "given" is house style; "ceftriaxone" is in the orders.
     assert rouge2_precision("a b c", "x a b") == 0.5
     assert copied_terms("Ceftriaxone and vancomycin were given.", "Start Ceftriaxone",
-                        ["Vancomycin was given."], {"given", "was", "were", "and"}) == ["vancomycin"]
+                        ["Vancomycin was given."], {"ceftriaxone", "vancomycin"}) == ["vancomycin"]
     assert style_vocabulary({"1": "was given", "2": "was started"}, share=1.0) == {"was"}
+
+    # Order terms: abbreviations, dosed names and drug endings in; plain words ("deferred", "start") out.
+    vocab = order_terms([{"orders": ["Vancomycin 1 g IV", "Crea, CBC", "Start Ceftriaxone",
+                                     "Feeding deferred; Empagliflozin/Linagliptin 25/5 mg OD", "Piperacillin"]}])
+    assert {"vancomycin", "cbc", "empagliflozin", "linagliptin", "piperacillin"} <= vocab, vocab
+    assert not {"deferred", "start", "feeding", "crea"} & vocab, vocab
+    assert copied_terms("Vancomycin was deferred.", "Start", ["Vancomycin deferred."], vocab) == ["vancomycin"]
+    # Missed: the approved summary kept vancomycin 1 g and CBC; ceftriaxone it left out, so never "missed".
+    approved = "Vancomycin 1 g IV was given and CBC was requested."
+    assert missed_items("CBC was requested.", "Vancomycin 1 g IV\nCBC\nCeftriaxone 2 g", approved, vocab) \
+        == ["vancomycin 1 g"]
+    assert missed_items("Vancomycin 2 g was given.", "Vancomycin 1 g IV\nCBC", approved, vocab) \
+        == ["vancomycin 1 g", "cbc"]
+    assert missed_items(approved, "Vancomycin 1 g IV\nCBC", approved, vocab) == []
 
     # Borrowed terms: "vancomycin" is an order term only the reference had -> flagged;
     # "creatinine" is in the approved summary (expansion of "Crea") -> not; "kept" is no order term.
-    clinical = clinical_vocabulary([{"orders": ["Vancomycin 1 g IV", "Crea, CBC", "Start Ceftriaxone"]}],
-                                   {"start"})
-    assert "start" not in clinical and "1" not in clinical and "vancomycin" in clinical
+    clinical = {"vancomycin", "ceftriaxone", "cbc"}
     assert borrowed_terms("Ceftriaxone, vancomycin and creatinine were kept.", "Start Ceftriaxone\nCrea",
                           "Ceftriaxone was started and creatinine requested.",
                           ["Vancomycin was given; creatinine kept.\nVancomycin 1 g IV"],
