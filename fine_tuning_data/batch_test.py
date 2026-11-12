@@ -23,7 +23,10 @@ Exit code 1 when any summary fails a hard check, so it can gate a model change.
 Hard checks (FAIL): call failed/empty, bullet or numbered list, a physician
 name ("Dr."), present tense ("is receiving"), a number that appears nowhere in
 the orders (likely invented dose).
-Soft checks (WARN): future/imperative wording, more than MAX_SENTENCES sentences.
+Soft checks (WARN): future/imperative wording, more than MAX_SENTENCES sentences,
+and on RAG summaries "terms only in references": an order term (medicine, test,
+procedure) that a retrieved reference has but neither the day's orders nor its
+approved summary does, i.e. content RAG should not have supplied.
 Summaries should be as short as the orders allow, but there is no hard cap on
 length, so it never fails a summary; word and sentence counts are just reported.
 All 109 approved references pass every hard check, so a FAIL is the model's.
@@ -197,6 +200,27 @@ def copied_terms(summary, orders_text, reference_texts, style):
     own = set(WORD.findall(orders_text.lower())) | style
     in_refs = {w for text in reference_texts for w in WORD.findall(text.lower())}
     return sorted({w for w in WORD.findall((summary or "").lower()) if w in in_refs and w not in own})
+
+
+def clinical_vocabulary(groups, style):
+    """Words physicians write in orders (drugs, tests, procedures), minus house style and bare numbers."""
+    return {w for g in groups for text in g["orders"] for w in WORD.findall(text.lower())
+            if re.search(r"[a-z]{3}", w)} - style
+
+
+def borrowed_terms(summary, orders_text, approved, references, clinical):
+    """Order terms (a medicine, test, procedure) the summary names that only a reference has.
+
+    A term counts when some physician order uses it (`clinical`), a retrieved reference
+    has it (its approved text or the source orders sent with it), and neither this
+    day's orders nor its approved summary does: the approved summary is how a
+    legitimate expansion ("creatinine" for "Crea") stays out.
+    ponytail: word-level; a multi-word name shows as its distinctive word(s).
+    """
+    own = set(WORD.findall(orders_text.lower())) | set(WORD.findall((approved or "").lower()))
+    in_refs = {w for text in references for w in WORD.findall(text.lower())}
+    return sorted({w for w in WORD.findall((summary or "").lower())
+                   if w in clinical and w in in_refs and w not in own})
 
 
 def post_json(url, body, timeout):
@@ -399,6 +423,7 @@ def main():
             print(f"RAG disabled, {rag_off}")
             rag, hits_by_group = False, {}
     style = style_vocabulary(references)
+    clinical = clinical_vocabulary(all_groups, style)
 
     total = len(groups) * len(args.variant) * args.runs
     print(f"Testing {len(groups)} group(s) x {len(args.variant)} variant(s) x {args.runs} run(s) = {total} calls\n")
@@ -409,6 +434,8 @@ def main():
             orders_text = "\n".join(group["orders"])
             hits = hits_by_group.get(group["group_id"], [])
             hit_texts = [references[h["group_id"]] for h in hits]
+            # What a reference carries into the prompt: its approved text and its source orders.
+            hit_payloads = [references[h["group_id"]] + "\n" + "\n".join(h["orders"]) for h in hits]
             refs = [{"approvedSummary": references[h["group_id"]], "sourceOrders": h["orders"],
                      "similarity": round(h["sim"], 4)} for h in hits] if variant in RAG_VARIANTS else []
             for run in range(1, args.runs + 1):
@@ -432,6 +459,11 @@ def main():
                 )
                 if error:
                     fails.insert(0, f"error: {error}")
+                # Measured for every variant (no-RAG ones are the baseline), flagged only where references were sent.
+                borrowed = borrowed_terms(summary, orders_text, references.get(group["group_id"]),
+                                          hit_payloads, clinical) if hit_payloads and summary else []
+                if borrowed and refs:
+                    warns.append("terms only in references: " + ", ".join(borrowed))
                 status = "FAIL" if fails else ("WARN" if warns else "PASS")
                 scores = rouge(summary, references.get(group["group_id"]))
                 shown = "/".join("-" if scores[k] is None else f"{scores[k]:.2f}" for k in ROUGE_KEYS)
@@ -458,6 +490,7 @@ def main():
                                        default=None) if hit_texts and summary else None,
                     "copied_terms": " ".join(copied_terms(summary, orders_text, hit_texts, style))
                     if hit_texts and summary else "",
+                    "borrowed_terms": " ".join(borrowed),
                     "fails": " | ".join(fails), "warns": " | ".join(warns),
                     "summary": summary or "",
                 })
@@ -642,6 +675,7 @@ def copy_stats(rows, variant):
     terms = Counter(t for r in mine for t in r["copied_terms"].split())
     return {
         "summaries": len(mine),
+        "borrowed": [r for r in mine if r["borrowed_terms"]],
         "overlap": statistics.mean(overlaps) if overlaps else None,
         "with_terms": len(with_terms),
         "terms_per_summary": statistics.mean(len(r["copied_terms"].split()) for r in mine),
@@ -703,6 +737,23 @@ def rag_section(rows, meta):
                       f"<td>{c['with_terms']} ({round(100 * c['with_terms'] / c['summaries'])}%)</td>"
                       f"<td>{fmt(c['terms_per_summary'], 1)}</td><td>{esc(terms)}</td></tr>")
 
+    # Content check: order terms (medicines, tests, procedures) only a reference had.
+    borrowed_rows, flagged = "", ""
+    for v in variants:
+        c = copy_stats(rows, v)
+        if not c:
+            continue
+        baseline = " (baseline: not sent references)" if v not in RAG_VARIANTS else ""
+        top = Counter(t for r in c["borrowed"] for t in r["borrowed_terms"].split()).most_common(12)
+        borrowed_rows += (f"<tr><td>{esc(VARIANT_LABELS.get(v, v))}{esc(baseline)}</td><td>{c['summaries']}</td>"
+                          f"<td>{len(c['borrowed'])} ({round(100 * len(c['borrowed']) / c['summaries'])}%)</td>"
+                          f"<td>{esc(', '.join(f'{t} ({n})' for t, n in top) or '—')}</td></tr>")
+        if v in RAG_VARIANTS:
+            flagged += "".join(
+                f"<tr><td>{esc(SHORT_LABELS.get(v, v))}</td><td>{esc(r['group_id'])}</td>"
+                f"<td>{esc(r['borrowed_terms'].replace(' ', ', '))}</td><td>{esc(r['rag_from'])}</td>"
+                f"<td>{esc(r['summary'])}</td></tr>" for r in c["borrowed"])
+
     return f"""
 <section>
   <h2>RAG analysis</h2>
@@ -739,6 +790,17 @@ def rag_section(rows, meta):
   <table><tr><th>Model</th><th>Summaries</th><th>Reference overlap</th><th>With copied terms</th>
   <th>Terms per summary</th><th>Most frequent copied terms</th></tr>
   {copy_rows or '<tr><td colspan="6">No summaries to check.</td></tr>'}</table>
+  <h3>Medicines and procedures from references</h3>
+  <p class="desc">The content check behind the copy check: terms physicians write in orders (a medicine, test or
+  procedure) that the summary names although only a retrieved reference has them, neither this day's orders nor
+  its approved summary. Each one is a WARN on a RAG summary. The no-RAG baseline is checked against the same
+  references it was never sent, so its count is the false-alarm level: a RAG model clearly above it is taking
+  content from the references.</p>
+  <table><tr><th>Model</th><th>Summaries</th><th>With borrowed terms</th><th>Most frequent</th></tr>
+  {borrowed_rows or '<tr><td colspan="4">No summaries to check.</td></tr>'}</table>
+  {f'''<h3>Flagged summaries</h3>
+  <table><tr><th>Model</th><th>Group</th><th>Terms only in references</th><th>References</th><th>Summary</th></tr>
+  {flagged}</table>''' if flagged else ''}
 </section>"""
 
 
@@ -760,7 +822,7 @@ def read_rows(path):
     for r in rows:
         # CSVs from before ROUGE-2/L had ROUGE-1 only, as "reference_similarity".
         r.setdefault("rouge1", r.get("reference_similarity"))
-        for field in ("rag_similarities", "rag_from", "copied_terms"):  # absent from older CSVs
+        for field in ("rag_similarities", "rag_from", "copied_terms", "borrowed_terms"):  # absent from older CSVs
             r[field] = r.get(field) or ""
         for field in ("seconds", "wall_seconds", "sentences", "words", "number_coverage", *ROUGE_KEYS,
                       "rag_refs", "rag_similarity", "rag_mean_similarity", "ref_overlap"):
@@ -967,6 +1029,17 @@ def self_test():
     assert copied_terms("Ceftriaxone and vancomycin were given.", "Start Ceftriaxone",
                         ["Vancomycin was given."], {"given", "was", "were", "and"}) == ["vancomycin"]
     assert style_vocabulary({"1": "was given", "2": "was started"}, share=1.0) == {"was"}
+
+    # Borrowed terms: "vancomycin" is an order term only the reference had -> flagged;
+    # "creatinine" is in the approved summary (expansion of "Crea") -> not; "kept" is no order term.
+    clinical = clinical_vocabulary([{"orders": ["Vancomycin 1 g IV", "Crea, CBC", "Start Ceftriaxone"]}],
+                                   {"start"})
+    assert "start" not in clinical and "1" not in clinical and "vancomycin" in clinical
+    assert borrowed_terms("Ceftriaxone, vancomycin and creatinine were kept.", "Start Ceftriaxone\nCrea",
+                          "Ceftriaxone was started and creatinine requested.",
+                          ["Vancomycin was given; creatinine kept.\nVancomycin 1 g IV"],
+                          clinical | {"creatinine"}) == ["vancomycin"]
+    assert borrowed_terms("Vancomycin was given.", "Vancomycin 1 g", None, ["Vancomycin"], clinical) == []
 
     # Effect of RAG: paired per group, direction-aware.
     def row(variant, group, status, rl, secs):
