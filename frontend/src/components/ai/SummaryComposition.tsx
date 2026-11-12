@@ -3,10 +3,17 @@
  * the timeline of the orders it was composed from: when, who ordered, who
  * carried it out, and which of its keywords made it into the summary.
  */
-import { useState, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import { formatDateMedium, formatTimeMedium } from '../../lib/format';
 import { orderTypeLabel } from '../orders/orderType';
-import { splitOnTerms, termsInSummary, type SummarySourceOrder } from './summaryKeywords';
+import {
+  UNKNOWN_DOCTOR,
+  orderedByKey,
+  ordersOfDoctor,
+  splitOnTerms,
+  termsInSummary,
+  type SummarySourceOrder,
+} from './summaryKeywords';
 
 const TEAL = '#0f766e';
 const AMBER = '#d97706';
@@ -107,24 +114,26 @@ export function HighlightedSummary({ text, orders }: { text: string; orders: Sum
   );
 }
 
-/** Filter value for orders with no ordering doctor recorded. */
-const UNKNOWN_DOCTOR = '__unknown__';
-
-export function CompositionPanel({ text, orders }: { text: string; orders: SummarySourceOrder[] }) {
-  // The panel stays mounted while the physician switches versions, so the
-  // chosen doctor carries over to every version.
-  const [doctor, setDoctor] = useState<string | null>(null);
-
+export function CompositionPanel({
+  text,
+  orders,
+  doctor,
+  onDoctorChange: setDoctor,
+}: {
+  text: string;
+  orders: SummarySourceOrder[];
+  doctor: string | null;
+  onDoctorChange: (doctor: string | null) => void;
+}) {
   const doctorCounts = new Map<string, number>();
   for (const order of orders) {
-    const key = name(order.orderedBy) ?? UNKNOWN_DOCTOR;
+    const key = orderedByKey(order);
     doctorCounts.set(key, (doctorCounts.get(key) ?? 0) + 1);
   }
   const doctors = [...doctorCounts.keys()].sort((a, b) =>
     a === UNKNOWN_DOCTOR ? 1 : b === UNKNOWN_DOCTOR ? -1 : a.localeCompare(b),
   );
-  // A doctor who no longer has orders here (list reloaded) falls back to "All".
-  const activeDoctor = doctor && doctorCounts.has(doctor) ? doctor : null;
+  const { activeDoctor } = ordersOfDoctor(orders, doctor);
 
   if (orders.length === 0)
     return <p style={styles.empty}>No accomplished orders yet, so there is no composition to show.</p>;
@@ -133,7 +142,7 @@ export function CompositionPanel({ text, orders }: { text: string; orders: Summa
     .map((order) => ({ order, terms: termsInSummary(order.orderContent, text) }));
   const reflected = rows.filter((row) => row.terms.length > 0).length;
   const shown = activeDoctor
-    ? rows.filter(({ order }) => (name(order.orderedBy) ?? UNKNOWN_DOCTOR) === activeDoctor)
+    ? rows.filter(({ order }) => orderedByKey(order) === activeDoctor)
     : rows;
 
   const filterChip = (key: string | null, label: string, count: number) => {
