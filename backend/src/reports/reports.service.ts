@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import {
   ActionType,
   OrderStatus,
@@ -10,6 +10,8 @@ import {
   SummaryStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { OllamaClient } from '../course-in-ward/ollama-client';
+import { backfillOrderEmbeddings } from '../orders/embedding-backfill';
 import { expireStaleResetRequests } from '../auth/reset-expiry';
 
 /** Trend granularity exposed to the reporting UI. */
@@ -47,6 +49,20 @@ export interface BucketCount {
 @Injectable()
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
+
+  // ponytail: in-process flag, one backend instance; a second instance could run it concurrently.
+  private backfilling = false;
+
+  /** Embeds every active order still missing an embedding; waits for the AI service. */
+  async backfillEmbeddings() {
+    if (this.backfilling) throw new ConflictException('An embedding backfill is already running');
+    this.backfilling = true;
+    try {
+      return await backfillOrderEmbeddings(this.prisma, new OllamaClient());
+    } finally {
+      this.backfilling = false;
+    }
+  }
 
   /**
    * Everything the admin dashboard's reporting section needs, in one round

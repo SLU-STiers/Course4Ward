@@ -58,6 +58,7 @@ const TABS: Array<{ value: ReportTab; label: string }> = [
 const AI_MODEL_LABELS: Record<string, string> = {
   standard: 'Base Model (with RAG)',
   fine_tuned: 'Fine-tuned model',
+  fine_tuned_rag: 'Fine-tuned model (with RAG)',
 };
 
 const AI_TRIGGER_LABELS: Record<string, string> = {
@@ -526,6 +527,8 @@ function AiStatsPanel({
   const coverage = corpus.ordersTotal
     ? Math.round((corpus.ordersEmbedded / corpus.ordersTotal) * 100)
     : 0;
+  // A few embedded orders out of many must not read as none.
+  const coverageLabel = coverage === 0 && corpus.ordersEmbedded > 0 ? '<1%' : `${coverage}%`;
   const timingRows = (stats: AiCallStats, prefix: string) => [
     { key: `${prefix}-avg`, label: 'Average', value: formatMs(stats.avgMs) },
     { key: `${prefix}-p50`, label: 'Median', value: formatMs(stats.p50Ms) },
@@ -569,7 +572,7 @@ function AiStatsPanel({
     {
       key: 'coverage',
       label: 'Orders with an embedding',
-      value: `${corpus.ordersEmbedded} / ${corpus.ordersTotal} (${coverage}%)`,
+      value: `${corpus.ordersEmbedded} / ${corpus.ordersTotal} (${coverageLabel})`,
     },
     {
       key: 'rag',
@@ -722,7 +725,7 @@ function AiStatsPanel({
         />
         <Kpi
           label="Embedded"
-          value={`${coverage}%`}
+          value={coverageLabel}
           hint={`${corpus.ordersEmbedded} of ${corpus.ordersTotal} orders`}
         />
         <Kpi
@@ -799,8 +802,9 @@ function AiStatsPanel({
               }}
             />
           </span>
-          <span style={styles.barListValue}>{coverage}%</span>
+          <span style={styles.barListValue}>{coverageLabel}</span>
         </div>
+        <EmbeddingBackfill missing={corpus.ordersTotal - corpus.ordersEmbedded} />
         {/* Rows with no value yet ("—") are noise on screen; the PDF keeps them. */}
         <StatRows rows={corpusRows.slice(1).filter((row) => row.value !== '—')} />
         {emb.calls ? (
@@ -824,6 +828,43 @@ function AiStatsPanel({
 
       </div>
     </>
+  );
+}
+
+/**
+ * Embeds the orders that never got an embedding (seeded, registration, or
+ * written while the AI service was down) so RAG can search them. Waits for
+ * the AI service; a large backlog can take a few minutes.
+ */
+function EmbeddingBackfill({ missing }: { missing: number }) {
+  const qc = useQueryClient();
+  const [message, setMessage] = useState('');
+  const run = useMutation({
+    mutationFn: () => adminApi.backfillEmbeddings().then((r) => r.data),
+    onSuccess: (result) =>
+      setMessage(
+        result.failed
+          ? `Embedded ${result.embedded} of ${result.found} orders. Is the AI service running?`
+          : `Embedded ${result.embedded} order${result.embedded === 1 ? '' : 's'}.`,
+      ),
+    onError: () => setMessage('Could not embed the orders. Is the AI service running?'),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['admin-report-ai'] }),
+  });
+
+  if (!missing && !message) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      {missing ? (
+        <Button size="sm" variant="secondary" loading={run.isPending} onClick={() => run.mutate()}>
+          {run.isPending ? 'Embedding...' : `Embed ${missing} missing order${missing === 1 ? '' : 's'}`}
+        </Button>
+      ) : null}
+      {message ? (
+        <span role="status" style={styles.graphNote}>
+          {message}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

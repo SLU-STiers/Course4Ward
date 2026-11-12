@@ -2,9 +2,10 @@ import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-va
 import { ApiProperty } from '@nestjs/swagger';
 import { SummaryModel } from '../ollama-client';
 
-const SUMMARY_MODELS: SummaryModel[] = ['standard', 'fine_tuned'];
+const SUMMARY_MODELS: SummaryModel[] = ['standard', 'fine_tuned', 'fine_tuned_rag'];
 const MODEL_DESCRIPTION =
-  'Which AI writes the summary: `standard` (base model + RAG references, the default) or `fine_tuned`.';
+  'Which AI writes the summary: `standard` (base model + RAG references, the default), ' +
+  '`fine_tuned`, or `fine_tuned_rag` (fine-tuned model + RAG references).';
 
 /**
  * Formats how the summary is written, never what it says; see

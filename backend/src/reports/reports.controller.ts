@@ -55,6 +55,13 @@ export class ReportsController {
     });
   }
 
+  /** Embeds every active order still missing one (409 while a backfill runs). */
+  @Post('embeddings/backfill')
+  @HttpCode(200)
+  backfillEmbeddings() {
+    return this.reportsService.backfillEmbeddings();
+  }
+
   /** Past patient-days the nightly batch missed (no summary, finished orders unlinked). */
   @Get('missed-summaries')
   missedSummaries() {

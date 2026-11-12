@@ -1,10 +1,11 @@
 /**
  * Client-side PhilHealth CF4 supporting PDF (February 2020 layout cues).
  *
- * Fills what Course4Ward stores for Sections I–IV and VII:
+ * Fills what Course4Ward stores for Sections I–V and VII:
  * HCI identity, patient data, reason for admission (HPI + CF4 sign ticks),
- * Course in the Ward (one row per approved day), and certification.
- * Case rates, drugs, and outcome stay blank when not captured.
+ * Course in the Ward (one row per approved day), Drugs/Medicines detected
+ * from physician orders, and certification.
+ * Case rates and outcome stay blank when not captured.
  *
  * Preview and download share this builder via `cf4Document.ts`.
  */
@@ -15,6 +16,7 @@ import {
   CF4_PERTINENT_SIGNS,
   resolveCf4SignsFromAssessment,
 } from '../../lib/cf4PertinentSigns';
+import { extractMedicinesFromOrders, type Cf4Medicine } from '../../lib/cf4Medicines';
 import { formatDatePhilHealth } from '../../lib/format';
 import { triageLevelInfo, type TriageDisplay } from '../../lib/triage';
 import philHealthLogoUrl from './assets/philhealth-logo.png';
@@ -62,7 +64,7 @@ type FieldCell = {
   render?: (doc: jsPDF, x: number, y: number, w: number, h: number) => void;
 };
 
-type CheckboxMark = { x: number; y: number; size: number };
+type CheckboxMark = { x: number; y: number; size: number; page: number };
 
 // ── Primitives ─────────────────────────────────────────────────────────────
 
@@ -497,7 +499,7 @@ function courseSectionBand(
 
   doc.setFont('helvetica', 'bold').setFontSize(6.8).setTextColor(INK);
   doc.text(
-    'IV. COURSE IN THE WARD (Attach photocopy of laboratory/imaging results)',
+    'IV. COURSE IN THE WARD',
     M + CONTENT_W / 2,
     ctx.y + 10,
     { align: 'center' },
@@ -515,7 +517,7 @@ function courseSectionBand(
   doc.text('Check box if there is/are additional sheet(s).', boxX + size + 4, boxY + 6);
 
   ctx.y += h;
-  return { x: boxX, y: boxY, size };
+  return { x: boxX, y: boxY, size, page: doc.getNumberOfPages() };
 }
 
 function tableHeader(ctx: Ctx): void {
@@ -626,6 +628,85 @@ function surgicalProcedureLine(ctx: Ctx): void {
   ctx.y += h;
 }
 
+/** PhilHealth CF4 Part V — under Doctor's Order, two drug pairs per row. */
+function drugsMedicinesSection(ctx: Ctx, medicines: Cf4Medicine[]): CheckboxMark {
+  const { doc } = ctx;
+  const headerH = 28;
+  reserve(ctx, headerH + 22);
+
+  doc.setDrawColor(INK).setLineWidth(0.7);
+  doc.rect(M, ctx.y, CONTENT_W, headerH, 'S');
+  doc.setFont('helvetica', 'bold').setFontSize(6.8).setTextColor(INK);
+  doc.text('V. DRUGS/MEDICINES', M + CONTENT_W / 2, ctx.y + 11, { align: 'center' });
+
+  const size = 7.5;
+  const boxX = M + 7;
+  const boxY = ctx.y + 16;
+  checkbox(doc, boxX, boxY, size, false);
+  doc.setFont('helvetica', 'normal').setFontSize(6).setTextColor(INK);
+  doc.text('Check box if there is/are additional sheet(s).', boxX + size + 4, boxY + 6);
+  const mark: CheckboxMark = { x: boxX, y: boxY, size, page: doc.getNumberOfPages() };
+  ctx.y += headerH;
+
+  const colGeneric = CONTENT_W * 0.28;
+  const colDose = CONTENT_W * 0.5;
+  const colCost = CONTENT_W * 0.22;
+  const colHeaderH = 14;
+
+  const paintColHeaders = () => {
+    if (!fits(ctx, colHeaderH + 18)) newPage(ctx);
+    doc.setDrawColor(INK).setLineWidth(0.55);
+    let x = M;
+    for (const [w, label] of [
+      [colGeneric, 'Generic Name'],
+      [colDose, 'Quantity/Dosage/Route/Frequency'],
+      [colCost, 'Total Cost'],
+    ] as const) {
+      doc.rect(x, ctx.y, w, colHeaderH, 'S');
+      doc.setFont('helvetica', 'bold').setFontSize(5.8).setTextColor(INK);
+      doc.text(label, x + w / 2, ctx.y + 9.5, { align: 'center' });
+      x += w;
+    }
+    ctx.y += colHeaderH;
+  };
+
+  paintColHeaders();
+
+  if (!medicines.length) {
+    const h = 22;
+    if (!fits(ctx, h)) {
+      newPage(ctx);
+      paintColHeaders();
+    }
+    doc.setDrawColor(INK).setLineWidth(0.55);
+    doc.rect(M, ctx.y, CONTENT_W, h, 'S');
+    doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(INK);
+    doc.text('drugs and medicines not required', M + 5, ctx.y + 14);
+    ctx.y += h;
+    return mark;
+  }
+
+  for (const medicine of medicines) {
+    const nameLines = wrapLines(doc, medicine.genericName, colGeneric - 10);
+    const doseLines = wrapLines(doc, medicine.quantityDosageRoute, colDose - 10);
+    const lineCount = Math.max(1, nameLines.length, doseLines.length);
+    const h = Math.max(18, 8 + lineCount * LEAD);
+    if (!fits(ctx, h)) {
+      newPage(ctx);
+      paintColHeaders();
+    }
+    doc.setDrawColor(INK).setLineWidth(0.55);
+    doc.rect(M, ctx.y, colGeneric, h, 'S');
+    doc.rect(M + colGeneric, ctx.y, colDose, h, 'S');
+    doc.rect(M + colGeneric + colDose, ctx.y, colCost, h, 'S');
+    drawLines(doc, nameLines, M + 4, ctx.y + 11, ctx.y + h - 3);
+    drawLines(doc, doseLines, M + colGeneric + 4, ctx.y + 11, ctx.y + h - 3);
+    ctx.y += h;
+  }
+
+  return mark;
+}
+
 function certification(ctx: Ctx, physician: string, evaluator: string): void {
   const { doc } = ctx;
   const h = 84;
@@ -694,16 +775,23 @@ export async function buildCf4Pdf(draft: Cf4SummaryDraft, evaluator: string): Pr
   reasonForAdmissionSection(ctx, draft, triage);
 
   const additionalSheets = courseSectionBand(ctx, draft.chart.ward, draft.chart.room);
-  courseTable(ctx, courseEntries(draft));
+  const entries = courseEntries(draft);
+  courseTable(ctx, entries);
   surgicalProcedureLine(ctx);
+
+  const stayOrders = draft.requests.flatMap((request) => request.orders);
+  const medicines = extractMedicinesFromOrders(stayOrders);
+  const drugsSheets = drugsMedicinesSection(ctx, medicines);
 
   bandWithNext(ctx, 'VII. CERTIFICATION OF HEALTH CARE PROFESSIONAL', 84);
   certification(ctx, draft.chart.attending === '—' ? evaluator : draft.chart.attending, evaluator);
 
   const pages = doc.getNumberOfPages();
   if (pages > 1) {
-    doc.setPage(1);
+    doc.setPage(additionalSheets.page);
     checkbox(doc, additionalSheets.x, additionalSheets.y, additionalSheets.size, true);
+    doc.setPage(drugsSheets.page);
+    checkbox(doc, drugsSheets.x, drugsSheets.y, drugsSheets.size, true);
   }
 
   for (let page = 1; page <= pages; page += 1) {

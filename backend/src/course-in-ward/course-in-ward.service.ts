@@ -55,6 +55,7 @@ const EMBEDDING_DIM = 1024;
 const MODEL_LABEL: Record<SummaryModel, string> = {
   standard: 'Base Model',
   fine_tuned: 'Fine-tuned',
+  fine_tuned_rag: 'Fine-tuned + RAG',
 };
 
 /** Earlier texts kept per summary; the oldest is dropped when a new one is saved. */
@@ -167,7 +168,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   //
   // `model` picks the writer: `standard` is the base model guided by RAG
   // references; `fine_tuned` already learned the style, and was trained without
-  // references, so it gets none.
+  // references, so it gets none; `fine_tuned_rag` is the fine-tuned model given them anyway.
   private async callAiSummarizer(
     orders: any[],
     instructions?: string,
@@ -216,7 +217,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       .filter(Boolean)
       .join('\n');
     const references =
-      model === 'standard' && queryText ? await this.retrieveReferences(queryText) : [];
+      model !== 'fine_tuned' && queryText ? await this.retrieveReferences(queryText) : [];
 
     this.logger.log(
       `[ai] summarizing ${orders.length} order(s) across ${admissions.length} admission(s) with the ${model} model and ${references.length} RAG reference(s)`,
