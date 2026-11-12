@@ -19,8 +19,11 @@ export interface OllamaReference {
   similarity?: number;
 }
 
-/** `standard` = base model guided by RAG references; `fine_tuned` = the fine-tuned summarizer. */
-export type SummaryModel = 'standard' | 'fine_tuned';
+/**
+ * `standard` = base model guided by RAG references; `fine_tuned` = the fine-tuned summarizer;
+ * `fine_tuned_rag` = the fine-tuned summarizer also given RAG references.
+ */
+export type SummaryModel = 'standard' | 'fine_tuned' | 'fine_tuned_rag';
 
 export interface SummarizeBatchOptions {
   temperature?: number;
@@ -90,7 +93,8 @@ export class OllamaClient {
       {
         admissions,
         temperature: options.temperature ?? 0.1,
-        modelVariant: options.model ?? 'standard',
+        // ai_service only knows the two models; RAG is just whether references are sent.
+        modelVariant: options.model === 'fine_tuned_rag' ? 'fine_tuned' : (options.model ?? 'standard'),
         ...(options.references && options.references.length
           ? { references: options.references }
           : {}),

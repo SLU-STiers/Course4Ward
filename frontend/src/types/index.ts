@@ -204,7 +204,7 @@ export interface PhysicianNote {
 export type SummaryStatus = 'DRAFT_AI' | 'DRAFT_EDITED' | 'APPROVED';
 
 /** Which AI writes a summary: the base model guided by RAG, or the fine-tuned one. */
-export type SummaryModel = 'standard' | 'fine_tuned';
+export type SummaryModel = 'standard' | 'fine_tuned' | 'fine_tuned_rag';
 
 export interface CourseInWard {
   id: string;

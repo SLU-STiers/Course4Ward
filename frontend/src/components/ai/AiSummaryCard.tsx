@@ -128,26 +128,19 @@ const styles: Record<string, CSSProperties> = {
   actions: { display: 'flex', flexWrap: 'wrap', gap: '10px', flexShrink: 0 },
   /** Toggle and its ⓘ stay one unit; the ⓘ's own 28px hit area supplies the breathing room. */
   modelRow: { display: 'inline-flex', alignItems: 'center', gap: '4px' },
-  modelGroup: {
-    display: 'inline-flex',
+  modelSelect: {
     border: '1px solid #d3a0f5',
     borderRadius: '6px',
-    overflow: 'hidden',
-  },
-  modelOption: {
-    border: 'none',
     background: '#ffffff',
     color: '#6b21a8',
-    fontSize: '11px',
+    fontSize: '13px',
     fontWeight: 700,
-    padding: '5px 11px',
+    padding: '6px 10px',
+    minHeight: '32px',
     cursor: 'pointer',
   },
-  /** Hairline between the two options, so they read as two buttons. */
-  modelOptionDivider: { borderLeft: '1px solid #d3a0f5' },
   modelHelpList: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' },
   modelHelpName: { fontWeight: 700, color: '#6b21a8' },
-  modelOptionActive: { background: '#7c00b8', color: '#ffffff' },
 };
 
 export interface AiSummaryCardProps {
@@ -275,6 +268,11 @@ const MODEL_OPTIONS: { value: SummaryModel; label: string; help: string }[] = [
     label: 'Fine-tuned',
     help: 'A model trained on approved Course in the Ward summaries, so it follows their style closely.',
   },
+  {
+    value: 'fine_tuned_rag',
+    label: 'Fine-tuned + RAG',
+    help: 'The fine-tuned model, also shown similar summaries physicians already approved.',
+  },
 ];
 
 /** Picks which AI writes the summary on Generate / Regenerate. */
@@ -289,28 +287,19 @@ export function AiModelToggle({
 }) {
   return (
     <div style={styles.modelRow}>
-      <div role="radiogroup" aria-label="AI model" style={styles.modelGroup}>
-        {MODEL_OPTIONS.map((option, index) => {
-          const active = option.value === value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              disabled={disabled}
-              onClick={() => onChange(option.value)}
-              style={{
-                ...styles.modelOption,
-                ...(index > 0 ? styles.modelOptionDivider : null),
-                ...(active ? styles.modelOptionActive : null),
-              }}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
+      <select
+        aria-label="AI model"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value as SummaryModel)}
+        style={styles.modelSelect}
+      >
+        {MODEL_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
       <InfoTooltip label="Which AI model writes the summary?">
         Picks the AI that writes the summary when you press Generate or Regenerate.
         <span style={styles.modelHelpList}>
