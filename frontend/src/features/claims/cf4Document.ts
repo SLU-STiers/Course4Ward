@@ -9,7 +9,8 @@ export async function buildCf4Document(
   evaluator: string,
 ): Promise<Cf4Document> {
   const { buildCf4Pdf } = await import('./cf4Pdf');
-  const bytes = buildCf4Pdf(draft, evaluator).output('arraybuffer');
+  const doc = await buildCf4Pdf(draft, evaluator);
+  const bytes = doc.output('arraybuffer');
   return { blob: new Blob([bytes], { type: 'application/pdf' }) };
 }
 

@@ -29,6 +29,8 @@ const DEFAULT_TRIAGE: TriageAssessment = {
   bp: '120/80 mmHg',
   temp: '36.8 °C',
   pain: '2/10',
+  height: '165 cm',
+  weight: '60 kg',
   notes: 'Stable on arrival. No acute distress.',
 };
 function buildChart(

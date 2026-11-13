@@ -864,7 +864,14 @@ describe("Patients Module", () => {
           }),
         );
         expect(prismaService.patientAdmission.update).toHaveBeenCalledWith(
-          expect.objectContaining({ where: { id: mockAdmissionId }, data: { roomId: "room-101" } }),
+          expect.objectContaining({
+            where: { id: mockAdmissionId },
+            data: expect.objectContaining({
+              roomId: "room-101",
+              roomNumber: "101",
+              wardName: "Surgery Ward",
+            }),
+          }),
         );
         expect(auditLogService.record).toHaveBeenCalledWith(expect.objectContaining({
           userId: mockUser.id,

@@ -323,6 +323,7 @@ describe('UsersService', () => {
             role: Role.CLAIMS_PROCESSOR,
             userId: expect.stringMatching(/^CLM/),
             sessionVersion: { increment: 1 },
+            lastSeenAt: null,
           }),
         }),
       );

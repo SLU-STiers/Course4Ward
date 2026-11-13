@@ -114,6 +114,8 @@ export interface PatientAdmission {
   /** When the admission entered its current class (e.g. start of observation). */
   classSince?: string;
   initialAssessment?: string | null;
+  /** Past / present medical and surgical history (CF4 Part III). */
+  medicalSurgicalHistory?: string | null;
   physician?: { id?: string; firstName: string; lastName: string } | null;
   /** Attending physician's id (physician-scoped lists). */
   physicianId?: string | null;
@@ -152,6 +154,10 @@ export interface AdmissionTriage {
   /** Prisma Decimal — serialized as a string. */
   temperature: string | number | null;
   painScore: number | null;
+  /** Centimetres; Prisma Decimal may arrive as a string. */
+  heightCm?: string | number | null;
+  /** Kilograms; Prisma Decimal may arrive as a string. */
+  weightKg?: string | number | null;
   createdAt: string;
   /** Nurse who recorded the triage. */
   recordedBy?: { firstName: string; lastName: string } | null;
@@ -198,7 +204,7 @@ export interface PhysicianNote {
 export type SummaryStatus = 'DRAFT_AI' | 'DRAFT_EDITED' | 'APPROVED';
 
 /** Which AI writes a summary: the base model guided by RAG, or the fine-tuned one. */
-export type SummaryModel = 'standard' | 'fine_tuned';
+export type SummaryModel = 'standard' | 'fine_tuned' | 'fine_tuned_rag';
 
 export interface CourseInWard {
   id: string;
@@ -214,6 +220,18 @@ export interface CourseInWard {
   version?: number;
   /** Attending physician of the summary's admission: the only one who may approve it. */
   attendingPhysicianId?: string | null;
+  /** True when the summary's admission is already discharged. */
+  admissionDischarged?: boolean;
+  /** True when the signed-in physician is consulting (not attending) on this admission. */
+  viewerIsConsulting?: boolean;
+  /** When this consulting viewer already notified the attending today (ISO). */
+  myConsultantNoticeAt?: string | null;
+  /** Consulting physicians who approved / endorsed this day's draft for the attending. */
+  consultantApprovals?: Array<{
+    physicianId: string;
+    name: string;
+    notifiedAt: string;
+  }>;
 }
 
 /**
@@ -302,6 +320,11 @@ export interface ClaimRecord {
         dischargeDate?: string | null;
         patientClass?: PatientClass;
         initialAssessment?: string | null;
+        medicalSurgicalHistory?: string | null;
+        /** Snapshot kept after discharge for CF4. */
+        roomNumber?: string | null;
+        /** Snapshot kept after discharge for CF4. */
+        wardName?: string | null;
         physician?: { firstName: string; lastName: string } | null;
         room?: { number: string; ward?: { name: string } | null } | null;
         triage?: AdmissionTriage | null;
@@ -489,7 +512,7 @@ export interface MissedSummaryDay {
   orders: number;
 }
 
-export type BatchTestVariant = 'standard' | 'fine_tuned';
+export type BatchTestVariant = 'standard' | 'standard_no_rag' | 'fine_tuned' | 'fine_tuned_rag';
 
 /** `GET /admin/reports/batch-test`: the admin batch-test console. */
 export interface BatchTestState {
@@ -503,6 +526,36 @@ export interface BatchTestState {
   exitCode: number | null;
   log: string[];
   reportAvailable: boolean;
+  /** The last finished run's statistics (`batch_results.json`), or null. */
+  stats: BatchTestStats | null;
+}
+
+/** min/avg/max of one measure across a variant's summaries. */
+export interface BatchTestRange {
+  avg: number;
+  min: number;
+  max: number;
+}
+
+export interface BatchTestVariantStats {
+  calls: number;
+  pass: number;
+  warn: number;
+  fail: number;
+  /** Seconds per summary, over successful calls. */
+  time: { avg: number; median: number; p95: number; max: number } | null;
+  /** Keyed by measure: words, sentences, number_coverage, rouge1/2/L, rag_refs, rag_similarity. */
+  metrics: Partial<Record<string, BatchTestRange>>;
+  /** [check, summaries] pairs, most frequent first. */
+  fail_reasons: [string, number][];
+  warn_reasons: [string, number][];
+}
+
+export interface BatchTestStats {
+  generatedAt: string;
+  /** Test setup, label → value, as printed in the report. */
+  meta: Record<string, string | number>;
+  variants: Partial<Record<BatchTestVariant, BatchTestVariantStats>>;
 }
 
 export interface ActivityTrendPoint {

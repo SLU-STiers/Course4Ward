@@ -37,12 +37,26 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
   const finalized = order.status === 'FINISHED' && Boolean(order.nurseComment);
   const dischargeNoteMissing = order.type === 'DISCHARGE' && status === 'FINISHED' && !comment.trim();
   const finishingBlocked = status === 'FINISHED' && Boolean(finishBlocked);
+  const trimmedComment = comment.trimEnd();
+  const quickCompleteNote = /(?:^|\n)Completed\s*$/i.test(comment)
+    ? comment
+    : [trimmedComment, 'Completed'].filter(Boolean).join('\n');
+  const quickCompleteDisabled =
+    Boolean(finishBlocked) ||
+    quickCompleteNote.length > 1000 ||
+    (status === 'FINISHED' && quickCompleteNote === comment);
   const savedIndex = ORDER_STATUS_OPTIONS.findIndex((option) => option.value === order.status);
   const dirty = status !== order.status || comment !== (order.nurseComment ?? '');
 
   const reset = () => {
     setStatus(order.status);
     setComment(order.nurseComment ?? '');
+    setError(null);
+  };
+
+  const quickComplete = () => {
+    setStatus('FINISHED');
+    setComment(quickCompleteNote);
     setError(null);
   };
 
@@ -77,7 +91,7 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
                 disabled={locked}
                 title={
                   finalized
-                    ? 'This order is finished and its note has been submitted'
+                    ? 'This order is accomplished and its note has been submitted'
                     : option.value === 'FINISHED' && finishBlocked
                       ? finishBlocked
                       : locked
@@ -111,7 +125,7 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
         />
         {finalized ? (
           <span style={s.lockedNote}>
-            This order is finished and its note has been submitted, so it can no longer be edited.
+            This order is accomplished and its note has been submitted, so it can no longer be edited.
           </span>
         ) : (
           <div style={s.actions}>
@@ -124,10 +138,19 @@ export function OrderExecutionPanel({ order, onSaved, finishBlocked }: OrderExec
             )}
             {dischargeNoteMissing && !finishBlocked && (
               <span style={s.error}>
-                Add a note to mark this discharge done. The patient is discharged when you save.
+                Add a note to mark this discharge accomplished. The patient is discharged when you save.
               </span>
             )}
             {error && <span style={s.error}>{error}</span>}
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={quickComplete}
+              disabled={saving || quickCompleteDisabled}
+              title='Sets the status to Finished and adds "Completed" to the note. Review and Save to submit.'
+            >
+              Quick complete
+            </Button>
             <Button size="sm" variant="ghost" onClick={reset} disabled={saving || !dirty}>
               Reset
             </Button>

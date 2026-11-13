@@ -193,7 +193,7 @@ export function PatientView() {
     : !dischargeOrder
       ? "Waiting for the physician's discharge order"
       : dischargeOrder.status !== 'FINISHED' || !dischargeOrder.nurseComment
-        ? 'Mark the discharge order done and add a note to discharge this patient'
+        ? 'Mark the discharge order accomplished and add a note to discharge this patient'
         : earlierOrderOpen
           ? 'Finish every order written before the discharge order first'
           : undefined;

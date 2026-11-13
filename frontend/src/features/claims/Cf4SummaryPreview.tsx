@@ -362,8 +362,10 @@ export function Cf4SummaryPreview({
               <span style={styles.summaryMetaValue}>{chart?.attending ?? '—'}</span>
             </div>
             <div style={styles.summaryMetaField}>
-              <span style={styles.summaryMetaLabel}>Ward / room</span>
-              <span style={styles.summaryMetaValue}>{chart?.location ?? '—'}</span>
+              <span style={styles.summaryMetaLabel}>Ward</span>
+              <span style={styles.summaryMetaValue}>{chart?.ward ?? chart?.location ?? '—'}</span>
+              <span style={styles.summaryMetaLabel}>Room</span>
+              <span style={styles.summaryMetaValue}>{chart?.room ?? '—'}</span>
             </div>
             <div style={styles.summaryMetaField}>
               <span style={styles.summaryMetaLabel}>Insurance</span>
@@ -401,6 +403,8 @@ export function Cf4SummaryPreview({
                     ['Patient class', chart.patientClass],
                     ['Triage', chart.triage],
                     ['Initial assessment', chart.assessment],
+                    ['Medical / surgical history', chart.medicalSurgicalHistory],
+                    ['Discharge diagnosis', chart.dischargeDiagnosis],
                   ] as const).map(([label, value]) => (
                     <div key={label} style={styles.summaryMetaField}>
                       <span style={styles.summaryMetaLabel}>{label}</span>

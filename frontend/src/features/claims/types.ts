@@ -101,10 +101,19 @@ export interface StayChart {
   religion: string;
   emergencyContact: string;
   attending: string;
+  /** Combined ward · room label for summary chips. */
   location: string;
+  /** Ward name from the admission room, when assigned. */
+  ward: string;
+  /** Room number from the admission, when assigned. */
+  room: string;
   patientClass: string;
   triage: string;
   assessment: string;
+  /** Past / present medical and surgical history (CF4 Part III). */
+  medicalSurgicalHistory: string;
+  /** From the physician's DISCHARGE order content, when present. */
+  dischargeDiagnosis: string;
 }
 
 /** One patient queued for the Course in the Ward Summary review step. */

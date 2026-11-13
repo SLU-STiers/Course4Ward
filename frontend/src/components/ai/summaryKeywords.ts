@@ -167,3 +167,20 @@ export function splitOnTerms(summary: string, orders: SummarySourceOrder[]): str
   pieces.push(summary.slice(cursor));
   return pieces;
 }
+
+/** "Ordered by" filter value for orders with no ordering doctor recorded. */
+export const UNKNOWN_DOCTOR = '__unknown__';
+
+/** The "Ordered by" filter key of an order: the doctor's full name. */
+export const orderedByKey = (order: SummarySourceOrder) =>
+  order.orderedBy ? `${order.orderedBy.firstName} ${order.orderedBy.lastName}` : UNKNOWN_DOCTOR;
+
+/**
+ * The orders of the chosen doctor, or all of them when none is chosen or the
+ * chosen one no longer has orders here (list reloaded). Compare versions owns
+ * the choice so the teal highlights and the composition panel filter alike.
+ */
+export function ordersOfDoctor(orders: SummarySourceOrder[], doctor: string | null) {
+  const mine = doctor ? orders.filter((order) => orderedByKey(order) === doctor) : [];
+  return mine.length ? { activeDoctor: doctor, orders: mine } : { activeDoctor: null, orders };
+}

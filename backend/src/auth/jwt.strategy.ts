@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { LAST_SEEN_THROTTLE_MS, touchSession } from './session-activity';
 
 export interface JwtPayload {
   sub: string; // internal user uuid
@@ -31,11 +32,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         isActive: true,
         sessionVersion: true,
         mustResetPassword: true,
+        lastSeenAt: true,
       },
     });
 
     if (!user || !user.isActive || user.sessionVersion !== (payload.sessionVersion ?? 0)) {
       throw new UnauthorizedException('Session expired');
+    }
+
+    // Keeps the account marked as signed in while it is in use, so a second
+    // sign-in elsewhere is refused (see AuthService.login).
+    if (!user.lastSeenAt || Date.now() - user.lastSeenAt.getTime() >= LAST_SEEN_THROTTLE_MS) {
+      await touchSession(this.prisma, user.id, user.sessionVersion);
     }
 
     // JwtAuthGuard refuses most routes while this is set.

@@ -78,7 +78,10 @@ JWT_SECRET=<insert key>
 6. Open the terminal and type:
 - cd ai_service
 - pip install -r requirements.txt
-7. After installation, on the same terminal, type:
+7. The AI service uses a 16,384-token Ollama context by default. If Ollama
+   needs more memory than is available, set a smaller value before starting it
+   (for example, in PowerShell: `$env:NUM_CTX=8192`).
+8. After installation, on the same terminal, type:
 - py.exe .\ollama_client.py
 
 # **Docker Installation**

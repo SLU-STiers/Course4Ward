@@ -65,6 +65,18 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: '6px',
     whiteSpace: 'nowrap',
   },
+  /** Consulting physician approvals under the day strip. */
+  banner: {
+    margin: '8px 12px 0',
+    padding: '8px 12px',
+    borderRadius: 8,
+    backgroundColor: '#ecfdf5',
+    border: '1px solid #a7f3d0',
+    color: '#065f46',
+    fontSize: 12,
+    fontWeight: 600,
+    lineHeight: 1.45,
+  },
   dayBar: {
     display: 'flex',
     alignItems: 'center',
@@ -128,27 +140,33 @@ const styles: Record<string, CSSProperties> = {
   actions: { display: 'flex', flexWrap: 'wrap', gap: '10px', flexShrink: 0 },
   /** Toggle and its ⓘ stay one unit; the ⓘ's own 28px hit area supplies the breathing room. */
   modelRow: { display: 'inline-flex', alignItems: 'center', gap: '4px' },
-  modelGroup: {
-    display: 'inline-flex',
+  modelSelect: {
     border: '1px solid #d3a0f5',
     borderRadius: '6px',
-    overflow: 'hidden',
-  },
-  modelOption: {
-    border: 'none',
     background: '#ffffff',
     color: '#6b21a8',
-    fontSize: '11px',
+    fontSize: '13px',
     fontWeight: 700,
-    padding: '5px 11px',
+    padding: '6px 10px',
+    minHeight: '32px',
     cursor: 'pointer',
   },
-  /** Hairline between the two options, so they read as two buttons. */
-  modelOptionDivider: { borderLeft: '1px solid #d3a0f5' },
   modelHelpList: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' },
   modelHelpName: { fontWeight: 700, color: '#6b21a8' },
-  modelOptionActive: { background: '#7c00b8', color: '#ffffff' },
+  /** Small reminder under the actions that the AI can be wrong. */
+  disclaimer: {
+    margin: '10px 0 0',
+    fontSize: '11px',
+    lineHeight: 1.45,
+    color: '#64748b',
+    textAlign: 'center',
+    flexShrink: 0,
+  },
 };
+
+/** Default wording of the "AI can make mistakes" reminder. */
+export const AI_SUMMARY_DISCLAIMER =
+  "AI-generated summaries can be inaccurate or incomplete. Always verify against the patient's chart and orders before approving.";
 
 export interface AiSummaryCardProps {
   /** Badge text, e.g. "AI Draft ready" / "No summary yet". */
@@ -171,10 +189,14 @@ export interface AiSummaryCardProps {
   children?: ReactNode;
   /** Rendered beside the "AI Summarized" title, e.g. the AI model toggle. */
   titleExtra?: ReactNode;
+  /** Shown under the day strip — e.g. consulting approvals. */
+  banner?: ReactNode;
   /** Footer actions. */
   actions?: ReactNode;
   /** Fill a resizable panel and scroll the body internally. */
   fill?: boolean;
+  /** Show the "AI can make mistakes" reminder; `true` uses the default wording. */
+  disclaimer?: boolean | string;
 }
 
 export function AiSummaryCard({
@@ -190,8 +212,10 @@ export function AiSummaryCard({
   emptyMessage,
   children,
   titleExtra,
+  banner,
   actions,
   fill,
+  disclaimer,
 }: AiSummaryCardProps) {
   return (
     <section style={fill ? { ...styles.card, ...styles.cardFill } : styles.card}>
@@ -237,6 +261,8 @@ export function AiSummaryCard({
         </div>
       ) : null}
 
+      {banner ? <div style={styles.banner}>{banner}</div> : null}
+
       <div style={styles.body}>
         {children ??
           (text ? (
@@ -245,6 +271,11 @@ export function AiSummaryCard({
             <p style={styles.empty}>{emptyMessage}</p>
           ))}
         {actions ? <div style={styles.actions}>{actions}</div> : null}
+        {disclaimer ? (
+          <p role="note" style={styles.disclaimer}>
+            {typeof disclaimer === 'string' ? disclaimer : AI_SUMMARY_DISCLAIMER}
+          </p>
+        ) : null}
       </div>
     </section>
   );
@@ -275,6 +306,11 @@ const MODEL_OPTIONS: { value: SummaryModel; label: string; help: string }[] = [
     label: 'Fine-tuned',
     help: 'A model trained on approved Course in the Ward summaries, so it follows their style closely.',
   },
+  {
+    value: 'fine_tuned_rag',
+    label: 'Fine-tuned + RAG',
+    help: 'The fine-tuned model, also shown similar summaries physicians already approved.',
+  },
 ];
 
 /** Picks which AI writes the summary on Generate / Regenerate. */
@@ -289,28 +325,19 @@ export function AiModelToggle({
 }) {
   return (
     <div style={styles.modelRow}>
-      <div role="radiogroup" aria-label="AI model" style={styles.modelGroup}>
-        {MODEL_OPTIONS.map((option, index) => {
-          const active = option.value === value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              disabled={disabled}
-              onClick={() => onChange(option.value)}
-              style={{
-                ...styles.modelOption,
-                ...(index > 0 ? styles.modelOptionDivider : null),
-                ...(active ? styles.modelOptionActive : null),
-              }}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
+      <select
+        aria-label="AI model"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value as SummaryModel)}
+        style={styles.modelSelect}
+      >
+        {MODEL_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
       <InfoTooltip label="Which AI model writes the summary?">
         Picks the AI that writes the summary when you press Generate or Regenerate.
         <span style={styles.modelHelpList}>

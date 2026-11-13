@@ -15,6 +15,8 @@ const RESET_STATUS_POLL_INTERVAL_MS = 5000;
 
 const INCORRECT_CREDENTIALS_MESSAGE = 'Invalid credentials. Please check your user ID and password.';
 
+const ALREADY_LOGGED_IN_MESSAGE = 'User already logged in';
+
 /**
  * Turns a failed-login Axios error into a single, consistent message. The
  * backend can respond with either a plain string (e.g. "Invalid
@@ -25,6 +27,10 @@ const INCORRECT_CREDENTIALS_MESSAGE = 'Invalid credentials. Please check your us
 function buildLoginErrorMessage(err: any): string {
   if (err?.response?.status === 429) {
     return 'Too many sign-in attempts. Wait a few minutes and try again.';
+  }
+  // The password was right, but this account has a live session elsewhere.
+  if (err?.response?.status === 409) {
+    return ALREADY_LOGGED_IN_MESSAGE;
   }
   return INCORRECT_CREDENTIALS_MESSAGE;
 }

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
@@ -15,6 +16,12 @@ import { Prisma, ResetStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { escapeLike } from '../common/like';
 import { expireStaleResetRequests } from './reset-expiry';
+import {
+  ACTIVE_SESSION_WINDOW_MS,
+  ALREADY_LOGGED_IN,
+  END_SESSION,
+  touchSession,
+} from './session-activity';
 import { AuditLogService, detailItems, fullName } from '../audit-log/audit-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LoginDto } from './dto/login.dto';
@@ -132,10 +139,36 @@ export class AuthService {
     }
 
     this.loginFailures.clear(key);
+
+    // Checked only after the password matched, so a stranger cannot use it to
+    // learn who is on shift. Claiming the session is one conditional update:
+    // two sign-ins racing each other cannot both see the account as free.
+    // Bumping sessionVersion ends any stale session that never signed out.
+    const now = new Date();
+    const { sessionVersion } = await this.prisma.user
+      .update({
+        where: {
+          id: user.id,
+          OR: [
+            { lastSeenAt: null },
+            { lastSeenAt: { lt: new Date(now.getTime() - ACTIVE_SESSION_WINDOW_MS) } },
+          ],
+        },
+        data: { lastSeenAt: now, sessionVersion: { increment: 1 } },
+        select: { sessionVersion: true },
+      })
+      .catch((err: unknown) => {
+        // P2025: no row matched, i.e. another session is still active.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+          throw new ConflictException(ALREADY_LOGGED_IN);
+        }
+        throw err;
+      });
+
     await this.auditLog.record({ userId: user.id, action: 'LOGIN' });
 
     return {
-      ...(await this.issueTokens(user.id, user.userId, user.role, user.sessionVersion)),
+      ...(await this.issueTokens(user.id, user.userId, user.role, sessionVersion)),
       mustResetPassword: user.mustResetPassword,
       user: {
         id: user.id,
@@ -202,7 +235,7 @@ export class AuthService {
     // never sign out a newer session.
     const { count } = await this.prisma.user.updateMany({
       where: { id: session.sub, sessionVersion: session.sessionVersion ?? 0 },
-      data: { sessionVersion: { increment: 1 } },
+      data: END_SESSION,
     });
     if (!count) return { message: 'Signed out.' };
 
@@ -245,6 +278,7 @@ export class AuthService {
       throw new UnauthorizedException('Session expired');
     }
 
+    await touchSession(this.prisma, user.id, user.sessionVersion);
     return this.issueTokens(user.id, user.userId, user.role, user.sessionVersion);
   }
 
@@ -446,7 +480,7 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: request.userId },
-        data: { passwordHash, mustResetPassword: true, sessionVersion: { increment: 1 } },
+        data: { passwordHash, mustResetPassword: true, ...END_SESSION },
       }),
       this.prisma.passwordResetRequest.update({
         where: { id: request.id },
@@ -553,7 +587,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
     await this.prisma.user.update({
       where: { id: request.userId },
-      data: { passwordHash, mustResetPassword: false, sessionVersion: { increment: 1 } },
+      data: { passwordHash, mustResetPassword: false, ...END_SESSION },
     });
 
     await this.prisma.passwordResetRequest.update({

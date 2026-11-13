@@ -24,7 +24,7 @@ import {
 import { adminApi } from '../../services/domainApi';
 import { Button, EmptyState, LoadingState, StatusBadge } from '../../components/ui';
 import { actionMeta, roleLabel } from './activityLabels';
-import { BarList, ColumnChart, DonutChart, FunnelChart, StatRows, TrendChart } from './charts';
+import { BarList, ColumnChart, DonutChart, FunnelChart, Kpi, StatRows, TrendChart } from './charts';
 import { segmentColor } from './chartTheme';
 import { BatchTestConsole } from './BatchTestConsole';
 import { styles } from './styles';
@@ -58,6 +58,7 @@ const TABS: Array<{ value: ReportTab; label: string }> = [
 const AI_MODEL_LABELS: Record<string, string> = {
   standard: 'Base Model (with RAG)',
   fine_tuned: 'Fine-tuned model',
+  fine_tuned_rag: 'Fine-tuned model (with RAG)',
 };
 
 const AI_TRIGGER_LABELS: Record<string, string> = {
@@ -80,7 +81,7 @@ const PRESET_BUCKET: Record<RangePreset, TrendBucket> = {
 const ORDER_STATUS_LABELS: Record<string, string> = {
   TO_ACCOMPLISH: 'To accomplish',
   ONGOING: 'Ongoing',
-  FINISHED: 'Finished',
+  FINISHED: 'Accomplished',
 };
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
@@ -526,6 +527,8 @@ function AiStatsPanel({
   const coverage = corpus.ordersTotal
     ? Math.round((corpus.ordersEmbedded / corpus.ordersTotal) * 100)
     : 0;
+  // A few embedded orders out of many must not read as none.
+  const coverageLabel = coverage === 0 && corpus.ordersEmbedded > 0 ? '<1%' : `${coverage}%`;
   const timingRows = (stats: AiCallStats, prefix: string) => [
     { key: `${prefix}-avg`, label: 'Average', value: formatMs(stats.avgMs) },
     { key: `${prefix}-p50`, label: 'Median', value: formatMs(stats.p50Ms) },
@@ -569,7 +572,7 @@ function AiStatsPanel({
     {
       key: 'coverage',
       label: 'Orders with an embedding',
-      value: `${corpus.ordersEmbedded} / ${corpus.ordersTotal} (${coverage}%)`,
+      value: `${corpus.ordersEmbedded} / ${corpus.ordersTotal} (${coverageLabel})`,
     },
     {
       key: 'rag',
@@ -607,7 +610,7 @@ function AiStatsPanel({
           {
             title: 'Summarization time',
             description:
-              'How long the language model took to write a Course in the Ward draft from a day\'s finished physician orders. "Median" is the typical call, "95th percentile" the slow end that 1 call in 20 exceeds. "Orders per call" and "Summary length" show how much went in and came out per successful call.',
+              'How long the language model took to write a Course in the Ward draft from a day\'s accomplished physician orders. "Median" is the typical call, "95th percentile" the slow end that 1 call in 20 exceeds. "Orders per call" and "Summary length" show how much went in and came out per successful call.',
             rows: summaryRows,
           },
           {
@@ -722,7 +725,7 @@ function AiStatsPanel({
         />
         <Kpi
           label="Embedded"
-          value={`${coverage}%`}
+          value={coverageLabel}
           hint={`${corpus.ordersEmbedded} of ${corpus.ordersTotal} orders`}
         />
         <Kpi
@@ -799,8 +802,9 @@ function AiStatsPanel({
               }}
             />
           </span>
-          <span style={styles.barListValue}>{coverage}%</span>
+          <span style={styles.barListValue}>{coverageLabel}</span>
         </div>
+        <EmbeddingBackfill missing={corpus.ordersTotal - corpus.ordersEmbedded} />
         {/* Rows with no value yet ("—") are noise on screen; the PDF keeps them. */}
         <StatRows rows={corpusRows.slice(1).filter((row) => row.value !== '—')} />
         {emb.calls ? (
@@ -824,6 +828,43 @@ function AiStatsPanel({
 
       </div>
     </>
+  );
+}
+
+/**
+ * Embeds the orders that never got an embedding (seeded, registration, or
+ * written while the AI service was down) so RAG can search them. Waits for
+ * the AI service; a large backlog can take a few minutes.
+ */
+function EmbeddingBackfill({ missing }: { missing: number }) {
+  const qc = useQueryClient();
+  const [message, setMessage] = useState('');
+  const run = useMutation({
+    mutationFn: () => adminApi.backfillEmbeddings().then((r) => r.data),
+    onSuccess: (result) =>
+      setMessage(
+        result.failed
+          ? `Embedded ${result.embedded} of ${result.found} orders. Is the AI service running?`
+          : `Embedded ${result.embedded} order${result.embedded === 1 ? '' : 's'}.`,
+      ),
+    onError: () => setMessage('Could not embed the orders. Is the AI service running?'),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['admin-report-ai'] }),
+  });
+
+  if (!missing && !message) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+      {missing ? (
+        <Button size="sm" variant="secondary" loading={run.isPending} onClick={() => run.mutate()}>
+          {run.isPending ? 'Embedding...' : `Embed ${missing} missing order${missing === 1 ? '' : 's'}`}
+        </Button>
+      ) : null}
+      {message ? (
+        <span role="status" style={styles.graphNote}>
+          {message}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -889,7 +930,7 @@ function MissedSummariesCard({ focus }: { focus: boolean }) {
       ) : isError ? (
         <p style={styles.reportEmpty}>Could not load the missed days.</p>
       ) : !days.length ? (
-        <p style={styles.reportEmpty}>Every past day with finished orders has a summary.</p>
+        <p style={styles.reportEmpty}>Every past day with accomplished orders has a summary.</p>
       ) : (
         <ul style={missedStyles.list}>
           {days.map((group) => {
@@ -1080,18 +1121,6 @@ function BreakdownTable({
         ))}
       </tbody>
     </table>
-  );
-}
-
-function Kpi({ label, value, hint }: { label: string; value: number | string; hint: string }) {
-  return (
-    <div style={styles.kpiTile}>
-      <span style={styles.kpiLabel} title={label}>
-        {label}
-      </span>
-      <span style={styles.kpiValue}>{value}</span>
-      <span style={styles.kpiHint}>{hint}</span>
-    </div>
   );
 }
 

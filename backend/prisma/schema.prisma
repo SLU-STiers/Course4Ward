@@ -150,6 +150,9 @@ model User {
   isActive          Boolean  @default(true)
   mustResetPassword Boolean  @default(false)
   sessionVersion    Int      @default(0)
+  /// Last time this account's current session made a request; null once signed out.
+  /// A sign-in is refused while this is recent, so one account has one live session.
+  lastSeenAt        DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -166,6 +169,7 @@ model User {
   notifications              Notification[]
   summaryRequestsAsPhysician SummaryApprovalRequest[] @relation("RequestedPhysician")
   summaryRequestsAsProcessor SummaryApprovalRequest[] @relation("RequestedProcessor")
+  summaryConsultantNotices   SummaryConsultantNotice[]
   /// Wards a nurse works in; a nurse sees full patient details only there.
   wards                      NurseWard[]
   /// Wards / specialties a physician is assigned to.
@@ -215,10 +219,16 @@ model PatientAdmission {
   /// When the admission entered its current class (e.g. start of observation).
   classSince           DateTime             @default(now())
   initialAssessment    String?
+  /// Past / present medical and surgical history for CF4 Part III.
+  medicalSurgicalHistory String?
   patientId            String
   physicianId          String?
-  /// The ward room of an admitted patient; freed once the admission is discharged.
+  /// The ward room of an admitted patient; occupancy frees once discharged.
   roomId               String?
+  /// Last assigned room number — kept after discharge for CF4 / claims.
+  roomNumber           String?
+  /// Last assigned ward name — kept after discharge for CF4 / claims.
+  wardName             String?
   patient              Patient              @relation(fields: [patientId], references: [id])
   physician            User?                @relation(fields: [physicianId], references: [id])
   room                 Room?                @relation(fields: [roomId], references: [id])
@@ -301,6 +311,10 @@ model TriageAssessment {
   bpDiastolic  Int?
   temperature  Decimal? @db.Decimal(4, 1)
   painScore    Int?
+  /// Height in centimetres (CF4 physical examination).
+  heightCm     Decimal? @db.Decimal(5, 1)
+  /// Weight in kilograms (CF4 physical examination).
+  weightKg     Decimal? @db.Decimal(5, 1)
   recordedById String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -395,8 +409,30 @@ model CourseInWard {
   orders     PhysicianOrder[]
   requests   SummaryApprovalRequest[]
   versions   SummaryVersion[]
+  /// Consulting physicians who told the attending they reviewed this day's draft.
+  consultantNotices SummaryConsultantNotice[]
 
   @@map("courses_in_ward")
+}
+
+/// Consulting → attending notice that a day's Course in the Ward was reviewed.
+/// One per consultant per summary per Manila calendar day; only after discharge.
+model SummaryConsultantNotice {
+  id          String   @id @default(uuid())
+  summaryId   String
+  physicianId String
+  /// Manila calendar day the notice was sent (`YYYY-MM-DD`).
+  dayKey      String
+  notifiedAt  DateTime @default(now())
+  /// Optional note from the consulting physician.
+  message     String?
+
+  summary   CourseInWard @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+  physician User         @relation(fields: [physicianId], references: [id])
+
+  @@unique([summaryId, physicianId, dayKey])
+  @@index([physicianId, notifiedAt])
+  @@map("summary_consultant_notices")
 }
 
 /// Earlier text of a Course in the Ward, kept when it is regenerated or edited

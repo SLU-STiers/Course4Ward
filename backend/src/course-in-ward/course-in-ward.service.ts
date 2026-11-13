@@ -14,11 +14,18 @@ import { AiTrigger, timeAiCall } from './ai-metrics';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService, detailItems, fullName } from '../audit-log/audit-log.service';
 import { OrdersService } from '../orders/orders.service';
-import { createClaimOnce } from '../claims/claim-once';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OllamaClient, OllamaReference, SummaryModel } from './ollama-client';
 import { assertFormattingOnlyInstructions } from './summary-instructions';
-import { CARE_TEAM_ADMISSION_SELECT, assertAttending, summaryAdmission } from './summary-access';
+import {
+  CARE_TEAM_ADMISSION_SELECT,
+  assertAttending,
+  assertConsultingCanNotifyAttending,
+  isConsultingOnly,
+  loadSummaryAdmission,
+  manilaDayKey,
+  summaryAdmission,
+} from './summary-access';
 
 /**
  * The source orders every summary the API returns carries: they give its day,
@@ -48,6 +55,7 @@ const EMBEDDING_DIM = 1024;
 const MODEL_LABEL: Record<SummaryModel, string> = {
   standard: 'Base Model',
   fine_tuned: 'Fine-tuned',
+  fine_tuned_rag: 'Fine-tuned + RAG',
 };
 
 /** Earlier texts kept per summary; the oldest is dropped when a new one is saved. */
@@ -160,7 +168,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   //
   // `model` picks the writer: `standard` is the base model guided by RAG
   // references; `fine_tuned` already learned the style, and was trained without
-  // references, so it gets none.
+  // references, so it gets none; `fine_tuned_rag` is the fine-tuned model given them anyway.
   private async callAiSummarizer(
     orders: any[],
     instructions?: string,
@@ -209,7 +217,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       .filter(Boolean)
       .join('\n');
     const references =
-      model === 'standard' && queryText ? await this.retrieveReferences(queryText) : [];
+      model !== 'fine_tuned' && queryText ? await this.retrieveReferences(queryText) : [];
 
     this.logger.log(
       `[ai] summarizing ${orders.length} order(s) across ${admissions.length} admission(s) with the ${model} model and ${references.length} RAG reference(s)`,
@@ -373,7 +381,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     if (!patient) throw new NotFoundException('Patient not found');
     if (dayOrders.length === 0) {
       throw new BadRequestException(
-        `No finished orders recorded for this patient on ${targetDay}`,
+        `No accomplished orders recorded for this patient on ${targetDay}`,
       );
     }
 
@@ -463,17 +471,17 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * A claim is opened on a Course in the Ward, so a discharge has to leave one
-   * summary per day of finished orders. The AI writes it when it is available;
-   * otherwise the finished orders are filed as the draft the physician reviews.
-   * Every day of the stay is then sent to Claims as an open claim.
+   * A claim is opened only when Claims requests one, so discharge must leave
+   * one Course in the Ward per day of finished orders. The AI writes it when
+   * available; otherwise the finished orders are filed as the draft. Claims
+   * then sees the stay under Discharged patients and can request the physician.
    */
   async prepareClaimForDischargedAdmission(admissionId: string, dischargedById?: string) {
     try {
       await this.fileDischargedStay(admissionId, dischargedById);
     } catch (err) {
       this.logger.warn(
-        `[discharge] could not prepare a claim for admission ${admissionId}: ${(err as Error).message}`,
+        `[discharge] could not prepare summaries for admission ${admissionId}: ${(err as Error).message}`,
       );
     }
   }
@@ -533,15 +541,14 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    await this.sendStayToClaims(admission, dischargedById);
+    await this.notifyClaimsStayReady(admission, dischargedById);
   }
 
   /**
-   * Opens a claim on every unclaimed day of a discharged stay, assigned to the
-   * active claims processor with the fewest open claims. Approved days start
-   * VALIDATED; the rest wait on the attending physician, who is asked once.
+   * Tell Claims a discharged stay is ready under Discharged patients — do not
+   * open a claim. Claims opens the request and notifies the attending.
    */
-  private async sendStayToClaims(
+  private async notifyClaimsStayReady(
     admission: {
       id: string;
       patientId: string;
@@ -553,84 +560,35 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     const summaries = await this.prisma.courseInWard.findMany({
       where: { requests: { none: {} }, orders: { some: { admissionId: admission.id } } },
       orderBy: { summaryDate: 'asc' },
-      select: { id: true, summaryDate: true, status: true, approvedStatus: true, validatorId: true },
+      select: { id: true, summaryDate: true },
     });
     if (!summaries.length) return;
 
     const name = fullName(admission.patient);
-    const processors = await this.prisma.user.findMany({
-      where: { role: Role.CLAIMS_PROCESSOR, isActive: true },
-      select: {
-        id: true,
-        _count: {
-          select: { summaryRequestsAsProcessor: { where: { status: { not: 'CF4_GENERATED' } } } },
+    const daysLabel = `${summaries.length} Course in the Ward ${summaries.length === 1 ? 'day' : 'days'}`;
+
+    if (dischargedById) {
+      await this.auditLog.record({
+        userId: dischargedById,
+        action: 'PATIENT_DISCHARGED',
+        details: {
+          summary: `Discharged ${name}; ${daysLabel} ready for a Claims request`,
+          items: detailItems([
+            ['Patient', name],
+            ['Days', summaries.map((entry) => dayText(entry.summaryDate)).join(', ')],
+          ]),
         },
-      },
-    });
-    const processor = processors.sort(
-      (a, b) => a._count.summaryRequestsAsProcessor - b._count.summaryRequestsAsProcessor,
-    )[0];
-    if (!processor) {
-      this.logger.warn(`[discharge] no active claims processor to receive ${name}'s stay`);
-      return;
-    }
-
-    const claims = [];
-    for (const summary of summaries) {
-      const approved = summary.status === SummaryStatus.APPROVED && Boolean(summary.approvedStatus);
-      const physicianId = approved
-        ? summary.validatorId ?? admission.physicianId
-        : admission.physicianId;
-      // Left for a manual claim request, which reports the missing physician.
-      if (!physicianId) continue;
-      const created = await createClaimOnce(this.prisma, {
-        summaryId: summary.id,
-        physicianId,
-        processorId: processor.id,
-        status: approved ? 'VALIDATED' : 'PENDING',
       });
-      if (created) claims.push({ claim: created, approved, day: summary.summaryDate });
     }
-    if (!claims.length) return;
-
-    const pending = claims.filter((entry) => !entry.approved);
-    const days = (count: number) => `${count} Course in the Ward ${count === 1 ? 'day' : 'days'}`;
-
-    await this.auditLog.record({
-      userId: dischargedById ?? processor.id,
-      action: 'CLAIM_CREATED',
-      details: {
-        summary: `Sent ${name}'s discharged stay to Claims (${days(claims.length)})`,
-        items: detailItems([
-          ['Patient', name],
-          ['Days', claims.map((entry) => dayText(entry.day)).join(', ')],
-          ['Assigned processor', await this.auditLog.userLabel(processor.id)],
-          ['Waiting for physician', pending.length ? String(pending.length) : 'None'],
-        ]),
-      },
-    });
 
     await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
-      title: 'Discharged patient sent to Claims',
-      message: `**${name}** was discharged. ${days(claims.length)} ${claims.length === 1 ? 'is' : 'are'} now in Claims Requests${
-        pending.length ? `, ${pending.length} waiting for physician approval` : ''
-      }.`,
+      title: 'Discharged patient ready for claim',
+      message: `**${name}** was discharged. ${daysLabel} ${summaries.length === 1 ? 'is' : 'are'} waiting under Discharged patients for a claim request.`,
       patientId: admission.patientId,
-      requestId: claims[0].claim.id,
     });
-
-    if (pending.length && admission.physicianId) {
-      await this.notifications.create({
-        userId: admission.physicianId,
-        type: NotificationType.REVIEW_REQUESTED,
-        title: 'Course in the Ward review requested',
-        message: `**${name}** was discharged. Approve ${days(pending.length)} so Claims can generate the CF4.`,
-        requestId: pending[0].claim.id,
-      });
-    }
   }
 
-  /** Discharged stays that still have finished orders with no summary. */
+  /** Discharged stays that still need Course in the Ward drafts before Claims can request. */
   private async catchUpDischargedClaims() {
     const admissions = await this.prisma.patientAdmission.findMany({
       where: {
@@ -891,7 +849,99 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       `${patientName}'s summary for ${dayText(existing.summaryDate)} was edited and needs physician approval again.`,
     );
 
-    return this.withOrders(updated.id);
+    // Consulting physicians (discharged stays only) tell the attending once per
+    // Manila day that they reviewed / edited this draft; attending still approves.
+    await this.maybeNotifyAttendingAfterConsultWork(
+      id,
+      physicianId,
+      `Edited the Course in the Ward draft for ${dayText(existing.summaryDate)}.`,
+    );
+
+    return this.withOrders(updated.id, physicianId);
+  }
+
+  /**
+   * Consulting physician → attending: endorse / flag a day's draft for final
+   * approval. Allowed once per Manila calendar day per summary, and only after
+   * discharge. Does not approve the summary or the claim.
+   */
+  async notifyAttending(summaryId: string, physicianId: string, message?: string) {
+    const admission = await assertConsultingCanNotifyAttending(
+      this.prisma,
+      summaryId,
+      physicianId,
+    );
+    const summary = await this.findOne(summaryId);
+    const dayKey = manilaDayKey();
+    const note = message?.trim() || null;
+
+    try {
+      await this.prisma.summaryConsultantNotice.create({
+        data: {
+          summaryId,
+          physicianId,
+          dayKey,
+          message: note,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          "You already notified the attending about this day's summary today.",
+        );
+      }
+      throw error;
+    }
+
+    const [patientName, consultantName] = await Promise.all([
+      this.auditLog.patientName({ patientId: summary.patientId }),
+      this.auditLog.userLabel(physicianId),
+    ]);
+    const day = dayText(summary.summaryDate);
+    await this.auditLog.record({
+      userId: physicianId,
+      action: 'CLAIM_PHYSICIAN_NOTIFIED',
+      details: {
+        summary: `Notified attending about ${patientName}'s summary for ${day}`,
+        items: detailItems([
+          ['Patient', patientName],
+          ['Summary day', day],
+          ['Attending', await this.auditLog.userLabel(admission.physicianId!)],
+          ['Note', note],
+        ]),
+      },
+    });
+
+    await this.notifications.notifyUsers([admission.physicianId!], {
+      type: NotificationType.REVIEW_REQUESTED,
+      title: 'Consulting physician approved a summary',
+      message:
+        `**${consultantName}** approved **${patientName}**'s Course in the Ward for ${day}` +
+        (note ? `: ${note}` : '.') +
+        ' Open the patient chart to give the final approval.',
+      patientId: summary.patientId,
+    });
+
+    return this.withOrders(summaryId, physicianId);
+  }
+
+  /** Best-effort consulting→attending notice after an edit (ignores rate-limit / role). */
+  private async maybeNotifyAttendingAfterConsultWork(
+    summaryId: string,
+    physicianId: string,
+    message: string,
+  ) {
+    const admission = await loadSummaryAdmission(this.prisma, summaryId);
+    if (!isConsultingOnly(admission, physicianId) || !admission?.dischargeDate) return;
+    try {
+      await this.notifyAttending(summaryId, physicianId, message);
+    } catch (error) {
+      if (error instanceof ConflictException || error instanceof BadRequestException) return;
+      throw error;
+    }
   }
 
   // "Resummarized Physician's Orders" -- option 2: regenerate via AI, optionally
@@ -991,8 +1041,13 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // Physician approves the summary they deem accurate
-  async approve(id: string, physicianId: string) {
+  /**
+   * Physician approves the summary they deem accurate.
+   * `completeClaim` (default true) also answers a PHYSICIAN_VALIDATION_REQUESTED
+   * claim — set false for per-day approve in the Requests review so
+   * "Approve request" remains the whole-stay sign-off.
+   */
+  async approve(id: string, physicianId: string, completeClaim = true) {
     await this.findOne(id);
     await assertAttending(this.prisma, id, physicianId);
     const approved = await this.prisma.courseInWard.update({
@@ -1005,16 +1060,20 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    // Approving from the workspace also answers any claim that was waiting on
-    // this summary, so the claims processor can move on to CF4.
-    const waitingClaims = await this.prisma.summaryApprovalRequest.findMany({
-      where: { summaryId: id, status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] } },
-      select: { id: true, processorId: true },
-    });
-    await this.prisma.summaryApprovalRequest.updateMany({
-      where: { summaryId: id, status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] } },
-      data: { status: 'VALIDATED' },
-    });
+    // Approving from the workspace only answers claims claims has already asked
+    // the physician to validate — bare PENDING (filed/auto-opened) stays open.
+    const waitingClaims = completeClaim
+      ? await this.prisma.summaryApprovalRequest.findMany({
+          where: { summaryId: id, status: 'PHYSICIAN_VALIDATION_REQUESTED' },
+          select: { id: true, processorId: true },
+        })
+      : [];
+    if (waitingClaims.length) {
+      await this.prisma.summaryApprovalRequest.updateMany({
+        where: { summaryId: id, status: 'PHYSICIAN_VALIDATION_REQUESTED' },
+        data: { status: 'VALIDATED' },
+      });
+    }
 
     // The approved text is final, so the drafts before it are no longer needed.
     await this.prisma.summaryVersion.deleteMany({ where: { summaryId: id } });
@@ -1045,7 +1104,7 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
           }),
         ),
       );
-    } else {
+    } else if (completeClaim) {
       await this.notifications.notifyRole(Role.CLAIMS_PROCESSOR, {
         title: 'Course in the Ward summary approved',
         message: `**${physicianName}** approved **${patientName}**'s Course in the Ward for ${dayText(approved.summaryDate)}. It is ready for a claim request.`,
@@ -1150,43 +1209,111 @@ export class CourseInWardService implements OnModuleInit, OnModuleDestroy {
    * returns this, or the client's copy would lose its orders (and its day)
    * until the next full reload.
    */
-  private async withOrders(id: string) {
+  private async withOrders(id: string, viewerId?: string) {
     const summary = await this.prisma.courseInWard.findUniqueOrThrow({
       where: { id },
       include: SUMMARY_ORDERS,
     });
-    return (await this.withAttending([summary]))[0];
+    return (await this.withAttending([summary], viewerId))[0];
   }
 
   /**
-   * Adds `attendingPhysicianId` -- the only physician who may approve the
-   * summary -- so the UI can offer Approve to that physician alone.
+   * Adds attending / discharge / consulting-approval fields so the UI can offer
+   * Approve only to the attending, and "Approve summary" (notify) to consultants.
    */
   private async withAttending<
-    T extends { patientId: string; summaryDate: Date; orders?: { admissionId?: string | null }[] },
-  >(summaries: T[]): Promise<(T & { attendingPhysicianId: string | null })[]> {
+    T extends { id?: string; patientId: string; summaryDate: Date; orders?: { admissionId?: string | null }[] },
+  >(
+    summaries: T[],
+    viewerId?: string,
+  ): Promise<
+    (T & {
+      attendingPhysicianId: string | null;
+      admissionDischarged: boolean;
+      viewerIsConsulting: boolean;
+      myConsultantNoticeAt: string | null;
+      consultantApprovals: Array<{
+        physicianId: string;
+        name: string;
+        notifiedAt: string;
+      }>;
+    })[]
+  > {
     if (!summaries.length) return [];
     const admissions = await this.prisma.patientAdmission.findMany({
       where: { patientId: { in: [...new Set(summaries.map((s) => s.patientId))] } },
       select: { ...CARE_TEAM_ADMISSION_SELECT, patientId: true },
     });
-    return summaries.map((summary) => ({
-      ...summary,
-      attendingPhysicianId:
-        summaryAdmission(
-          summary,
-          admissions.filter((a) => a.patientId === summary.patientId),
-        )?.physicianId ?? null,
-    }));
+    const summaryIds = summaries
+      .map((summary) => summary.id)
+      .filter((id): id is string => Boolean(id));
+    const today = manilaDayKey();
+    const notices = summaryIds.length
+      ? await this.prisma.summaryConsultantNotice.findMany({
+          where: { summaryId: { in: summaryIds } },
+          orderBy: { notifiedAt: 'desc' },
+          select: {
+            summaryId: true,
+            physicianId: true,
+            notifiedAt: true,
+            dayKey: true,
+            physician: { select: { firstName: true, lastName: true } },
+          },
+        })
+      : [];
+
+    const approvalsBySummary = new Map<
+      string,
+      Array<{ physicianId: string; name: string; notifiedAt: string }>
+    >();
+    const seenPair = new Set<string>();
+    for (const notice of notices) {
+      const key = `${notice.summaryId}:${notice.physicianId}`;
+      if (seenPair.has(key)) continue;
+      seenPair.add(key);
+      const name = `Dr. ${notice.physician.firstName} ${notice.physician.lastName}`.trim();
+      const list = approvalsBySummary.get(notice.summaryId) ?? [];
+      list.push({
+        physicianId: notice.physicianId,
+        name,
+        notifiedAt: notice.notifiedAt.toISOString(),
+      });
+      approvalsBySummary.set(notice.summaryId, list);
+    }
+
+    return summaries.map((summary) => {
+      const admission = summaryAdmission(
+        summary,
+        admissions.filter((a) => a.patientId === summary.patientId),
+      );
+      const approvals = summary.id ? approvalsBySummary.get(summary.id) ?? [] : [];
+      const myToday = notices.find(
+        (notice) =>
+          notice.summaryId === summary.id &&
+          notice.physicianId === viewerId &&
+          notice.dayKey === today,
+      );
+      return {
+        ...summary,
+        attendingPhysicianId: admission?.physicianId ?? null,
+        admissionDischarged: Boolean(admission?.dischargeDate),
+        viewerIsConsulting: Boolean(
+          viewerId && isConsultingOnly(admission, viewerId),
+        ),
+        myConsultantNoticeAt: myToday?.notifiedAt.toISOString() ?? null,
+        consultantApprovals: approvals,
+      };
+    });
   }
 
-  async findForPatient(patientId: string) {
+  async findForPatient(patientId: string, viewerId?: string) {
     return this.withAttending(
       await this.prisma.courseInWard.findMany({
         where: { patientId },
         orderBy: { summaryDate: 'desc' },
         include: SUMMARY_ORDERS,
       }),
+      viewerId,
     );
   }
 

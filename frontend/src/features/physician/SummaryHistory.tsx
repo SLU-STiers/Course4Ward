@@ -14,6 +14,7 @@ import {
   CompositionPanel,
   HighlightedSummary,
 } from "../../components/ai/SummaryComposition";
+import { ordersOfDoctor } from "../../components/ai/summaryKeywords";
 import { manage } from "./styles";
 
 /** `selectedId` of the version in use, which has no version id of its own. */
@@ -132,6 +133,10 @@ export function SummaryHistory({
   const orders = (summary.orders ?? []).filter(
     (order) => order.status === "FINISHED",
   );
+  // The panel's "Ordered by" filter; the teal highlights follow it. Kept here,
+  // so the chosen doctor carries over to every version.
+  const [doctor, setDoctor] = useState<string | null>(null);
+  const highlightOrders = ordersOfDoctor(orders, doctor).orders;
 
   // Refetch whenever the current text changes (regenerate, edit, restore).
   useEffect(() => {
@@ -185,7 +190,7 @@ export function SummaryHistory({
             <span style={manage.historyLegend}>
               <span>
                 <mark style={manage.historyLegendTeal}>Teal</mark> words in the
-                selected card come from the finished doctor's orders listed in
+                selected card come from the accomplished doctor's orders listed in
                 the panel.
               </span>
               <span>
@@ -232,7 +237,7 @@ export function SummaryHistory({
               ) : isSelected(CURRENT) ? (
                 <HighlightedSummary
                   text={summary.summaryContent}
-                  orders={orders}
+                  orders={highlightOrders}
                 />
               ) : (
                 summary.summaryContent
@@ -290,7 +295,7 @@ export function SummaryHistory({
                     ) : isSelected(version.id) ? (
                       <HighlightedSummary
                         text={version.content}
-                        orders={orders}
+                        orders={highlightOrders}
                       />
                     ) : (
                       diffWords(summary.summaryContent, version.content).map(
@@ -330,7 +335,12 @@ export function SummaryHistory({
               ? `Earlier version ${selectedIndex + 1}`
               : "Version in use"}
           </h3>
-          <CompositionPanel text={selectedText} orders={orders} />
+          <CompositionPanel
+            text={selectedText}
+            orders={orders}
+            doctor={doctor}
+            onDoctorChange={setDoctor}
+          />
         </aside>
       </div>
     </Modal>

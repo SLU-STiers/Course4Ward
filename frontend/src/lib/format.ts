@@ -61,6 +61,20 @@ export function formatDateNumeric(value: string | Date): string {
   return new Date(value).toLocaleDateString('en-GB');
 }
 
+/**
+ * PhilHealth Claim Form date: `MM-DD-YYYY`.
+ * Prefers a `YYYY-MM-DD` key so UTC midnight does not shift the calendar day.
+ */
+export function formatDatePhilHealth(value: string | Date): string {
+  const key =
+    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value.trim())
+      ? value.trim().slice(0, 10)
+      : toDateKey(value);
+  if (!key) return '';
+  const [year, month, day] = key.split('-');
+  return `${month}-${day}-${year}`;
+}
+
 /** `15 Apr 2026` — en-GB with an abbreviated month. */
 export function formatDateShort(value: string | Date): string {
   return new Date(value).toLocaleDateString('en-GB', {

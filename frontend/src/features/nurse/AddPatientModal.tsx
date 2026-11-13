@@ -16,6 +16,7 @@ import {
   sanitizeName,
   sanitizePhoneNumber,
 } from './patientForm';
+import { CF4_PERTINENT_SIGNS } from '../../lib/cf4PertinentSigns';
 import { INSURANCE_LABEL, SEX_LABEL } from '../../lib/patient';
 import { TRIAGE_LEVELS, triageLevelInfo } from '../../lib/triage';
 import { addPatient as s, TEAL, ui } from './styles';
@@ -30,31 +31,8 @@ const REGISTRATION_CLASS = {
   hint: 'The patient is registered as an inpatient and assigned to a room in your ward.',
 } as const;
 
-/** General complaints offered in the Chief Complaint checklist. */
-const CHIEF_COMPLAINTS = [
-  'Abdominal pain (tummy ache)',
-  'Allergic reaction',
-  'Back pain',
-  'Body weakness / fatigue',
-  'Chest pain',
-  'Colds / runny nose',
-  'Cough',
-  'Diarrhea',
-  'Dizziness',
-  'Ear pain',
-  'Eye pain / redness',
-  'Fever',
-  'Headache',
-  'Joint pain',
-  'Loss of appetite',
-  'Nausea / vomiting',
-  'Painful urination',
-  'Shortness of breath',
-  'Skin rash / itching',
-  'Sore throat',
-  'Toothache',
-  'Wound / injury',
-];
+/** PhilHealth CF4 Part III item 3 — same ticks print on the claim form. */
+const CHIEF_COMPLAINTS: readonly string[] = CF4_PERTINENT_SIGNS;
 
 export type AddPatientFormResult = {
   firstName: string;
@@ -92,8 +70,12 @@ export type AddPatientFormResult = {
   bp: string;
   temp: string;
   pain: string;
+  heightCm: string;
+  weightKg: string;
   /** Complaints checked in the single dropdown. At least one is required. */
   chiefComplaints: string[];
+  /** Past / present medical and surgical history for CF4 Part III. */
+  medicalSurgicalHistory: string;
   notes: string;
 };
 const emptyForm = (): AddPatientFormResult => ({
@@ -123,13 +105,16 @@ const emptyForm = (): AddPatientFormResult => ({
   bp: '',
   temp: '',
   pain: '',
+  heightCm: '',
+  weightKg: '',
   chiefComplaints: [],
+  medicalSurgicalHistory: '',
   notes: '',
 });
 
 const BP_PATTERN = /\d{2,3}\s*\/\s*\d{2,3}/;
 
-type VitalKey = 'heartRate' | 'respRate' | 'spo2' | 'bp' | 'temp' | 'pain';
+type VitalKey = 'heartRate' | 'respRate' | 'spo2' | 'bp' | 'temp' | 'pain' | 'heightCm' | 'weightKg';
 
 type VitalRule = {
   key: VitalKey;
@@ -150,9 +135,11 @@ const VITAL_RULES: VitalRule[] = [
   { key: 'bp', label: 'Blood pressure', pattern: BP_PATTERN, patternHint: 'systolic/diastolic, e.g. 120/80' },
   { key: 'temp', label: 'Temperature', min: 30, max: 45, unit: '°C' },
   { key: 'pain', label: 'Pain score', min: 0, max: 10, unit: '/10' },
+  { key: 'heightCm', label: 'Height', min: 20, max: 300, unit: 'cm' },
+  { key: 'weightKg', label: 'Weight', min: 0.5, max: 500, unit: 'kg' },
 ];
 
-/** Vitals that only accept whole numbers (temperature allows one decimal). */
+/** Vitals that only accept whole numbers (temp / height / weight allow one decimal). */
 const WHOLE_VITALS = new Set<VitalKey>(['heartRate', 'respRate', 'spo2', 'pain']);
 
 
@@ -303,6 +290,9 @@ type FieldKey =
   | 'triageDate'
   | 'triageTime'
   | 'heartRate'
+  | 'heightCm'
+  | 'weightKg'
+  | 'medicalSurgicalHistory'
   | 'respRate'
   | 'spo2'
   | 'bp'
@@ -568,6 +558,9 @@ export function AddPatientModal({
       bp: form.bp.replace(/\s+/g, '') || undefined,
       temp: toNumber(form.temp),
       pain: toNumber(form.pain),
+      heightCm: toNumber(form.heightCm),
+      weightKg: toNumber(form.weightKg),
+      medicalSurgicalHistory: form.medicalSurgicalHistory.trim() || undefined,
       // No chief-complaint column: it leads the initial assessment text.
       notes: `Chief complaint: ${complaints.join(', ')}.\n\n${form.notes.trim()}`,
     };
@@ -1001,6 +994,26 @@ export function AddPatientModal({
                 <Vital id={fieldId('pain')} label="Pain" unit="/10" type="number" min={0} max={10} value={form.pain} onChange={(v) => setField('pain', v)} placeholder="—" required />
                 {fieldError('pain')}
               </div>
+              <div>
+                <Vital id={fieldId('heightCm')} label="Height" unit="cm" type="number" min={20} max={300} step={0.1} value={form.heightCm} onChange={(v) => setField('heightCm', v)} placeholder="—" required />
+                {fieldError('heightCm')}
+              </div>
+              <div>
+                <Vital id={fieldId('weightKg')} label="Weight" unit="kg" type="number" min={0.5} max={500} step={0.1} value={form.weightKg} onChange={(v) => setField('weightKg', v)} placeholder="—" required />
+                {fieldError('weightKg')}
+              </div>
+            </div>
+            <div style={{ marginTop: 14 }}>
+              <Field label="Past / Present Medical & Surgical History">
+                <textarea
+                  id={fieldId('medicalSurgicalHistory')}
+                  style={s.textarea}
+                  value={form.medicalSurgicalHistory}
+                  onChange={(e) => setField('medicalSurgicalHistory', e.target.value)}
+                  placeholder="Prior illnesses, surgeries, hospitalizations…"
+                />
+                {fieldError('medicalSurgicalHistory')}
+              </Field>
             </div>
             <div style={{ marginTop: 14 }}>
               <span style={s.label}>
@@ -1218,7 +1231,7 @@ function ChiefComplaintPicker({
           aria-label="Chief complaints"
           style={{
             marginTop: 6,
-            maxHeight: 220,
+            maxHeight: 280,
             overflowY: 'auto',
             padding: 6,
             backgroundColor: '#ffffff',

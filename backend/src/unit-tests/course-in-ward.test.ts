@@ -61,6 +61,10 @@ const mockPrismaService = {
     delete: jest.fn(),
     deleteMany: jest.fn(),
   },
+  summaryConsultantNotice: {
+    findMany: jest.fn().mockResolvedValue([]),
+    create: jest.fn(),
+  },
 };
 
 const mockAuditLogService = {
@@ -372,7 +376,7 @@ describe('CourseInWardService', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.generateSummary(mockPatientId, mockRequestedById, '2026-03-04')
-      ).rejects.toThrow('No finished orders recorded for this patient on 2026-03-04');
+      ).rejects.toThrow('No accomplished orders recorded for this patient on 2026-03-04');
       expect(mockOllamaClient.summarizeBatch).not.toHaveBeenCalled();
     });
 
@@ -895,7 +899,7 @@ describe('CourseInWardService', () => {
       expect(mockPrismaService.summaryApprovalRequest.updateMany).toHaveBeenCalledWith({
         where: {
           summaryId: mockSummaryId,
-          status: { in: ['PENDING', 'PHYSICIAN_VALIDATION_REQUESTED'] },
+          status: 'PHYSICIAN_VALIDATION_REQUESTED',
         },
         data: { status: 'VALIDATED' },
       });
