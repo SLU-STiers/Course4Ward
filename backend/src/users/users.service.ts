@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import * as bcrypt from 'bcrypt';
 import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { END_SESSION } from '../auth/session-activity';
 import {
   AuditChange,
   AuditLogService,
@@ -220,7 +221,7 @@ export class UsersService {
               },
             }
           : {}),
-        ...(statusChanged || roleChanged ? { sessionVersion: { increment: 1 } } : {}),
+        ...(statusChanged || roleChanged ? END_SESSION : {}),
       },
       select: this.safeSelect,
     })).catch(rethrowIdRace);

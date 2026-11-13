@@ -1,5 +1,7 @@
 // backend/src/unit-tests/auth.test.ts
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from '../auth/auth.service';
@@ -62,6 +64,7 @@ describe('AuthService', () => {
     role: 'DOCTOR',
     isActive: true,
     mustResetPassword: false,
+    sessionVersion: 4,
   };
 
   beforeEach(async () => {
@@ -115,7 +118,7 @@ describe('AuthService', () => {
 
       expect(mockPrismaService.user.updateMany).toHaveBeenCalledWith({
         where: { id: 'user-123', sessionVersion: 3 },
-        data: { sessionVersion: { increment: 1 } },
+        data: { sessionVersion: { increment: 1 }, lastSeenAt: null },
       });
       expect(auditLogService.record).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'user-123', action: 'LOGOUT' }),
@@ -131,7 +134,7 @@ describe('AuthService', () => {
       expect(jwtService.verifyAsync).toHaveBeenCalledWith('refresh-1', { secret: 'refresh-secret' });
       expect(mockPrismaService.user.updateMany).toHaveBeenCalledWith({
         where: { id: 'user-123', sessionVersion: 0 },
-        data: { sessionVersion: { increment: 1 } },
+        data: { sessionVersion: { increment: 1 }, lastSeenAt: null },
       });
     });
 
@@ -346,6 +349,7 @@ describe('AuthService', () => {
     it('should return tokens and user info when credentials are valid', async () => {
       // Arrange
       (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      (prismaService.user.update as jest.Mock).mockResolvedValue({ sessionVersion: 5 });
       jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(true) as never);
 
       // Act
@@ -359,12 +363,12 @@ describe('AuthService', () => {
 
       expect(jwtService.signAsync).toHaveBeenNthCalledWith(
         1,
-        { sub: mockUser.id, userId: mockUser.userId, role: mockUser.role },
+        { sub: mockUser.id, userId: mockUser.userId, role: mockUser.role, sessionVersion: 5 },
         { secret: 'access-secret', expiresIn: '15m' },
       );
       expect(jwtService.signAsync).toHaveBeenNthCalledWith(
         2,
-        { sub: mockUser.id, userId: mockUser.userId, role: mockUser.role },
+        { sub: mockUser.id, userId: mockUser.userId, role: mockUser.role, sessionVersion: 5 },
         { secret: 'refresh-secret', expiresIn: '7d' },
       );
 
@@ -386,6 +390,50 @@ describe('AuthService', () => {
           mustResetPassword: false,
         },
       });
+    });
+
+    it('claims the session only if no other session is active, and ends any stale one', async () => {
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      (prismaService.user.update as jest.Mock).mockResolvedValue({ sessionVersion: 5 });
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(true) as never);
+
+      await service.login(dto);
+
+      expect(prismaService.user.update).toHaveBeenCalledWith({
+        where: {
+          id: mockUser.id,
+          OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: expect.any(Date) } }],
+        },
+        data: { lastSeenAt: expect.any(Date), sessionVersion: { increment: 1 } },
+        select: { sessionVersion: true },
+      });
+      const { where } = (prismaService.user.update as jest.Mock).mock.calls[0][0];
+      const cutoff = where.OR[1].lastSeenAt.lt.getTime();
+      expect(Date.now() - cutoff).toBeGreaterThanOrEqual(15 * 60 * 1000 - 1000);
+      expect(Date.now() - cutoff).toBeLessThan(15 * 60 * 1000 + 1000);
+    });
+
+    it('refuses a second sign-in while the account is already logged in', async () => {
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      (prismaService.user.update as jest.Mock).mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('No record found', { code: 'P2025', clientVersion: 'test' }),
+      );
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(true) as never);
+
+      const attempt = service.login(dto);
+      await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.login(dto)).rejects.toThrow('User already logged in');
+
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(auditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('does not reveal an active session to someone with the wrong password', async () => {
+      (prismaService.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(false) as never);
+
+      await expect(service.login(dto)).rejects.toThrow('Invalid credentials');
+      expect(prismaService.user.update).not.toHaveBeenCalled();
     });
 
     it('should throw error when user is not found', async () => {
