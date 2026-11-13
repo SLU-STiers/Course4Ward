@@ -1,14 +1,15 @@
 # Debian slim (not alpine): bcrypt and the Prisma engines work without extra build tools.
 FROM node:20-bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends openssl python3 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY backend/package*.json ./
 RUN npm ci
 
-COPY . .
+COPY backend/ ./
+COPY fine_tuning_data/batch_test.py fine_tuning_data/groups.txt fine_tuning_data/summaries.json ./fine_tuning_data/
 RUN npx prisma generate && npm run build
 
 EXPOSE 3000

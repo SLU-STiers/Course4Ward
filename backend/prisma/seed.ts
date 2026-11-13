@@ -311,6 +311,20 @@ async function main() {
 
   // 9) Wards: nurse assignments, and rooms for some current inpatients. Only
   // fills gaps (no room yet, room free), so it never moves a real patient.
+  const additionalRooms = [
+    ...['111', '112', '113', '114', '115'].map((number) => ({ number, wardId: 'ward-coronary' })),
+    ...['116', '117', '118', '119', '120'].map((number) => ({ number, wardId: 'ward-obdr' })),
+    ...['121', '122', '123', '124', '125'].map((number) => ({ number, wardId: 'ward-picu' })),
+    ...['211', '212', '213', '214', '215'].map((number) => ({ number, wardId: 'ward-micu' })),
+    ...['216', '217', '218', '219', '220'].map((number) => ({ number, wardId: 'ward-surgery' })),
+  ];
+  for (const room of additionalRooms) {
+    await prisma.room.upsert({
+      where: { number: room.number },
+      update: {},
+      create: { ...room, isActive: true },
+    });
+  }
   for (const { userId, wardIds } of nurseWards) {
     const nurseId = must(userIds.get(userId), `nurse '${userId}'`);
     await prisma.nurseWard.createMany({

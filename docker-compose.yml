@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: cims
       POSTGRES_DB: cims
     ports:
-      - "5433:5432" # 5433 on the host so it doesn't clash with a local Postgres
+      - "127.0.0.1:5433:5432" # Host-only; 5433 avoids clashing with local Postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -28,10 +28,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     depends_on:
       db:
         condition: service_healthy
@@ -40,23 +42,24 @@ services:
     environment:
       DATABASE_URL: postgresql://cims:cims@db:5432/cims
       AI_SERVICE_URL: http://ai_service:8000
+      BATCH_TEST_SCRIPT: /app/fine_tuning_data/batch_test.py
       CORS_ORIGIN: http://localhost:5173
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
       SUMMARY_BATCH_TIME: ${SUMMARY_BATCH_TIME:-23:59}
       TZ: ${TZ:-Asia/Manila}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
   frontend:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:3000
+        VITE_API_URL: /api
     depends_on:
       - backend
     ports:
-      - "5173:80"
+      - "0.0.0.0:5173:80"
 
 volumes:
   pgdata:

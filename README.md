@@ -106,6 +106,16 @@ JWT_SECRET=<insert key>
 9. Type the following in the terminal to run the project entirely:
 - docker compose up
 
+### Accessing from other computers
+
+The Docker frontend is available on the server's network interfaces at port
+5173. Find the server computer's IPv4 address on the same network and open
+`http://<server-ip>:5173` from another computer (for example,
+`http://192.168.1.25:5173`). Allow inbound TCP port 5173 through the server's
+firewall if prompted or if the page cannot be reached. The frontend proxies API
+requests internally, so other computers do not need to connect to the backend
+port directly.
+
 # **Quick Start**
 Once the prerequisites are followed and the installation steps are done, you may start the Course4Ward web application using the command:
     npm run dev

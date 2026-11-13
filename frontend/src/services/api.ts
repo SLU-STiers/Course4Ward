@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/authStore';
 import { clearSessionState } from '../lib/sessionState';
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3000',
+  baseURL: import.meta.env.VITE_API_URL ?? '/api',
   withCredentials: true,
 });
 
